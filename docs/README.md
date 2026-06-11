@@ -6,247 +6,118 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-05-13 ~ 2026-06-11
-- 运行时间：2026-06-11 08:28:34 UTC
+- 最新运行日期：2026-06-11
+- 运行时间：2026-06-11 21:07:31 UTC
 - 运行状态：成功
-- 本次总论文数：75
-- 精读区：64
+- 本次总论文数：32
+- 精读区：21
 - 速读区：11
 
 ### 今日简报（AI）
-本周深度研读语音技术前沿：从医疗实时语音转文本交响系统（满分精读），到利用音频编辑生成高质量摘要、关节发音合成评估及低资源口音鲁棒识别等速读成果。  
-最值得关注：高精度实时语音接口正走进临床，音频参与迭代式编辑能大幅提升对话摘要质量，意味着语音 AI 在专业场景的可用性迎来飞跃。  
-普通读者不妨用现有的语音记事与摘要工具，尝试“边说边改”的交互方式，感受下一代工作流如何更懂你的话语。
-- 详情：[/20260513-20260611/README](/20260513-20260611/README)
+今日精读21篇语音AI前沿论文，两大满分工作揭示情感可控合成与儿童语音识别新范式。  
+Task-Vector算术精准操控语音情感表达，Age-Aware适配器以轻量调优破解儿童ASR难题。  
+想跟进下一代语音交互，不妨从“任务向量+适配器”组合切入，低成本打造更懂人心的生成系统。
+- 详情：[/202606/11/README](/202606/11/README)
 
 ### 精读区论文标签
-1. [Symphony for Speech-to-Text: Supporting Real-Time Medical Voice Interfaces](/20260513-20260611/2605.16545v1-symphony-for-speech-to-text-supporting-real-time-medical-voice-interfaces)  
+1. [Task-Vector Arithmetic for Emotional Expressivity Control in Language-Model-Based Text-to-Speech](/202606/11/2606.05367v1-task-vector-arithmetic-for-emotional-expressivity-control-in-language-model-based-text-to-speech)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：推出用于实时临床的医疗级语音识别系统
-2. [Symphony for Speech-to-Text: Supporting Real-Time Medical Voice Interfaces](/20260513-20260611/2605.16545v2-symphony-for-speech-to-text-supporting-real-time-medical-voice-interfaces)  
+   evidence：通过x向量质心算术实现LM-TTS的无训练情感控制
+2. [Age-Aware Adapter Tuning for Children's Speech Recognition](/202606/11/2606.05440v1-age-aware-adapter-tuning-for-childrens-speech-recognition)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：一个医疗级的自动语音识别系统
-3. [Taming Audio VAEs via Target-KL Regularization](/20260513-20260611/2605.17085v1-taming-audio-vaes-via-target-kl-regularization)  
+   evidence：针对儿童语音识别的年龄感知适配器调整
+3. [M2S-AVSR: Modality-aware Multi-view Self-supervised Representation for Robust Audio-Visual Speech Recognition](/202606/11/2606.05763v2-m2s-avsr-modality-aware-multi-view-self-supervised-representation-for-robust-audio-visual-speech-recognition)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：提出用于文本转语音和音频生成的音频VAE的目标KL正则化
-4. [StepAudio 2.5 Technical Report](/20260513-20260611/2605.23463v1-stepaudio-25-technical-report)  
+   evidence：提出模态感知多视角自监督框架用于鲁棒视听语音识别
+4. [VoxCPM2 Technical Report](/202606/11/2606.06928v1-voxcpm2-technical-report)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：提出一个统一音频语言模型，在自动语音识别、文本到语音合成和实时口语交互方面取得有竞争力的表现。
-5. [PilotTTS: A Disciplined Modular Recipe for Competitive Speech Synthesis](/20260513-20260611/2605.27258v1-pilottts-a-disciplined-modular-recipe-for-competitive-speech-synthesis)  
+   evidence：多语言可控语音生成基础模型，具备声音克隆功能，直接支撑TTS
+5. [Audio-Oscar: A Multi-Agent System for Complex Audio Scene Generation, Orchestration, and Refinement](/202606/11/2606.07397v1-audio-oscar-a-multi-agent-system-for-complex-audio-scene-generation-orchestration-and-refinement)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：轻量级自回归TTS系统，对文本到语音合成的直接贡献
-6. [PilotTTS: A Disciplined Modular Recipe for Competitive Speech Synthesis](/20260513-20260611/2605.27258v2-pilottts-a-disciplined-modular-recipe-for-competitive-speech-synthesis)  
+   evidence：多智能体系统用于复杂音频场景生成，包含文本到语音
+6. [Factors affecting ASR performance: A study using state of the art ASR models in Indic Languages](/202606/11/2606.09335v1-factors-affecting-asr-performance-a-study-using-state-of-the-art-asr-models-in-indic-languages)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：提出了一种轻量级文本到语音系统，通过极简架构和数据工程实现有竞争力的性能。
-7. [Data-Efficient On-Policy Distillation for Automatic Speech Recognition](/20260513-20260611/2605.28139v1-data-efficient-on-policy-distillation-for-automatic-speech-recognition)  
+   evidence：大规模研究分析多个印度语言的ASR性能
+7. [OpenBibleTTS: Large-Scale Speech Resources and TTS Models for Low-Resource Languages](/202606/11/2606.09553v1-openbibletts-large-scale-speech-resources-and-tts-models-for-low-resource-languages)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：研究在线策略蒸馏，在10万小时数据上改善ASR模型，优于更大规模的基线。
-8. [Towards Human-Like Interactive Speech Recognition With Agentic Correction and Semantic Evaluation](/20260513-20260611/2605.29430v1-towards-human-like-interactive-speech-recognition-with-agentic-correction-and-semantic-evaluation)  
+   evidence：面向37种低资源语言的大规模多语言TTS基准
+8. [Entropy-Aware Domain-Routed Mixture-of-Experts Speech-LLM Framework: A Case Study of Multi-Domain Child-Adult ASR](/202606/11/2606.10454v1-entropy-aware-domain-routed-mixture-of-experts-speech-llm-framework-a-case-study-of-multi-domain-child-adult-asr)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：提出一个交互式ASR框架，具备智能体纠错和语义评估，以解决单遍识别局限和词错率不足。
-9. [Decoding Strategies for Diffusion-Based ASR: A Systematic Evaluation of Confidence-Based Thresholding](/20260513-20260611/2605.29613v1-decoding-strategies-for-diffusion-based-asr-a-systematic-evaluation-of-confidence-based-thresholding)  
+   evidence：熵感知混合专家语音大语言模型用于儿童-成人多域语音识别
+9. [Towards Deep Contextual Reasoning from Broad Descriptions for ASR with Speech-LLM via Metadata-Driven Reasoning Chains](/202606/11/2606.10838v1-towards-deep-contextual-reasoning-from-broad-descriptions-for-asr-with-speech-llm-via-metadata-driven-reasoning-chains)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：评估基于信度阈值的扩散语言模型ASR解码策略
-10. [ImmersiveTTS: Environment-Aware Text-to-Speech with Multimodal Diffusion Transformer and Domain-Specific Representation Alignment](/20260513-20260611/2605.30965v1-immersivetts-environment-aware-text-to-speech-with-multimodal-diffusion-transformer-and-domain-specific-representation-alignment)  
+   evidence：使用宽泛描述进行上下文推理以改进ASR对罕见术语的识别
+10. [Ethical and Technical Limits of Deepfake Speech Datasets](/202606/11/2606.10911v1-ethical-and-technical-limits-of-deepfake-speech-datasets)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：提出环境感知的文本到语音合成模型
-11. [UNISON: A Unified Sound Generation and Editing Framework via Deep LLM Fusion](/20260513-20260611/2605.31530v1-unison-a-unified-sound-generation-and-editing-framework-via-deep-llm-fusion)  
+   evidence：对39个深度伪造语音数据集进行审计，分析可访问性、人口统计、语言覆盖等公平性问题。
+11. [Gumbel-BEARD: Automatic Layer Selection for Self-Supervised Adaptation of Whisper in Low-Resource Domains](/202606/11/2606.11429v1-gumbel-beard-automatic-layer-selection-for-self-supervised-adaptation-of-whisper-in-low-resource-domains)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：文本到音频、文本到语音及声音生成的统一框架，直接符合文本到音频合成方法
-12. [SoulX-Transcriber: A Robust End-to-End Framework for Multi-Speaker Speech Transcription](/20260513-20260611/2606.02400v1-soulx-transcriber-a-robust-end-to-end-framework-for-multi-speaker-speech-transcription)  
+   evidence：自动化Whisper层选择以实现低资源ASR领域的自监督域适应
+12. [CS-YODAS: A Mined Dataset of In-the-Wild Code-Switched Speech](/202606/11/2606.11514v1-cs-yodas-a-mined-dataset-of-in-the-wild-code-switched-speech)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：统一的多说话人语音转录系统，结合LLM中的说话人分离和ASR
-13. [M2S-AVSR: Modality-aware Multi-view Self-supervised Representation for Robust Audio-Visual Speech Recognition](/20260513-20260611/2606.05763v1-m2s-avsr-modality-aware-multi-view-self-supervised-representation-for-robust-audio-visual-speech-recognition)  
+   evidence：从YouTube挖掘的语码转换语音数据集
+13. [SARA: A Dual-Stream VAE for High-Fidelity Speech Generation via Integrating Semantic and Acoustic Representations](/202606/11/2606.11611v1-sara-a-dual-stream-vae-for-high-fidelity-speech-generation-via-integrating-semantic-and-acoustic-representations)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：提出一种模态感知多视角自监督框架，用于鲁棒的视听语音识别，处理视角变化和模态降质。
-14. [GLASS: GRPO-Trained LoRA for Acoustic Style Steering in Zero-Shot Text-to-Speech](/20260513-20260611/2606.05889v1-glass-grpo-trained-lora-for-acoustic-style-steering-in-zero-shot-text-to-speech)  
+   evidence：提出用于高保真文本到语音合成的双流VAE，解决语义-声学权衡问题。
+14. [UR-BERT: Scaling Text Encoders for Massively Multilingual TTS Through Universal Romanization and Speech Token Prediction](/202606/11/2606.11681v1-ur-bert-scaling-text-encoders-for-massively-multilingual-tts-through-universal-romanization-and-speech-token-prediction)  
    标签：评分：10.0/10、query:speech-audio
-   evidence：零样本文本到语音中的可组合声学风格控制
-15. [dots.tts Technical Report](/20260513-20260611/2606.07080v1-dotstts-technical-report)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：提出dots.tts，一个2B参数的连续自回归TTS模型，在AudioVAE、全历史条件和自我校正后训练上有创新。
-16. [Assessing True Generalisability of Audio-Visual Speech Recognisers](/20260513-20260611/2606.07259v1-assessing-true-generalisability-of-audio-visual-speech-recognisers)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：构建受控未见评估集以基准测试视听语音识别泛化能力
-17. [From A to B to A: Palindromic Zero-Shot Voice Conversion with Non-Parallel Data](/20260513-20260611/2606.08843v1-from-a-to-b-to-a-palindromic-zero-shot-voice-conversion-with-non-parallel-data)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：提出使用WavLM表示的KNN检索实现零样本语音转换
-18. [TLDR: Compressing Audio Tokens for Efficient Autoregressive Text-to-Speech](/20260513-20260611/2606.09019v1-tldr-compressing-audio-tokens-for-efficient-autoregressive-text-to-speech)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：提出TLDR，一种基于补丁的自回归框架，通过压缩音频令牌加速编解码TTS。
-19. [FlashTTS: Fast Streaming TTS with MTP Acceleration and X-pred Mean Flow Distillation](/20260513-20260611/2606.09141v1-flashtts-fast-streaming-tts-with-mtp-acceleration-and-x-pred-mean-flow-distillation)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：提出低延迟的快速流式TTS，直接推进文本到语音合成
-20. [End-to-End Training for Discrete Token LLM based TTS System](/20260513-20260611/2606.09234v1-end-to-end-training-for-discrete-token-llm-based-tts-system)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：提出针对基于离散Token大语言模型TTS系统的端到端训练
-21. [Speech Meets ELF: Audio Conditional Continuous-Target Diffusion for Speech Recognition and Translation](/20260513-20260611/2606.10368v1-speech-meets-elf-audio-conditional-continuous-target-diffusion-for-speech-recognition-and-translation)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：提出ELF-S2T，一种音频条件连续目标生成模型用于语音识别。
-22. [Vividh-ASR: A Complexity-Tiered Benchmark and Optimization Dynamics for Robust Indic Speech Recognition](/20260513-20260611/2605.13087v1-vividh-asr-a-complexity-tiered-benchmark-and-optimization-dynamics-for-robust-indic-speech-recognition)  
+   evidence：基于罗马化和语音令牌预测的巨大规模多语言TTS BERT编码器
+15. [Towards Unified Song Generation and Singing Voice Conversion with Accompaniment Co-Generation](/202606/11/2606.07015v1-towards-unified-song-generation-and-singing-voice-conversion-with-accompaniment-co-generation)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：提出Vividh-ASR，一个面向印地语和马拉雅拉姆语的分层复杂度基准，并提出反向多阶段微调。
-23. [From Text to Voice: A Reproducible and Verifiable Framework for Evaluating Tool Calling LLM Agents](/20260513-20260611/2605.15104v1-from-text-to-voice-a-reproducible-and-verifiable-framework-for-evaluating-tool-calling-llm-agents)  
+   evidence：歌声转换与歌曲生成统一
+16. [Making the Most of Limited Data: Score-Aware Training for Text-to-Music Generation](/202606/11/2606.07387v1-making-the-most-of-limited-data-score-aware-training-for-text-to-music-generation)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：利用TTS生成音频工具调用基准的框架，与语音和音频数据集相关
-24. [SemaVoice: Semantic-Aware Continuous Autoregressive Speech Synthesis](/20260513-20260611/2605.16964v1-semavoice-semantic-aware-continuous-autoregressive-speech-synthesis)  
+   evidence：文本到音乐生成，利用得分感知训练提高数据效率，属于文本到音频合成
+17. [Mitigating Proxy-to-Wild Domain Gap in Deepfake Speech](/202606/11/2606.07494v1-mitigating-proxy-to-wild-domain-gap-in-deepfake-speech)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：语义感知的连续自回归语音合成用于零样本TTS
-25. [PAREDA: A Multi-Accent Speech Dataset of Natural Language Processing Research Discussions](/20260513-20260611/2605.17860v1-pareda-a-multi-accent-speech-dataset-of-natural-language-processing-research-discussions)  
+   evidence：引入挑战性深度伪造语音评估数据集CoSG ExtEval。
+18. [A study on the impact of region specific data on the performance of Indic ASR](/202606/11/2606.09345v1-a-study-on-the-impact-of-region-specific-data-on-the-performance-of-indic-asr)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：用于ASR研究的多口音语音数据集
-26. [Contextual Biasing for Streaming ASR via CTC-based Word Spotting](/20260513-20260611/2605.18222v2-contextual-biasing-for-streaming-asr-via-ctc-based-word-spotting)  
+   evidence：分析印度语言ASR的跨地区泛化能力
+19. [Is Text All You Need? Text as a Universal Information Bottleneck for Speech LLMs](/202606/11/2606.09366v1-is-text-all-you-need-text-as-a-universal-information-bottleneck-for-speech-llms)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：用于ASR上下文偏置的流式CTC词发现
-27. [Can Large Language Models Reliably Correct Errors in Low-Resource ASR? A Contamination-Aware Case Study on West Frisian](/20260513-20260611/2605.19711v1-can-large-language-models-reliably-correct-errors-in-low-resource-asr-a-contamination-aware-case-study-on-west-frisian)  
+   evidence：用于改进转录和副语言信息保留的语音到LLM桥接
+20. [Linguistically Augmented Audio Speech Data (LinguAS)](/202606/11/2606.10246v1-linguistically-augmented-audio-speech-data-linguas)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：基于LLM的低资源ASR错误纠正
-28. [Mega-ASR: Towards In-the-wild^2 Speech Recognition via Scaling up Real-world Acoustic Simulation](/20260513-20260611/2605.19833v1-mega-asr-towards-in-the-wild2-speech-recognition-via-scaling-up-real-world-acoustic-simulation)  
+   evidence：包含真实和深度伪造音频及专家定义语言特征的语音数据集，用于深度伪造检测。
+21. [Massive Open-Vocabulary Keyword Spotting](/202606/11/2606.11279v1-massive-open-vocabulary-keyword-spotting)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：提出Voices-in-the-Wild-2M数据集及Mega-ASR框架，用于野外鲁棒语音识别。
-29. [Raon-OpenTTS: Open Models and Data for Robust Text-to-Speech](/20260513-20260611/2605.20830v1-raon-opentts-open-models-and-data-for-robust-text-to-speech)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：开放TTS模型和大规模数据集用于可复现的TTS研究
-30. [RobustSpeechFlow: Learning Robust Text-to-Speech Trajectories via Augmentation-based Contrastive Flow Matching](/20260513-20260611/2605.22083v1-robustspeechflow-learning-robust-text-to-speech-trajectories-via-augmentation-based-contrastive-flow-matching)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：带增强的对比流匹配提升TTS鲁棒性
-31. [FC-TTS: Style and Timbre Control in Zero-Shot Text-to-Speech with Disentangled Speech Representations](/20260513-20260611/2605.24618v1-fc-tts-style-and-timbre-control-in-zero-shot-text-to-speech-with-disentangled-speech-representations)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：提出FC-TTS，一种零样本文本到语音框架，支持从分离参考中解耦控制风格和音色。
-32. [Proactive for Uncertainty: Cause-Aware Error Diagnosis and Interactive Clarification for Spoken Dialogue Systems](/20260513-20260611/2605.25404v1-proactive-for-uncertainty-cause-aware-error-diagnosis-and-interactive-clarification-for-spoken-dialogue-systems)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：ASR-LLM口语对话系统原因感知的错误诊断
-33. [TARQ: Tail-Aware Reconstruction Quantization for Rare-Word Robust Automatic Speech Recognition](/20260513-20260611/2605.27808v1-tarq-tail-aware-reconstruction-quantization-for-rare-word-robust-automatic-speech-recognition)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：针对罕见词鲁棒ASR的量化方法
-34. [Dasheng AudioGen: A Unified Model for Generating Coherent Audio Scenes from Text](/20260513-20260611/2605.27838v1-dasheng-audiogen-a-unified-model-for-generating-coherent-audio-scenes-from-text)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：提出Dasheng AudioGen，一种从文本生成连贯音频场景的统一模型，采用结构化多视角字幕。
-35. [VoiceGiraffe: A Benchmark for Extreme Long-Context Audio-Language Understanding](/20260513-20260611/2605.27976v1-voicegiraffe-a-benchmark-for-extreme-long-context-audio-language-understanding)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：用于长上下文音频语言理解的基准测试
-36. [Unified Synthesis of Compositional Speech and Sound from Free-Form Text Prompts](/20260513-20260611/2605.28063v1-unified-synthesis-of-compositional-speech-and-sound-from-free-form-text-prompts)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：从自由文本生成包含语音和声音的统一音频，符合文本到音频合成
-37. [MELD: Mel-Spectrogram-Based Speech Language Modeling with Discrete Latent Variables](/20260513-20260611/2605.29859v1-meld-mel-spectrogram-based-speech-language-modeling-with-discrete-latent-variables)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：联合优化编码器和自回归模型，提升零样本TTS和STT
-38. [OpenSTBench: Beyond Semantic Evaluation for Speech Translation](/20260513-20260611/2605.30792v1-openstbench-beyond-semantic-evaluation-for-speech-translation)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：用于语音翻译评估的统一基准
-39. [SwanVoice: Expressive Long-Form Zero-Shot Speech Synthesis for Both Monologue and Dialogue](/20260513-20260611/2605.30993v1-swanvoice-expressive-long-form-zero-shot-speech-synthesis-for-both-monologue-and-dialogue)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：用于对话的富有表现力的长文本零样本语音合成
-40. [UniVocal: Unified Speech-Singing Code-Switching Synthesis](/20260513-20260611/2606.01677v1-univocal-unified-speech-singing-code-switching-synthesis)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：统一语音和歌唱合成框架，扩展了文本到语音能力
-41. [MOSS-Audio Technical Report](/20260513-20260611/2606.01802v1-moss-audio-technical-report)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：支持时间戳转录，一项关键的自动语音识别任务
-42. [MOSS-Audio Technical Report](/20260513-20260611/2606.01802v2-moss-audio-technical-report)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：支持带时间戳的转录，即自动语音识别的一种形式
-43. [MOSS-Audio Technical Report](/20260513-20260611/2606.01802v3-moss-audio-technical-report)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：执行时间戳转录，一种自动语音识别形式
-44. [SoulX-Transcriber: A Robust End-to-End Framework for Multi-Speaker Speech Transcription](/20260513-20260611/2606.02400v2-soulx-transcriber-a-robust-end-to-end-framework-for-multi-speaker-speech-transcription)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：基于LLM的统一多说话人转录
-45. [SN-WER: Script-Normalized WER for Multi-Script Indic ASR Evaluation](/20260513-20260611/2606.02548v1-sn-wer-script-normalized-wer-for-multi-script-indic-asr-evaluation)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：用于多文字印度语言ASR评估的字形归一化WER
-46. [SpeakerCard-1M: An Evidence-Grounded Speaker Card Corpus for In-the-Wild Speaker Verification](/20260513-20260611/2606.03283v1-speakercard-1m-an-evidence-grounded-speaker-card-corpus-for-in-the-wild-speaker-verification)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：引入一个面向证据驱动说话人验证的双语说话人中心语料库，源自VoxCeleb和CN-Celeb。
-47. [Efficient ASR Training with Conversations that Never Happened](/20260513-20260611/2606.03957v1-efficient-asr-training-with-conversations-that-never-happened)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：用TTS生成合成对话训练对话ASR
-48. [UAT: Unified Audio-Text Diffusion for Audio Generation, Editing, and Captioning](/20260513-20260611/2606.04939v1-uat-unified-audio-text-diffusion-for-audio-generation-editing-and-captioning)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：统一扩散模型用于文本到音频生成、编辑和字幕
-49. [Beyond Waveform Robustness: Robust Feature-Vocoder Adversarial Attacks on Automatic Speech Recognition](/20260513-20260611/2606.05678v1-beyond-waveform-robustness-robust-feature-vocoder-adversarial-attacks-on-automatic-speech-recognition)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：针对自动语音识别系统的对抗攻击
-50. [Towards Truly Multilingual ASR: Generalizing Code-Switching ASR to Unseen Language Pairs](/20260513-20260611/2606.05846v1-towards-truly-multilingual-asr-generalizing-code-switching-asr-to-unseen-language-pairs)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：研究代码切换ASR对未见语言对的泛化能力
-51. [UniVoice: A Unified Model for Speech and Singing Voice Generation](/20260513-20260611/2606.05852v1-univoice-a-unified-model-for-speech-and-singing-voice-generation)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：提出一个统一框架，利用因子化条件与流匹配，从符号输入生成语音和歌声。
-52. [SpeechJBB: Probing Safety Alignment and Comprehension in Large Audio Language Models under Code-Switched Speech](/20260513-20260611/2606.06037v2-speechjbb-probing-safety-alignment-and-comprehension-in-large-audio-language-models-under-code-switched-speech)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：引入用于音频语言模型基准测试的语音安全数据集
-53. [FiLM-Based Speaker Conditioning of a SpeechLLM for Pathological Speech Recognition](/20260513-20260611/2606.06211v1-film-based-speaker-conditioning-of-a-speechllm-for-pathological-speech-recognition)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：面向病理语音识别的FiLM说话人条件注入
-54. [Contrastive Training with LLM-generated Near-Misses for Robust Code-Switching Speech Recognition](/20260513-20260611/2606.06985v1-contrastive-training-with-llm-generated-near-misses-for-robust-code-switching-speech-recognition)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：针对代码切换语音识别的对比训练
-55. [BareWave: Waveform-Native Flow-Matching Text-to-Speech](/20260513-20260611/2606.09048v1-barewave-waveform-native-flow-matching-text-to-speech)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：基于流匹配的原生波形文本到语音生成框架
-56. [HoliDubber: Holistic Video Dubbing for Complex Acoustic Scenes via Text-Guided Audio Synthesis](/20260513-20260611/2606.09098v1-holidubber-holistic-video-dubbing-for-complex-acoustic-scenes-via-text-guided-audio-synthesis)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：从文本联合合成语音和音效用于视频配音
-57. [FlashTTS: Fast Streaming TTS with MTP Acceleration and X-pred Mean Flow Distillation](/20260513-20260611/2606.09141v2-flashtts-fast-streaming-tts-with-mtp-acceleration-and-x-pred-mean-flow-distillation)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：快速流式文本到语音合成框架
-58. [NüshuVoice: Reviving the Voice of Endangered Nüshu with Pitch-Aware Text-to-Speech](/20260513-20260611/2606.09295v1-nshuvoice-reviving-the-voice-of-endangered-nshu-with-pitch-aware-text-to-speech)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：提出NüshuVoice，濒危女书文字的首个TTS基准，并配备音高感知TTS模型。
-59. [Rethinking Depth: A study of the Recursive-Transformer for Speech Recognition](/20260513-20260611/2606.09357v1-rethinking-depth-a-study-of-the-recursive-transformer-for-speech-recognition)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：用于高效ASR编码器的递归Transformer
-60. [Interpreting and Steering a Text-to-Speech Language Model with Sparse Autoencoders](/20260513-20260611/2606.10029v1-interpreting-and-steering-a-text-to-speech-language-model-with-sparse-autoencoders)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：用稀疏自编码器解释文本到语音模型并操控生成
-61. [LLM can Read Spectrogram: Encoder-free Speech-Language Modeling](/20260513-20260611/2606.10231v1-llm-can-read-spectrogram-encoder-free-speech-language-modeling)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：无编码器的语音-语言模型同时处理ASR和TTS
-62. [Enhancing Multilingual LLM-based ASR with Mixture of Experts and Dynamic Downsampling](/20260513-20260611/2606.10439v1-enhancing-multilingual-llm-based-asr-with-mixture-of-experts-and-dynamic-downsampling)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：基于LLM和混合专家的多语言ASR
-63. [Speech Encoder Fusion for LLM-based Automatic Speech Recognition](/20260513-20260611/2606.10853v1-speech-encoder-fusion-for-llm-based-automatic-speech-recognition)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：研究融合多个预训练语音编码器以增强基于LLM的ASR。
-64. [Phoneme-First Prediction for LLM-Based Speech Recognition](/20260513-20260611/2606.10864v1-phoneme-first-prediction-for-llm-based-speech-recognition)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：面向LLM语音识别的音素优先预测
+   evidence：大规模开放词汇关键词检测以改善ASR中的罕见词识别
 
 ### 速读区论文标签
-1. [Beyond Transcripts: Iterative Peer-Editing with Audio Unlocks High-Quality Human Summaries of Conversational Speech](/20260513-20260611/2605.17652v1-beyond-transcripts-iterative-peer-editing-with-audio-unlocks-high-quality-human-summaries-of-conversational-speech)  
+1. [FoeGlass: Simple In-Context Learning Is Enough for Red Teaming Audio Deepfake Detectors](/202606/11/2606.05101v1-foeglass-simple-in-context-learning-is-enough-for-red-teaming-audio-deepfake-detectors)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：研究了十种语音摘要标注工作流，以创建高质量人类摘要，为基准构建提供信息。
-2. [Evaluating Speech Articulation Synthesis with Articulatory Phoneme Recognition](/20260513-20260611/2605.20920v1-evaluating-speech-articulation-synthesis-with-articulatory-phoneme-recognition)  
+   evidence：利用TTS模型自动生成数据集以评估音频深度伪造检测器的红队测试方法。
+2. [USAD 2.0: Scaling Representation Distillation for Universal Audio Understanding](/202606/11/2606.06444v1-usad-20-scaling-representation-distillation-for-universal-audio-understanding)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：使用音素识别评估语音发音合成，直接相关于 TTS 质量评估
-3. [Convex Low-resource Accent-Robust Language Detection in Speech Recognition](/20260513-20260611/2605.23235v1-convex-low-resource-accent-robust-language-detection-in-speech-recognition)  
+   evidence：通过表征蒸馏构建通用音频编码器用于多种音频任务
+3. [Multilingual Multi-Speaker Unit Vocoders: A Systematic Analysis of Discrete Speech Representations](/202606/11/2606.06740v1-multilingual-multi-speaker-unit-vocoders-a-systematic-analysis-of-discrete-speech-representations)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：提出凸优化方法进行鲁棒语言检测以改善口音环境下的语音识别
-4. [Read What You Hear: Reference-Free Hypotheses Evaluation with Acoustic Discrepancy](/20260513-20260611/2606.04680v1-read-what-you-hear-reference-free-hypotheses-evaluation-with-acoustic-discrepancy)  
+   evidence：分析用于多语言多说话人语音生成的离散语音单元
+4. [Leveraging Soft Distributions of SSL-Derived Discrete Speech Tokens for Downstream Inference](/202606/11/2606.06806v1-leveraging-soft-distributions-of-ssl-derived-discrete-speech-tokens-for-downstream-inference)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：利用TTS声学差异的无参考ASR评估
-5. [CoSTA: Cognitive-State-Conditioned TTS Data Augmentation Using ASR Transcripts for Alzheimer's Disease Detection](/20260513-20260611/2606.06170v1-costa-cognitive-state-conditioned-tts-data-augmentation-using-asr-transcripts-for-alzheimers-disease-detection)  
+   evidence：软令牌分配提升了ASR和语音合成的性能
+5. [SpectCount: Spectrotemporal Counting via Synthetic Signals Improves Large Audio Language Models](/202606/11/2606.06907v1-spectcount-spectrotemporal-counting-via-synthetic-signals-improves-large-audio-language-models)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：开发认知状态条件TTS模型用于阿尔茨海默病检测的数据增强
-6. [SpeakerCard-1M: An Evidence-Grounded Speaker Card Corpus for In-the-Wild Speaker Verification](/20260513-20260611/2606.03283v2-speakercard-1m-an-evidence-grounded-speaker-card-corpus-for-in-the-wild-speaker-verification)  
+   evidence：通过合成信号进行频谱时间计数以改进大型音频语言模型
+6. [KIT's Submission to Cross-Lingual Voice Cloning in IWSLT 2026](/202606/11/2606.07240v1-kits-submission-to-cross-lingual-voice-cloning-in-iwslt-2026)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：跨语言语音克隆，使用语言标签提示和强化学习
+7. [Audio Imitator: Controlling Timbre and Tempo in Video2Audio Synthesis with Audio Reference](/202606/11/2606.07182v1-audio-imitator-controlling-timbre-and-tempo-in-video2audio-synthesis-with-audio-reference)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：提出SpeakerCard-1M，一个面向证据驱动说话人验证的双语说话人中心语料库。
-7. [Drift-Augmented Scoring: Text-Derived Noise Robustness for Zero-Shot Audio-Language Classification](/20260513-20260611/2606.04844v1-drift-augmented-scoring-text-derived-noise-robustness-for-zero-shot-audio-language-classification)  
+   evidence：独立的音色与节奏控制的视频转音频合成
+8. [DeRA-MOS: Optimizing Text-to-Music Evaluation via Decoupled Listwise Ranking and Modality Alignment](/202606/11/2606.10010v1-dera-mos-optimizing-text-to-music-evaluation-via-decoupled-listwise-ranking-and-modality-alignment)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：噪声鲁棒零样本音频分类方法
-8. [Automatic Labelling of Speech Translation Errors](/20260513-20260611/2606.06047v1-automatic-labelling-of-speech-translation-errors)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：为语音翻译错误标注创建标注协议和评估数据集
-9. [SpectCount: Spectrotemporal Counting via Synthetic Signals Improves Large Audio Language Models](/20260513-20260611/2606.06907v1-spectcount-spectrotemporal-counting-via-synthetic-signals-improves-large-audio-language-models)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：提出SpectCount，一种利用合成信号的高效微调方法，以解决大型音频语言模型中的感知弱点。
-10. [PlanRAG-Audio: Planning and Retrieval Augmented Generation for Long-form Audio Understanding](/20260513-20260611/2605.20414v2-planrag-audio-planning-and-retrieval-augmented-generation-for-long-form-audio-understanding)  
+   evidence：解耦优化框架用于文本生成音乐评估，是文本到音频合成的子领域
+9. [Domain-Aware Mispronunciation Detection and Diagnosis Using Language-Specific Statistical Graphs](/202606/11/2606.05569v1-domain-aware-mispronunciation-detection-and-diagnosis-using-language-specific-statistical-graphs)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：通过规划和检索实现长音频理解，支持语音内容推理
-11. [SpeechJBB: Probing Safety Alignment and Comprehension in Large Audio Language Models under Code-Switched Speech](/20260513-20260611/2606.06037v1-speechjbb-probing-safety-alignment-and-comprehension-in-large-audio-language-models-under-code-switched-speech)  
+   evidence：利用统计图谱进行发音偏误检测，属于语音识别应用
+10. [Forgive or forget: Understanding the context of hate in audio retrieval systems](/202606/11/2606.05857v1-forgive-or-forget-understanding-the-context-of-hate-in-audio-retrieval-systems)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：提出SpeechJBB，一个用于评估大型音频语言模型在语码转换语音下安全性的越狱基准。
+   evidence：通过因果去偏实现文本到音频检索安全
+11. [Acoustic Cue Alignment in Audio Language Models for Speech Emotion Recognition](/202606/11/2606.07309v1-acoustic-cue-alignment-in-audio-language-models-for-speech-emotion-recognition)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：利用音频语言模型中声学概念标记对齐进行语音情感识别
 
 
 <div class="dpr-home-promo-card">
