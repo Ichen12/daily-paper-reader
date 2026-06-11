@@ -1,0 +1,425 @@
+Title: FC-TTS: Style and Timbre Control in Zero-Shot Text-to-Speech with Disentangled Speech Representations
+
+URL Source: https://arxiv.org/pdf/2605.24618v1
+
+Published Time: Tue, 26 May 2026 00:46:41 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# FC-TTS: Style and Timbre Control in Zero-Shot Text-to-Speech with Disentangled Speech Representations 
+
+Yoonhyung Lee and Hyunsin Park and Jinhwan Park and Jinkyu Lee *
+
+Qualcomm AI Research †
+
+{yoonhyun, hyunsinp, jinhpark, jinkyu}@qti.qualcomm.com 
+
+Abstract 
+
+Recent advances in zero-shot text-to-speech (TTS) have enabled accurate imitation of reference speech in terms of both speaking style and speaker timbre. However, achieving disentangled control over these aspects from separate references remains a challenging task. Several studies have proposed disentangled speech representations that decompose speech into interpretable attributes (e.g. ,timbre, prosody, and content), providing a promising foundation for TTS with attribute control from separate references. Yet, how to effectively integrate such representations into TTS systems to achieve independent and precise control remains underexplored. In this paper, we present FC-TTS, a zero-shot TTS framework that enables disentangled control of style and timbre by conditioning on two distinct reference utterances. Unlike existing systems that inherit limitations from those pre-trained disentangled representations, FC-TTS introduces key design strategies, including architectural choices, training frame-work, and auxiliary training objectives, which improve the reliability of attribute separation and dual-reference control. Experiments show that FC-TTS achieves high-fidelity synthesis and competitive zero-shot natural-ness, while uniquely supporting consistent and independent manipulation of style and timbre. Audio samples are available at 
+
+https://qualcomm-ai-research.github. io/fc-tts 
+
+1 Introduction 
+
+With recent breakthroughs in text-to-speech (TTS) technology (Kim et al., 2021; Chen et al., 2025, 2024), the focus has expanded from simply generat-ing natural-sounding speech to enabling expressive and personalized synthesis for diverse applications 
+
+> *indicates the corresponding author.
+> †Qualcomm AI Research is an initiative of Qualcomm Technologies, Inc.
+
+such as virtual assistants, audiobooks, accessibility tools, and interactive media (Xie et al., 2024). This evolution has brought a growing demand for fine-grained control over attributes such as speaking style and speaker timbre (Chen et al., 2025; Cho et al., 2025). To support such control, existing TTS systems have explored various strategies. Supervised mod-els trained on labeled datasets (Kim et al., 2021; Cho et al., 2024; Leng et al., 2024) offer reliable conditioning but scale poorly due to costly anno-tations. In contrast, reference-based zero-shot ap-proaches (Casanova et al., 2022; Chen et al., 2025; Kim et al., 2023; Ji et al., 2024; Chen et al., 2024) offer greater flexibility by conditioning on example utterances, but typically entangle style and timbre in a single reference, hindering independent con-trol. To overcome this limitation, recent studies have explored disentangled speech representations (Choi et al., 2023; Ju et al., 2024), leading to various TTS systems that exploit such factorization. In particu-lar, these systems employ disentangled attributes together with jointly pre-trained decoders to en-able more interpretable control and, in principle ,the possibility of conditioning on style and timbre separately. Nevertheless, disentanglement is often imperfect in practice, and the decoders inherently bound synthesis quality, with no guarantee of ro-bustness to unseen style-timbre combinations. In this paper, we investigate how to effectively leverage disentangled speech representations to build TTS models that support separate control over style and timbre using distinct references. To this end, we present FC-TTS, which leverages factorized speech representations but adds: (1) a two-stage spectrogram generation pipeline (timbre-conditioned blurry spectrogram, then prosody re-finement) for robustness to unseen combinations; (2) a VQ-VAE-based style encoder that captures fine-grained and intra-utterance style variability; 
+
+> arXiv:2605.24618v1 [eess.AS] 23 May 2026
+
+and (3) a conditioning-aware consistency loss that extends conventional regularization to multi-condition settings by enforcing joint coherence across timbre and style, providing more precise guidance for disentangled control. In our experiments, we show that FC-TTS deliv-ers competitive zero-shot TTS performance com-pared to state-of-the-art models that lack explicit support for separate control of style and timbre, as evaluated by objective metrics including UT-MOS (Saeki et al., 2022), word error rate, and speaker similarity. Furthermore, we conduct de-tailed evaluations on the RAVDESS dataset (Liv-ingstone and Russo, 2018a)—a highly expressive emotional speech corpus—focusing on both tim-bre and prosody controllability through both ob-jective and subjective evaluations. Specifically, for timbre control, we compare FC-TTS with a fac-torized codec-based system (Ju et al., 2024), and for prosody control, we compare against a state-of-the-art zero-shot TTS model, F5-TTS (Chen et al., 2024). These evaluations highlight that FC-TTS not only maintains high synthesis quality but also enables precise and independent manipulation of style and timbre, which existing zero-shot systems do not explicitly support. 
+
+2 Related Work 
+
+2.1 Conditional Text-to-Speech 
+
+Conditional TTS incorporates auxiliary signals to control speaker or style attributes, enabling expres-sive and personalized speech. A common approach is to use labeled datasets with speaker or style anno-tations (Kim et al., 2021; Cho et al., 2024), which support multi-condition models capable of control-ling multiple attributes simultaneously (Liu et al., 2023, 2025; Kang et al., 2023a). More recently, prompt-guided methods (Leng et al., 2024; Ji et al., 2025) have emerged, where models interpret free-form descriptions of style or tone. While these approaches offer disentangled controllability and flexibility, these approaches still rely heavily on an-notation coverage and granularity, limiting scalabil-ity in open-domain or fine-grained control settings. 
+
+2.2 Disentangled Speech Representation Learning 
+
+A complementary direction focuses on learning dis-entangled speech representations that disentangle speech into interpretable components ( e.g. , timbre, pitch, or linguistic content), opening promising di-rections for developing controllable TTS systems without labeled datasets. NANSY++ (Choi et al., 2023) leverages various information perturbation functions to isolate pitch, linguistic, and timbre fea-tures. FACodec (Ju et al., 2024) enforces strong information bottlenecks and uses supervision from phoneme and speaker labels to learn factorized rep-resentations. LSCodec (Guo et al., 2024) further improves timbre isolation via speaker perturbation and achieves strong results in voice conversion. Despite progress, most systems are trained in au-toencoding setups with paired inputs and targets, meaning they are primarily optimized for naturally co-occurring factors. As a result, their ability to generalize to mismatched conditioning—such as combining timbre and prosody from different refer-ences—remains underexplored. 
+
+2.3 Reference Speech-based Style and Timbre Control 
+
+Recently, there have been studies to control the style and timbre of TTS models based on two ref-erence samples. For instance, IndexTTS 2 (Zhou et al., 2025) achieves this by relying on the disen-tanglement property of semantic codec representa-tions derived from MaskGCT (Wang et al., 2025). EmoSphere++ (Cho et al., 2025) trains a dedicated emotion encoder and introduces a regularization loss to enforce orthogonality between emotion and timbre vectors. Although promising, these methods rely on representations with only empirically ob-served disentanglement, or on pre-trained encoders that may discard other attributes such as accent. In contrast, our approach builds on systematically factorized representations that preserve reconstruc-tion quality while enabling explicit decomposition, providing a more reliable basis for separate style and timbre control. 
+
+3 Methodology 
+
+3.1 Preliminaries 3.1.1 Factorized Speech Codec 
+
+To build a timbre and style controllable TTS sys-tem, we adopt FACodec 1 (Ju et al., 2024), a neu-ral speech codec that decomposes speech into in-terpretable components while supporting faithful reconstruction. It factorizes a speech signal into multiple disentangled streams of discrete tokens, each capturing a distinct speech attribute: prosody     
+
+> 1https://github.com/open-mmlab/Amphion/tree/ main/models/codec/ns3_codec Phoneme
+> Encoder
+> Timbre Adapter
+> 𝑧 𝑠𝑝𝑘
+> 𝒉
+> Style Adapter
+> Frame -level
+> Style Adapter
+> Phoneme -level
+> 𝒄 𝒑
+> ෝ𝒙
+> Aligner
+> Style
+> Encoder
+> 𝒛 𝒔𝒕𝒚 ,𝒇𝒓𝒂𝒎𝒆
+> 𝒛 𝒔𝒕𝒚 ,𝒑𝒉𝒐𝒏𝒆
+> 𝚨 𝒉𝒂𝒓𝒅
+> Prosody
+> Predictor
+> Timbre
+> Predictor Ƹ𝑧 𝑠𝑝𝑘
+> ො𝒄 𝒑
+> 𝒄 𝒑
+> 𝑧 𝑠𝑝𝑘
+> Length
+> Regulator
+> Flow Matching
+> Log -Mel Decoder
+
+c    
+
+> information
+> bottleneck
+> Transformer
+> Encoder FSQ
+> Cross
+> Attention
+> …
+> Global queries
+> Input Output
+> Pooling Length
+> Regulator
+> TCF
+> Frame
+> 𝒄 𝒑
+
+-
+
+> TCF
+> Phone
+> 𝚨 𝒉𝒂𝒓𝒅
+
+𝒛 𝒔𝒕𝒚 , 𝒑𝒉𝒐𝒏𝒆 
+
+𝒛 𝒔𝒕𝒚 , 𝒇𝒓𝒂𝒎𝒆 c 
+
+> FACodec
+> Prosody encoder
+> FACodec
+> Timbre encoder
+
+𝑧 𝑠𝑝𝑘 
+
+𝒄 𝒑     
+
+> Target Speech
+> Timbre Reference
+> Style Reference
+> :Training
+> :Inference
+> 𝒚
+> First  stage  Second s tage
+> Style -
+> Encoding
+> ℒ𝑐𝑐𝑙 (§3.2.3) Reference samples:
+
+Figure 1: FC-TTS architecture. First stage : a phoneme sequence y is conditioned on timbre embedding zspk via the timbre adapter to generate a blurry log-mel spectrogram h, anchoring timbre characteristics. Second stage : h is refined into a clean spectrogram ˆx by a flow-matching decoder conditioned on style embedding zsty , obtained from prosody tokens cp through hierarchical TCF modules, imprinting prosodic characteristics. During training, target speech provides both timbre and style references; at inference, separate references enable disentangled attribute control. Blue modules indicate trainable components. 
+
+tokens cp, content tokens cc, and acoustic detail tokens cd. Each stream is represented as ZN∗×T ,where T is the number of time steps with residual quantization levels Np = 1 , Nc = 2 , and Nd = 3 .In addition, speaker timbre is captured as a con-tinuous global embedding zspk ∈ RD. Notably, FC-TTS conditions exclusively on zspk and cp; the content tokens cc and acoustic detail tokens cd are deliberately excluded to prevent information leak-age that would compromise independent control of the two pathways. 
+
+3.1.2 Flow-matching TTS 
+
+In conditional TTS, the goal is to generate a tar-get speech representation x ∈ RF ×T (a log-mel spectrogram in this work) given a phoneme se-quence y ∈ ZL and additional conditioning in-formation c such as speaker timbre or speaking style. To model this conditional generation process, we adopt the Conditional Flow-Matching (CFM) framework (Lipman et al., 2023), which defines a continuous-time transformation from a simple prior p1(x) (e.g. , isotropic Gaussian N (0, I)) to a target conditional distribution p0 = p(x|y, c). To describe the progression from p1 to p0, CFM intro-duces a time-dependent flow ϕt : [0 , 1] × Rd → Rd
+
+that transports samples across time t ∈ [0 , 1] , with marginal distribution pt(x) at each step. This flow is driven by a velocity field vt(x) : [0 , 1] × Rd →
+
+Rd, which specifies the instantaneous direction of motion at each point. Their relationship is gov-erned by the following ordinary differential equa-tion (ODE): 
+
+ddt ϕt(x) = vt(ϕt(x)) , ϕ1(x) = x1. (1) Although the true v is not available in practice, CFM approximates it by training uθ(x, t, y, c)
+
+with a conditional vector field vt(x|x0). Among possible flows, the straight-line optimal transport (OT) trajectory is known to be efficient, and the corresponding ground-truth velocity is given by: 
+
+vOT 
+
+t (xt|x0) = x0 − x1, (2) where xt = (1 − t)x1 + tx0. The model is then trained to align its predicted velocity uθ with this OT velocity by minimizing the following loss: 
+
+LCFM = Et, x0,x1
+
+h
+
+∥uθ(xt, t, y, c) − (x0 − x1)∥2i
+
+.
+
+(3) 3.2 FC-TTS 
+
+Figure 1 illustrates FC-TTS. Although the timbre condition zspk and the style condition cp are ex-tracted from the same target during training, in prin-ciple , the factorized codec allows these attributes to be controlled separately at inference using refer-ences from different utterances. Building on this foundation, the following sections describe the ar-chitectural innovations that make such disentangled control practical. Concretely, FC-TTS processes the two conditions sequentially across dedicated stages: a timbre stage that anchors timbre charac-teristics via zspk to produce a blurry spectrogram, followed by a style stage that imprints prosodic characteristics via cp to refine it, ensuring each ref-erence condition influences only its intended step. Additional implementation details are provided in Section 4.1 and Appendix A. 
+
+3.2.1 Hierarchical Spectrogram Generation 
+
+In preliminary experiments, we found that sim-ply reusing the FACodec decoder, as in Natural-Speech 3 (Ju et al., 2024), was insufficient for inde-pendent timbre-prosody control. The main reason is that the imperfect disentanglement provides no guarantee of robust generation on unseen combi-nations. To address this limitation, we propose a new model design that performs hierarchical log-mel spectrogram generation incorporating a jointly trained CFM speech decoder. It first generates a blurry spectrogram h using timbre information, and subsequently refines it into a complete spec-trogram x0 using style information through the CFM decoder. These steps are trained jointly us-ing mean-absolute-error (MAE) loss for the blurry spectrogram and CFM loss for the final output. The MAE objective, defined as Lblur = E [∥h − x0∥],encourages over-smoothed outputs—a property we exploit to avoid the need for pre-generated blurry spectrograms. Additionally, to prevent information leakage while maintaining consistent timbre and recording conditions, zspk is randomly replaced with another utterance from the same long audio file. This two-stage design achieves functional sep-aration: the timbre adapter injects zspk in the first stage to anchor timbre characteristics, while the style adapter subsequently applies cp to imprint prosodic characteristics, ensuring each reference influences a dedicated processing pathway. 
+
+3.2.2 VQ-VAE Style Encoding 
+
+Recent zero-shot TTS models perform well in mim-icking voice characteristics based on in-context learning (ICL), where part of the target speech is used as a prompt and the model generates the rest, assuming consistent timbre and style. However, this assumption often fails in practice, as speaking style can vary even within a single utterance (Fig-ure 2). To address this, we condition the model on style representations extracted from the target speech during training, eliminating the need to as-sume style consistency. However, this approach in-troduces a new challenge: the model may shortcut learning by copying surface-level acoustic features directly from the style reference, rather than cap-turing the intended higher-level prosodic patterns. For this purpose, we propose a style encoder mod-ule called TCF, combining a Transformer encoder, Cross-attention, and a Finite scalar quantization layer (FSQ), which is instantiated twice within the main architecture to hierarchically model style rep-resentations at both the phoneme and frame lev-els (Lei et al., 2023). Each design component of TCF specifically targets one of these challenges: • Prosody-only representation: We exclu-sively use prosody tokens cp from FACodec as the input to TCF, deliberately excluding content tokens cc and acoustic detail tokens 
+
+cd. This ensures that the style encoder cap-tures rhythmic and intonational patterns with-out encoding unintended information. • Q-Former bottleneck (Li et al., 2023): Afixed set of learned query tokens attends to the variable-length encoder outputs via cross-attention, compressing them into a fixed num-ber of latent tokens. This bottleneck discards frame-level temporal details and forces the representation to retain only high-level stylis-tic structure, preventing the model from over-fitting to the specific acoustic realization of the reference utterance. • Vector quantization (van den Oord et al., 2017): The continuous latent tokens produced by the Q-Former are further discretized using FSQ (Mentzer et al., 2024). Quantization acts as an information bottleneck that suppresses low-level acoustic residuals and encourages the encoder to commit to a discrete, semanti-cally meaningful style code. Neutral  Expressive Figure 2: A speech sample from the Libriheavy dataset showing multiple speaking styles within a single utter-ance. 
+
+The detailed module architecture of TCF is pro-vided in Appendix A. 
+
+3.2.3 Conditional Consistency Loss 
+
+To improve condition consistency in disentan-gled TTS, we present a conditional consistency loss (CCL) that extends prior regularization meth-ods (Xin et al., 2021; Casanova et al., 2022) to multi-condition settings. By enforcing joint co-herence across prosody and speaker identity, CCL provides more reliable guidance for disentangled control. We first re-parameterize the CFM objective (Luo et al., 2025) so that the FC-TTS decoder gener-ates log-mel spectrograms directly, instead of a vector field. Then, we train two attribute predic-tors on these spectrograms to predict the condition-ing prosody token cp and speaker embedding zspk 
+
+respectively. Importantly, each predictor also re-ceives non-target conditioning signals, feeding zspk 
+
+to the prosody predictor and cp to the timbre predic-tor. In Figure 3, the effect of this cross-conditioning is illustrated through an example scenario involving two conditional labels: gender and emotion. The CCL is defined as a weighted sum of two terms: a cross-entropy loss for prosody prediction and a negative cosine similarity for speaker embed-ding consistency: 
+
+LCCL = λccl-pro · E CE (cp, f ( ˆ x, z spk )) 
+
+− λccl-spk · E cos  zspk , g ( ˆ x, cp) ,
+
+(4) where CE (·, ·) denotes the cross-entropy loss, f (·)
+
+denotes the prosody predictor, and g(·) denotes the speaker embedding predictor. 
+
+4 Experiments 
+
+This section presents a thorough evaluation of FC-TTS, focusing on its zero-shot TTS performance p(x|male , sad ) p(x|female , sad )    
+
+> x
+> xlog p(sad |x,male )xlog p(sad |x)
+> Gender
+> Emotion
+
+Figure 3: Gradients for CCL with multiple conditions. When a predictor takes only a log-mel spectrogram, the gradient ∇x log p(sad |x) tends to point toward a region somewhere between the modes. In contrast, incorporat-ing a known non-target attribute ( e.g. , male) can sharpen the estimated posterior p(sad |x, male ), guiding spectro-grams in more accurate directions, especially in early denoising steps when ˆx0 is only partially formed. 
+
+and the disentanglement of style and timbre. We first describe the experimental setup, including datasets, model architecture, and training-inference procedures. We then compare FC-TTS with state-of-the-art (SOTA) baselines and conduct ablation studies to assess the contribution of individual com-ponents. 
+
+4.1 Experimental Setup 4.1.1 Datasets 
+
+For model training, we used the LibriHeavy dataset (Kang et al., 2023b), a large-scale audio-book corpus derived from LibriLight (Kahn et al., 2020). While it is not specifically curated for TTS, LibriHeavy offers substantial speaker and stylistic diversity, making it particularly useful for cover-ing a wide range of speaking styles in zero-shot and expressive speech synthesis tasks. Our pri-mary evaluation was conducted on the LibriSpeech 
+
+test-clean subset, a widely adopted benchmark for zero-shot TTS. This split is especially suitable for testing generalization, as it contains speakers unseen during training. To further evaluate ex-pressiveness and the disentanglement of style and timbre, we include experiments on the RAVDESS dataset (Livingstone and Russo, 2018b), which con-tains emotionally rich speech across multiple speak-ers. This dataset serves as a complementary test set for evaluating FC-TTS’s ability to independently model and control timbre and style in complex, high-variance vocal contexts. Further details on datasets are provided in Appendix B. 
+
+4.1.2 Model Architecture 
+
+The phoneme encoder is implemented using a trans-former encoder architecture. For alignment, we adopt the RAD-TTS aligner (Shih et al., 2021) and train a CFM-based duration predictor using aligner-estimated durations. The timbre adapter is a transformer encoder where the speaker embed-ding zspk conditions the layer normalization via adaptive layer normalization (Perez et al., 2018). The style adapter is a transformer decoder without causal masking, where style embeddings are pro-vided through cross-attention layers. The log-mel spectrogram decoder consists of DiT blocks (Pee-bles and Xie, 2023). The TCF modules consist of a transformer encoder, a cross-attention layer with global queries, and a finite scalar quantization layer. Further architectural details are provided in Appendix A. 
+
+4.1.3 Training & Inference 
+
+We train FC-TTS on LibriHeavy for 200k iterations with AdamW (Loshchilov and Hutter, 2019), using a batch size of 64 and learning rate of 0.0002. Dur-ing inference, FC-TTS first predicts durations using the duration predictor, with a number of function evaluations (NFEs) set to 8 and without classifier-free guidance. For log-mel spectrogram synthe-sis, we use 32 NFEs with a classifier-free guid-ance scale of 4.0, and apply random conditioning dropout with a probability of 15% during training. Finally, the generated log-mel spectrograms are converted to waveforms using HiFi-GAN (Kong et al., 2020). Further details on training and infer-ence are provided in Appendix C. 
+
+4.1.4 Baselines 
+
+We benchmark FC-TTS against a diverse set of state-of-the-art TTS systems. Specifically, we in-clude NaturalSpeech 3 (Ju et al., 2024), which rep-resents one of the strongest FACodec-based models, 
+
+F5-TTS (Chen et al., 2024), which we retrain on LibriHeavy with a configuration comparable in size to ours, and reported results for CLaM-TTS (Kim et al., 2024) and DiTTo-TTS (Lee et al., 2025), representing recent advances in zero-shot speech synthesis. In addition, we introduce a FACodec-based voice conversion (VC) system, which serves as the upper bound of FACodec-based TTS perfor-mance. We adopt this setup for three reasons: (1) although several FACodec-based TTS models such as NaturalSpeech 3 have reported strong results, no official checkpoints are publicly available; (2) by directly reusing the ground-truth discrete tokens from the official FACodec encoder, this system ap-proximates an idealized scenario in which a TTS model perfectly predicts codec tokens; and (3) by combining these tokens with an unmatched speaker embedding fed into the FACodec decoder, we sim-ulate timbre controllability and assess the perfor-mance that a FACodec-based TTS system could achieve under such idealized conditions. 
+
+4.1.5 Metrics 
+
+We assess model performance using a comprehen-sive set of metrics: UTMOS 2 (Saeki et al., 2022) for speech quality, WER 3 for pronunciation accu-racy, SPK 4 for speaker similarity, and MCD for prosodic and spectral similarity. These metrics collectively offer a multifaceted view of model per-formance across quality, intelligibility, and speaker consistency. Although MCD is not a perfect mea-sure of prosodic similarity, we adopt it because it has been widely used in prior works as a practi-cal proxy (Ju et al., 2024; Yang et al., 2025). In-stead, we compute MCD with a fixed speaker to mitigate timbre confounding, so that the score pri-marily reflects prosodic differences. Additionally, we conduct a human ABX listening test focused on timbre and prosody, providing a more direct perceptual measure of controllability. To further supplement these evaluations with a more rigorous automated assessment of style similarity, we also employ an AudioLLM-as-a-Judge approach (Chi-ang et al., 2025; Manku et al., 2025) using Gemini 2.5 Pro (Comanici et al., 2025) as the evaluator. We measure two metrics: Win Ratio via an ABX test that determines which of two generated samples better matches the reference style, and Style-MOS 
+
+that assigns a per-sample style similarity score (1– 5). Further details on metric definitions and evalua-tion tools are described in Appendix D. 
+
+4.2 Results 4.2.1 Zero-Shot TTS Performance 
+
+Table 1 presents a comparative evaluation of FC-TTS against prior zero-shot TTS systems, focusing on naturalness and speaker similarity. Following common practice, we evaluate on the LibriSpeech 
+
+test-clean split and report values from original papers when available. For evaluation, we use utter-ances from the test-clean subset that are 4 to 10 seconds long, with each text paired with a reference 
+
+> 2https://huggingface.co/spaces/sarulab-speech/ UTMOS-demo
+> 3https://huggingface.co/facebook/ hubert-large-ls960-ft
+> 4https://github.com/microsoft/UniSpeech/tree/ main/downstreams/speaker_verification
+
+speech randomly sampled from the same speaker. While FC-TTS does not achieve the absolute best scores across all metrics, it demonstrates compet-itive performance relative to SOTA TTS systems. Importantly, unlike prior models, FC-TTS is explic-itly designed for separate and controllable manip-ulation of timbre and style, a core capability not prioritized in existing TTS frameworks. Although NaturalSpeech 3 also supports reference-based con-trol, its disentanglement ability is limited, as we discuss in the next section. We attribute the performance gap to a combi-nation of deliberate design choices in favor of stronger disentanglement and structural constraints introduced by our generation pipeline. First, we deliberately avoided using FACodec’s content and detail tokens to prevent unintended information leakage; however, these tokens also carry useful cues that could enhance naturalness. In particular, detail tokens often encode recording-environment characteristics, and without them the model tends to converge toward the average acoustic condition of LibriHeavy, a corpus not originally optimized for TTS production quality. Second, our two-stage generation pipeline begins by producing a blurry spectrogram conditioned solely on timbre, which anchors the acoustic subspace that the subsequent style-based refinement stage must operate within. This structural constraint limits the distribution the flow-matching decoder can reach compared to end-to-end systems that jointly optimize all attributes without an intermediate bottleneck. While this de-sign maximizes robustness to unseen style–timbre combinations, it may limit the ceiling of achiev-able naturalness relative to approaches such as NaturalSpeech 3 that impose no such constraint. Third, due to the imperfect disentanglement of FA-Codec, residual timbre cues may still reside in the excluded tokens; handling such leakage more pre-cisely remains an open challenge. We view these as principled trade-offs that are necessary for achiev-ing interpretable and independent controllability, and identify more robust disentanglement mecha-nisms—as well as codec-free alternatives—as key directions for future work. 
+
+4.2.2 Timbre Controllability on RAVDESS 
+
+In this experiment, we assess the model’s robust-ness and its ability to accurately realize the in-tended timbre control when provided with prosodi-cally richer reference samples from the RAVDESS dataset (Livingstone and Russo, 2018a). For each                                                         
+
+> UTMOS ↑WER ↓SPK ↑#Param. ↓
+> Ground-truth 4.10 2.07 0.71 -HiFi-GAN 3.70 2.17 0.64 -NaturalSpeech 3 4.30 1.81 0.67 500M F5-TTS -2.42 0.66 336M F5-TTS †4.03 3.30 0.67 205M DiTTo-TTS -2.69 0.60 508M CLaM-TTS -5.11 0.50 584M FC-TTS (ours) 4.22 1.88 0.60 204M
+> Table 1: Performance comparison of zero-shot TTS models. Reported values are taken from original papers if available. †indicates models re-trained on Libriheavy with similar model size.
+> UTMOS ↑SPK ↑WER ↓Win (%) ↑
+> FACodec-VC 3.19 0.27 8.40 10.7 Ours 4.03 0.48 0.18 66.1
+> Table 2: Objective metrics on the RAVDESS dataset for evaluating independent timbre control, a more challeng-ing condition than standard TTS evaluation.
+
+RAVDESS utterance used as a prosody reference, we synthesize speech by controlling the timbre ac-cording to two target speakers (one male and one fe-male) selected from LibriSpeech test-clean sub-set. In this experiment, we use the FACodec-based voice conversion (VC) system as the comparison model. As described in Section 4.1.4, FACodec-VC directly reuses discrete tokens extracted from the FACodec encoder, approximating an oracle sce-nario where the codec tokens are perfectly pre-dicted. Because there is no officially available FACodec-based TTS models ( e.g. , NaturalSpeech 3), this configuration serves as a practical upper bound for the achievable performance of such sys-tems. By pairing these ground-truth FACodec to-kens with distinct speaker embeddings, FACodec-VC enables a controlled assessment of whether FC-TTS can maintain timbre controllability inde-pendently of prosodic variations. As summarized in Table 2, FACodec-based tim-bre control exhibits substantial degradation across all objective metrics, achieving a UTMOS of 3.19, a SPK of 0.27, and a WER of 8.40. In contrast, FC-TTS maintains strong performance, reaching a UTMOS of 4.03, a SPK of 0.48, and a WER of 0.18 5, demonstrating its robustness under this                        
+
+> 5The RAVDESS transcripts include only two short sen-tences — “Kids are talking by the door.” and “Dogs are sit-ting by the door.” — which explains the unusually low WER values. UTMOS ↑SPK ↑WER ↓MCD ↓Win (%) ↑
+> F5-TTS 3.40 0.57 4.39 3.43 8.9 Ours †3.95 0.47 0.30 3.21 65.5
+
+Table 3: Objective metrics on the RAVDESS dataset for evaluating independent style control. † indicates models using separate reference inputs for timbre and prosody.        
+
+> Win Ratio (%) ↑Style-MOS ↑
+> F5-TTS 8.3 1.50 Ours 91.7 3.92
+
+Table 4: AudioLLM-as-a-Judge (Gemini 2.5 Pro) evalu-ation for style control on RAVDESS. 
+
+mismatched setting. Furthermore, we conduct a subjective ABX test in which listeners are pre-sented with (A) the FACodec-VC output, (B) the FC-TTS output, and (X) a target reference, and asked which of A or B is closer to X in terms of 
+
+timbre . The resulting preference rate is reported as Win (%) in Table 2. Consistent with the ob-jective results, FC-TTS is preferred in 66.1% of ABX trials, whereas FACodec-VC achieves only 10.7%. Taken together, these results demonstrate that FC-TTS enables effective and independent tim-bre control even in prosodically complex scenarios, reinforcing the practical advantage of our disen-tangled design beyond conventional codec-based TTS. 
+
+4.2.3 Prosody Controllability on RAVDESS 
+
+We next evaluate the prosody controllability of FC-TTS in comparison to F5-TTS using the RAVDESS dataset, as F5-TTS represents a SOTA zero-shot TTS system with publicly available source code. For a fair comparison, we retrain F5-TTS on the LibriHeavy dataset using phoneme inputs and match its model size to that of FC-TTS. Since F5-TTS does not support separate reference inputs for timbre and prosody, we provide a single refer-ence speech during inference. In contrast, FC-TTS leverages two distinct references: an expressive RAVDESS utterance for prosody and a neutral ut-terance from the same speaker for timbre. This con-figuration imposes a more challenging inference condition but provides a clearer test of disentangled style control. In addition to the automatic metrics used in the previous section, we further measure mel-cepstral distortion (MCD) between the expressive reference and the generated speech under matched text as an auxiliary indicator of prosody similarity. Although MCD is not a perfect proxy for prosodic attributes, we mitigate potential timbre confounding by fixing the timbre reference to a neutral utterance from the same speaker. We also complement these auto-matic evaluations with a subjective ABX prosody test, in which listeners judge which output—FC-TTS or F5-TTS—better matches the expressive reference in terms of prosodic pattern. Results are summarized in Tables 3 and 4. FC-TTS outperforms F5-TTS in UTMOS (3.95 vs. 3.40), WER (0.30 vs. 4.39), and MCD (3.21 vs. 3.43), while also being preferred in 65.5% of ABX trials compared to only 8.9% for F5-TTS. These findings are further reinforced by the AudioLLM-as-a-Judge evaluation (Table 4): Gemini 2.5 Pro assigns FC-TTS a Win Ratio of 91.7% and a Style-MOS of 3.92, compared to only 8.3% and 1.50 for F5-TTS, respectively, providing strong evidence that the style differences perceived by human lis-teners are also reliably captured by an automated large-scale evaluator. Although FC-TTS yields a lower SPK score (0.47 vs. 0.57), this trade-off is consistent with the trends observed in Table 1; we note that maintaining perfect timbre consistency while achieving strong, disentangled style control from a separate reference—especially on highly expressive speech such as RAVDESS—represents an open research problem that we identify as a key direction for future work. Overall, these results col-lectively demonstrate that FC-TTS achieves more accurate and disentangled prosody transfer without sacrificing intelligibility, even under stricter evalu-ation conditions. (a) Timbre reference    
+
+> (male speaker)
+> (b) Prosody reference
+> (surprised)
+> (c) Baseline
+> (d) Single -stage
+> (e) In -context learning
+> (f) Without ℒ𝑪𝑪𝑳
+
+Figure 4: Log-mel spectrograms generated by each ab-lation variant (c-f), conditioned on the same timbre and prosody references (a, b) and using identical text input. The boxed regions highlight the segments correspond-ing to a specific phrase within the text input. Zero-shot TTS on LibriSpeech Style Control on RAVDESS UTMOS ↑ WER ↓ SPK ↑ MCD ↓ UTMOS ↑ WER ↓ SPK ↑ MCD ↓                                            
+
+> FC-TTS 4.22 1.88 0.60 5.60 3.91 0.30 0.37 3.33
+> −two-stage generation 4.15 1.93 0.60 5.83 3.57 0.30 0.37 3.26
+> −VQ-VAE style encoding 4.25 2.00 0.57 5.62 3.99 0.25 0.34 3.47
+> −conditioning in consistency loss 4.21 1.92 0.59 5.67 3.79 0.35 0.36 3.36
+> −entire consistency loss 3.95 5.88 0.48 6.34 3.70 9.36 0.21 3.75
+> Table 5: Ablation study results. LibriSpeech use the same target data as reference for measuring MCD. RAVDESS uses the neutral speech as reference timbre and uses the emotional speech as reference style.
+
+4.2.4 Ablation Study 
+
+We conduct an ablation study to analyze the con-tribution of three key components—two-stage gen-eration, VQ-VAE style encoding, and conditional consistency loss—by systematically removing each from the full FC-TTS model. Table 5 summarizes quantitative results, and Figure 4 illustrates repre-sentative spectrograms that highlight the distinct role of each component in shaping prosody and timbre. 
+
+Two-stage generation. Removing this component degrades acoustic stability (UTMOS 4.15 vs. 4.22, MCD 5.83 vs. 5.60); Figure 4-(d) shows that the model over-reflects prosodic cues, yielding unsta-ble acoustic patterns. The two-stage design de-couples coarse timbre shaping from fine prosody refinement, improving robustness to unseen style– timbre combinations. 
+
+VQ-VAE style encoder. Removing this encoder yields a slight UTMOS gain (4.25 vs. 4.22) but notably weakens style control (SPK 0.57 vs. 0.60, MCD 3.47 vs. 3.33). As visible in Figure 4-(e), the generated speech exhibits flattened F0 con-tours that fail to follow the target prosody. With-out the VQ-VAE encoder, the model falls back to ICL, which operates under an incorrect style as-sumption—treating the reference as stylistically uniform—and consequently fails to properly learn style reference following. 
+
+Consistency loss. Removing only the cross-conditioning moderately worsens prosody align-ment and intelligibility (MCD 3.36 vs. 3.33; WER 1.92 vs. 1.88). Although the per-metric decrease is modest, this adds negligible training overhead and none at inference; the key design is that each pre-dictor is conditioned on the other attribute (prosody predictor on zspk , timbre predictor on cp), as vi-sualized in Figure 3, which we believe is a useful building block for future multi-attribute control. Removing the entire consistency loss causes catas-trophic degradation—WER 5.88 (LibriSpeech) and 9.36 (RAVDESS) vs. 1.88 and 0.30—with incon-sistent pitch and rhythm visible in Figure 4-(f), confirming that conditional supervision is the most indispensable component overall. In summary, both the quantitative metrics in Table 5 and the spectrograms in Figure 4 jointly demonstrate how each component contributes to prosody shaping and timbre stability. The re-sults confirm that our proposed techniques—two-stage generation, VQ-VAE style encoding, and con-ditional consistency loss—play a central role in achieving robust and disentangled control. For a deeper perceptual understanding of these effects, we strongly recommend listening to the audio sam-ples on our demo page. 6
+
+5 Conclusion 
+
+In this work, we presented FC-TTS, a zero-shot text-to-speech framework that enables indepen-dent control over timbre and speaking style using separate reference utterances. While built upon factorized codec representations, FC-TTS intro-duces three complementary innovations that ex-tend beyond the codec’s limitations: (1) a two-stage spectrogram generation pipeline improving robustness to unseen timbre-style combinations, (2) a VQ-VAE-based hierarchical style encoder that captures fine-grained intra-utterance variation, and (3) a conditional consistency loss enforcing coher-ence across conditioning factors. Extensive experi-ments on LibriSpeech and RAVDESS demonstrate that FC-TTS delivers competitive zero-shot quality and robust disentanglement, outperforming codec-based or single-reference baselines in both objec-tive and perceptual evaluations. Overall, FC-TTS provides a solid foundation for future research in diverse expressive TTS applications requiring dis-entangled and controllable speech synthesis. 
+
+> 6https://qualcomm-ai-research.github.io/ fc-tts
+
+6 Limitations 
+
+Language coverage and generalization. Our training and evaluation are currently limited to En-glish datasets, which under-represent many lan-guages, dialects, and accents. This restriction may limit the model’s ability to generalize to diverse linguistic conditions. Extending FC-TTS to mul-tilingual and cross-accent scenarios will be an im-portant step toward assessing its robustness and adaptability in broader expressive TTS settings. 
+
+Dependence on codec representations. Al-though FC-TTS introduces architectural and train-ing innovations beyond codec-based systems, it still relies on the disentanglement quality of FA-Codec representations. Consequently, its absolute synthesis quality may appear slightly below the strongest SOTA TTS models. Future work could explore more robust disentanglement mechanisms or codec-free formulations to further enhance fi-delity and controllability. 
+
+Definition and interpretability of attributes. 
+
+The conceptual boundary between timbre and style remains an open question. For instance, determin-ing whether a “husky voice” should be treated as a stylistic or timbral attribute is not trivial. Clarifying such definitions and establishing quantitative met-rics that can reliably assess these dimensions would further advance the interpretability, controllability, and scientific rigor of expressive TTS research. 
+
+7 Ethical Considerations 
+
+The zero-shot capability of FC-TTS, while offering substantial flexibility for expressive and person-alized synthesis, also introduces potential misuse risks, particularly in the creation of deepfake or impersonated speech. By enabling highly realis-tic synthesis from minimal reference data, such models can reproduce a speaker’s unique timbre and convey new emotional or stylistic content with-out their consent, raising concerns around privacy, identity theft, and misinformation. These risks become more pronounced as FC-TTS allows independent style control while pre-serving a fixed timbre, which can be exploited to generate emotionally manipulated speech in an-other person’s voice. To mitigate such misuse, fu-ture deployments of expressive TTS systems might consider architectures or interfaces that restrict style controllability while keeping timbre gener-ation confined to authorized sources. We hope that future research will further explore technical and policy-oriented safeguards to balance creative ex-pression with ethical responsibility in controllable TTS technologies. 
+
+Acknowledgments 
+
+We are grateful to our colleagues for their support and encouragement throughout this research. In particular, we thank Guillaume Sautiere for insight-ful discussions and feedback on this work. The authors used AI writing assistance solely for mi-nor language polishing and proofreading of the manuscript; it was not used to generate new con-tent, ideas, or analyses. 
+
+References                      
+
+> Edresson Casanova, Julian Weber, Christopher D Shulby, Arnaldo Candido Junior, Eren Gölge, and Moacir A Ponti. 2022. YourTTS: Towards zero-shot multi-speaker TTS and zero-shot voice conversion for everyone. In Proceedings of the 39th Interna-tional Conference on Machine Learning , volume 162 of Proceedings of Machine Learning Research , pages 2709–2720. PMLR. Sanyuan Chen, Chengyi Wang, Yu Wu, Ziqiang Zhang, Long Zhou, Shujie Liu, Zhuo Chen, Yanqing Liu, Huaming Wang, Jinyu Li, Lei He, Sheng Zhao, and Furu Wei. 2025. Neural codec language models are zero-shot text to speech synthesizers. IEEE Trans-actions on Audio, Speech and Language Processing ,33:705–718. Yushen Chen, Zhikang Niu, Ziyang Ma, Keqi Deng, Chunhui Wang, Jian Zhao, Kai Yu, and Xie Chen. 2024. F5-tts: A fairytaler that fakes fluent and faithful speech with flow matching. arXiv preprint arXiv:2410.06885 .Cheng-Han Chiang, Xiaofei Wang, Chung-Ching Lin, Kevin Lin, Linjie Li, Radu Kopetz, Yao Qian, Zhen-dong Wang, Zhengyuan Yang, Hung-yi Lee, and Li-juan Wang. 2025. Audio-aware large language mod-els as judges for speaking styles. In Findings of the Association for Computational Linguistics: EMNLP 2025 , pages 467–480, Suzhou, China. Association for Computational Linguistics. Deok-Hyeon Cho, Hyung-Seok Oh, Seung-Bin Kim, Sang-Hoon Lee, and Seong-Whan Lee. 2024. Emosphere-tts: Emotional style and intensity mod-eling via spherical emotion vector for controllable emotional text-to-speech. In Interspeech 2024 , pages 1810–1814. Deok-Hyeon Cho, Hyung-Seok Oh, Seung-Bin Kim, and Seong-Whan Lee. 2025. Emosphere++: Emotion-controllable zero-shot text-to-speech via emotion-adaptive spherical vector. IEEE Transac-tions on Affective Computing .
+
+Hyeong-Seok Choi, Jinhyeok Yang, Juheon Lee, and Hyeongju Kim. 2023. NANSY++: Unified voice synthesis with neural analysis and synthesis. In The Eleventh International Conference on Learning Rep-resentations .Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Mar-cel Blistein, Ori Ram, Dan Zhang, Evan Rosen, and 1 others. 2025. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 .Alex Graves, Santiago Fernández, Faustino Gomez, and Jürgen Schmidhuber. 2006. Connectionist temporal classification: labelling unsegmented sequence data with recurrent neural networks. In Proceedings of the 23rd international conference on Machine learning ,pages 369–376. Yiwei Guo, Zhihan Li, Chenpeng Du, Hankun Wang, Xie Chen, and Kai Yu. 2024. LSCodec: Low-bitrate and speaker-decoupled discrete speech codec. arXiv preprint arXiv:2410.15764 .Shengpeng Ji, Qian Chen, Wen Wang, Jialong Zuo, Minghui Fang, Ziyue Jiang, Hai Huang, Zehan Wang, Xize Cheng, Siqi Zheng, and Zhou Zhao. 2025. Con-trolSpeech: Towards simultaneous and independent zero-shot speaker cloning and zero-shot language style control. In Proceedings of the 63rd Annual Meeting of the Association for Computational Lin-guistics (Volume 1: Long Papers) , pages 6966–6981, Vienna, Austria. Association for Computational Lin-guistics. Shengpeng Ji, Ziyue Jiang, Hanting Wang, Jialong Zuo, and Zhou Zhao. 2024. MobileSpeech: A fast and high-fidelity framework for mobile zero-shot text-to-speech. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Vol-ume 1: Long Papers) , pages 13588–13600, Bangkok, Thailand. Association for Computational Linguistics. Zeqian Ju, Yuancheng Wang, Kai Shen, Xu Tan, De-tai Xin, Dongchao Yang, Eric Liu, Yichong Leng, Kaitao Song, Siliang Tang, Zhizheng Wu, Tao Qin, Xiangyang Li, Wei Ye, Shikun Zhang, Jiang Bian, Lei He, Jinyu Li, and Sheng Zhao. 2024. Natural-speech 3: Zero-shot speech synthesis with factorized codec and diffusion models. In ICML .J. Kahn, M. Rivière, W. Zheng, E. Kharitonov, Q. Xu, P. E. Mazaré, J. Karadayi, V. Liptchinsky, R. Col-lobert, C. Fuegen, T. Likhomanenko, G. Synnaeve, A. Joulin, A. Mohamed, and E. Dupoux. 2020. Libri-light: A benchmark for asr with limited or no su-pervision. In ICASSP 2020 - 2020 IEEE Interna-tional Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 7669–7673. https: //github.com/facebookresearch/libri-light .Minki Kang, Wooseok Han, Sung Ju Hwang, and Eunho Yang. 2023a. Zet-speech: Zero-shot adaptive emotion-controllable text-to-speech synthesis with diffusion and style-based models. In Interspeech 2023 , pages 4339–4343. Wei Kang, Xiaoyu Yang, Zengwei Yao, Fangjun Kuang, Yifan Yang, Liyong Guo, Long Lin, and Daniel Povey. 2023b. Libriheavy: a 50,000 hours asr cor-pus with punctuation casing and context. Preprint ,arXiv:2309.08105. Jaehyeon Kim, Sungwon Kim, Jungil Kong, and Sun-groh Yoon. 2020. Glow-tts: A generative flow for text-to-speech via monotonic alignment search. In 
+
+Advances in Neural Information Processing Systems ,volume 33, pages 8067–8077. Curran Associates, Inc. Jaehyeon Kim, Jungil Kong, and Juhee Son. 2021. Conditional variational autoencoder with adversar-ial learning for end-to-end text-to-speech. In Inter-national Conference on Machine Learning , pages 5530–5540. PMLR. Jaehyeon Kim, Keon Lee, Seungjun Chung, and Jae-woong Cho. 2024. CLam-TTS: Improving neural codec language model for zero-shot text-to-speech. In The Twelfth International Conference on Learning Representations .Sungwon Kim, Kevin J. Shih, Rohan Badlani, Joao Fe-lipe Santos, Evelina Bakhturina, Mikyas T. Desta, Rafael Valle, Sungroh Yoon, and Bryan Catanzaro. 2023. P-flow: A fast and data-efficient zero-shot TTS through speech prompting. In Thirty-seventh Confer-ence on Neural Information Processing Systems .Jungil Kong, Jaehyeon Kim, and Jaekyoung Bae. 2020. Hifi-gan: Generative adversarial networks for effi-cient and high fidelity speech synthesis. Advances in neural information processing systems , 33:17022– 17033. Keon Lee, Dong Won Kim, Jaehyeon Kim, Seungjun Chung, and Jaewoong Cho. 2025. DiTTo-TTS: Dif-fusion transformers for scalable text-to-speech with-out domain-specific factors. In The Thirteenth Inter-national Conference on Learning Representations .Shun Lei, Yixuan Zhou, Liyang Chen, Zhiyong Wu, Xixin Wu, Shiyin Kang, and Helen Meng. 2023. Msstyletts: Multi-scale style modeling with hierar-chical context information for expressive speech syn-thesis. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 31:3290–3303. Yichong Leng, Zhifang Guo, Kai Shen, Zeqian Ju, Xu Tan, Eric Liu, Yufei Liu, Dongchao Yang, leying zhang, Kaitao Song, Lei He, Xiangyang Li, sheng zhao, Tao Qin, and Jiang Bian. 2024. PromptTTS 2: Describing and generating voices with text prompt. In The Twelfth International Conference on Learning Representations .Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi. 2023. Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large lan-guage models. In International conference on ma-chine learning , pages 19730–19742. PMLR. Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Max-imilian Nickel, and Matthew Le. 2023. Flow match-ing for generative modeling. In The Eleventh Inter-national Conference on Learning Representations .Guanghou Liu, Yongmao Zhang, Yi Lei, Yunlin Chen, Rui Wang, Lei Xie, and Zhifei Li. 2023. Promptstyle: Controllable style transfer for text-to-speech with natural language descriptions. In Interspeech 2023 ,pages 4888–4892. Jiaxuan Liu, Zhaoci Liu, Yajun Hu, Yingying Gao, Shilei Zhang, and Zhenhua Ling. 2025. Diff-StyleTTS: Diffusion-based hierarchical prosody mod-eling for text-to-speech with diverse and controllable styles. In Proceedings of the 31st International Con-ference on Computational Linguistics , pages 5265– 5272, Abu Dhabi, UAE. Association for Computa-tional Linguistics. Steven R. Livingstone and Frank A. Russo. 2018a. The ryerson audio-visual database of emotional speech and song (ravdess): A dynamic, multimodal set of fa-cial and vocal expressions in north american english. 
+
+PLOS ONE , 13(5):1–35. Steven R Livingstone and Frank A Russo. 2018b. The ryerson audio-visual database of emotional speech and song (ravdess): A dynamic, multimodal set of fa-cial and vocal expressions in north american english. 
+
+PloS one , 13(5):e0196391. Ilya Loshchilov and Frank Hutter. 2019. Decoupled weight decay regularization. In International Confer-ence on Learning Representations .Tianze Luo, Xingchen Miao, and Wenbo Duan. 2025. WaveFM: A high-fidelity and efficient vocoder based on flow matching. In Proceedings of the 2025 Con-ference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) ,pages 2187–2198, Albuquerque, New Mexico. Asso-ciation for Computational Linguistics. Ruskin Raj Manku, Yuzhi Tang, Xingjian Shi, Mu Li, and Alex Smola. 2025. EmergentTTS-eval: Eval-uating TTS models on complex prosodic, expres-siveness, and linguistic challenges using model-as-a-judge. In The Thirty-ninth Annual Conference on Neural Information Processing Systems Datasets and Benchmarks Track .Fabian Mentzer, David Minnen, Eirikur Agustsson, and Michael Tschannen. 2024. Finite scalar quantization: VQ-VAE made simple. In The Twelfth International Conference on Learning Representations .William Peebles and Saining Xie. 2023. Scalable dif-fusion models with transformers. In Proceedings of the IEEE/CVF international conference on computer vision , pages 4195–4205. Ethan Perez, Florian Strub, Harm de Vries, Vincent Dumoulin, and Aaron Courville. 2018. Film: Vi-sual reasoning with a general conditioning layer. In 
+
+Proceedings of the AAAI conference on artificial in-telligence , volume 32. Takaaki Saeki, Detai Xin, Wataru Nakata, Tomoki Koriyama, Shinnosuke Takamichi, and Hiroshi Saruwatari. 2022. Utmos: Utokyo-sarulab system for voicemos challenge 2022. In Interspeech 2022 ,pages 4521–4525. Kevin J Shih, Rafael Valle, Rohan Badlani, Adrian Lan-cucki, Wei Ping, and Bryan Catanzaro. 2021. Rad-tts: Parallel flow-based tts with robust alignment learn-ing and diverse synthesis. In ICML Workshop on Invertible Neural Networks, Normalizing Flows, and Explicit Likelihood Models .Jianlin Su, Murtadha Ahmed, Yu Lu, Shengfeng Pan, Wen Bo, and Yunfeng Liu. 2024. Roformer: En-hanced transformer with rotary position embedding. 
+
+Neurocomputing , 568:127063. Aäron van den Oord, Oriol Vinyals, and Koray Kavukcuoglu. 2017. Neural discrete representation learning. In Neural Information Processing Systems .Yuancheng Wang, Haoyue Zhan, Liwei Liu, Ruihong Zeng, Haotian Guo, Jiachen Zheng, Qiang Zhang, Xueyao Zhang, Shunsi Zhang, and Zhizheng Wu. 2025. MaskGCT: Zero-shot text-to-speech with masked generative codec transformer. In The Thir-teenth International Conference on Learning Repre-sentations .Tianxin Xie, Yan Rong, Pengfei Zhang, and Li Liu. 2024. Towards controllable speech synthesis in the era of large language models: A survey. ArXiv ,abs/2412.06602. Detai Xin, Yuki Saito, Shinnosuke Takamichi, Tomoki Koriyama, and Hiroshi Saruwatari. 2021. Cross-lingual speaker adaptation using domain adaptation and speaker consistency loss for text-to-speech syn-thesis. In Interspeech 2021 , pages 1614–1618. Yifan Yang, Bing Han, Hui Wang, Long Zhou, Wei Wang, Mingyu Cui, Xu Tan, and Xie Chen. 2025. Measuring prosody diversity in zero-shot tts: A new metric, benchmark, and exploration. arXiv preprint arXiv:2509.19928 .Siyi Zhou, Yiquan Zhou, Yi He, Xun Zhou, Jinchao Wang, Wei Deng, and Jingchen Shu. 2025. In-dextts2: A breakthrough in emotionally expressive and duration-controlled auto-regressive zero-shot text-to-speech. arXiv preprint arXiv:2506.21619 .A Architecture details 
+
+This section elaborates on the FC-TTS architecture, expanding on components that were just briefly described from the main paper due to space con-straints. Detailed hyperparameter configurations are listed in Table 7. • FACodec encoder: We utilize FACodec en-coder to obtain disentangled speech represen-tations: prosody tokens cp, content tokens 
+
+cc, detail tokens cd, and the speaker embed-ding zspk . Since the temporal resolution of the discrete tokens differs from that of the log-mel spectrograms, we upsample the to-kens to match the spectrogram’s frame rate using a repetition-based method. Addition-ally, we specifically utilize the tokens by first transforming them into embeddings via the codebook, followed by applying layer normal-ization without affine transformation to stan-dardize the representations across their feature dimensions. • Text encoder: The text encoder adopts a transformer-based architecture in which the traditional feed-forward network layers are substituted with one-dimensional convolu-tional layers. Positional information is en-coded using rotary positional embeddings (Su et al., 2024). This configuration serves as the default transformer encoder architecture in this work. • Aligner: This module aligns the output of the text encoder with the target log-mel spec-trogram using an attention-based alignment search (Shih et al., 2021). To accelerate align-ment training, it utilizes two loss functions: 
+
+Lforwardsum , which promotes monotonic diag-onal alignment via the connectionist temporal classification (CTC) algorithm (Graves et al., 2006); and Lbin , which encourages the soft alignment Asoft calculated from the attention mechanism to be close to the binarized hard alignment Ahard calculated from the mono-tonic alignment search algorithm (Kim et al., 2020). During the initial training phase, the aligner uses Asoft to expand the text represen-tations and starts to use Ahard after 10,000 iterations to reduce the training-inference gap. Operations requiring alignment—such as pooling and length regulation—also use 
+
+Ahard .Transformer         
+
+> Encoder
+> Cross
+> Attention
+> Global queries Input
+> …
+> …
+> ResNet [𝒄 𝒄 ,𝒄 𝒅 ,𝑧 𝑠𝑝𝑘 ]
+> Linear Linear VQ
+> Scale Round Re -
+> scale
+> -+
+> stop
+> gradien t
+> tanh
+
+Figure 5: Detailed architecture of the TCF module. The input is first processed by a Transformer encoder, fol-lowed by compression using a Q-former-style cross-attention mechanism and a subsequence finite scalar quantization layer. To prevent representation collapse, a ResNet-based speech reconstruction module is jointly trained. 
+
+• Style encoder: Composed of two TCF mod-ules operating at phoneme and frame levels respectively, this encoder models hierarchical style representations. It receives phoneme-level averaged prosody representations com-puted using Ahard . For the frame-level input, it takes the concatenation of the re-expanded av-eraged prosody representations and the resid-ual difference between the original and aver-aged representations to avoid encoding redun-dant information. • Timbre adapter: It is built upon the trans-former encoder with 1D CNNs. Also, the layer normalization is modified to adaptive layer normalization (AdaLN) (Perez et al., 2018), allowing for the injection of the speaker embedding vector zspk .• Style adapter: It is built upon the transformer decoder with 1D CNNs. Also, the style em-bedding encoded by the style encoder is fed to the style adapter via the cross attention layer. Here, we do not use the causal masking typi-cally used in the transformer decoder. • Log-Mel decoder: The decoder adopts the DiT architecture (Peebles and Xie, 2023), specifically the DiT Block with adaLN-Zero layers. Time embedding t is injected into the adaLN layers. • Prosody & Timbre predictors: These at-tribute predictors are built using the trans-former encoder architecture used in FACodec, allowing us to directly initialize them with Training 
+
+Learning Rate 0.0002 Batch Size 64 Iterations 200,000 Optimizer AdamW Weight Decay 0.0 Betas (0.8, 0.99) Warm-up 4,000 Decay type exponential Decay factor 0.999875 Decay step 200 Gradient clip norm 10.0 
+
+> Table 6: Training hyperparameters
+
+the transformer modules from the pre-trained FACodec encoder. • Duration predictor: This module follows the duration predictor used in MaskGCT (Wang et al., 2025) and is trained using the CFM loss Ldur based on ICL. To encode duration references, it employs a transformer encoder block that processes a context prompt com-posed of log-scale durations, text representa-tions, and phoneme-level averaged prosody representations extracted from a random seg-ment corresponding to 0-30% of the target. It adopts DiT blocks incorporated with cross-attention layers to effectively integrate the du-ration prompt. • TCF module: The TCF module comprises a transformer encoder, a cross-attention mech-anism, and a finite scalar quantization (FSQ) layer (see Figure 5). During experimentation, we observed that the FSQ layer’s latent repre-sentations tend to collapse into a single code. To mitigate this, we introduce an auxiliary ResNet module trained to reconstruct the log-mel spectrogram using a mean absolute er-ror loss Lmel-recon . The ResNet takes as input the output of the transformer encoder along with residual information necessary for spec-trogram reconstruction. 
+
+B Dataset details 
+
+In this work, we use three datasets: • Libriheavy: A large-scale English read speech corpus consisting of 50,000 hours of labeled audio derived from LibriVox and Lib-rilight. It provides transcriptions with punctua-tion, casing, and textual context, enabling con-textual ASR research. The dataset is divided into training subsets of 500h (small), 5,000h (medium), and 50,000h (large) and we use all these subsets for training. The dataset is avail-able under an Apache-2.0 license at https: //github.com/k2-fsa/libriheavy .• LibriSpeech: A widely used 1,000-hour En-glish ASR corpus based on public-domain LibriVox audiobooks and Project Gutenberg texts, distributed under the CC-BY 4.0 license. It includes training subsets of 100h, 360h, and 500h, and development and test sets of ap-proximately 5 hours each (clean and other conditions). In this work, we exclusively used the test-clean subset (5.4 hours, 40 speakers: 20 male and 20 female) as our test set. From this subset, we selected only utterances be-tween 4 and 10 seconds in duration, resulting in approximately 1.2k audio samples. • RAVDESS: The Ryerson Audio-Visual Database of Emotional Speech and Song is a validated multimodal emotion dataset contain-ing 7,356 recordings from 24 actors (12 male, 12 female). It includes audio-only, video-only, and audio-visual modalities across eight emo-tions for speech and six for song, each ex-pressed at two intensity levels. The dataset is available under the CC BY-NC-SA 4.0 li-cense. 
+
+C Training & Inference details 
+
+C.1 Training 
+
+FC-TTS is trained on LibriHeavy dataset for 200,000 iterations using AdamW (Loshchilov and Hutter, 2019) optimizer, with a batch size of 64 and beta parameters set to (0.8, 0.99), on 8 NVIDIA V100 GPUs for 116 hours. A learning rate of 0.0002 is employed, which undergoes a linear warmup over the initial 4,000 iterations before tran-sitioning to exponential decay used in Kim et al. (2021). Also, gradient norms are clipped at a maxi-mum of 10.0 to stabilize training. The overall training objective is defined by the following composite loss function: Ltotal = λCFM ·LCFM +λblur ·L blur +λccl-pro ·L CE +λccl-spk ·L cossim +
+
+λmel-recon · L mel-recon + λforwardsum · L forwardsum +
+
+α · λbin · L bin + α · λdur · L dur . Here, each λ∗term controls the contribution of its correspond-ing loss component. The coefficients are set as follows: λCFM = 5 .0, λ blur = 1 .0, λ ccl-pro =0.2, λccl-spk = 0.5, λmel-recon = 1.0, λdur =1.0, λ forwardsum = 0 .1, and λbin = 0 .1. Addi-tionally, the coefficient α is linearly warmed up over the first 10,000 iterations to allow time for the aligner to estimate accurate alignments. 
+
+C.2 Inference 
+
+Inference proceeds in two stages: duration predic-tion and spectrogram generation. Duration predic-tion is performed as the first stage of inference, us-ing a fixed number of function evaluations (NFEs), set to 8. This stage does not incorporate classifier-free guidance. For log-mel spectrogram synthesis, we use 32 NFEs with a classifier-free guidance scale of 4.0. To enable classifier-free guidance, we randomly drop the conditioning inputs during train-ing with a probability of 15%. Lastly, the generated log-mel spectrograms are transformed into 22kHz waveforms using a pre-trained HiFi-GAN (Kong et al., 2020) vocoder. To match the input require-ments of HiFi-GAN, we use LibriHeavy speech samples that have been upsampled to 22kHz. De-spite the waveform synthesis operating at 22kHz, the HiFi-GAN vocoder is trained with log-mel fea-tures configured with an f_max of 8000 Hz, which enables compatibility between features extracted from 16kHz audio and the final waveform synthe-sis at 22kHz. Further hyperparameter settings are listed in Table 6. 
+
+D Evaluation details 
+
+This section provides supplementary details on the evaluation setup and methodology. We compare the performance of FC-TTS against a diverse set of baseline models to ensure a comprehensive eval-uation: 
+
+D.1 Baselines 
+
+• NaturalSpeech 3 (NS3) : Selected as the pri-mary baseline due to its strong performance and architectural similarity to FC-TTS, no-tably its use of FACodec. When we asses its separate controllability of timbre and style, we instead evaluate the voice conversion capa-bility of FACodec, which serves as an upper bound for NS3’s performance in this context. • F5-TTS (Chen et al., 2024): An in-context learning-based state-of-the-art zero-shot TTS model. We selected this model because its official source code is publicly available under MIT License, allowing us to retrain it under identical conditions and thereby ensure both fairness in evaluation. • CLaM-TTS & DiTTo-TTS (Kim et al., 2024; Lee et al., 2025): These models are also in-cluded to broaden the comparison, using re-ported metrics evaluated on the same test set and scoring protocol. • FACodec (Ju et al., 2024): This is used a voice conversion system to approximate the oracle of the FACodec-based TTS models. Based on the official checkpoint, which is available un-der MIT License, we first extract ground-truth FACodec tokens from the encoder and recon-struct it with unmatched timbre embedding using FACodec decoder. 
+
+D.2 Metrics 
+
+Also, we assess model performance using a diverse set of objective metrics as follows: • UTMOS 7 (Saeki et al., 2022) (MIT License): A neural network-based metric trained to pre-dict human mean opinion scores (MOS) for speech quality. It provides a reliable proxy for perceptual naturalness and fluency, and is widely adopted for evaluating TTS systems. • WER (Word Error Rate) : Computed us-ing a pre-trained HuBERT-based automatic speech recognition model 8 (Apache 2.0 Li-cense). WER quantifies intelligibility by com-paring the transcribed output of generated speech against ground-truth text, with lower values indicating better pronunciation accu-racy. • SPK : A metric for evaluating speaker simi-larity, computed as the cosine similarity be-tween embeddings extracted using a WavLM-TDCNN-based speaker verification model 9
+
+(CC BY-SA 3.0 License). These embeddings are obtained from both reference and synthe-sized speech samples. Higher scores indicate greater similarity in speaker characteristics. 
+
+> 7https://huggingface.co/spaces/sarulab-speech/ UTMOS-demo
+> 8https://huggingface.co/facebook/ hubert-large-ls960-ft
+> 9https://github.com/microsoft/UniSpeech/tree/ main/downstreams/speaker_verification
+
+• MCD (Mel Cepstral Distortion) : MCD cal-culates the Euclidean distance between mel-cepstral coefficients of two speech signals. These coefficients capture the spectral enve-lope of speech. In our evaluation, we use MCD for assessing prosodic similarity be-tween the reference and generated utterances, which contain identical linguistic content and are spoken by the same speaker. 
+
+D.3 ABX test 
+
+The human listening evaluation was conducted with internal company employees serving as par-ticipants. To ensure fairness and reliability, a set of test samples was randomly selected from the evaluation dataset. For each sample, corresponding speech outputs were generated by both the base-line system and our proposed system. During the test, participants were presented with pairs of au-dio clips in randomized order—one from each sys-tem—without any indication of their origin. They were asked to identify which sample more closely matched the reference in terms of naturalness and intelligibility. This procedure was designed to min-imize potential bias and to ensure the validity and reproducibility of the evaluation results. 
+
+D.4 AudioLLM-as-a-Judge Evaluation 
+
+We use Gemini 2.5 Pro (Comanici et al., 2025) as the evaluator model and measure two complemen-tary metrics. Win Ratio is obtained via pairwise comparison: the model is given a human reference and two generated samples and judges which better matches the reference speaking style; the aggre-gate preference rate over all test pairs constitutes the Win Ratio. Style-MOS is obtained via inde-pendent per-sample scoring: the model rates how well a single generated sample reflects the speaking style of a given reference on a 1–5 scale, and the mean over all pairs constitutes the Style-MOS. Module Hyperparameter Value 
+
+Text encoder / Duration prompt encoder Hidden dimension 192 Layers 6Heads 2FFN dimension 768 Conv kernel size 3Duration predictor Hidden dimension 192 Layers 6Heads 4FFN dimension 768 Conv kernel size 3Timbre adapter / Style adapter-phone / Style adapter-frame Hidden dimension 192 Layers 4Heads 4FFN dimension 768 Conv kernel size 9 / 5 / 9 Log-mel decoder Hidden dimension 384 Layers 12 Heads 4FFN dimension 768 Conv kernel size 5Prosody / Timbre predictor Hidden dimension 256 Layers 4Heads 4FFN dimension 1024 Conv kernel size 5TCF-phone / TCF-frame Hidden dimension 384 Layers 6Heads 4Conv kernel size 5Queries 4FSQ latent dimension 6FSQ latent bins [5, 5, 5, 5, 5, 5] ResNet Blocks 3ResNet Conv Layers 2ResNet Conv kernel size [[9, 1], [9, 1], [9, 1]] ResNet Conv dilations [[1, 1], [2, 1], [4, 1]] 
+
+> Table 7: Grouped hyperparameters for different modules. Modules with similar configurations are merged into single group, and differing values are separated by slashes (e.g., “Timbre adapter / Style adapter-phone / Style adapter-frame”) to reduce redundancy and improve readability.
+
+Figure 6: Main instructions provided to participants in the ABX test. Figure 7: Instructions for the timbre controllability evaluation. Figure 8: Instructions for the style controllability evaluation.

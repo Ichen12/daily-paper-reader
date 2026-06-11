@@ -1,0 +1,182 @@
+Title: LLM can Read Spectrogram: Encoder-free Speech-Language Modeling
+
+URL Source: https://arxiv.org/pdf/2606.10231v1
+
+Published Time: Wed, 10 Jun 2026 00:19:50 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# LLM CAN READ SPECTROGRAM: ENCODER-FREE SPEECH-LANGUAGE MODELING 
+
+# Ruchao Fan 1, Yiming Wang 1∗, Yuxuan Hu 1, Bo Ren 1, Yufei Xia 1, Xiaofei Wang 1, Yao Qian 1, Jinyu Li 1
+
+# Microsoft CoreAI, USA 
+
+ABSTRACT 
+
+Recent speech-aware large language models (Speech-LLMs) rely on a pre-trained speech encoder to convert audio into semantic-rich representations consumable by LLM. In this work, instead, we ex-plore: can an LLM learn to read Mel spectrogram directly without a dedicated speech encoder? We propose Mel-LLM , an encoder-free Speech-LLM that feeds lightly pre-processed Mel spectrogram patches directly into the LLM through a linear projection, allow-ing the LLM to learn speech-text alignment purely through its own parameters. We conduct extensive experiments on both au-tomatic speech recognition (ASR) and text-to-speech (TTS) tasks. For ASR, we evaluate on the OpenASR leaderboard public sets and production-level scaling experiments, demonstrating that the encoder-free solution achieves competitive performance with only limited degradation compared to encoder-initialized counterparts. We find that when data is limited, initialization from a multimodal checkpoint (Phi-4-MM) is crucial for maintaining performance. We also present ablation studies revealing which LLM layers are less relevant to speech encoding. For TTS, we show preliminary results with a next-token VAE approach. While TTS performance is not yet optimal, these results establish the feasibility of a fully unified encoder-free architecture for autoregressive speech-text modeling. 
+
+Index Terms — Speech-LLM, encoder-free, Mel spectrogram, ASR, TTS, large language model 
+
+1. INTRODUCTION 
+
+The prevailing paradigm for speech large language models (Speech-LLMs) [1–3] consists of three components: a pre-trained speech encoder, a modality projector, and a large language model (LLM). The speech encoder, typically a Whisper-style [4] or Conformer-based [5] model pre-trained on large-scale ASR data, converts raw audio into high-level speech representations. These are then pro-jected into the LLM’s embedding space for downstream tasks such as ASR, translation, and instruction following. While effective, this reliance on a dedicated speech encoder in-troduces several limitations. First, the encoder is often large (e.g., 600M+ parameters for Whisper-large) and adds significant compu-tational overhead. Second, the encoder’s learned representations may not be optimal for the LLM’s internal processing, creating a representational mismatch. Third, the encoder becomes a bottle-neck for information flow—the LLM can only access speech through the encoder’s compressed representations. Recent works in vision-language models have shown that LLMs can directly process raw pixel patches [7] without a vision encoder, suggesting that large lan-guage models have sufficient capacity to learn modality-specific pro-cessing internally. Inspired by this, we ask: can an LLM directly read Mel spectrogram? .In this paper, we propose Mel-LLM , an encoder-free Speech-LLM architecture that removes the conventional pre-trained speech 
+
+> ∗Contributing to the work in 2025 before he left Microsoft.
+
+encoder, especially the Transformer/Conformer blocks, and pre-serves the convolution layers for downsamling only. That said, the Mel spectrogram is chunked in time, and projected directly into the LLM’s embedding space. The LLM itself learns to interpret these raw spectral features and align them with text, using only its own Transformer layers. The key insight of our work is that when the LLM is sufficiently large, the LLM’s lower layers effectively learn to serve as a “speech encoder” during training. The removal of speech encoder allows for a joint speech-text modeling within the same LLM backbone towards both understanding and generation. Our contributions are as follows: • We demonstrate that an LLM can learn to perform ASR directly from Mel spectrogram without a speech encoder, achieving competitive results on the OpenASR leaderboard. • We show that encoder-free models have limited degradation compared to encoder-initialized ones, especially at scale. • We identify that multimodal pre-training (Phi-4-MM) initial-ization is critical when training data is limited and show that lower LLM layers contribute most to speech understanding. • We present preliminary TTS results with a next-token VAE decoder, establishing feasibility of a unified autoregressive ar-chitecture for speech-understanding and generation. 
+
+2. RELATED WORK 
+
+Recent works [1–3,9,25–28] have established the encoder-projector-LLM paradigm for speech understanding. These systems typically use large pre-trained speech encoders (Whisper [4], HuBERT [10]) to extract features before feeding them to the LLM. 
+
+Encoder-free multimodal models. In vision, Fuyu [7] first demonstrated that raw image patches can be directly projected into an LLM without a vision encoder. More recently, Tuna-2 [19] shows that pixel embeddings can beat vision encoders for both multimodal understanding and generation, achieving state-of-the-art results with simple patch embedding layers and no modular encoder. Represen-tation Forcing [20] further eliminates the VAE bottleneck by forcing the decoder to predict visual representations as intermediate tokens before pixel generation. An et al. [21] provide a comprehensive roadmap toward native multimodal modeling (NMM), distinguish-ing early-fusion architectures from non-native paradigms. These vi-sion advances motivate our encoder-free exploration in speech. 
+
+Continuous mel-spectrogram TTS. MELLE [14] pioneered autoregressive continuous mel generation without vector quantiza-tion, using regression loss with spectrogram flux and variational inference. MELA-TTS [22] extends this with a joint Transformer-diffusion framework and representation alignment from a pre-trained ASR encoder. MELD [23] introduces discrete latent variables on Mel spectrogram with joint encoder-LM optimization for both TTS and STT. WavFlow [24] pushes further by generating audio directly in raw waveform space without intermediate representations. Our                    
+
+> arXiv:2606.10231v1 [eess.AS] 8 Jun 2026 m1m2· · · mTpt1t2t3· · ·
+> mel input prompt generated text (AR)
+> Conv ↓r
+> optional, off if r=1
+> Linear Proj
+> LLM (Phi-4-MM, 32L + LoRA)
+> LM Head
+> t1t2t3t4· · ·
+> causal attn →
+> LCE
+
+(a) ASR: Mel spectrogram is normalized (MVN), and passed through con-vlution layers if downsampling is required, and linearly projected into the LLM embedding space. The LLM autoregressively generates text tokens.                          
+
+> t1t2· · · tN<s> ˆm1ˆm2ˆm3· · ·
+> text input generated mel (AR)
+> Conv ↓r
+> optional, off if r=1
+> Linear Proj
+> LLM (Phi-4-MM, 32L + LoRA)
+> Mel Head (VAE Decoder)
+> μ/σ→reparam →MLP →Postnet Stop
+> ˆm1ˆm2ˆm3ˆm4· · ·
+> causal attn →
+> Lreg+ LKL +Lstop
+
+(b) TTS: Given text input, speech mel chunks are autoregressively generated by LLM and a VAE decoder (linear → μ/σ, reparameterize, residual MLP, postnet) similarly to MELLE [14]. A stop predictor signals end-of-audio. 
+
+Fig. 1 : Architecture of Mel-LLM for (a) ASR and (b) TTS. Both tasks share the same LLM backbone with LoRA adaptation. The encoder-free ASR variant removes the Transformer encoder, using linear projection and convolution layers if downsampling is required. TTS approach builds upon MELLE but uses the LLM itself as the backbone. 
+
+Speech-text unified models. SpeechGPT [11], VoxtLM [12], and Spirit-LM [13] explore unified speech-text generation, typically using discrete speech tokens. Our work differs by operating directly on continuous Mel spectrogram features for both input and output. To our knowledge, this is the first academic publication provid-ing detailed encoder-based vs. encoder-free comparisons for Speech-LLMs across data scales. 1
+
+3. METHOD 3.1. Architecture Overview 
+
+The Mel-LLM architecture is illustrated in Figure 1. We build upon the standard Speech-LLM framework [1, 2] but systematically sim-plify the speech encoder component. Our system supports both ASR (speech-to-text) and TTS (text-to-speech) tasks, with a modficiation on Phi-4-MultiModal (Phi-4-MM) [3]. 
+
+3.2. ASR: Speech Input Path 
+
+Given a speech signal, we first extract 80-dimensional log-Mel spec-trogram features. These features are then processed through the fol-lowing pipeline: 
+
+MVN Normalization. We apply mean and variance normaliza-tion (MVN) on using pre-computed statistics from the training set. 
+
+Lightweight Convolution layers (Optional for downsampling ). The normalized spectrogram of shape [T, 80] is projected into a hidden space with a reduced sequence length at T /r where r is the time reduction factor (we use r = 2 for TTS and 8 for ASR). Ablation study on r is conducted in Section 5.2, and the convolution layers are disabled for the r = 1 setting. 
+
+> 1
+
+During the preparation of this manuscript, Google announced Gemma 4 12B (Jun. 2026) which removes both vision and audio encoders, projecting raw audio signals directly into the LLM via a lightweight projec-tion. However, no detailed academic publication or apple-to-apple compari-son with encoder-based settings has been provided. 
+
+Linear Projection. A single linear layer projects the features into the LLM’s hidden dimension: 
+
+Es = Wproj · e + bproj , Wproj ∈ RdLLM ×denc (1) In the encoder-free setting, this projection is randomly initialized (as opposed to being pre-trained alongside an encoder), and the LLM learns to interpret raw spectral features through its own parameters. 
+
+LLM Processing. The projected speech embeddings Es are concatenated with text prompt embeddings Ep and fed into the LLM, which autoregressively generates the transcription: 
+
+ˆT = LLM (Concat (Es, E p)) (2) The LLM is adapted using LoRA [6] with rank 320 and α = 640 .
+
+3.3. TTS: Speech Output Path 
+
+For TTS, the LLM generates speech in an autoregressive manner. Given text input, the LLM produces hidden states at speech posi-tions, which are decoded back to Mel spectrogram by the Mel head: 
+
+VAE Decoder. At each speech position, the LLM hidden state 
+
+h ∈ RdLLM is decoded via a variational autoencoder: 
+
+μ, log σ2 = split (Wlatent · h) (3) 
+
+z = μ + σ · ϵ, ϵ ∼ N (0 , I ) (4) 
+
+ˆm = z + MLP res (z) (5) where the residual MLP consists of 3 linear layers with tanh activa-tion and dropout. 
+
+Postnet Refinement. The decoded Mel spectrogram is further refined by a 5-layer Conv1D residual postnet: 
+
+ˆmfinal = ˆ m + Postnet ( ˆ m) (6) 
+
+Stop Prediction. A linear layer predicts end-of-audio at each timestep via binary cross-entropy loss. 
+
+Training Losses. The TTS training objective combines: 
+
+LTTS = Lreg + λKL LKL + λstop Lstop + λflux Lflux (7) where Lreg is L1+MSE reconstruction loss, LKL is the KL diver-gence, Lstop is the stop token loss, and Lflux encourages temporal smoothness, similarly to MELLE [14]. Table 1 : ASR performance (WER%) on OpenASR leaderboard test sets. “Encoder” and “LoRA” columns indicate initialization: Pretrained (from Phi-4-MM), Random, or None (encoder-free). Mel-LLM removes the encoder entirely, projecting mel patches directly into the LLM. System Encoder LoRA AMI Earnings22 Gigaspeech LS-clean LS-other SPGISpeech TED-LIUM VoxPopuli Avg                                                                   
+
+> Whisper-Large-V3 [4] N/A N/A 15.95 11.29 10.02 2.01 3.91 2.94 3.86 9.54 7.44 Phi-4-MM N/A N/A 11.69 10.16 9.78 1.68 3.83 3.13 2.90 5.91 6.14 + FT Pretrained Pretrained 11.16 9.57 9.45 1.32 2.95 1.70 2.70 6.03 5.61 + Random Enc FT Random Pretrained 12.19 14.31 10.38 1.62 4.27 2.04 3.29 7.65 6.97 Mel-LLM (Phi-4-MM init) None Pretrained 12.91 12.99 10.95 1.70 4.83 2.28 3.55 7.76 7.12
+> Mel-LLM (Random init) None Random 13.65 11.98 11.38 1.83 5.50 2.47 4.42 8.25 7.44
+
+Table 2 : Performance gap (WER%) between encoder-initialized and encoder-free models at different data scales on in-house test sets. With limited public data, encoder-free degrades notably. With 10 ×
+
+scaled anonymized in-house data, the gap narrows significantly, con-firming data scaling as the key enabler. Test Set Enc-Init Encoder-Free (limited data) ∆ rel. Encoder-Free (10 × scaled) ∆ rel. Call Center 15.92 18.28 +14.8% 16.74 +5.2% Conversation 15.83 17.10 +8.0% 16.25 +2.7% Dictation 5.80 6.40 +10.3% 5.99 +3.3% Average 12.52 13.93 +11.3% 12.99 +3.8% 
+
+4. EXPERIMENTAL SETTINGS 4.1. Model Configuration 
+
+Our model is built upon Phi-4-MM [3]. The LLM has a hidden di-mension of 3072, 32 layers, 24 attention heads, and 8 KV heads. We use LoRA with r = 320 , α = 640 for linear layers in atten-tion and MLP blocks. For ASR, the main Conformer encoder blocks are removed while NeMoConv layers are preserved for downsam-pling purposes. For TTS, the r for mel input is set to 2 to align with the best setting in MELLE. The VAE decoder uses 3 residual MLP layers with dimension 256, followed by a 5-layer Conv1D postnet. 
+
+4.2. Training Data and Settings 
+
+For ASR experiments on the OpenASR leaderboard, we train ex-clusively on publicly available English speech corpora, totaling approximately 31M utterances ( ∼64k hours). The training set comprises: LibriSpeech [29] (960h), GigaSpeech [30] (10kh), Mul-tilingual LibriSpeech (MLS) English [31] (44kh), SPGISpeech [32] (5kh), CommonVoice 15 English [33], VoxPopuli English [34], TED-LIUM [35], AMI [36], Earnings-22 [37], and FLEURS En-glish [38]. No proprietary or internal data is used for these exper-iments. We train using DeepSpeed ZeRO Stage-1 on 16 NVIDIA H100 GPUs. We use the AdamW optimizer with peak learning rate 
+
+1 × 10 −4, linear warmup-decay scheduling (9000 warmup steps), gradient clipping at 1.0, and effective batch size of 512. The base LLM layers are frozen with only LoRA trainable. The training data is iterated for three times and we do not find additional gains with more sweeps. We ablate the time reduction rate for performance and speed trade-off, the layer-wise LoRA initialization and training behaviors for speech encoding insights. For the production-scale experiments in Table 2, we use about 10 × anonymized in-house training data for one iteration with a similar setup. For TTS experiments, we use Libriheavy 50k hours English data for preliminary training. We use dropout of 0.5 for both input linear projection layers and the output Mel head. The KL loss weight is 0.05, stop head loss weight is 1.0 and flux loss is 0.5 respectively. The libriheavy data is swept for 5 epochs. 
+
+4.3. Evaluation 
+
+For ASR, we evaluate on the OpenASR leaderboard [8] public test sets, which include diverse benchmarks covering various domains and acoustic conditions, reported in word error rate (WER). We addi-tionally report production-level scaling experiments on anonymized in-house test sets covering call center, conversation, and dictation scenarios, also reported in WER. For TTS, we evaluate zero-shot synthesis on LibriSpeech test-clean using WER (measured by Whisper-large-v3 [4] for intelligi-bility) and UTMOS [17] for perceptual quality. 
+
+5. EXPERIMENTAL RESULTS 5.1. ASR: Main Results and Scaling Phi-4-MM initialization is critical at limited data scale. The encoder-free Mel-LLM with Phi-4-MM LoRA initialization achieves 7.12% average WER on OpenASR (Table 1), only 0.15% behind the random-encoder baseline (6.97%) that still uses a trainable encoder. Random initialization of the LLM degrades to 7.44%, a further 0.32% drop. This confirms that multimodal pre-training provides essential inductive biases for interpreting raw spectral features when training data is limited, although the hidden space is different for w/ encoder and encoder free setup. That said, the pretrained LoRA already encodes speech-text alignment knowledge that a randomly initialized model must learn from scratch. 
+
+Data scaling closes the encoder-free gap. Table 2 reveals that the performance gap between encoder-initialized and encoder-free models shrinks dramatically with data scale. With limited public data, the encoder-free model shows notable degradation across all in-house test sets (12.52% →13.93% average WER). However, with 10 × scaled anonymized in-house data, this gap narrows to only +3.8% relative (12.52% →12.99%). This demonstrates that suffi-cient data is the key enabler for encoder-free architectures—given enough training signal, the LLM learns to perform implicit speech encoding without relying on a dedicated encoder or pretrained ini-tialization. 
+
+5.2. ASR: Ablation Studies Downsampling rate vs. training efficiency. Table 3 shows the trade-off between token rate and ASR quality. The Phi-4-MM-FT-Base is with 8x downsampling and thus 12.5HZ token rate. Higher token rates (100Hz, 50Hz) yield lower WER (6.58%, 6.71%) but are significantly slower due to longer sequence lengths. Notably, the 25Hz and 12.5Hz settings achieve similar performance (7.21% vs. 7.12%). We attribute this to the Phi-4-MM LoRA initialization: the pretrained LoRA was trained with 12.5Hz token rate in Phi-4-MM, so Mel-LLM at 12.5Hz benefits directly from this initializa-tion, while 25Hz must adapt the pretrained weights to a mismatched frame rate. The 12.5Hz setting achieves the best quality-speed trade-off with 1.57 × training speedup over the encoder-based baseline. Importantly, this speedup comes from removing the encoder entirely, Table 3 : Ablation on token rate (downsampling). Lower token rates reduce sequence length and improve training speed but degrade quality. Mel-LLM at 12.5Hz achieves 1.57 × speedup over the encoder-based baseline while maintaining competitive WER. System Token Rate AMI Earnings22 Gigaspeech LS-clean LS-other SPGISpeech TED-LIUM VoxPopuli Avg Speedup Phi-4-MM-FT-Base 12.5Hz 12.19 14.31 10.38 1.62 4.27 2.04 3.29 7.65 6.97 1.0 ×                                                  
+
+> Mel-LLM 100Hz 12.34 10.56 10.41 1.63 4.50 2.20 3.29 7.74 6.58 0.33 ×
+> 50Hz 12.65 10.89 10.67 1.64 4.59 2.14 3.24 7.84 6.71 0.65 ×
+> 25Hz 13.18 13.69 10.80 1.73 4.77 2.15 3.38 7.96 7.21 1.09 ×
+> 12.5Hz 12.91 12.99 10.95 1.70 4.83 2.28 3.55 7.76 7.12 1.57 ×
+> 6.25Hz 14.80 15.13 11.82 1.86 5.70 2.49 3.91 8.43 8.02 1.88 ×
+
+Table 4 : Ablation on layer-wise initialization and freezing upper LoRA layers (initialized from Phi-4-MM). “Freeze L k–31” keeps LoRA layers k through 31 at Phi-4-MM initialization without fine-tuning. Results show that layers 24+ contribute minimally, suggesting they already focus on high-level semantics in Phi-4-MM. System AMI Earnings22 Gigaspeech LS-c LS-o SPGISpeech TED-LIUM VoxPopuli Avg 
+
+Phi-4-MM-FT-Base 12.19 14.31 10.38 1.62 4.27 2.04 3.29 7.65 6.97 Mel-LLM (Random init) 13.65 11.98 11.38 1.83 5.50 2.47 4.42 8.25 7.44 Mel-LLM (all LoRA) 12.91 12.99 10.95 1.70 4.83 2.28 3.55 7.76 7.12 + init. and freeze L16–31 14.08 13.43 11.78 2.25 6.67 2.86 3.96 8.48 7.94 + init. and freeze L20–31 13.72 14.34 11.38 1.96 6.13 2.64 3.89 8.08 7.77 + init. and freeze L24–31 13.76 12.72 11.26 1.95 5.54 2.46 3.70 8.05 7.43 + init. and freeze L28–31 13.66 12.76 11.19 1.85 5.56 2.43 3.70 8.07 7.40 making encoder-free Mel-LLM beneficial for both architectural sim-plicity and computational efficiency. 
+
+Layer-wise initialization and freezing reveals LLM layer roles. Table 4 investigates which LLM layers are essential for speech encoding by freezing upper LoRA layers at their Phi-4-MM initialization. Freezing L28–31 causes only 0.28% degradation (7.12% →7.40%), and freezing L24–31 yields 7.43%—nearly iden-tical to the fully trainable setting. However, extending the freeze to L20–31 (7.77%) and L16–31 (7.94%) leads to progressively larger drops. This pattern reveals that layers 24+ in the pretrained Phi-4-MM already encode high-level language semantics—reasoning, discourse structure, and text generation capabilities—that transfer well to ASR without speech-specific adaptation. In contrast, layers 0–23 must be adapted to learn the implicit speech encoding func-tion: converting raw spectral patterns into linguistically meaningful representations. This is consistent with findings in NLP that lower Transformer layers capture local features while upper layers han-dle abstract semantics. The frozen upper layers can still perform text generation effectively because their pretrained weights already handle the “language modeling” part of ASR; what they lack is the low-level acoustic processing that the lower layers must learn. 
+
+5.3. TTS: Next-Token VAE Results 
+
+Following MELLE [14], we autoregressively generate continuous mel-spectrogram frames using the LLM with a VAE-style Mel head, bypassing vector quantization. The mel features use 80-dimensional log-Mel spectrogram with the same configuration as ASR. Gener-ated mel frames are converted to waveforms using HiFi-GAN [16] vocoder. Table 5 shows preliminary zero-shot TTS results. 
+
+Phi-4-MM initialization is essential for TTS. Without Phi-4-MM LoRA initialization (random init), the model converges during training but produces inaudible outputs. We hypothesize that the LLM embedding space is semantically rich and difficult to align with the Mel spectrogram space from scratch for generation. Phi-4-MM initialization, which has already aligned speech and text modalities, provides the necessary starting point for TTS. 
+
+Dropout is critical for autoregressive generation. Reduc-
+
+Table 5 : Zero-shot TTS results on LibriSpeech test-clean. We follow the MELLE [14] framework, autoregressively generating continuous mel frames via a VAE decoder. WER is measured by Whisper-large-v3 [4]; UTMOS [17] measures perceptual quality. Results are pre-liminary. System WER ↓ UTMOS ↑
+
+Mel-LLM (Random init) converge but no audible output Mel-LLM (Phi-4-MM, no norm) 11.03 3.10 Mel-LLM (Phi-4-MM, MVN) 14.75 3.25 + dropout 0.1 85.51 1.38 + fix-KL (0-mean) 12.65 3.22 + sigma-VAE (0-mean) 18.07 3.29 ing input/output dropout from the default to 0.1 catastrophically degrades performance (WER 85.51%, UTMOS 1.38), indicating severe exposure bias during autoregressive generation. Sufficient dropout during training is essential to prevent the model from over-relying on teacher-forced ground-truth mel inputs. 
+
+Normalization and KL variants. In MELLE, mel features are not normalized, making the KL divergence naturally well-behaved with a 0-mean, unit-variance prior. Adding CMVN slightly degrades WER (14.75 vs. 11.03) but improves UTMOS (3.25 vs. 3.10). We also experimented with fixing the KL target to 0-mean and sigma-VAE [18] to prevent variance collapse (similar to VibeVoice), but neither provides consistent improvements over the baseline. While these TTS results are not yet state-of-the-art, they estab-lish feasibility of using the same encoder-free LLM backbone for both ASR and TTS in a unified architecture. Further optimization of the VAE decoder and training recipe is ongoing. 
+
+6. CONCLUSION 
+
+We present Mel-LLM, demonstrating that large language models can directly learn to read Mel spectrogram without a dedicated speech encoder. On ASR, the encoder-free approach achieves competitive results with only limited performance gap compared to encoder-initialized models, particularly when sufficient training data is avail-able. Phi-4-MM initialization proves critical for low-resource set-tings. Our ablation studies reveal that lower LLM layers are most relevant for implicit speech encoding. For TTS, we show prelimi-nary feasibility with next-token VAE decoding, though further opti-mization is needed. This work opens new directions for simplified, unified speech-language models. The limitation of the work is that we explore the encoder-free speech-LLM for ASR and TTS sepa-rately. The future work includes the joint ASR and TTS training, and speech-only data pretraining for unified representation learning for better speech generation and understanding. 
+
+7. REFERENCES 
+
+[1] Y. Fathullah et al. , “Prompting large language models with speech recognition abilities,” in Proc. ICASSP , 2024, pp. 13 351–13 355. [2] M. Shi et al. , “Train short, infer long: Speech-llm enables zero-shot streamable joint asr and diarization on long audio,” in IEEE ICASSP , 2026, pp. 17442-17446. [3] A. Abouelenin et al. , “Phi-4-mini technical report: Com-pact yet powerful multimodal language models via mixture-of-loras,” arXiv preprint , vol. arXiv:2503.01743, 2025. [4] A. Radford et al. , “Robust speech recognition via large-scale weak supervision,” in Proc. ICML , 2023, pp. 28 492–28 518. [5] A. Gulati et al. , “Conformer: Convolution-augmented Trans-former for speech recognition,” in Proc. Interspeech , 2020, pp. 5036–5040. [6] E. J. Hu et al. , “Lora: Low-rank adaptation of large language models,” in Proc. ICLR , 2022. [7] R. Bavishi et al. , “Fuyu-8B: A multimodal architecture for AI agents,” 2023. [Online]. Available: https://www.adept.ai/blog/ fuyu-8b [8] V. Srivastav et al. , “Open ASR leaderboard: Towards reproducible and transparent multilingual and long-form speech recognition evaluation,” arXiv preprint , vol. arXiv:2510.06961, 2026. [9] C. Tang et al. , “SALMONN: Towards generic hearing abilities for large language models,” in Proc. AAAI , 2024. [10] W. Hsu et al. , “HuBERT: Self-supervised speech repre-sentation learning by masked prediction of hidden units,” 
+
+IEEE/ACM TASLP , vol. 29, pp. 3451–3460, 2021. [11] D. Zhang et al. , “SpeechGPT: Empowering large language models with intrinsic cross-modal conversational abilities,” in 
+
+Proc. EMNLP , 2023. [12] S. Maiti et al. , “VoxtLM: Unified decoder-only models for con-solidating speech recognition/synthesis and speech/text contin-uation tasks,” in Proc. ICASSP , 2024. [13] T. Nguyen et al. , “Spirit-LM: Interleaved spoken and written language model,” arXiv preprint , vol. arXiv:2402.05755, 2024. [14] L. Meng et al. , “Autoregressive speech synthesis without vec-tor quantization,” in Proc. ACL , 2025, pp. 1287–1300. [15] S.-G. Lee et al. , “BigVGAN: A universal neural vocoder with large-scale training,” in Proc. ICLR , 2023. [16] J. Kong, J. Kim, and J. Bae, “HiFi-GAN: Generative adversar-ial networks for efficient and high fidelity speech synthesis,” in 
+
+Proc. NeurIPS , 2020, pp. 17 022–17 033. [17] T. Saeki et al. , “UTMOS: UTokyo-SaruLab system for Voice-MOS challenge 2022,” in Proc. Interspeech , 2022, pp. 4521– 4525. [18] O. Rybkin et al. , “Simple and effective VAE training with cal-ibrated decoders,” in Proc. ICML , 2021, pp. 9179–9189. [19] Z. Liu et al. , “Tuna-2: Pixel embeddings beat vision encoders for multimodal understanding and generation,” arXiv preprint ,vol. arXiv:2604.24763, 2026. [20] Y. Wang et al. , “Representation forcing for bottleneck-free unified multimodal models,” arXiv preprint , vol. arXiv:2605.31604, 2026. [21] S. An et al. , “Toward native multimodal modeling: Aroadmap,” arXiv preprint , vol. arXiv:2605.25343, 2026. [22] K. An et al. , “MELA-TTS: Joint Transformer-diffusion model with representation alignment for speech synthesis,” in Proc. ICASSP , 2026. [23] S.-L. Yeh et al. , “MELD: Mel-spectrogram-based speech lan-guage modeling with discrete latent variables,” arXiv preprint ,vol. arXiv:2605.29859, 2026. [24] F. Zhou et al. , “WavFlow: Audio generation in waveform space,” arXiv preprint , vol. arXiv:2605.18749, 2026. [25] R. Fan, B. Ren, Y. Hu, R. Zhao, S. Liu, and J. Li, “Align-Former: Modality matching can achieve better zero-shot instruction-following speech-LLM,” IEEE J. Sel. Topics Sig-nal Process. , 2025. [26] H. Wu et al. , “Towards efficient speech-text jointly decoding within one speech language model,” in Proc. ASRU , 2025. [27] Y. Hu et al. , “SLM-S2ST: A multimodal language model for direct speech-to-speech translation,” in Proc. ASRU , 2025. [28] K. Deng, R. Fan, B. Ren, Y. Wang, and J. Li, “Speech LLMs are contextual reasoning transcribers,” arXiv preprint , vol. arXiv:2604.00610, 2026. [29] V. Panayotov, G. Chen, D. Povey, and S. Khudanpur, “Lib-riSpeech: An ASR corpus based on public domain audio books,” in Proc. ICASSP , 2015, pp. 5206–5210. [30] G. Chen et al. , “GigaSpeech: An evolving, multi-domain ASR corpus with 10,000 hours of transcribed audio,” in Proc. Inter-speech , 2021, pp. 3670–3674. [31] V. Pratap et al. , “MLS: A large-scale multilingual dataset for speech research,” in Proc. Interspeech , 2020, pp. 2757–2761. [32] P. K. O’Neill et al. , “SPGISpeech: 5,000 hours of transcribed financial audio for fully formatted end-to-end speech recogni-tion,” in Proc. Interspeech , 2021, pp. 1434–1438. [33] R. Ardila et al. , “Common Voice: A massively-multilingual speech corpus,” in Proc. LREC , 2020, pp. 4218–4222. [34] C. Wang et al. , “VoxPopuli: A large-scale multilingual speech corpus for representation learning, semi-supervised learning and interpretation,” in Proc. ACL , 2021, pp. 993–1003. [35] F. Hernandez, V. Nguyen, S. Ghannay, N. Tomashenko, and Y. Est` eve, “TED-LIUM 3: Twice as much data and corpus repartition for experiments on speaker adaptation,” in Proc. SPECOM , 2018, pp. 198–208. [36] J. Carletta et al. , “The AMI meeting corpus: A pre-announcement,” in Proc. MLMI Workshop , 2005, pp. 28–39. [37] M. Del Rio et al. , “Earnings-22: A practical benchmark for ac-cents in the wild,” in Proc. Interspeech , 2022, pp. 4277–4281. [38] A. Conneau et al. , “FLEURS: Few-shot learning evaluation of universal representations of speech,” in Proc. SLT , 2023, pp. 798–805.

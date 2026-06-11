@@ -1,0 +1,576 @@
+Title: TLDR: Compressing Audio Tokens for Efficient Autoregressive Text-to-Speech
+
+URL Source: https://arxiv.org/pdf/2606.09019v1
+
+Published Time: Tue, 09 Jun 2026 01:42:25 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# TLDR: Compressing Audio Tokens for Efficient Autoregressive Text-to-Speech 
+
+Yejin Lee 1, Junwon Moon 1, Hyoeun Kim 1, Hyunjin Choi 1, Heeseung Kim 2, Kyuhong Shim 1 
+
+> 1
+
+Sungkyunkwan University, 2 University of Seoul 
+
+{yj.lee, mppn98, khshim}@skku.edu , gmltmd789@uos.ac.kr 
+
+## Abstract 
+
+Codec-based autoregressive (AR) speech language models have achieved strong text-to-speech (TTS) quality by modeling speech as sequences of discrete audio tokens with large pretrained backbones. However, this token-level formulation creates a structural efficiency bottleneck: speech-token sequences are much longer than text sequences, requiring the AR backbone to perform causal computation at every token position and maintain a KV cache that grows with the sequence length. We introduce TLDR, a patch-based autoregressive framework that accelerates codec-based AR-TTS by shifting the causal modeling from token-level speech sequences to patch-level sequences. TLDR groups consecutive codec tokens into compact latent patches using a lightweight compressor, models the resulting shorter patch sequence with a frozen pretrained AR-TTS backbone adapted by LoRA, and reconstructs fine-grained speech tokens within each patch using a speaker-conditioned extractor. With a patch size of 4, TLDR achieves a 1.8x inference speedup over the baseline AR-TTS model and reduces global KV-cache memory by up to 75%. Experimental results indicate that patch-level global causal modeling can be a practical way to reduce the inference cost of pretrained codec-based AR-TTS systems without replacing the existing modules. 
+
+## 1 Introduction 
+
+Codec-based autoregressive text-to-speech (AR-TTS) systems generate speech as sequences of discrete audio tokens produced by neural audio codecs [ 7 , 42 ]. This discretization recasts speech generation as next-token prediction over a finite vocabulary, replacing direct waveform modeling with discrete symbolic prediction [ 4, 14 , 33 , 40 , 44 ]. Consequently, AR-TTS systems predict symbolic acoustic units with a standard categorical objective instead of directly estimating high-dimensional waveform samples, yielding a tractable formulation for speech generation. Despite this advantage, this token-level formulation imposes an inference bottleneck. Because codec tokenizers encode speech at a high frame rate, even a short utterance can comprise hundreds or thousands of codec tokens. Conventional AR-TTS systems therefore require one forward pass through the autoregressive decoder for each generated codec token. Thus, the main efficiency challenge arises not only from long codec-token sequences, but also from requiring the autoregressive decoder to predict at every codec-token timestep. Existing acceleration methods, such as multi-token prediction (MTP) [ 13 , 26 , 37 ] and speculative decoding (SD) [ 3, 21 ], accelerate token-level autoregressive decoding by predicting multiple future tokens or verifying draft predictions more efficiently. However, they retain codec-token-level model-ing: the AR-TTS model still predicts at codec-token timesteps, and its KV cache remains tied to the length of the generated codec-token sequence. In this paper, we propose TLDR , a patch-based autoregressive TTS framework that shifts the modeling unit of a pretrained AR-TTS backbone from individual codec tokens to codec-token patches. 
+
+> Preprint.
+> arXiv:2606.09019v1 [cs.SD] 8 Jun 2026 𝑥 !
+> (T)
+> 𝑥 "
+> (O)
+> 𝑥 #
+> (O)
+> 𝑥 $
+> (O)
+> 𝑥 %
+> (L)
+> 𝑥 &
+> (O)
+> 𝑥 '
+> (N)
+> 𝑥 (
+> (G)
+> 𝑥 )
+> (D)
+> 𝑥 *
+> (O)
+> 𝑥 "!
+> (N)
+> 𝑥 ""
+> (T)
+> 𝑥 "'
+> (A)
+
+…
+
+AR -TTS 
+
+(A) Conventional Autoregressive TTS 
+
+T
+
+𝑥 !
+
+O O O
+
+𝑥 " 𝑥 # 𝑥 $
+
+> Patch -to -Token
+> Extractor
+> Conditioning
+
+AR -TTS 
+
+> 𝑥 !:#
+> (LONG)
+
+(B) Autoregressive TTS with TLDR 
+
+> 𝑥 "
+> (O)
+> 𝑥 #
+> (O)
+> 𝑥 $
+> (O)
+> 𝑥 %
+> (L)
+> 𝑥 &
+> (O)
+> 𝑥 '
+> (N)
+> 𝑥 (
+> (G)
+> 𝑥 )
+> (D)
+> 𝑥 *
+> (O)
+> 𝑥 "!
+> (N)
+> 𝑥 ""
+> (T)
+> 𝑥 "'
+> (D)
+
+…
+
+> 𝑥 #:$%
+> (DONT)
+> 𝑥 $% :$&
+> (READ)
+> 𝑥 ':!
+> (TOOO)
+> 𝑥 !:#
+> (LONG)
+> 𝑥 #:$%
+> (DONT)
+> Token -to -Patch
+> Compressor
+
+R
+
+𝑥 "# 
+
+E A D
+
+𝑥 "$ 𝑥 "% 𝑥 "& 
+
+> Speaker
+> Embedding
+
+Figure 1: Overview of TLDR, a patch-based autoregressive framework for speech generation. A token-to-patch compressor maps consecutive codec tokens into patch representations, a patch-level global sequence model predicts the patch sequence, and a patch-to-token extractor generates fine-grained codec tokens within each patch. TLDR partitions consecutive codec tokens into patches and feeds the resulting patch sequence to the pretrained AR-TTS backbone, which serves as the global sequence model. A lightweight token-to-patch compressor maps codec-token spans into patch representations, while a speaker-conditioned patch-to-token extractor generates fine-grained codec tokens within each patch. The key assumption behind TLDR is that codec-token sequences are locally redundant but globally structured. Local redundancy arises because adjacent codec frames describe temporally contiguous speech segments whose acoustic attributes typically vary smoothly over short time spans. Global structure, in contrast, is governed by slower dependencies such as text–speech alignment, prosodic progression, and speaker-consistent generation. This distinction motivates reducing the update rate of the largest causal model from codec-token timesteps to patch timesteps. Accordingly, TLDR compresses local token spans into patch representations for global autoregressive modeling and reconstructs token-level detail within each patch using a lightweight speaker-conditioned extractor. By requiring one global-backbone forward pass per patch rather than per codec token, TLDR reduces the number of autoregressive decoding steps performed by the global sequence model. The resulting shorter patch sequence also reduces the KV cache maintained by the global backbone. Although TLDR still performs autoregressive decoding within each patch, this local decoding is bounded by the patch size k and is handled by the patch-to-token extractor rather than the pretrained backbone. The main efficiency gain therefore comes from reducing the update frequency and KV-cache growth of the global causal model from the token rate to the patch rate. Our contributions are summarized as follows: • We recast codec-based AR-TTS as patch-level autoregressive modeling, reducing the update frequency of the global causal backbone from codec-token timesteps to patch timesteps. • We retrofit a pretrained AR-TTS backbone to this patch-level formulation by freezing its base weights and training LoRA adapters together with a token-to-patch compressor and a speaker-conditioned patch-to-token extractor, while retaining the original tokenizer, text frontend, and vocoder. 2• We quantify the quality–latency–memory trade-off induced by patch size in zero-shot TTS, showing that TLDR reduces global-backbone KV-cache memory by approximately 75% and achieves a 1.8 × speedup at k = 4 with minimal degradation in recognition accuracy and speaker similarity. 
+
+## 2 Related Work 
+
+2.1 Autoregressive and Non-Autoregressive Text-to-Speech 
+
+Codec-token-based AR-TTS models represent speech as discrete audio-token sequences produced by neural audio codecs and formulate speech synthesis as conditional next-token prediction. This formulation underlies recent zero-shot TTS systems built on neural audio codecs such as Sound-Stream [ 42 ] and EnCodec [ 7], as well as audio language modeling frameworks such as AudioLM [ 2 ]. VALL-E [ 33 ] instantiated this approach by autoregressively generating codec tokens from text and a short speech prompt. Recent systems, including the CosyVoice series [ 9, 11 , 10 ], Seed-TTS [ 1], and LLaSA [ 40 ], further demonstrate the effectiveness of codec-token autoregression for zero-shot TTS. Despite these advances, codec-token-based AR-TTS systems remain latency-intensive because each generated codec token requires a sequential autoregressive decoding step. In parallel, non-autoregressive (NAR) TTS models [ 30 , 31 ], including diffusion- and flow-matching-based architectures [ 6 , 12 , 18 , 20 , 24 , 36 ], reduce latency by removing or shortening autoregressive dependency chains. However, many NAR systems rely on duration or alignment estimation, masking schedules, or iterative denoising/flow procedures, which differ from causal codec-token autoregression. TLDR instead targets efficiency within the AR-TTS paradigm: it preserves autoregressive generation but shifts the global modeling unit from individual codec tokens to codec-token patches. 
+
+2.2 Efficient Decoding for Autoregressive Generation 
+
+Efficient decoding techniques aim to reduce the per-token inference cost of autoregressive generation while preserving the token-level prediction structure. Multi-token prediction (MTP) [ 13 , 26 , 37 ]augments autoregressive models with auxiliary heads that predict multiple future tokens from a shared hidden representation. Speculative decoding (SD) [ 3, 21 ] uses a smaller draft model to propose candidate tokens and verifies multiple candidates in parallel with the target model, reducing the effective target-model cost per accepted token. Recent studies have adapted SD techniques to AR-TTS [ 22 , 23 ]. Although these methods accelerate token-level decoding, they still perform prediction at individual codec-token timesteps, and the KV cache continues to grow with the generated token sequence. In contrast, TLDR shifts the modeling unit from individual codec tokens to codec-token patches, reducing both the number of global decoding steps and the KV cache maintained by the global sequence model. 
+
+2.3 Patch-level Sequence Modeling 
+
+Patch-level sequence modeling reduces the effective length of long discrete sequences by aggregating low-level tokens into higher-level units. In the text domain, MEGABYTE [ 41 ] partitions byte sequences into patches and combines a global model with a local model to autoregressively model long sequences. BLT [ 27 ] further segments bytes into entropy-based dynamic patches and treats patches as the primary units of computation, improving efficiency and robustness in byte-level language modeling. Hierarchical Transformer architectures, such as Hourglass [25] and H-Net [16], also shorten causal sequences through hierarchical or dynamically chunked representations. These approaches motivate patch-level modeling as a way to reduce sequential computation, but they mainly target text or byte-level language modeling. For speech generation, DiTAR [ 17 ] introduced a patch-based autoregressive framework that combines a causal language model with a diffusion Transformer over continuous speech representations. DiTAR therefore differs from TLDR in both representation and integration target: it constructs and trains a new continuous-latent generative pipeline from scratch, whereas TLDR retrofits an existing discrete codec-based AR-TTS system without replacing the pretrained AR backbone or the surrounding TTS pipeline. 33 Method 
+
+3.1 TLDR Overview 
+
+Let x = ( x1, . . . , x T ) denote the target speech token sequence, including the end-of-sequence (EOS) token. Given a patch size k, we divide the target sequence into N = ⌈T /k ⌉ contiguous patches: 
+
+Xi = ( x(i−1) k+1 , . . . , x min( ik,T )), i = 1 , . . . , N. 
+
+If the final patch contains fewer than k tokens, it is padded for fixed-length patch processing, and padded positions are excluded from the training loss. TLDR shifts autoregressive modeling from individual speech tokens to the patch sequence 
+
+(X1, . . . , X N ). The framework consists of three components: (i) a token-to-patch compressor, (ii) a pretrained AR-TTS backbone used as a patch-level global Transformer, and (iii) a speaker-conditioned patch-to-token extractor. In the zero-shot setting, reference speech tokens are also compressed into prompt patch representations and prepended to the generated patch sequence as acoustic conditioning. 
+
+3.2 Token-to-Patch Compressor 
+
+The compressor maps each patch Xi to a latent representation pi, yielding a compressed sequence 
+
+(p1, . . . , p N ). For each patch, we initialize pi by mean-pooling the embeddings of its constituent tokens and applying RMSNorm. The compressor then refines the patch representations with cross-attention that aggregates local token-level acoustic information. With fixed-length patches, the compressor aggregates token-level information within each patch while preserving patch boundaries. Details of the compressor architecture are provided in Appendix A.1. 
+
+3.3 Patch-Level Transformer 
+
+The patch-level Transformer uses a pretrained codec-based AR-TTS backbone to model the com-pressed patch sequence. It processes one latent representation per patch, reducing the global sequence length from T speech tokens to approximately T /k patch positions. We freeze the pretrained backbone and train LoRA [15] adapters to adapt it to patch-level representations. For causal patch-level generation, let gi denote the global context used to generate the next patch 
+
+Xi+1 . For i = 0 , . . . , N − 1, gi is computed from the conditioning prefix and the previous patch representations {p1, . . . , p i}, where g0 is computed from the prefix alone. During inference, the global KV cache is updated at the patch rate rather than the speech-token rate. Details are provided in Appendix A.2. 
+
+3.4 Speaker-Conditioned Patch-to-Token Extractor 
+
+The patch-to-token Extractor autoregressively predicts the discrete speech tokens inside each target patch, conditioned on the global patch context gi and a speaker embedding s extracted from the reference speech. Because patch-level compression may weaken fine-grained speaker characteristics such as timbre and speaking style, we condition the Extractor on s to preserve speaker identity throughout generation. The Extractor fuses gi and s into a speaker-conditioned patch context ci, which conditions its cross-attention layers. It factorizes the token distribution within each patch as 
+
+p(Xi+1 | gi, s ) = 
+
+> ℓi+1
+
+Y
+
+> j=1
+
+p(xi+1 ,j | xi+1 ,<j , c i),
+
+where ℓi+1 ≤ k denotes the number of valid tokens in Xi+1 , and xi+1 ,<j denotes the previously generated tokens within the same target patch. Thus, the Extractor performs speaker-conditioned autoregressive generation locally within each patch. We train all trainable modules with teacher-forced token-level cross-entropy over valid target speech tokens. Details are provided in Appendix A.3. 4Table 1: Zero-shot TTS performance on SeedTTS-EN dataset. We compare TLDR with AR and NAR baselines using WER, SIM, and RTF.                                                                                         
+
+> Type Model Params. Dataset SeedTTS-EN WER ↓SIM ↑RTF ↓
+> –Ground-truth --2.14 0.734 –AR Seed-TTS ––2.25 0.762 –Spark-TTS [35] 0.5B 100k Multi. 1.98 0.573 0.952 FireRedTTS2 [38] 1.5B 248k Multi. 1.95 0.665 1.225 IndexTTS2 1.5B 55k Emilia 2.23 0.706 0.823 Llasa 1B 250k Multi. 3.22 0.572 –CosyVoice 0.3B 170k Multi. 4.29 0.609 –CosyVoice2 0.5B 170k Multi. 2.57 0.659 0.457 CosyVoice3 0.5B 1000k Multi. 2.02 0.691 0.605 NAR MaskGCT 1.1B 100k Emilia 2.62 0.714 –E2 TTS (32 NFE) 0.3B 100k Emilia 2.19 0.710 –F5-TTS (32 NFE) 0.3B 100k Emilia 2.00 0.647 –Ours
+> TLDR (k=4 )0.5B + 136.2M 0.6k LibriTTS 2.03 0.684 0.336
+> TLDR (k=6 )0.5B + 136.2M 0.6k LibriTTS 2.10 0.686 0.278
+> TLDR (k=8 )0.5B + 136.2M 0.6k LibriTTS 2.49 0.688 0.248
+
+3.5 Inference 
+
+During inference, TLDR generates speech patch by patch while conditioning on the reference speech prompt. We compress the prompt speech tokens into patch representations before feeding them to the patch-level Transformer. This prompt patchification aligns the temporal granularity of the prompt with that of the generated patch sequence. Without this alignment, the patch-level backbone receives the prompt at a mismatched acoustic rate, effectively stretching the prompt by a factor of k and degrading continuation quality. The resulting prompt patch representations are used as part of the initial context together with the non-speech prefix and text tokens. The model then alternates between patch-level context modeling and token-level patch generation until it produces an EOS token or reaches the maximum number of patches. After decoding, all generated patches are concatenated into a single speech-token sequence and passed to the vocoder for waveform reconstruction. 
+
+## 4 Experiments 
+
+We evaluate TLDR along two axes. First, we examine whether shifting global causal modeling from token positions to patch positions preserves the intelligibility and speaker similarity of the underlying backbone. Second, we analyze the quality–latency–memory trade-off induced by varying the patch size k. We use CosyVoice3 [ 10 ] as the reference backbone: because TLDR shares its tokenizer, text frontend, and vocoder, performance differences primarily reflect the proposed patch-level reformulation. 
+
+4.1 Experimental Setup Training setup. We train TLDR on 585 hours of LibriTTS [ 43 ], using the CosyVoice3 speech tokenizer (25 tokens/sec, V = 6 ,561 ) and the Qwen2 text tokenizer [ 39 ]. For speaker conditioning, we extract speaker embeddings from the reference speech using WavLM [ 5] with an ECAPA-TDNN head [ 8]. The patch-level Transformer is initialized from the CosyVoice3 AR backbone, kept frozen, and adapted only through LoRA adapters. The token-to-patch compressor and patch-to-token extractor are trained from scratch. This results in 136.2M trainable parameters out of 648M total parameters. We report results for k ∈ { 4, 6, 8}; more details are provided in Tables 7 and 8. 5Table 2: Zero-shot TTS performance on LibriSpeech-PC . We compare TLDR with AR and NAR baselines using WER, SIM, and UTMOS.                                                                       
+
+> Type Model Params. Dataset LibriSpeech-PC WER ↓SIM ↑UTMOS ↑
+> –Ground-truth ––2.23 0.69 4.10 AR CosyVoice 0.3B 170k Multi. 3.59 0.66 4.14 CosyVoice2 0.5B 170k Multi. 2.05 0.657 4.38
+> FireRedTTS 0.6B 248k Multi. 2.69 0.47 –DiTAR 0.6B 100k Emilia 2.39 0.67 4.22 CosyVoice3 0.5B 1000k Multi. 1.95 0.718 4.28 NAR MaskGCT (50 NFE) 1.1B 100k Emilia 2.72 0.69 3.90 E2 TTS (32 NFE) 0.3B 100k Emilia 2.95 0.69 3.56 F5-TTS (32 NFE) 0.3B 100k Emilia 2.42 0.66 3.88 Ours TLDR ( k=4 )0.5B + 136.2M 0.6k LibriTTS 2.15 0.710 4.24 TLDR ( k=6 )0.5B + 136.2M 0.6k LibriTTS 2.20 0.708 4.23 TLDR ( k=8 )0.5B + 136.2M 0.6k LibriTTS 2.53 0.709 4.23
+
+Evaluation protocol. We evaluate zero-shot TTS on SeedTTS-EN [ 1] and LibriSpeech-PC subset B [ 28 ], containing 1,088 and 1,127 utterances, respectively. For objective evaluation, we report word error rate (WER), speaker similarity (SIM), UTMOS [ 32 ], and real-time factor (RTF) where applicable. WER is computed by transcribing generated speech with whisper large-v3 [29 ] and comparing the transcripts against the ground-truth text. SIM is computed between the prompt and synthesized speech using WavLM-TDNN [ 5]. To check that the SIM results are not specific to this evaluator, we additionally report speaker similarity with an independent WeSpeaker model in Appendix C. 
+
+Subjective evaluation. We additionally conduct a crowdsourced subjective evaluation with 25 English speakers. SMOS (similarity mean opinion score) measures perceived speaker similarity to the prompt on a 1–5 scale with 0.5-point increments. For naturalness, raters compare TLDR against the CosyVoice3 baseline using both CMOS (comparative mean opinion score) on a −3 to +3 scale and an A/B preference test; positive CMOS scores and A/B preferences indicate preference for TLDR. 
+
+Inference protocol. We measure RTF on a single A100 80GB GPU with batch size 1, using a fixed 100-token generation corresponding to approximately 4 seconds of audio. Inference memory is measured with batch size 64 under fp16 SDPA across output durations of 4–20 seconds. All systems use the same sampling configuration: temperature 0.7, top-k 25 , and top-p 0.7.
+
+Baseline scores. Unless otherwise noted, the baseline results in Tables 1 and 2 are taken from the official CosyVoice3 repository. We evaluate F5-TTS and E2 TTS under matched decoding settings, and take the DiTAR result in Table 2 from the original paper [17]. 
+
+4.2 Experimental Results Zero-shot TTS Quality. Tables 1 and 2 summarize the main zero-shot TTS results. Overall, TLDR preserves much of the CosyVoice3 backbone’s quality while using a substantially smaller adaptation set. With k=4 , TLDR closely matches CosyVoice3 on SeedTTS-EN and remains competitive with strong AR baselines on LibriSpeech-PC. These results suggest that patch-level decoding can improve efficiency without substantially degrading zero-shot quality. We also conduct a subjective evaluation on the SeedTTS-EN. As shown in Table 3, TLDR (k=4 ) obtains comparable speaker-similarity ratings and slightly higher naturalness preference than CosyVoice3. We further validate the role of speaker conditioning in Section 5.2. 
+
+WER–RTF Trade-off. Figure 2 compares the WER–RTF trade-off of TLDR under different patch sizes against existing speech generation models. Larger patches reduce the number of global 60.2 0.4 0.6 0.8 1.0 1.2 1.4 
+
+RTF 
+
+1.8 
+
+2.0 
+
+2.2 
+
+2.4 
+
+2.6 
+
+> WER (%)
+
+k=4 
+
+WER=2.03% 
+
+RTF=0.336 
+
+k=6 
+
+WER=2.10% 
+
+RTF=0.278 
+
+k=8 
+
+WER=2.49% 
+
+RTF=0.248 
+
+CosyVoice3 
+
+WER=2.02% 
+
+RTF=0.605 
+
+CosyVoice2 
+
+WER=2.57% 
+
+RTF=0.457 
+
+IndexTTS2 
+
+WER=2.23% 
+
+RTF=0.823 
+
+Spark TTS 
+
+WER=1.98% 
+
+RTF=0.952 
+
+FireRedTTS2 
+
+WER=1.95% 
+
+RTF=1.225 
+
+TLDR (Ours) 
+
+CosyVoice3 
+
+CosyVoice2 
+
+IndexTTS2 
+
+Spark-TTS 
+
+FireRedTTS2 Figure 2: WER–RTF trade-off of TLDR with different patch sizes, compared with existing speech generation models. 4 8 12 16 20     
+
+> Output duration (s)
+> 100
+> 200
+> 300
+> 400
+> 500
+> 600
+> 700
+> 800
+> KV cache size (MB)
+> KV cache memory
+> CosyVoice3 (Baseline)
+> TLDR (k=4)
+> TLDR (k=6)
+> TLDR (k=8)
+> 4812 16 20
+> Output duration (s)
+> 2500
+> 5000
+> 7500
+> 10000
+> 12500
+> 15000
+> 17500
+> 20000
+> Peak GPU memory (MB)
+> End-to-end peak memory
+> CosyVoice3 (Baseline)
+> TLDR (k=4)
+> TLDR (k=6)
+> TLDR (k=8)
+
+Figure 3: Inference memory comparison between TLDR and the CosyVoice3 backbone across output durations at batch size 64. (Left) global KV cache size; (Right) end-to-end peak GPU memory. autoregressive decoding steps, lowering RTF. However, they also require the local decoder to predict more speech tokens within each patch, which can hurt WER. Since speaker similarity and perceptual quality remain relatively stable across patch sizes, increasing k mainly trades content accuracy for faster inference. 
+
+Memory Efficiency. Figure 3 shows that the efficiency benefits of patch-level decoding extend beyond decoding latency to memory. Because the global Transformer caches one KV state per patch instead of per speech token, the global KV cache grows as T /k rather than T , and the gap relative to CosyVoice3 widens with output duration (see Table 6). End-to-end peak GPU memory at batch 64 also decreases, even after accounting for the added compressor and extractor parameters. This is because the dominant memory cost, the global KV cache, grows at the patch rate rather than the token rate. This is where TLDR’s structural reformulation matters most: in batched serving, KV-cache occupancy rather than parameter count is typically the binding constraint [ 19 ], so per-patch caching directly translates into higher achievable batch size and throughput. 7Table 3: Subjective evaluation on SeedTTS-EN using SMOS, CMOS, and A/B preference. 
+
+System SMOS (↑) CMOS (↑) A/B Preference (%) 
+
+CosyVoice3 3.739 0.00 46.1% 
+
+TLDR (k=4 ) 3.953 0.19 53.9% 0 5 10 15 20                             
+
+> Text token
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> 140
+> 160
+> CosyVoice3 (token-level)
+> Speech token
+> Layer 2
+> 0510 15 20
+> Text token
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> 140
+> 160
+> Speech token
+> Layer 12
+> 0510 15 20
+> Text token
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> 140
+> 160
+> Speech token
+> Layer 17
+> 0510 15 20
+> Text token
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> 140
+> 160
+> Speech token
+> Layer 18
+> 0510 15 20
+> Text token
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> TLDR (patch-level)
+> Speech patch
+> 0510 15 20
+> Text token
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> Speech patch
+> 0510 15 20
+> Text token
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> Speech patch
+> 0510 15 20
+> Text token
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+> Speech patch
+
+Figure 4: Text–speech cross-attention maps for CosyVoice3 and TLDR ( k=4 ). Despite the com-pressed speech axis, TLDR preserves the left-to-right text–speech alignment observed in the token-level backbone. 
+
+## 5 Analysis 
+
+We analyze the main design choices of TLDR on SeedTTS-EN. Unless otherwise noted, all variants use k=4 and share the same tokenizer, text frontend, vocoder, and training data, so that differences reflect the ablated component. We study LoRA adaptation of the frozen backbone, speaker conditioning in the patch-to-token extractor, and within-patch parallelization. The compressor cross-attention ablation is provided in Appendix Table 9. 
+
+5.1 LoRA Adaptation of the Frozen Backbone 
+
+We test whether the frozen CosyVoice3 backbone can be reused directly with patch-level inputs. Although the backbone already contains strong autoregressive speech modeling capability, it is pretrained on token-level sequences rather than compressed patch representations. We compare the full model with a variant that removes LoRA and trains only the token-to-patch compressor and patch-to-token extractor. Table 4 shows that removing LoRA substantially degrades WER while leaving SIM nearly unchanged. This suggests that LoRA mainly adapts the frozen backbone to the patch-level input space needed for content prediction. Without this adaptation path, the compressor and extractor alone do not sufficiently bridge the mismatch between token-level pretraining and patch-level inputs. 
+
+5.2 Speaker Conditioning 
+
+We examine the role of reference-speaker conditioning in the patch-to-token extractor. In the ablated variant, we remove the speaker embedding s and condition the local generator only on the global patch context gi.Table 5 shows that removing speaker conditioning improves WER but substantially reduces SIM. This trade-off suggests that the global patch context is sufficient for content prediction, while explicit 8Table 4: Effect of LoRA adaptation on SeedTTS-EN. Backbone adaptation WER (%) ↓ SIM ↑
+
+No LoRA 7.66 0.687 
+
++ LoRA (Ours) 2.03 0.684 Table 5: Effect of speaker conditioning on SeedTTS-EN. Model variant WER (%) ↓ SIM ↑
+
+w/o speaker cond. 1.77 0.580 w/ speaker cond. 2.03 0.684 Table 6: Comparison of patch-level reformulation and within-patch parallelization on SeedTTS-EN. Variant WER (%) ↓ SIM ↑ Global KV cache ratio @12 s ↓              
+
+> CosyVoice3 2.02 0.691 1.00 ×
+> TLDR ( k=4 )2.03 0.684 0.26 ×
+> TLDR ( k=4 )+MTP (3 heads) 4.85 0.631 0.26 ×
+> TLDR ( k=4 ), NAR Patch-to-Token Extractor 3.79 0.573 0.26 ×
+
+speaker conditioning plays a central role in preserving the reference speaker under patch-level generation. Since zero-shot TTS requires both intelligibility and speaker similarity, we keep speaker conditioning in the main model. 
+
+5.3 Patch-Level Reformulation vs. Within-Patch Parallelization 
+
+We compare TLDR with variants that parallelize token prediction within each patch. This comparison distinguishes the effect of shortening the global autoregressive sequence from the effect of paralleliz-ing the local patch-to-token decoding. The multi-token prediction (MTP) variant predicts multiple future tokens inside each patch using additional heads, while the NAR extractor predicts all tokens in a patch in parallel. Table 6 shows that TLDR reduces the global KV cache to 0.26 × that of CosyVoice3 at 12 seconds, while maintaining comparable WER and SIM. The MTP and non-autoregressive extractor variants use the same patch-level global sequence as TLDR, and therefore have the same global KV-cache ratio. However, both variants degrade WER and SIM, indicating that parallelizing within-patch prediction hurts intelligibility and speaker similarity. These results suggest that the main memory reduction comes from running the global backbone at the patch rate, while autoregressive decoding inside each patch remains important for preserving intelligibility and speaker similarity. 
+
+5.4 Text–Speech Alignment under Patch-Level Decoding 
+
+Because speech evolves continuously over time, adjacent codec tokens often encode locally correlated acoustic patterns. This locality suggests that grouping neighboring tokens into patches can preserve the coarse text–speech alignment of the pretrained backbone, while representing speech at a lower temporal resolution. We test this hypothesis by visualizing text–speech cross-attention maps for TLDR and CosyVoice3 on the same utterance. Figure 4 compares the cross-attention maps of CosyVoice3 and TLDR. In later layers, both models show a monotonic text–speech alignment: earlier speech positions attend to earlier text tokens, while later speech positions attend to later text tokens. The difference lies in the speech-axis resolution. In CosyVoice3, each row corresponds to an individual speech token, whereas in TLDR, each row corresponds to a speech patch. This qualitative comparison supports our hypothesis that patch-level decoding preserves the coarse left-to-right alignment learned by the pretrained backbone. Rather than collapsing the alignment, TLDR represents a similar text–speech alignment structure at a coarser temporal granularity. 96 Conclusion 
+
+In this work, we proposed TLDR, a patch-based autoregressive framework that reduces the inference cost of pretrained codec-based AR-TTS systems. TLDR decouples acoustic tokenization from the temporal resolution of global causal modeling: speech remains represented as discrete codec tokens, while the frozen backbone models a shorter sequence of patch-level representations. By retaining the existing tokenizer, text frontend, vocoder, and pretrained backbone, TLDR retrofits an existing AR-TTS pipeline rather than training a new system from scratch. Patch size exposes an explicit quality–latency–memory control variable. At k = 4 , TLDR reduces global-backbone KV-cache memory by approximately 75% and lowers RTF from 0.605 to 0.336, corresponding to a 1.8 ×
+
+speedup, with minimal absolute WER increase and a SIM decrease relative to the baseline. 
+
+## References 
+
+[1] Philip Anastassiou, Jiawei Chen, Jitong Chen, Yuanzhe Chen, Zhuo Chen, Ziyi Chen, Jian Cong, Lelai Deng, Chuang Ding, Lu Gao, et al. Seed-tts: A family of high-quality versatile speech generation models. 
+
+arXiv preprint arXiv:2406.02430 , 2024. [2] Zalán Borsos, Raphaël Marinier, Damien Vincent, Eugene Kharitonov, Olivier Pietquin, Matt Sharifi, Dominik Roblek, Olivier Teboul, David Grangier, Marco Tagliasacchi, and Neil Zeghidour. AudioLM: A language modeling approach to audio generation. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 31:2523–2533, 2023. [3] Charlie Chen, Sebastian Borgeaud, Geoffrey Irving, Jean-Baptiste Lespiau, Laurent Sifre, and John Jumper. Accelerating large language model decoding with speculative sampling. arXiv preprint arXiv:2302.01318 ,2023. [4] Sanyuan Chen, Shujie Liu, Long Zhou, Yanqing Liu, Xu Tan, Jinyu Li, Sheng Zhao, Yao Qian, and Furu Wei. Vall-e 2: Neural codec language models are human parity zero-shot text to speech synthesizers. arXiv preprint arXiv:2406.05370 , 2024. [5] Sanyuan Chen, Chengyi Wang, Zhengyang Chen, Yu Wu, Shujie Liu, Zhuo Chen, Jinyu Li, Naoyuki Kanda, Takuya Yoshioka, Xiong Xiao, et al. Wavlm: Large-scale self-supervised pre-training for full stack speech processing. IEEE Journal of Selected Topics in Signal Processing , 16(6):1505–1518, 2022. [6] Yushen Chen, Zhikang Niu, Ziyang Ma, Keqi Deng, Chunhui Wang, Jian Zhao, Kai Yu, and Xie Chen. F5-tts: A fairytaler that fakes fluent and faithful speech with flow matching. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 6255–6271, 2025. [7] Alexandre Défossez, Jade Copet, Gabriel Synnaeve, and Yossi Adi. High fidelity neural audio compression. 
+
+arXiv preprint arXiv:2210.13438 , 2022. [8] Brecht Desplanques, Jenthe Thienpondt, and Kris Demuynck. Ecapa-tdnn: Emphasized channel attention, propagation and aggregation in tdnn based speaker verification. arXiv preprint arXiv:2005.07143 , 2020. [9] Zhihao Du, Qian Chen, Shiliang Zhang, Kai Hu, Heng Lu, Yexin Yang, Hangrui Hu, Siqi Zheng, Yue Gu, Ziyang Ma, et al. Cosyvoice: A scalable multilingual zero-shot text-to-speech synthesizer based on supervised semantic tokens. arXiv preprint arXiv:2407.05407 , 2024. [10] Zhihao Du et al. Cosyvoice 3: Towards in-the-wild speech generation via scaling-up and post-training. 
+
+arXiv preprint arXiv:2505.17589 , 2025. [11] Zhihao Du, Yuxuan Wang, Qian Chen, Xian Shi, Xiang Lv, Tianyu Zhao, Zhifu Gao, Yexin Yang, Changfeng Gao, Hui Wang, et al. Cosyvoice 2: Scalable streaming speech synthesis with large language models. arXiv preprint arXiv:2412.10117 , 2024. [12] Sefik Emre Eskimez, Xiaofei Wang, Manthan Thakker, Canrun Li, Chung-Hsien Tsai, Zhen Xiao, Hemin Yang, Zirun Zhu, Min Tang, Xu Tan, et al. E2 tts: Embarrassingly easy fully non-autoregressive zero-shot tts. In 2024 IEEE spoken language technology workshop (SLT) , pages 682–689. IEEE, 2024. [13] Fabian Gloeckle, Badr Youbi Idrissi, Baptiste Rozière, David Lopez-Paz, and Gabriel Synnaeve. Better & faster large language models via multi-token prediction. arXiv preprint arXiv:2404.19737 , 2024. [14] Hao-Han Guo, Yao Hu, Kun Liu, Fei-Yu Shen, Xu Tang, Yi-Chen Wu, Feng-Long Xie, Kun Xie, and Kai-Tuo Xu. Fireredtts: A foundation text-to-speech framework for industry-level generative speech applications. arXiv preprint arXiv:2409.03283 , 2024. 
+
+10 [15] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. ICLR , 1(2):3, 2022. [16] Sukjun Hwang, Brandon Wang, and Albert Gu. Dynamic chunking for end-to-end hierarchical sequence modeling. In International Conference on Learning Representations , 2026. [17] Dongya Jia, Zhuo Chen, Jiawei Chen, Chenpeng Du, et al. Ditar: Diffusion transformer autoregressive modeling for speech generation. In International Conference on Machine Learning (ICML) , 2025. [18] Jaehyeon Kim, Sungwon Kim, Jungil Kong, and Sungroh Yoon. Glow-TTS: A generative flow for text-to-speech via monotonic alignment search. In Advances in Neural Information Processing Systems , volume 33, pages 8067–8077, 2020. [19] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph Gonzalez, Hao Zhang, and Ion Stoica. Efficient memory management for large language model serving with pagedattention. In Proceedings of the 29th symposium on operating systems principles , pages 611–626, 2023. [20] Matthew Le, Apoorv Vyas, Bowen Shi, Brian Karrer, Leda Sari, Rashel Moritz, Mary Williamson, Vimal Manohar, Yossi Adi, Jay Mahadeokar, et al. Voicebox: Text-guided multilingual universal speech generation at scale. Advances in neural information processing systems , 36:14005–14034, 2023. [21] Yaniv Leviathan, Matan Kalman, and Yossi Matias. Fast inference from transformers via speculative decoding. In International Conference on Machine Learning (ICML) , 2023. [22] Bohan Li, Hankun Wang, Situo Zhang, Yiwei Guo, and Kai Yu. Fast and high-quality auto-regressive speech synthesis via speculative decoding. In ICASSP 2025-2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 1–5. IEEE, 2025. [23] Zijian Lin, Yang Zhang, Yougen Yuan, Yuming Yan, Jinjiang Liu, Zhiyong Wu, Pengfei Hu, and Qun Yu. Accelerating autoregressive speech synthesis inference with speech speculative decoding. arXiv preprint arXiv:2505.15380 , 2025. [24] Shivam Mehta, Ruibo Tu, Jonas Beskow, Éva Székely, and Gustav Eje Henter. Matcha-tts: A fast tts architecture with conditional flow matching. In ICASSP 2024-2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 11341–11345. IEEE, 2024. [25] Piotr Nawrot, Szymon Tworkowski, Michał Tyrolski, Łukasz Kaiser, Yuhuai Wu, Christian Szegedy, and Henryk Michalewski. Hierarchical transformers are more efficient language models. In Findings of the Association for Computational Linguistics: NAACL 2022 , pages 1559–1571, 2022. [26] Tan Dat Nguyen, Ji-Hoon Kim, Jeongsoo Choi, Shukjae Choi, Jinseok Park, Younglo Lee, and Joon Son Chung. Accelerating codec-based speech synthesis with multi-token prediction and speculative decoding. In 
+
+ICASSP 2025-2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) ,pages 1–5. IEEE, 2025. [27] Artidoro Pagnoni, Ramakanth Pasunuru, Pedro Rodriguez, John Nguyen, Benjamin Muller, Margaret Li, Chunting Zhou, Lili Yu, Jason E Weston, Luke Zettlemoyer, et al. Byte latent transformer: Patches scale better than tokens. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 9238–9258, 2025. [28] Vassil Panayotov, Guoguo Chen, Daniel Povey, and Sanjeev Khudanpur. Librispeech: an asr corpus based on public domain audio books. In 2015 IEEE international conference on acoustics, speech and signal processing (ICASSP) , pages 5206–5210. IEEE, 2015. [29] Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision. In International conference on machine learning ,pages 28492–28518. PMLR, 2023. [30] Yi Ren, Chenxu Hu, Xu Tan, Tao Qin, Sheng Zhao, Zhou Zhao, and Tie-Yan Liu. FastSpeech 2: Fast and high-quality end-to-end text to speech. In International Conference on Learning Representations , 2021. [31] Yi Ren, Yangjun Ruan, Xu Tan, Tao Qin, Sheng Zhao, Zhou Zhao, and Tie-Yan Liu. Fastspeech: Fast, robust and controllable text to speech. Advances in neural information processing systems , 32, 2019. [32] Takaaki Saeki, Detai Xin, Wataru Nakata, Tomoki Koriyama, Shinnosuke Takamichi, and Hiroshi Saruwatari. Utmos: Utokyo-sarulab system for voicemos challenge 2022. arXiv preprint arXiv:2204.02152 ,2022. 
+
+11 [33] Chengyi Wang, Sanyuan Chen, Yu Wu, Ziqiang Zhang, Long Zhou, Shujie Liu, Zhuo Chen, Yanqing Liu, Huaming Wang, Jinyu Li, et al. Neural codec language models are zero-shot text to speech synthesizers. 
+
+arXiv preprint arXiv:2301.02111 , 2023. [34] Hongji Wang, Chengdong Liang, Shuai Wang, Zhengyang Chen, Binbin Zhang, Xu Xiang, Yanlei Deng, and Yanmin Qian. Wespeaker: A research and production oriented speaker embedding learning toolkit. In 
+
+ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) ,pages 1–5. IEEE, 2023. [35] Xinsheng Wang et al. Spark-tts: An efficient llm-based text-to-speech model with single-stream decoupled speech tokens. arXiv preprint arXiv:2503.01710 , 2025. [36] Yuancheng Wang, Haoyue Zhan, Liwei Liu, Ruihong Zeng, Haotian Guo, Jiachen Zheng, Qiang Zhang, Xueyao Zhang, Shunsi Zhang, and Zhizheng Wu. Maskgct: Zero-shot text-to-speech with masked genera-tive codec transformer. arXiv preprint arXiv:2409.00750 , 2024. [37] Yuhao Wang, Heyang Liu, Ziyang Cheng, Ronghua Wu, Qunshan Gu, Yanfeng Wang, and Yu Wang. Vocalnet: Speech llms with multi-token prediction for faster and high-quality generation. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 19595–19612, 2025. [38] Kun Xie et al. Fireredtts-2: Towards long conversational speech generation for podcast and chatbot. arXiv preprint arXiv:2509.02020 , 2025. [39] An Yang, Baosong Yang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Zhou, Chengpeng Li, Chengyuan Li, Dayiheng Liu, Fei Huang, et al. Qwen2 technical report. arXiv preprint arXiv:2407.10671 , 2024. [40] Zhen Ye, Xinfa Zhu, Chi-Min Chan, Xinsheng Wang, Xu Tan, Jiahe Lei, Yi Peng, Haohe Liu, Yizhu Jin, Zheqi Dai, et al. Llasa: Scaling train-time and inference-time compute for llama-based speech synthesis. 
+
+arXiv preprint arXiv:2502.04128 , 2025. [41] Lili Yu, Dániel Simig, Colin Flaherty, Armen Aghajanyan, Luke Zettlemoyer, and Mike Lewis. Megabyte: Predicting million-byte sequences with multiscale transformers. Advances in Neural Information Process-ing Systems , 36:78808–78823, 2023. [42] Neil Zeghidour, Alejandro Luebs, Ahmed Omran, Jan Skoglund, and Marco Tagliasacchi. Soundstream: An end-to-end neural audio codec. IEEE/ACM Transactions on Audio, Speech, and Language Processing ,30:495–507, 2021. [43] Heiga Zen, Viet Dang, Rob Clark, Yu Zhang, Ron J Weiss, Ye Jia, Zhifeng Chen, and Yonghui Wu. Libritts: A corpus derived from librispeech for text-to-speech. arXiv preprint arXiv:1904.02882 , 2019. [44] Siyi Zhou et al. Indextts2: A breakthrough in emotionally expressive and duration-controlled auto-regressive zero-shot text-to-speech. arXiv preprint arXiv:2506.21619 , 2025. 
+
+12 A Implementation Details 
+
+Table 7: Model configuration of TLDR.                  
+
+> Component Hyperparameter Value
+> Token-to-Patch Compressor Layers 1Hidden dim / Heads 896 / 8 FFN dim 3584 Cross-attn heads 4Patch-Level Transformer Backbone Qwen2-0.5B LoRA rank / alpha 64 / 64 Hidden dim 896 Patch-to-Token Extractor Layers 4Hidden dim / Heads 896 / 8 FFN dim 3584 Cross-attn heads 4Slots per layer ( m)4Patching Patch size ( k)4Local window ( w)16
+
+Table 8: Training configuration of TLDR.                      
+
+> Hyperparameter Value
+> Optimizer AdamW Learning rate (Compressor / Extractor) 1e −4
+> Learning rate (LoRA on Patch-Level Transformer) 5e −5
+> Weight decay 0.01
+> LR schedule Linear warmup →cosine decay Warmup steps 5,000
+> Final LR ratio 0.1
+> Per-device batch size 16
+> Gradient accumulation 4
+> Effective batch size 64
+> Max gradient norm 1.0
+> Max training steps 500 ,000
+> Maximum sequence length 512
+> Dropout 0.1
+> Random seed 42
+> Hardware 1×NVIDIA A100 80 GB Training time ∼20 hours
+
+A.1 Details of the Token-to-Patch Compressor 
+
+After mean-pooling and RMSNorm initialization, the token-to-patch compressor refines patch repre-sentations using a block that interleaves a local Transformer layer with patch-to-token cross-attention. The local Transformer layer contextualizes token hidden states with windowed causal self-attention (RoPE positional encoding) and a SwiGLU feed-forward network. The patch representations are then updated through masked patch-to-token cross-attention, where each patch representation serves as a query and attends only to token hidden states assigned to the same patch. The cross-attention mask ensures that patch i only aggregates information from tokens in Xi,preventing information from being mixed across patch boundaries. 
+
+A.2 Details of the Patch-Level Transformer 
+
+We initialize the Patch-Level Transformer from a CosyVoice3-style codec-based AR-TTS checkpoint built on Qwen2-0.5B. LoRA adapters are inserted into the frozen backbone as the trainable parameters in the global path; rank and alpha values are reported in Table 7. 13 Table 9: Effect of the Token-to-Patch Compressor on SeedTTS-EN test-clean. We compare mean pooling with the cross-attention compressor used in TLDR. Patch representation WER (%) ↓ SIM ↑
+
+Mean pool + RMSNorm only 2.66 0.6842 Cross-attention Compressor (TLDR) 2.03 0.6842 The global input sequence is formed by concatenating the non-speech prefix—consisting of SOS, text, and task tokens—with the compressed patch representations. During training, we use a shifted patch sequence so that the context gi used to predict target patch Xi+1 is produced from the prefix and previous patch representations p1, . . . , p i, without exposing the target patch representation pi+1 . This shift is necessary because pi+1 is computed from the tokens in Xi+1 during teacher-forced training; using it to predict Xi+1 would introduce target leakage. 
+
+A.3 Details of the Speaker-Conditioned Patch-to-Token Extractor 
+
+Given a speaker embedding s extracted from the reference speech, we project it to vs = Wss. We then concatenate vs with each global patch context gi and obtain a speaker-conditioned patch context 
+
+˜gi = Wc[gi; vs].
+
+Each decoder layer then projects ˜gi into m cross-attention slots: 
+
+C(ℓ) 
+
+> i
+
+= reshape 
+
+
+
+W (ℓ)slot ˜gi
+
+
+
+∈ Rm×d,
+
+where d is the hidden dimension of the patch-to-token extractor and m is the number of slots per layer (Table 7). At each patch-to-token extractor layer, token representations first attend to the speaker-conditioned slots through cross-attention, followed by causal self-attention within the current patch. Training uses teacher forcing inside each target patch with a token-level cross-entropy loss over valid target speech-token positions, excluding prompt and padding tokens. 
+
+## B Cross-Attention in the Token-to-Patch Compressor 
+
+We test whether the token-to-patch compressor needs a learned cross-attention module or whether a simple average of token embeddings is sufficient. We compare the full TLDR model with a variant that replaces the compressor with mean pooling followed by RMSNorm. All other components, including the LoRA adapters and the patch-to-token extractor, are kept unchanged. Table 9 shows that replacing the cross-attention compressor with mean pooling increases WER from 
+
+2.03 % to 2.66 %, while SIM remains unchanged. This suggests that the compressor mainly affects content modeling rather than speaker preservation. Speaker similarity is not affected because the speaker embedding is injected in the patch-to-token extractor, outside the global patch-level path. In contrast, content accuracy depends on the patch representation passed to the global backbone. Mean pooling gives each token in a patch the same weight, whereas cross-attention learns which token-level features should be passed to the patch representation. We therefore use the cross-attention compressor in the main model. 
+
+## C Speaker Similarity with an Independent Evaluator 
+
+Our main speaker-similarity evaluation uses a WavLM encoder with an ECAPA-TDNN head [ 5, 8 ], which is the same speaker embedding model used for speaker conditioning. To assess whether the reported SIM scores depend on this embedding space, we additionally evaluate speaker similarity using an independent speaker verification model based on WeSpeaker [34]. Table 10 shows the same trend: TLDR achieves a speaker similarity score comparable to CosyVoice3 under the independent evaluator. This suggests that the speaker-similarity comparison is not specific to the WavLM-ECAPA embedding space used for conditioning. 14 Table 10: Speaker similarity evaluated with an independent WeSpeaker SIM model on SeedTTS-EN. The results are reported as mean ± standard deviation. Model WeSpeaker SIM ↑
+
+CosyVoice3 0.7699 ± 0.073 
+
+TLDR ( k=4 ) 0.7619 ± 0.067 
+
+## Limitations and Future Work 
+
+TLDR is studied in a controlled single-backbone setting, leaving several extensions for future work. We evaluate only one AR-TTS backbone, CosyVoice3, adapted on 585 hours of LibriTTS. Future work will test other public AR-TTS backbones, multilingual and larger-scale data, and long-form generation. The current model uses a fixed patch size k, despite the uneven information density of speech. Adaptive patching could assign larger patches to redundant regions and smaller patches to dense transitions, improving the speed–quality trade-off. Our subjective test uses 25 English listeners, sufficient for backbone comparison but limited in scale and language coverage. Future work will expand both. 
+
+## Broader Impact 
+
+TLDR reduces the inference cost of codec-based AR-TTS, lowering energy consumption and hard-ware requirements for high-quality speech synthesis. This can improve accessibility on commodity or resource-constrained hardware. At the same time, TLDR-accelerated systems inherit the risks of TTS systems, including voice forgery. Standard audio-watermarking and deepfake-detection methods remain applicable, and we encourage their use in deployment. 15

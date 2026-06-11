@@ -1,0 +1,913 @@
+Title: Symphony for Speech-to-Text: Supporting Real-Time Medical Voice Interfaces
+
+URL Source: https://arxiv.org/pdf/2605.16545v1
+
+Published Time: Tue, 19 May 2026 00:15:56 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# Symphony for Speech-to-Text: Supporting Real-Time Medical Voice Interfaces 
+
+Arne Nix Robert James Lasse Borgholt Anna B. Ekner Lana Krumm Julius Severin Dan Engel Lars Maaløe Jakob Havtorn* Corti 
+
+Abstract 
+
+After decades of use in dictation and, more recently, ambient documentation, speech is emerging as a primary modality for interacting with technology and AI in healthcare. Yet medical speech recognition remains difficult: systems must capture specialized terminology, resolve contextual ambiguity, and render measurements, abbreviations, and clinical shorthand precisely. Existing solutions are typically optimized either for general-purpose transcription or narrow dictation workflows, limiting their reliability in safety-critical settings and their usefulness for broader clinical workflows. We introduce Symphony for Speech-to-Text, a medical-grade speech recognition system for real-time streaming and batch file-based clinical use. Symphony decomposes the transcription process into specialized components for recognition, formatting, and contextual correction to optimize medical term recall while producing clinically structured text in real time and adapting across use cases. Evaluations on public benchmark and medical speech datasets show that Symphony substantially outperforms state-of-the-art systems in clinical settings while matching or exceeding them in general-domain settings, suggesting robust generalization rather than overfitting. We release a clinical benchmark dataset to support reliable validation and further progress in medical speech recognition. Sym-phony is available through a production-grade API for live dictation, conversational transcription, and batch audio file processing. 
+
+1 Introduction 
+
+Speech is becoming a core interface for healthcare. Clinicians already use speech recognition for documentation capture, electronic health record (EHR) navigation, and workflow automation, and the next generation of clinical software will increasingly rely on speech-enabled interaction for ambient workflows, structured data capture, and real-time assistance [Goss et al., 2019, Falcetta et al., 2023, Haberle et al., 2024]. In this setting, speech recognition is not merely a transcription utility; it is a foundational layer for both the everyday software clinicians rely on and the AI-enabled solutions healthcare builders are advancing. This raises a higher bar than general-purpose automatic speech recognition is designed to meet. In clinical settings, systems must accurately capture rare and specialized terminology, preserve distinc-tions that are medically consequential, and render shorthand, acronyms, dosages, and measurements in a form that is immediately usable downstream [Hodgson et al., 2017, Zhou et al., 2018]. Errors at this level are not only cosmetic. They increase correction burden, degrade trust, and limit the usefulness of speech interfaces in real-world care delivery. 
+
+*Correspondence to jdh@corti.ai , Corti. To get access to Symphony for Speech-to-Text, visit Corti Docs. 
+
+> arXiv:2605.16545v1 [cs.LG] 15 May 2026
+
+Most existing speech recognition systems are trained and evaluated as broad-domain transcription models [Radford et al., 2023]. While they have improved substantially in recent years, their core objective remains the production of plausible text from audio. That objective is insufficient for medicine, where correctness depends not only on word recognition, but also on domain-specific formatting, contextual disambiguation, and adaptation to the task at hand. A system that transcribes “fifty” correctly but fails to render a dosage, unit, acronym, or abbreviation in its clinically intended form is often still wrong in practice. Conversely, systems optimized narrowly for single-speaker medical dictation often fail to generalize to conversational clinical audio, where overlapping speech, turn-taking, disfluencies, and variable acoustic conditions make transcription substantially harder [Liesenfeld et al., 2023]. In these settings, such systems may not only miss clinically relevant content, but also produce unstable outputs, including ungrounded insertions and other hallucinated text, further limiting their reliability in real-world use [Frieske and Shi, 2024]. Recent work has begun to use large language models to improve transcription outputs through rescoring, reformatting, or post-hoc correction [Yang et al., 2023, Radhakrishnan et al., 2023]. These methods show that medical speech recognition benefits from stronger language understanding, but are often introduced as loosely coupled post-processing steps rather than as an integrated system design [Hu et al., 2024]. As a result, they do not fully address the need for real-time operation, structured output, and task-specific adaptation across different clinical workflows. Therefore, we argue that medical speech recognition should not be viewed as a single-stage tran-scription problem. Rather, it is better understood as a structured inference problem in which raw recognition, linguistic normalization, and contextual correction must work together to produce text that is clinically faithful and operationally useful. We present Symphony for Speech-to-Text, combining a streaming recognition model specialized for high-precision and high-recall capture of medical terminology with support for keyterm biasing, a real-time language model for rendering structured clinical text, and a correction model that uses contextual reasoning and custom prompts to adapt outputs to different settings. The system also exposes real-time audio-quality signals that surface input audio quality problems. The result is a system designed not only to accurately transcribe speech but also to serve as an infrastructure for speech-enabled clinical workflows. In this paper, we make the following contributions: 1. Keyterm precision and recall: We introduce a real-time speech recognition model special-ized for the accurate recognition of medical terminology, spoken-punctuation symbols, and formatted entities from clinical audio. 2. Structured transcription: We introduce a real-time language model that formats acronyms, measurements, and other clinically important textual conventions during transcription. 3. Contextual correction: We present a language model for context-aware correction that can be adapted through custom prompts to different downstream use cases and documentation styles. 4. Comprehensive evaluation: We show that Symphony performs on par with or better than best-in-class systems on public benchmarks, while substantially outperforming compet-ing systems on medical speech recognition datasets. We adopt a keyterm precision and recall evaluation that separately measures medical terms, formatted entities, and spoken punctuation, exposing failure modes that aggregate or recall-only metrics obscure. 5. Dataset release: We release a new medical speech recognition dataset to support further improvement and more realistic evaluation across the field. 6. Deployment across workflows: We demonstrate a single production system that supports dictation, conversational speech, and batch audio file processing through a unified API 1.7. Audio quality awareness: We provide real-time audio events that expose input-quality conditions, enabling more reliable operation and better monitoring of speech-based systems. 
+
+> 1Find more information on docs.corti.ai/stt and try a demo on console.corti.app.
+
+2/transcribe 
+
+> WSS - real-time stateless dictation
+> /streams
+> WSS - real-time stateful transcription
+> /transcripts
+> REST - async batch transcription
+> Symphony
+> Ingress + Routing
+> Diarize + Transcribe
+> Format + Correction
+> Structured Transcript
+
+Figure 1: Symphony API endpoints and shared speech-to-text pipeline. The system supports stateless real-time dictation through /transcribe , stateful real-time transcription through /streams , and asynchronous batch transcription through /transcripts . All endpoints feed into a common pro-cessing pipeline that performs audio ingress and routing, diarization and transcription, formatting and contextual correction, and generation of structured transcripts. 
+
+2 Methods 
+
+2.1 Symphony for speech-to-text API endpoints Symphony exposes speech recognition through three API endpoints that correspond to the main ways clinical applications interact with audio (Figure 1). The /transcribe endpoint supports real-time, stateless dictation over WebSocket Secure (WSS), making it suitable for command-and-control dictation workflows and speech-enabled user interfaces. The /streams endpoint provides a real-time, stateful WSS interface for conversational transcription and clinical intelligence, where audio is associated with an ongoing interaction. Finally, /transcripts supports asynchronous transcription over REST for batch processing of pre-recorded audio files. Together, these endpoints allow the same underlying speech-to-text system to support live dictation and ambient conversations or audio-file-based workflows through different integration patterns. 
+
+Ingress and routing Audio entering Symphony is first normalized through an ingress and routing layer. This layer abstracts the differences between live WebSocket audio and uploaded recordings, allowing downstream components to operate on a common representation of the audio stream. In the streaming case, the system returns low-latency interim and final recognition results to support responsive user interfaces; in the batch case, uploaded recordings are processed through an asyn-chronous transcript creation workflow. This separation between endpoint semantics and recognition infrastructure allows Symphony to provide different interface behaviors for integrators while sharing a common transcription pipeline. 
+
+Recognition and diarization The central recognition stage performs medical speech recognition and, when configured, speaker diarization. The recognition model is optimized for high-precision and high-recall capture of clinical terminology, including medications, diagnoses, procedures, measurements, and abbreviations. For multi-speaker clinical conversations, diarization segments the transcript by speaker and assigns speech to distinct participants, improving readability and reviewability of conversational transcripts. In multichannel workflows, speaker attribution can instead be derived from channel configuration, which provides exact attribution when separate audio channels are available per speaker. 
+
+Formatting and contextual correction After recognition, Symphony applies formatting, based on entity tagging, and contextual correction. This stage converts spoken clinical language into text that is directly useful for documentation and downstream workflows while staying grounded in the verbatim transcript. Formatting handles domain-relevant surface forms such as dates, times, numbers, measurements, numeric ranges, and ordinals, all of which are frequent sources of errors in clinical speech recognition. For example, spoken measurements and numeric expressions must often be rendered in standardized textual forms to be safe and useful in clinical documentation. Symphony also incorporates contextual reasoning and configurable prompting to adapt outputs to different clinical settings. This is important because the correct rendering of speech often depends on local context: the same acoustic signal may correspond to different abbreviations, medication names, units, or documentation conventions depending on specialty, workflow, and surrounding 3utterances. By separating recognition, formatting, and correction into distinct components, Symphony can improve raw transcription accuracy while also producing text that is configurable to match the exact expectations of different clinical applications. 
+
+Audio-quality feedback In real-time deployments, the system also exposes audio-quality events to the client. These events allow applications to surface problems with speech intelligibility or unexpected, prolonged silence while the interaction is still in progress. This feedback loop is important for clinical voice interfaces because recognition quality depends not only on the model but also on recording conditions including microphone placement and configuration, user behavior, and noise types and levels. Unlike other consumer applications, a clinical encounter is a singular event where audio lost to poor conditions is unrecoverable. By making audio health visible to the application, Symphony supports interfaces that can prompt the user to correct input conditions before transcript quality is compromised, or the opportunity is lost. 
+
+Command and control In addition to transcription, Symphony supports command-and-control workflows through its real-time API. The /transcribe endpoint is designed for stateless dictation and speech-enabled applications, where spoken commands can be used to control the user interface, edit text, trigger formatting operations, or support hands-free interaction. This makes the API suitable not only for converting speech into text, but also for building speech-enabled clinical interfaces in which speech acts as both an input modality for documentation and a control modality for interacting with electronic systems. 
+
+Training We train Symphony on a mixture of publicly available speech and text-to-speech data, together with a large corpus of proprietary data collected by Corti. The training corpus spans a wide range of real-world acoustic and linguistic conditions, including medical consultations, clinical dictations, conversational speech, and everyday interactions. To improve robustness and coverage, we combine real recordings with synthetically generated examples that increase the representation of rare medical terminology, abbreviations, medications, measurements, and domain-specific phrasing. This mixture exposes the model to both natural variability in spoken language and targeted clinical edge cases, helping it generalize across speakers, accents, recording conditions, and workflow types. Overall, Symphony is designed as an API-level infrastructure for speech-enabled clinical workflows, not merely a transcription model. Endpoints define how applications submit audio, the shared pipeline performs medical recognition and speaker-aware transcription, and the post-processing layer transforms recognized speech into structured, clinically usable text and commands. 
+
+2.2 Evaluation data 
+
+We evaluate Symphony on datasets that represent four complementary capabilities required for medical speech recognition: general clinical dictation, radiology dictation, medical terminology coverage, and general-domain robustness. Although Symphony is available across many languages, we focus our evaluation on English, German, and French. These languages provide a controlled multilingual benchmark spanning different pronunciation patterns, morphology, abbreviation conventions, and clinical documentation styles. This allows us to evaluate whether Symphony generalizes beyond English while maintaining high-quality annotations and comparable evaluation sets across systems. The language scope of the benchmark should therefore not be interpreted as the scope of the deployed system: Symphony supports a broader set of languages through the Corti API, with additional languages available upon request. 
+
+MedDictate MedDictate 2 is a carefully curated medical dictation dataset in English, French, and German dictated by medical professionals, totalling nearly two hours of audio with gold-standard transcripts. The dataset spans a broad range of clinical domains, from radiology to psychology, and is designed to reflect realistic documentation scenarios. The underlying notes were hand-crafted to include challenging clinical language, diverse dictation styles, and terminology-rich content, encompassing a broad set of unique medical terms. MedDictate therefore evaluates end-to-end dictation quality, including recognition of medical terminology, preservation of clinically relevant details, and accurate rendering of dictated clinical text.  
+
+> 2We will make MedDictate available on Hugging Face at: corti/med-dictate .
+
+4Table 1: Dataset statistics for speech recognition evaluation sets. 
+
+Dataset Lang Examples Duration Med. terms Fmt. terms 
+
+MedDictate EN 24 65.8 min 844 272 FR 7 15.5 min 169 34 DE 9 32.6 min 488 145 MedTerm EN 499 9.9 h 1,435 1,404 FR 457 9.7 h 1,346 1,042 DE 499 9.4 h 1,402 1,080 MedRad EN 5000 30 h 1,920 -CommonVoice EN 2,000 3.29 h - -FR 2,000 3.27 h - -DE 2,000 3.45 h - -
+
+MedTerm MedTerm is a large-scale dataset of short medical dictations, each constructed around specialized medical terms uniformly sampled from a terminology database containing more than 100,000 terms per language. The dataset is designed to stress-test medical vocabulary coverage across English, French, and German, with particular emphasis on rare, specialized, and safety-critical terminology that may be underrepresented in general-purpose speech recognition benchmarks. In addition to medical terms, MedTerm includes formatted entities and spoken punctuation, enabling evaluation of both domain-specific recognition and clinically important text normalization. 
+
+MedRad MedRad 3 is an English radiology dictation dataset consisting of a large set of samples. Radiology is a key evaluation domain for medical speech recognition because it is one of the most established and high-volume uses of clinical dictation. Radiology reports are terminology-dense and frequently contain measurements, anatomical references, laterality, negation, and concise diagnostic phrasing. Errors in these elements can materially change the interpretation of a report, making radiology a strong stress test for precision, consistency, and clinical usability in real-world dictation workflows. 
+
+Common Voice Common Voice 4 is a large, open, community-curated speech dataset designed to expand coverage across languages, accents, and speaker populations. Unlike more traditional English-only benchmarks, Common Voice reflects the diversity and heterogeneity of general, real-world speech contributed by volunteers. In our evaluation, we include Common Voice as a general-purpose benchmark to verify that Symphony’s medical-domain specialization does not come at the cost of regression on everyday speech recognition. 
+
+FSD50K FSD50K 5 is a large-scale collection of everyday sound events used to evaluate robustness under realistic background-noise conditions. We use samples from FSD50K for non-speech acoustic interference and mix them with speech at different signal-to-noise ratios. This allows us to test whether Symphony’s audio-quality events respond to degraded input conditions and whether those events correlate with downstream transcription quality. Unlike the speech datasets above, FSD50K is not used to directly evaluate transcription accuracy, but to create controlled noisy audio conditions to assess the detection of audio-health events. 
+
+3 Experiments 
+
+3.1 Evaluation metrics Word error rate (WER) WER measures the edit distance between a reference transcript and a hypothesis transcript at the word level, normalized by the length of the reference. Given a reference of N words, let S, D, and I denote the minimum number of word-level substitutions, deletions, and 
+
+> 3We only use MedRad for Symphony keyterm biasing evaluations due to PHI.
+> 4We use Common Voice for general-domain speech recognition evaluation.
+> 5We use FSD50K for controlled background-noise robustness experiments.
+
+5insertions required to transform the hypothesis into the reference under Levenshtein alignment. WER is defined as 
+
+WER = S + D + IN . (1) Lower WER indicates better performance. Because WER counts substitutions, deletions, and insertions relative to the reference transcript, it can exceed 100% when a system adds many extra words. WER should only be compared when the reference and model output are normalized in the same way, for example with consistent casing, punctuation, and number formatting. 
+
+Keyterm precision and recall For word categories that are clinically or functionally important, such as medical entities, formatted entities, and spoken punctuation, we report a standalone recall for each category ( Rmed , R fmt , R punct ). For spoken punctuation, we additionally report precision ( Ppunct ), since many systems produce unwarranted punctuation in dictation settings, where they are expected to insert punctuation only in response to explicit spoken commands. This behavior can cause a sharp rise in false positives that recall alone does not capture. Let V be a keyterm vocabulary, and let A be the word-level Levenshtein alignment between reference and hypothesis used for WER. Restricting attention to terms in V:• TP : the number of V-terms in the reference whose aligned hypothesis tokens under A correspond to the same V-term. • FN : the number of V-terms in the reference whose aligned hypothesis tokens are missing or are not the same V-token (recall failures). • FP : the number of V-terms in the hypothesis whose aligned reference tokens are not the same 
+
+V-token (precision failures). Precision and recall are then 
+
+PV = TP TP + FP , RV = TP TP + FN . (2) The disambiguation cases fall out of the definition: if the speaker uttered the literal word “colon” in an anatomical context and the system emitted “:”, the symbol contributes an FP to Ppunct ; if the symbol was intended and the system emitted the word, that contributes an FN to Rpunct . Reporting precision and recall separately, rather than aggregating into F1 or a single error rate, exposes which side of the trade-off a system fails on. 
+
+Keyterm biasing ( rFNR , Pmed ) We measure biasing effectiveness by the relative reduction in miss rate when a biasing vocabulary is provided, and monitor precision to verify that biasing does not introduce spurious detections. The relative FNR reduction under biasing is 
+
+rFNR V = FNR unbiased  
+
+> V
+
+− FNR biased 
+
+> V
+
+FNR unbiased 
+
+> V
+
+, (3) where FNR V = 1 − RV . This quantity is defined whenever the unbiased system makes at least one miss. A value of rFNR = 0 .5 means biasing eliminates half of the unbiased system’s misses; because the reduction is relative, it rewards the same proportional improvement whether baseline recall is 80% or 98%. To verify that recall gains do not come at the cost of spurious detections, we report Pmed under both unbiased and biased conditions. Safe biasing leaves precision essentially unchanged; a notable drop in P biased med relative to P unbiased med would signal over-aggressive biasing. Defined analogously to FNR V , we will also briefly use the false discovery rate, FDR V = 1 − PV ,which measures the fraction of predicted medical keyterms that are spurious. 
+
+Confidence estimation. For each system, dataset, and metric, we estimate uncertainty using the percentile bootstrap. We draw S = 1000 bootstrap samples with replacement at the utterance level from the evaluation set and recompute the metric on each resample. The metric computed on the full evaluation set is used as the point estimate, and the 2.5th and 97.5th percentiles of the bootstrap distribution define the 95% confidence interval. This captures both sampling variability in the metric estimate and the sensitivity of system comparisons to the composition of the evaluation set, which is particularly important for smaller medical benchmarks. 6Tooling All the evaluations conducted in this work are scored using BeWER 6, an open-source library developed and released by Corti. BeWER implements standard metrics (WER, CER), as well as the keyterm precision and recall metrics, percentile bootstrap confidence intervals, and normalization pipeline defined in the previous section. For a qualitative analysis, Corti Canal 7 wraps alignment and metric computation into an open-source command-line tool that produces self-contained visual reports with per-word error overlays and aggregate accuracy breakdowns. For internal metrics and analysis, we have recently adopted the string alignment method ErrorAlign 8 [Borgholt et al., 2026] but use the standard Levenshtein alignment in this paper for comparability to most public results. 
+
+3.2 Text normalization Formatting. Our goal is to identify the strongest overall transcription system for medical use among the systems we compare. Because accurate formatting of dosages, units, dates, and similar entities is essential in medical speech recognition, we compute all metrics against formatted reference transcripts that represent the expected output of a medical transcription system. Specifically, units follow SI abbreviations (e.g., "mg", "mL", "mmHg"), dates are rendered in standard long form for the respective locale (e.g., "February 3, 2025" in English, "3. Februar 2025" in German, "3 février 2025" in French), times follow locale convention (e.g., "8:00 AM" in English, "08:00" in German, "8h00" in French), cardinal numbers and ordinals from one through nine are written as words while values of 10 and above are rendered as numerals, and any numeric range is rendered with numerals (e.g., "4–15"). For general-domain transcription, we apply the same principle when formattable entities are present, although such entities occur less frequently. 
+
+Casing and punctuation. All metrics are computed case-insensitively. For WER, punctuation symbols are additionally stripped from both reference and hypothesis to be consistent with standard public benchmarks. The keyterm metrics (PV , R V ) retain punctuation symbols, since spoken-punctuation handling is part of what they measure. Hence, the reference contains the punctuation symbols corresponding to spoken punctuations command in the audio. This means punctuation is only expected when it was actually spoken. The spoken-punctuation vocabulary covers period (.), comma (,), new line, new paragraph, exclamation mark (!), question mark (?), colon (:), semicolon (;), hyphen (-), slash (/), quotation marks (" "), and parentheses ( ). Concretely, any missed punctuation command will decrease Rpunct and any punctuation symbol in the hypothesis without corresponding command in the audio will be penalized in Ppunct . For example, the word “colon” in its anatomical sense should remain the word “colon” in the formatted reference; but “colon” meant as a dictation command should become “:” in the formatted reference. This makes spoken-punctuation evaluation an explicit disambiguation test where contextual understanding of the transcript is required for correct formatting. 
+
+3.3 Speech-to-text systems for comparison 
+
+We compare Symphony against three classes of baseline: general-purpose cloud speech-to-text APIs, a dedicated medical dictation system (Dragon Medical One), and leading open-source models. This selection enables us test Symphony against both the strongest commercially available APIs and the specialized tooling already deployed in clinical documentation workflows. We first conducted a pre-evaluation of major cloud-based speech recognition APIs, including Deep-gram, AssemblyAI, Speechmatics, OpenAI, ElevenLabs, Google Cloud, Amazon Transcribe, and Microsoft Azure (Figure 2). These systems represent a broad cross-section of commercially available speech recognition services, including both batch and real-time APIs, and are commonly used as general-purpose transcription backends. The pre-evaluation was used to identify the strongest general-purpose systems for more detailed comparison. Where a cloud API offered a medical-specific mode, we used it (e.g. Amazon Transcribe Medical, Google Cloud Medical). Among all systems considered, ElevenLabs, Amazon Transcribe    
+
+> 6BeWER metrics library available at: https://pypi.org/project/bewer/ .
+> 7Corti Canal reporting tool available at: https://pypi.org/project/corti-canal .
+> 8ErrorAlign string alignment algorithm available at https://pypi.org/project/error-align/
+
+7Figure 2: Corti’s speech-to-text comparison tool. The interactive tool allows users to compare transcription outputs across speech recognition systems on the same audio input. Available at corti.ai/compare/speech-to-text. Medical, Google Cloud, and OpenAI performed best in our initial screening and were selected for a full offline evaluation on our medical and general-domain benchmarks. In our offline evaluation, OpenAI Speech-to-Text 9 and ElevenLabs Speech-to-Text were the strongest performing general-purpose APIs overall, and were consequently selected for the real-time evaluation against Symphony. This two-stage procedure lets us screen broadly while focusing the real-time experiments on the strongest baselines. We evaluate Dragon Medical One (DMO), a dedicated medical speech recognition product designed for clinical dictation. Unlike the cloud APIs above, DMO is not a general-purpose transcription backend but a clinician-facing documentation tool widely deployed in healthcare settings. Including DMO let us test whether Symphony improves not only over general-purpose APIs, but also over a specialized system that many clinicians already use for day-to-day documentation. We also evaluate two leading open-source speech recognition architectures: Whisper and Parakeet. These models provide important reference points because they are widely used as research and deployment baselines outside proprietary cloud APIs. Whisper is a multilingual encoder-decoder model trained on large-scale weak supervision and has become a standard open-source baseline for robust general-purpose transcription [Radford et al., 2022]. Parakeet is a family of high-performance ASR models released through NVIDIA NeMo, based on modern transducer-style architectures designed for accurate and efficient speech recognition [NVIDIA Conversational AI, 2024, Sekoyan et al., 2025]. 
+
+4 Results 
+
+We evaluate Symphony across four complementary settings: medical terminology coverage, realistic medical dictation, general-domain speech recognition, and keyterm biasing. The medical evaluations test whether systems can recognize specialized clinical vocabulary, render formatted entities, and 
+
+> 9While testing the OpenAI Speech-to-Text real-time system, we learned that the system relies on a conserva-tive voice activity detection (VAD), making the time to receive a transcript very slow. There is a discussion to be had on whether this system can in fact be treated as a real-time speech-to-text system. In this paper we treat it as such for simplicity.
+
+8Table 2: Real-time on MedTerm [English]. Comparison across WER and keyterm precision/recall (PV , R V ) for medical entities ( V = med ), spoken-punctuation symbols ( V = punct ), and formatted entities ( V = fmt ). Higher is better for P/R metrics; lower is better for WER. All values reported in percent [%] . 95% confidence intervals shown below each value. Bold indicates best in each row. 
+
+Open-source Closed-source Corti Lang Metric Parakeet Whisper OpenAI ElevenLabs Symphony 
+
+WER 18.9 
+
+> [18.4,19.5]
+
+17.4 
+
+> [16.9,17.9]
+
+17.7 
+
+> [17.1,18.3]
+
+18.1 
+
+> [17.5,18.7]
+
+1.4
+
+> [1.3,1.5]
+
+Rmed 
+
+66.2 
+
+> [63.7,68.4]
+
+70.8 
+
+> [68.3,73.0]
+
+75.5 
+
+> [73.2,77.7]
+
+72.2 
+
+> [69.8,74.5]
+
+84 .1
+
+> [82.4,86.0]
+
+EN Rfmt 
+
+37.6 
+
+> [34.1,41.1]
+
+44.3 
+
+> [40.9,47.7]
+
+33.4 
+
+> [29.5,37.1]
+
+43.1 
+
+> [39.7,46.8]
+
+98 .3
+
+> [97.6,98.9]
+
+Rpunct 
+
+41.1 
+
+> [39.6,42.5]
+
+42.1 
+
+> [40.6,43.6]
+
+44.9 
+
+> [43.3,46.4]
+
+48.6 
+
+> [46.9,50.2]
+
+92 .4
+
+> [91.4,93.4]
+
+Ppunct 
+
+31.5 
+
+> [30.4,32.5]
+
+28.8 
+
+> [27.8,29.9]
+
+33.6 
+
+> [33.3,35.8]
+
+27.2 
+
+> [26.3,28.1]
+
+70 .3
+
+> [69.2,71.3]
+
+handle spoken punctuation in dictation-style workflows. The CommonVoice evaluation serves as a general-domain control to assess whether medical specialization degrades broader speech recognition performance. Finally, the keyterm biasing experiment measures whether Symphony can safely adapt to user- or workflow-specific terminology without sacrificing precision. Across these settings, we compare Symphony against leading open-source ASR models, commercial speech-to-text APIs, and, where applicable, a dedicated medical dictation system. We report both aggregated transcription quality through WER and clinically targeted metrics for medical terms, formatted entities, and spoken punctuation. 
+
+4.1 Medical terminology 
+
+In the English real-time setting (Table 2), Symphony reduces WER to 1.4% , compared with 17 .7% for OpenAI, 18 .1% for ElevenLabs, 17 .4% for Whisper, and 18 .9% for Parakeet. Symphony also obtains the highest medical term recall, reaching 84 .1% , compared with 75 .5% for the strongest non-Corti system. These results indicate that Symphony substantially improves recognition of specialized medical terminology while also reducing overall transcription errors. The largest differences appear on formatting and spoken-punctuation metrics. On English MedTerm, Symphony reaches 98 .3% recall on formatted entities, while the strongest baseline reaches only 
+
+44 .3% in the real-time comparison and 51 .2% in the offline comparison. Similarly, Symphony obtains 92 .4% spoken-punctuation recall and 70 .3% spoken-punctuation precision, substantially outperforming all baselines. This gap is important because formatted entities and spoken punctuation are central to clinical dictation: dosages, measurements, dates, and punctuation commands must be rendered correctly for transcripts to be useful in documentation workflows. The offline comparison (Table 3) shows that these gains are not only due to comparing against weaker real-time systems. Even when evaluating against stronger offline APIs, the real-time Symphony remains best on every metric. OpenAI is the strongest non-Corti baseline on English MedTerm, with 
+
+12 .8% WER, 81 .0% medical term recall, and 51 .2% formatted entity recall. Symphony improves over this with 1.4% WER, 84 .1% medical term recall, and 98 .3% formatted entity recall. The difference is especially pronounced for formatting and spoken punctuation, suggesting that Symphony is not merely a stronger recognizer, but better aligned with the output requirements of medical dictation. The German and French results (Table 4) show that the same pattern holds beyond English. For German, Symphony achieves 2.4% WER, compared with 13 .0% for OpenAI, 16 .4% for ElevenLabs, 
+
+15 .6% for Whisper, and 15 .9% for Parakeet. Symphony also obtains the best medical term recall at 9Table 3: Offline on MedTerm against real-time Symphony [English]. Comparison across WER and keyterm precision/recall ( PV , R V ) for medical entities ( V = med ), spoken-punctuation symbols (V = punct ), and formatted entities ( V = fmt ). Higher is better for P/R metrics; lower is better for WER. All values reported in percent [%] . 95% confidence intervals shown below each value. Bold 
+
+indicates best in each row. 
+
+Closed-source Corti Lang Metric Google AWS OpenAI ElevenLabs Symphony 
+
+WER 18.6 
+
+> [17.9,19.2]
+
+16.4 
+
+> [15.9,16.8]
+
+12.8 
+
+> [12.2,13.4]
+
+17.4 
+
+> [16.8,18.0]
+
+1.4
+
+> [1.3,1.5]
+
+Rmed 
+
+50.3 
+
+> [47.8,52.9]
+
+64.3 
+
+> [61.8,66.9]
+
+81.0 
+
+> [78.9,83.2]
+
+80.5 
+
+> [78.3,82.6]
+
+84 .1
+
+> [82.4,86.0]
+
+EN Rfmt 
+
+45.8 
+
+> [42.5,49.3]
+
+44.2 
+
+> [41.4,47.2]
+
+51.2 
+
+> [47.6,54.4]
+
+33.7 
+
+> [29.9,37.4]
+
+98 .3
+
+> [97.6,98.9]
+
+Rpunct 
+
+33.7 
+
+> [32.3,35.2]
+
+43.9 
+
+> [42.5,45.4]
+
+48.7 
+
+> [46.8,50.6]
+
+45.7 
+
+> [44.1,47.2]
+
+92 .4
+
+> [91.4,93.4]
+
+Ppunct 
+
+46.9 
+
+> [44.8,48.8]
+
+31.6 
+
+> [30.6,32.6]
+
+39.4 
+
+> [37.7,41.0]
+
+32.0 
+
+> [30.8,33.0]
+
+70 .3
+
+> [69.2,71.3]
+
+76 .4% , the best formatted entity recall at 99 .4% , and the best spoken-punctuation recall at 96 .1% . For French, Symphony achieves 3.9% WER, compared with 10 .6% for OpenAI, 16 .0% for ElevenLabs, 
+
+13 .9% for Whisper, and 14 .7% for Parakeet. It also reaches the highest medical term recall, formatted entity recall, spoken-punctuation recall, and spoken-punctuation precision. Overall, the MedTerm results demonstrate that Symphony provides large improvements over both open-source systems and leading closed-source speech-to-text APIs. The improvements are consistent across English, German, and French, and are strongest on the clinically important categories that general-purpose systems handle poorly: medical terms, formatted entities, and spoken punctuation. This supports the central design goal of Symphony: producing transcripts that are not only acoustically accurate, but also formatted and structured for real-world medical dictation workflows. 
+
+4.2 Medical dictation 
+
+Table 5 evaluates Symphony on MedDictate, a realistic English medical dictation benchmark, against both general open-source ASR models and DMO, a front-end speech recognition system specialized for clinical dictation. This comparison is important because DMO represents a strong and widely adopted medical dictation baseline, whereas Parakeet and Whisper provide a sanity check for how far general-purpose open-source models are from meeting the requirements of this setting. The open-source systems perform poorly on MedDictate. Parakeet and Whisper obtain WERs of 
+
+48 .3% and 40 .3% , respectively, indicating that general-purpose ASR models struggle with realistic medical dictation despite reasonable medical term recall. Their performance is especially weak on formatted entities and spoken punctuation: Parakeet reaches only 14 .9% formatted entity recall and Whisper reaches 37 .8% , while both systems remain below 42% spoken-punctuation recall and below 38% spoken-punctuation precision. These results show that medical dictation is not only a recognition problem, but also requires domain-specific handling of formatting, punctuation commands, and clinically meaningful surface forms. Compared with DMO, Symphony achieves a lower WER ( 4.6% vs. 5.7% ), slightly higher medi-cal term recall ( 93 .5% vs. 92 .9% ), and comparable spoken-punctuation precision — reaching the performance regime of a dedicated medical dictation system while being exposed through an API designed for broader clinical workflows. DMO remains strongest on formatted entity recall and spoken-punctuation recall, reaching 78 .3% and 94 .9% compared with Symphony’s 74 .4% and 89 .0% .However, DMO’s medical-term false discovery rate is almost twice that of Symphony ( 1.33% vs. 
+
+0.79% ), evidence that its strong recall partly reflects over-aggressive vocabulary priors that insert 10 Table 4: Real-time on MedTerm [German, French]. Comparison across WER and keyterm precision/recall ( PV , R V ) for medical entities ( V = med ), spoken-punctuation symbols ( V = punct ), and formatted entities ( V = fmt ). Higher is better for P/R metrics; lower is better for WER. All values reported in percent [%] . 95% confidence intervals shown below each value. Bold indicates best in each row. 
+
+Open-source Closed-source Corti Lang Metric Parakeet Whisper OpenAI ElevenLabs Symphony 
+
+WER 15.9 
+
+> [15.5,16.4]
+
+15.6 
+
+> [15.1,16.0]
+
+13.0 
+
+> [12.6,13.4]
+
+16.4 
+
+> [15.9,17.0]
+
+2.4
+
+> [2.2,2.6]
+
+Rmed 
+
+51.1 
+
+> [48.6,53.7]
+
+57.1 
+
+> [54.8,59.7]
+
+70.6 
+
+> [68.0,73.0]
+
+62.9 
+
+> [60.3,65.5]
+
+76 .4
+
+> [74.2,78.7]
+
+DE Rfmt 
+
+81.3 
+
+> [79.5,83.0]
+
+81.9 
+
+> [80.2,83.7]
+
+84.8 
+
+> [83.2,86.3]
+
+84.5 
+
+> [82.9,85.9]
+
+99 .4
+
+> [99.1,99.7]
+
+Rpunct 
+
+32.4 
+
+> [30.0,34.9]
+
+33.9 
+
+> [31.4,36.5]
+
+40.3 
+
+> [37.6,43.2]
+
+38.8 
+
+> [36.3,41.6]
+
+96 .1
+
+> [95.4,96.8]
+
+Ppunct 
+
+20.0 
+
+> [18.3,21.9]
+
+20.1 
+
+> [18.6,21.9]
+
+25.6 
+
+> [23.6,27.8]
+
+19.2 
+
+> [17.8,20.8]
+
+62 .0
+
+> [60.8,63.3]
+
+WER 14.7 
+
+> [14.2,15.2]
+
+13.9 
+
+> [13.5,14.4]
+
+10.6 
+
+> [10.1,11.0]
+
+16.0 
+
+> [15.5,16.6]
+
+3.9
+
+> [3.6,4.1]
+
+Rmed 
+
+60.5 
+
+> [57.9,63.1]
+
+64.3 
+
+> [61.6,67.0]
+
+73.9 
+
+> [71.5,76.2]
+
+69.9 
+
+> [67.3,72.6]
+
+79 .3
+
+> [77.1,81.4]
+
+FR Rfmt 
+
+62.7 
+
+> [60.2,65.2]
+
+64.0 
+
+> [61.4,66.8]
+
+69.6 
+
+> [67.1,72.1]
+
+58.0 
+
+> [55.0,61.0]
+
+92 .4
+
+> [91.0,93.8]
+
+Rpunct 
+
+28.7 
+
+> [27.7,29.7]
+
+27.0 
+
+> [25.9,28.0]
+
+33.2 
+
+> [31.5,34.8]
+
+33.4 
+
+> [32.2,34.7]
+
+90 .5
+
+> [89.5,91.6]
+
+Ppunct 
+
+23.6 
+
+> [22.6,24.6]
+
+21.5 
+
+> [20.4,22.3]
+
+34.9 
+
+> [32.9,36.8]
+
+24.0 
+
+> [23.0,25.1]
+
+70 .6
+
+> [69.6,71.6]
+
+medical terms where none were spoken. This over-specialization tendency is also visible in the qualitative comparison on conversational speech in Figure 3. 
+
+4.3 General-domain speech recognition 
+
+To verify that the medical-domain gains do not come at the expense of general speech recognition quality, we evaluate all real-time systems on CommonVoice in English, German, and French. This benchmark serves as a general-domain control setting: unlike MedTerm and MedDictate, it does not specifically target clinical terminology, formatting, or dictation commands. Table 6 shows that Symphony remains competitive with strong general-purpose systems across all three languages. In English, Symphony obtains the lowest WER at 11 .2% , closely followed by ElevenLabs at 11 .3% , also outperforming Whisper and OpenAI real-time. In German, Symphony also achieves the best WER at 6.6% , slightly ahead of OpenAI real-time at 6.7% and ElevenLabs real-time at 6.9% . In French, Symphony again obtains the lowest WER at 8.0% , outperforming Parakeet, OpenAI realtime, ElevenLabs realtime, and Whisper. These results indicate that Symphony’s specialization for medical speech does not lead to a loss of general-domain recognition performance. Instead, Symphony remains on par with or better than leading real-time baselines on CommonVoice, while substantially outperforming the same systems on medical terminology, formatting, and dictation-oriented metrics. This supports the conclusion that Symphony’s improvements in clinical settings reflect domain-specific capability rather than overfitting to narrow medical evaluation data. On the other hand, Google Medical ASR and DMO illustrate the risks of narrow domain specialization. In our evaluations, Google Medical reached 40.0% WER on English CommonVoice, far worse than 11 Table 5: Real-time on MedDictate [English]. Comparison across WER and keyterm precision/recall (PV , R V ) for medical entities ( V = med ), spoken-punctuation symbols ( V = punct ), and formatted entities ( V = fmt ). Higher is better for P/R metrics; lower is better for WER. All values reported in percent [%] . 95% confidence intervals shown below each value. Bold indicates best in each row. 
+
+Open-source Closed-source Corti Lang Metric Parakeet Whisper DMO Symphony 
+
+WER 48.3 
+
+> [39.9,56.9]
+
+40.3 
+
+> [34.2,47.0]
+
+5.7 
+
+> [4.1,7.3]
+
+4.6
+
+> [3.6,5.4]
+
+Rmed 
+
+81.4 
+
+> [77.2,85.6]
+
+90.0 
+
+> [87.4,92.5]
+
+92.9 
+
+> [90.1,95.5]
+
+93 .5
+
+> [91.6,95.1]
+
+EN Rfmt 
+
+14.9 
+
+> [10.8,20.8]
+
+37.8 
+
+> [32.4,47.8]
+
+78 .3
+
+> [68.8,92.2]
+
+74.4 
+
+> [67.1,82.6]
+
+Rpunct 
+
+41.3 
+
+> [36.4,46.4]
+
+38.9 
+
+> [34.4,43.2]
+
+94 .9
+
+> [93.1,96.6]
+
+89.0 
+
+> [86.3,91.1]
+
+Ppunct 
+
+37.5 
+
+> [32.1,43.0]
+
+34.2 
+
+> [29.0,39.6]
+
+97 .4
+
+> [96.1,98.6]
+
+94.3 
+
+> [90.4,96.9]
+
+Table 6: Real-time on CommonVoice. General-domain speech recognition comparison across English (EN), German (DE), and French (FR). We report normalized word error rate (WER). Lower is better. All values reported in percent [%] . 95% confidence intervals shown below each value. Bold 
+
+indicates best in each row. 
+
+Open-source Closed-source Corti Lang Metric Parakeet Whisper OpenAI ElevenLabs Symphony 
+
+EN WER 11.7 
+
+> [10.8,12.6]
+
+13.1 
+
+> [12.1,14.1]
+
+13.3 
+
+> [12.4,14.3]
+
+11.3 
+
+> [10.5,12.2]
+
+11 .2
+
+> [10.3,12.1]
+
+DE WER 7.2 
+
+> [6.5,7.9]
+
+7.9 
+
+> [7.2,8.6]
+
+6.7 
+
+> [6.1,7.3]
+
+6.9 
+
+> [6.3,7.6]
+
+6.6
+
+> [5.9,7.3]
+
+FR WER 8.2 
+
+> [7.5,8.9]
+
+11.4 
+
+> [10.5,12.3]
+
+10.5 
+
+> [9.7,11.2]
+
+10.5 
+
+> [9.7,11.3]
+
+8.0
+
+> [7.3,8.7]
+
+any real-time system in Table 6 despite being offline itself, indicating poor generalization to non-clinical speech. DMO could not be systematically evaluated on CommonVoice, as it is a front-end dictation application, but as noted above, its elevated false discovery rate for medical terms on MedDictate and qualitative examples of conversational speech (Figure 3) show the same signs of over-specialization; the system inserts medical terms where none were spoken, even in medical audio. 
+
+4.4 Keyterm biasing 
+
+We evaluate keyterm biasing by providing Symphony with the set of medical terms present in each evaluation dataset and measuring its effect on medical term false negatives. As shown in Table 7, biasing substantially improves medical term coverage. On MedDictate, the medical term false-negative rate is reduced by 47 .9% relative to the unbiased baseline, while on MedRad the reduction is 50 .9% . This indicates that keyterm biasing is effective for improving recognition of clinically important terminology that may otherwise be missed. 12 Highlight colors: 
+
+Utterances 11–18 
+
+11 Ref. um i was first 9 years ago um and had um a whole lot of then and 
+
+Gen. um i was first 9 years ago um and had um a whole lot of then and 
+
+12 Ref. then 4 years ago received my secondary um where the has since spread to 
+
+Gen. then 4 years ago received my secondary um where the has s since spread to 
+
+13 Ref. other parts of my body like my and my um i've now been having um so 
+
+Gen. other parts of my body like my and my um i've now been having um so 
+
+14 Ref. um now for 4 years and i'm now on my fourth line agent um and yeah it's 
+
+Gen. um now for 4 years and i'm now on my fourth line agent um and yeah it's 
+
+15 Ref. sort of a bit of a ongoing ongoing profession or ongoing commitment this now so 
+
+Gen. sort of a l a bit of a ongoing ongoing profession or ongoing commitment this now so 
+
+16 Ref. yeah 4 years in still on and and then we started meeting um with regards to managing my 
+
+Gen. yeah 4 years in still on and and then we started meeting um with regards to managing my 
+
+17 Ref. um specifically but actually that's branched out into other things and that's been 
+
+Gen. um specifically but actually that's branched out into other things and that's been 
+
+18 Ref. quite useful um and here we are today uh when did we first meet i think it was about 2 years ago 
+
+Gen. quite useful um and here we are today how lo when did we first meet i think it was about 2 years ago 
+
+■ Correct ■ Misspelling ■ Extra Word ■ Missing Word ■ Padding Medical Term 
+
+breast cancer diagnosed treatment breast cancer diagnosed treatment diagnosis breast cancer diagnosis breast cancer lungs bones treatment palliative lungs bones treatment palliative chemotherapy chemotherapy chemotherapy chemotherapy chemotherapy chemotherapy chemotherapy chemotherapy symptoms pain symptoms pain (a) Symphony Highlight colors: 
+
+Utterances 11–18 
+
+11 Ref. am 39 i had to think about that then i'm 39 and i have um i was 
+
+Gen. can 39 think about her benefit and i have and 
+
+12 Ref. first 9 years ago um and had um a whole lot of then and then 4 years ago 
+
+Gen. 9 years ago and had an last 9 and then 4 years ago 
+
+13 Ref. received my secondary um where the has since spread to other parts 
+
+Gen. received my secondary and where the has since bad to nobody 
+
+14 Ref. of my body like my and my um i've now been having um so 
+
+Gen. like my and my and had not been having and so 
+
+15 Ref. um now for 4 years and i'm now on my fourth line agent um and yeah it's 
+
+Gen. and now for 4 years and now my fourth line agent and and its to 
+
+16 Ref. sort of a bit of a ongoing ongoing profession or ongoing commitment this 
+
+Gen. develop better there ongoing ongoing professional ongoing commitment next 
+
+17 Ref. now so yeah 4 years in still on and and then we started meeting um with 
+
+Gen. now so waiting still on and and then restarted meeting and with 
+
+18 Ref. regards to managing my um specifically but actually that's branched out into other 
+
+Gen. regards to managing my and specifically but actually and other 
+
+■ Correct ■ Misspelling ■ Extra Word ■ Missing Word ■ Padding Medical Term 
+
+stage iv breast cancer 
+
+hpi stage iv breast cancer abscess 
+
+diagnosed treatment diagnosed treatment diagnosis breast cancer diagnosis breast cancer anaphylactic 
+
+lungs bones treatment palliative lungs bones treatment palliative chemotherapy chemotherapy chemotherapy chemotherapy chemotherapy chemotherapy chemotherapy chemotherapy symptoms pain symptoms pain aspirin statin 
+
+(b) Dragon Medical One 
+
+Figure 3: Qualitative comparison of Symphony and Dragon Medical One (DMO) on non-dictation conversational speech, visualized with Corti-Canal. Both systems transcribe the same audio. DMO, designed for single-speaker front-end dictation, occasionally hallucinates medical terms for non-medical ones and generalizes less reliably to conversational settings. Reference alignments differ slightly between (a) and (b) due to preceding context. 13 Table 7: Keyterm biasing evaluation. Effect of biasing Symphony toward the full set of medical terms present in each dataset. rFNR med is the relative reduction in false-negative rate compared with the unbiased baseline (higher is better) for medical terms ( V = med) ; Pmed is reported under both conditions to verify that biasing does not degrade precision. Dataset rFNR med P unbiased med P biased med 
+
+MedDictate (EN) 47.9% 98.5% 98.7% MedRad (EN) 50.9% 97.0% 96.7% Importantly, the improvement in recall does not come at the cost of precision. Medical term precision remains essentially unchanged under biasing, rising slightly from 98 .5% to 98 .7% on MedDictate and decreasing only marginally from 97 .0% to 96 .7% on MedRad. This suggests that Symphony can leverage user- or workflow-specific terminology to recover more relevant medical terms without introducing spurious medical entities. In clinical applications, this is critical: keyterm biasing should improve recognition of expected terminology—medications, procedures, or site-specific vocabulary—without hallucinating terms that could alter the clinical meaning of the transcript. 
+
+4.5 Audio quality events 
+
+In addition to transcription accuracy, Symphony exposes real-time audio-quality events that can alert applications when input conditions are likely to degrade recognition performance. We evaluate these events by adding different types of noise to speech segments and comparing the percentage of segments flagged as low quality against the resulting per-segment WER. Figure 4 shows that the audio-quality events track the degradation in transcription quality as the signal-to-noise ratio decreases. For clean audio, the system flags few or no segments, and WER remains low. As the audio becomes noisier, especially under white-noise corruption, both the mean per-segment WER and the percentage of flagged segments increase sharply. This indicates that the health events are not arbitrary, but correlate with the conditions where recognition quality deteriorates. These results support the use of audio-quality events as an operational signal in real-time clinical voice interfaces. Rather than discovering input-quality problems only after a transcript has been produced, applications can surface warnings during the interaction itself, prompting users to adjust microphone placement, reduce background noise, or repeat an utterance. This makes audio-quality monitoring an important complement to model accuracy in safety-critical speech workflows. 
+
+Figure 4: Audio-quality event detection compared with transcription degradation under increasing noise. Solid lines show mean per-segment WER, while dashed lines show the percentage of segments flagged as bad audio. As signal-to-noise ratio decreases, both WER and the rate of audio-quality events increase, indicating that Symphony surfaces degraded input conditions when associated with worse transcription quality. 14 5 Conclusion 
+
+We presented Symphony for Speech-to-Text, a medical-grade speech recognition system designed for real-time streaming and batch file-based clinical workflows. Symphony combines medical speech recognition, structured formatting, contextual correction, command support, audio-quality signals, and keyterm biasing within a unified API for dictation, conversational transcription, and batch processing. Across medical terminology and medical dictation evaluations, Symphony substantially improves over strong open-source and closed-source baselines on the metrics most important for clinical use: WER, medical term recall, formatted entity recall, and spoken-punctuation handling. At the same time, results on CommonVoice show that this specialization does not come at the cost of general-domain robustness. Compared with dedicated front-end dictation systems, Symphony reaches the same performance regime while exposing a more flexible infrastructure for speech-enabled clinical applications. These results support the view that medical speech recognition should not be treated as a single transcription task. Reliable clinical voice interfaces require recognition, formatting, contextual correction, and workflow adaptation to work together. Symphony demonstrates that such an integrated design can improve both transcription accuracy and clinical usability, providing a foundation for future speech-enabled healthcare systems. 
+
+Acknowledgments 
+
+We thank Michael Thorsager, Simas Paulikas, Jerome Amon, Gediminas Kikilas, Chituru Chinwah, Kevin Pelgrims, Nicklas Frahm and the Corti AI Platform team for their invaluable support in the build, deploy, and maintenance of the microservice architecture that made this work possible. Thank you to Dr. Lasse Krogsbøll, Dr. Vanessa Klungtvedt, Dr. Marvin Dumke, James Kane, Majed Sharif, and Henrik Cullen for their contributions, insightful discussions, and support throughout the completion of this work. 15 References 
+
+Foster R. Goss, Suzanne V. Blackley, Carlos A. Ortega, Leigh T. Kowalski, Adam B. Landman, Chen-Tan Lin, Marie Meteer, Samantha Bakes, Stephen C. Gradwohl, David W. Bates, and Li Zhou. A clinician survey of using speech recognition for clinical documentation in the electronic health record. International Journal of Medical Informatics , 130:103938, October 2019. ISSN 1386-5056. Frederico Soares Falcetta, Fernando Kude de Almeida, Janaína C.S. Lemos, José Roberto Goldim, and Cristiano André da Costa. Automatic documentation of professional health interactions: A systematic review. Artificial Intelligence in Medicine , 137:102487, March 2023. ISSN 0933-3657. Tyler Haberle, Courtney Cleveland, Greg L Snow, Chris Barber, Nikki Stookey, Cari Thornock, Laurie Younger, Buzzy Mullahkhel, and Diego Ize-Ludlow. The impact of nuance dax ambient listening ai documentation: a cohort study. Journal of the American Medical Informatics Association , 31(4), February 2024. ISSN 1527-974X. Tobias Hodgson, Farah Magrabi, and Enrico Coiera. Efficiency and safety of speech recognition for documentation in the electronic health record. Journal of the American Medical Informatics Association , 24(6), July 2017. ISSN 1527-974X. Li Zhou, Suzanne V. Blackley, Leigh Kowalski, Raymond Doan, Warren W. Acker, Adam B. Landman, Evgeni Kontrient, David Mack, Marie Meteer, David W. Bates, and Foster R. Goss. Analysis of errors in dictated clinical documents assisted by speech recognition software and professional transcriptionists. JAMA Network Open , 1(3):e180530, July 2018. ISSN 2574-3805. Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine Mcleavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision. In Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scarlett, editors, Proceedings of the 40th International Conference on Machine Learning , volume 202 of Proceedings of Machine Learning Research , pages 28492–28518. PMLR, 23–29 Jul 2023. Andreas Liesenfeld, Alianda Lopez, and Mark Dingemanse. The timing bottleneck: Why timing and overlap are mission-critical for conversational user interfaces, speech recognition and dialogue systems. In Svetlana Stoyanchev, Shafiq Joty, David Schlangen, Ondrej Dusek, Casey Kennington, and Malihe Alikhani, editors, Proceedings of the 24th Annual Meeting of the Special Interest Group on Discourse and Dialogue , pages 482–495, Prague, Czechia, September 2023. Association for Computational Linguistics. Rita Frieske and Bertram E. Shi. Hallucinations in neural automatic speech recognition: Identifying errors and hallucinatory models, 2024. Chao-Han Huck Yang, Yile Gu, Yi-Chieh Liu, Shalini Ghosh, Ivan Bulyko, and Andreas Stolcke. Generative speech recognition error correction with large language models and task-activating prompting, 2023. Srijith Radhakrishnan, Chao-Han Huck Yang, Sumeer Ahmad Khan, Rohit Kumar, Narsis A. Kiani, David Gomez-Cabrero, and Jesper N. Tegner. Whispering LLaMA: A cross-modal generative error correction framework for speech recognition. In Houda Bouamor, Juan Pino, and Kalika Bali, editors, Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 10007–10016, Singapore, December 2023. Association for Computational Linguistics. Yuchen Hu, Chen Chen, Chengwei Qin, Qiushi Zhu, Eng Siong Chng, and Ruizhe Li. Listen again and choose the right answer: A new paradigm for automatic speech recognition with large language models. In Lun-Wei Ku, Andre Martins, and Vivek Srikumar, editors, Findings of the Association for Computational Linguistics: ACL 2024 , pages 666–679, Bangkok, Thailand, August 2024. Association for Computational Linguistics. doi: 10.18653/v1/2024.findings-acl.37. Lasse Borgholt, Jakob Havtorn, Christian Igel, Lars Maaløe, and Zheng-Hua Tan. A text-to-text alignment algorithm for better evaluation of modern speech recognition systems. In IEEE Interna-tional Conference on Acoustics, Speech and Signal Processing (ICASSP) 2026 , Barcelona, Spain, 2026. IEEE. 16 Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision. arXiv preprint arXiv:2212.04356 ,2022. NVIDIA Conversational AI. Announcing nvidia nemo parakeet asr models for pushing the bound-aries of speech recognition. https://research.nvidia.com/labs/conv-ai/blogs/2024/ 2024-01-parakeet/ , 2024. Accessed 2026. Monica Sekoyan, Nithin Rao Koluguri, Nune Tadevosyan, Piotr Zelasko, Travis Bartley, Nikolay Karpov, Jagadeesh Balam, and Boris Ginsburg. Canary-1b-v2 & parakeet-tdt-0.6b-v3: Efficient and high-performance models for multilingual asr and ast. arXiv preprint arXiv:2509.14128 , 2025. 17 A Configuration of benchmarked systems 
+
+This section documents the inference-time configuration for the four external ASR systems evaluated in this work. AWS Transcribe Medical and Google Cloud Speech-to-Text are batch REST APIs with dedicated medical model tiers; audio is routed via cloud storage for longer recordings. ElevenLabs and OpenAI Realtime are WebSocket streaming APIs that simulate live dictation: audio is pushed in 100 ms frames at real-time pace and transcripts are emitted incrementally within a single long-lived session. No vocabulary biasing, prompt injection, or output post-processing was applied to any system. Table 8 summarises the key parameters. Table 8: Inference-time configuration for the four closed-source ASR systems. Entries marked “—” indicate the parameter does not apply. 
+
+Parameter AWS Medical Google Medical ElevenLabs OpenAI Realtime 
+
+Model / tier Medical DICTATION medical_dictation scribe_v2_realtime gpt-realtime-whisper 
+
+Interface REST (async) REST (sync / async) WebSocket WebSocket Language en-US en-US configurable configurable Sample rate 16,000 Hz 16,000 Hz 16,000 Hz 24,000 Hz a
+
+Audio routing S3 upload inline / GCS b streamed frames streamed frames Automatic punctuation native enabled enabled native 
+
+Streaming parameters 
+
+Frame size — — 100 ms 100 ms Real-time factor — — 1× 1×
+
+Commit strategy — — server VAD c manual VAD silence threshold — — 2.5 s —VAD threshold — — 0.5 —Post-send grace — — 5.0 s 5.0 s 
+
+Request settings 
+
+Parallel requests 4 4 6 6Max retries — 3 3 3Initial backoff — 1 s 1 s 1 s Max backoff — 10 s 10 s 10 s Jitter — ±0.5 s ±0.5 s ±0.5 s        
+
+> aInput audio at lower sample rates (e.g. 16,000 Hz) is automatically resampled to 24,000 Hz before transmission, as required by the API.
+> bAudio shorter than 60 s is sent inline via recognize ; longer audio is uploaded to GCS and processed via longRunningRecognize .
+> cFor the Common Voice dataset, the manual commit strategy was used instead.
+
+Table 9: Inference-time configuration for the two open-source ASR systems. To effectively perform streamed speech recognition, both systems receive audio segments from an external voice activity detector. Entries marked “—” indicate the parameter does not apply. 
+
+Parameter Whisper Parakeet 
+
+Model whisper-large-v3 parakeet-tdt-0.6b a
+
+Framework faster-whisper NVIDIA NeMo Language set per dataset auto-detect (v3) / EN-only (v2) Sample rate 16,000 Hz 16,000 Hz Decoding beam search (width 5) greedy Temperature fallback disabled —
+
+Pseudo-streaming parameters 
+
+Segmentation external VAD external VAD Segment duration 2–12 s (median 8 s) 2–12 s (median 8 s)  
+
+> aEnglish evaluations use Parakeet TDT v2 as this outperformed the multilingual v3; German and French evaluations used Parakeet TDT v3, which supports automatic language detection.
+
+18

@@ -1,0 +1,454 @@
+Title: UAT: Unified Audio-Text Diffusion for Audio Generation, Editing, and Captioning
+
+URL Source: https://arxiv.org/pdf/2606.04939v1
+
+Published Time: Thu, 04 Jun 2026 01:29:32 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# UAT: Unified Audio-Text Diffusion for Audio Generation, Editing, and Captioning 
+
+Hui Wang 1, 2 *, Yifan Yang 3, Zeyue Tian 4, 5 , Yuhang Jia 1, Jinghua Zhao 1, Long Zhou 2†
+
+Bing Han 3, Cheng Liu 1, Jiaming Zhou 1, Geng Tu 2, Yong Qin 1‡
+
+> 1
+
+College of Computer Science, Nankai University 2Tencent 
+
+> 3
+
+Shanghai Jiao Tong University 4HKUST 5Noiz AI  
+
+> Correspondence: wanghui_hlt@mail.nankai.edu.cn, qinyong@nankai.edu.cn
+
+Abstract 
+
+Audio generation and audio-to-text understand-ing remain largely separate, with diffusion mod-els dominating high-fidelity synthesis and au-toregressive (AR) language models driving cap-tioning and semantic prediction. Existing uni-fied approaches typically rely on either het-erogeneous modules or AR-centric modeling, which can hinder joint optimization and limit acoustic fidelity. We present UAT, to our knowl-edge, the first diffusion-centric framework that supports unified audio generation, editing, and captioning. UAT couples continuous latent dif-fusion for audio with masked discrete diffu-sion for text, enabling bidirectional audio-text modeling within a shared dual-stream back-bone. Experiments show that UAT preserves strong audio generation and editing capabil-ities while achieving competitive captioning performance, demonstrating a favorable bal-ance between acoustic synthesis and seman-tic prediction. Demo samples are available at 
+
+https://UAT-demo.github.io .
+
+1 Introduction 
+
+Unifying generation and understanding within a single model has emerged as an important re-search direction. Recent studies have made sub-stantial progress within the image and video do-mains (Zhou et al., 2025; Zhao et al., 2025b; Li et al., 2025; Xie et al., 2025). These works suggest that a unified formulation can facilitate cross-task knowledge transfer, reduce redundant task-specific designs, and bridge the gap between perceptual synthesis and semantic understanding. Despite these advances, audio generation and audio understanding are still largely studied un-der separate modeling paradigms. High-fidelity text-to-audio (TTA) generation and editing are pre-dominantly driven by diffusion-based models oper-ating in continuous latent spaces (Liu et al., 2023,                 
+
+> *Work done during internship at Tencent.
+> †Project Leader ‡Corresponding Author Unified
+> LLM
+> MLLM Unified
+> Diffusion
+> (a) Hybrid Architecture (b)AR -centric
+> Text Audio
+> (c)Diffusion -centric
+> …
+> Text &Audio Text &Audio Text Audio
+> Text &Audio Text Audio
+> Diffusion
+
+Figure 1: Three architectural routes toward unified audio-text modeling: hybrid systems, autoregressive-centric models, and our diffusion-centric model. 
+
+2024; Guan et al., 2024), whereas audio caption-ing and understanding are typically formulated as autoregressive (AR) generation tasks within large language models (Dinkel et al., 2025; Ghosh et al., 2025a). This separation prevents different tasks from sharing model architectures, representations, and supervision. Consequently, audio synthesis and textual prediction remain optimized in isolation, limiting cross-task transfer, data-efficient learning, and unified audio-text modeling. Recent efforts toward unified audio generation and understanding generally follow two paradigms, as shown in Figure 1. Hybrid architectures (Tian et al., 2026c) connect frozen multimodal large lan-guage models (MLLMs) with diffusion backbones via feature projection, but their generation and un-derstanding components still operate in separate latent spaces and are optimized with different ob-jectives, limiting the ability to jointly model seman-tic reasoning and acoustic synthesis. AR-centric models (Tian et al., 2026a; Yang et al., 2026; Lu et al., 2024) provide a unified sequence-modeling interface by interleaving text tokens with audio representations and predicting discrete audio to-kens for synthesis. However, generation quality is limited by the information bottleneck of discrete acoustic tokenization. In addition, strictly left-to-right decoding makes it difficult to correct earlier errors and maintain global acoustic consistency. 1
+
+> arXiv:2606.04939v1 [eess.AS] 3 Jun 2026
+
+These limitations motivate a diffusion-centric al-ternative for unified audio-text modeling. However, adapting existing text-to-audio diffusion backbones to this setting is non-trivial. At the architectural level, current TTA diffusion models are inher-ently asymmetric : audio latents are iteratively updated by the diffusion transformer, while text remains a static condition injected through cross-attention. This design lacks an active text stream that can be progressively refined for audio-to-text generation. At the modeling level, audio and text exhibit a paradigm discrepancy : audio synthesis is performed in continuous latent spaces, whereas text generation requires discrete token prediction. Together, these challenges make it difficult to di-rectly repurpose existing TTA diffusion backbones for unified audio generation and captioning. To address these challenges, we present Unified 
+
+Audio-Text Diffusion ( UAT ), a diffusion frame-work for audio generation, editing, and captioning. To resolve the architectural asymmetry, UAT ex-tends a pretrained text-to-audio diffusion backbone with a lightweight text stream, forming a coupled dual-stream architecture. To bridge the paradigm discrepancy, UAT combines continuous latent dif-fusion for acoustic modeling with masked discrete diffusion for textual token generation. Experiments show that this retrofitted unified model achieves strong performance in audio generation and editing while maintaining competitive audio captioning re-sults, supporting the viability of diffusion-centric unified audio-text modeling. Our contributions are summarized as follows: • We formulate audio generation, editing, and cap-tioning within a unified diffusion-centric frame-work, providing a non-autoregressive alternative to unified audio-text modeling. • We introduce a coupled dual-stream architecture that combines continuous audio diffusion with discrete text diffusion, addressing both architec-tural asymmetry and paradigm discrepancy. • We demonstrate through extensive experiments that UAT preserves strong generation and editing capability while achieving competitive caption-ing performance. 
+
+2 Related Work 
+
+2.1 Audio Generation and Editing 
+
+Audio generation has achieved substantial progress with the development of diffusion-based models. Recent text-to-audio systems typically perform de-noising in continuous waveform or latent spaces, enabling the synthesis of high-fidelity audio that is semantically aligned with textual prompts (Liu et al., 2023, 2024; Tian et al., 2026b; Guan et al., 2024). Compared with autoregressive generation over discrete audio tokens, diffusion models pro-vide an iterative refinement process that is well-suited for modeling fine-grained acoustic details and complex temporal structures. This property also makes them effective for audio editing (Wang et al., 2023; Jia et al., 2025a), where the model is required to modify specific acoustic content while preserving the surrounding context. Despite their strong synthesis and editing capa-bilities, existing diffusion-based audio models are mostly designed as one-way conditional genera-tors (Liu et al., 2023; Ghosal et al., 2023; Evans et al., 2025). Text is usually encoded as a condition and injected into the denoising network through cross-attention or similar mechanisms, while only audio latents are progressively updated. Such an asymmetric formulation is effective for text-conditioned generation, but it does not naturally support inverse tasks such as audio captioning. 
+
+2.2 Audio Captioning and Understanding 
+
+Audio captioning and understanding focus on ex-tracting semantic information from acoustic signals and expressing it in natural language. Recent meth-ods commonly formulate these tasks as audio-to-text generation problems, where an audio encoder first maps input audio into continuous features or discrete representations, and an autoregressive lan-guage model then generates captions, answers, or instructions (Ghosh et al., 2025a; Chu et al., 2024; Zhao et al., 2025a). Benefiting from the reason-ing and language generation ability of large lan-guage models, these approaches have shown strong performance on audio captioning, audio question answering, and instruction-following tasks. However, audio understanding models are opti-mized for semantic prediction rather than acous-tic synthesis. As a result, they are not naturally equipped with the ability to generate or edit high-fidelity audio. To extend such models to gener-ative tasks, prior methods often rely on discrete audio token prediction or external generation mod-ules (Huang et al., 2024), which can introduce quantization loss, complicate the overall system, and degrade acoustic realism (Guo et al., 2025; Wang et al., 2025). 22.3 Unified Audio-Text Modeling 
+
+Recent efforts have explored unified audio-text modeling to bridge audio understanding and gener-ation. One line of work adopts hybrid architectures that connect language models with dedicated au-dio encoders and audio generators through feature projection or intermediate representations (Tian et al., 2026c). By leveraging specialized modules for different modalities and tasks, these systems can support a broad range of audio-text interac-tions, including speech understanding, audio cap-tioning, and text-guided generation. However, the understanding and generation components often operate in separate representation spaces and are optimized with different objectives, which limits end-to-end cross-modal alignment, joint optimiza-tion, and knowledge sharing across tasks. Another line of work formulates audio-text mod-eling as autoregressive sequence prediction over text tokens and discrete audio tokens, particularly on the generation side (Tian et al., 2026a; Yang et al., 2026; Lu et al., 2024). By converting audio signals or spectrograms into token sequences, these methods provide a unified interface for audio gen-eration, continuation, captioning, and multimodal reasoning. Despite this conceptual simplicity, dis-crete audio tokenization can introduce a quantiza-tion bottleneck and may discard fine-grained acous-tic details that are important for perceptual quality. In addition, autoregressive decoding produces au-dio tokens sequentially, which can be inefficient for long audio sequences and does not naturally provide the iterative refinement mechanism that is central to diffusion-based synthesis and editing. 
+
+3 Method 
+
+3.1 Problem Formulation 
+
+Given an audio-text pair (a, y ), where a is an au-dio and y is a text sequence, UAT supports three tasks: text-to-audio generation, text-guided audio editing, and audio captioning. We view both audio synthesis and text generation as conditional denois-ing processes over different modalities. Audio is modeled through continuous latent diffusion, while text is modeled through masked discrete diffusion. Under this view, different tasks correspond to dif-ferent choices of observed conditions and corrupted target variables, enabling generation, editing, and captioning within a unified diffusion framework. Audio Text                   
+
+> Audio
+> Diffusion Head
+> Text
+> Diffusion Head
+> Audio
+> VAE Encoder T5 Encoder
+> Dual -Stream DiT
+> Training Objectives
+> Audio Diffusion Loss
+> (continuous )
+> Text Diffusion Loss
+> (discrete)
+> !
+> DiT Block
+> 24 ×Audio Stream Text Stream
+> !
+> !
+> ❄❄
+> !
+> Trainable Frozen ❄
+> Figure 2: Overview of UAT, which couples continuous audio diffusion with masked text diffusion in a dual-stream DiT.
+
+3.2 Model Architecture 
+
+As shown in Figure 2, the model consists of frozen modality encoders, a trainable dual-stream DiT, and two modality-specific output heads. 
+
+Modality encoders. UAT uses modality-specific encoders to obtain audio and text representations. Given an audio waveform a, a frozen audio VAE 
+
+Ea maps it into a continuous latent representation: 
+
+z0 = Ea(a).
+
+A frozen T5 encoder Et maps the task-specific text input y into token-level representations: 
+
+h(0) = Et(y).
+
+Here, y is the clean prompt for audio generation, and the corrupted caption for audio captioning. 
+
+Dual-stream DiT. The core of UAT is a dynamic dual-stream Diffusion Transformer, which main-tains an audio stream and a text stream throughout the backbone. The audio stream processes contin-uous audio latent representations, while the text stream processes token-level text representations. Unlike conventional text-to-audio diffusion models that use fixed text embeddings as conditions, UAT updates both audio and text states layer by layer. 3UAT                      
+
+> Noise Latent
+> Text Prompt
+> Encoder
+> UAT
+> Source Audio Editing Prompt
+> Encoder
+> Encoder
+> UAT
+> Audio
+> Encoder
+> (a) Audio Generation (b) Audio Editing (c) Audio Captioning
+> Masked Text Token
+> prediction
+> Add Noise
+> prediction T
+> [M] …
+> …
+> Iterative
+> sampling
+> Iterative
+> sampling
+> Iterative
+> sampling
+> !!
+> Encoder
+> [M] [M]
+> [M] [M]
+
+Figure 3: Multi-task inference with UAT. The same dual-stream DiT model supports audio generation, instruction-guided audio editing, and audio captioning by changing the observed condition and the corrupted modality. 
+
+Let z(l) and h(l) denote the audio and text states at the l-th layer, respectively. Let F (l) 
+
+> a
+
+and F (l)
+
+> t
+
+denote the corresponding audio-stream and text-stream update functions in the l-th dual-stream DiT layer. The layer-wise interaction is formulated as: 
+
+z(l+1) = F (l)
+
+> a
+
+
+
+z(l), h (l)
+
+,h(l+1) = F (l)
+
+> t
+
+
+
+h(l), z (l+1) 
+
+.
+
+Here, the audio stream is conditioned on the cur-rent text states, and the text stream is conditioned on the updated audio states. Through this mutual conditioning, audio and text representations are dy-namically refined and co-evolve within the same diffusion backbone. 
+
+Diffusion Heads. UAT uses two diffusion heads on top of the dual-stream DiT. The audio diffusion head is inherited from the pretrained backbone and predicts the continuous velocity target for audio denoising, supporting both generation and editing. The text diffusion head maps the final text states to vocabulary logits for masked token reconstruc-tion, with lightweight refiner blocks used to further refine text-side representations before prediction. Together, these two heads enable the same back-bone to support continuous audio diffusion and discrete text diffusion. 
+
+3.3 Training Objectives 
+
+UAT is optimized with a joint objective that com-bines continuous audio diffusion and masked dis-crete text diffusion. 
+
+Audio diffusion objective. Following the Stable Audio-style cosine velocity-prediction objective, we train the audio generation branch to denoise continuous audio latents. Given an audio wave-form a, we encode it into a clean latent represen-tation z0 = Ea(a). We sample Gaussian noise 
+
+ϵ ∼ N (0 , I ) and a timestep t ∈ [0 , 1] , and con-struct the noisy latent as 
+
+zt = αtz0 + σtϵ, 
+
+where αt = cos( πt/ 2) and σt = sin( πt/ 2) . The model predicts the corresponding velocity target 
+
+vtarget = αtϵ − σtz0:
+
+Laudio = Ez0,ϵ,t 
+
+h
+
+∥vθ(zt, y, t ) − vtarget ∥22
+
+i
+
+.
+
+Masked text diffusion objective. For audio cap-tioning, we formulate text generation as masked discrete diffusion. Given a caption y = {yi}Li=1 ,we sample a text diffusion timestep τ ∈ (0 , 1] and independently mask each token with probability 
+
+pmask (τ ) = (1 − ε)τ , producing a corrupted cap-tion yτ . Let mi ∈ { 0, 1} indicate whether the i-th token is masked. The corrupted caption is pro-cessed by the text stream together with the audio latent z0, and the model is trained to reconstruct the original tokens at the masked positions: 
+
+Ltext = Ez0,y,τ,m 
+
+"
+
+w(τ )
+
+L
+
+> L
+
+X
+
+> i=1
+
+miℓi
+
+#
+
+,
+
+where ℓi = − log pθ(yi | cτ ), cτ = (yτ , z 0),and w(τ ) = σ′(τ )/(exp( σ(τ )) − 1) with σ(τ ) = 
+
+− log(1 − (1 − ε)τ ). The clean caption is used only to construct the corrupted input and provide reconstruction targets. 
+
+Joint objective. The final training objective is: 
+
+L = Laudio + λLtext ,
+
+where λ is a balancing hyperparameter that coor-dinates generative audio synthesis and text recon-struction. This joint optimization enables the dual-stream DiT to learn shared, bidirectional audio-text representations. 43.4 Multi-Task Inference 
+
+During inference, a single set of trained UAT weights can be flexibly deployed across three major audio-language tasks by activating the correspond-ing processing pathways, as illustrated in Figure 3. 
+
+Audio Generation. To perform text-to-audio generation, given an input text prompt y, we ex-tract its conditioning representation using the text encoder. Starting from randomly sampled Gaus-sian audio latents, the audio stream follows the learned velocity field conditioned on the text rep-resentation and progressively transports the latent trajectory toward the clean audio latent ˆz0. Finally, the frozen VAE decoder reconstructs ˆz0 into the output waveform. 
+
+Audio Editing. For text-guided audio editing, we leverage an SDEdit-style procedure in the contin-uous latent space (Meng et al., 2022). Given a source audio asrc and a target editing prompt ynew ,the source audio is first mapped to the latent space as z0 = Ea(asrc ). We then perturb z0 to an inter-mediate noise level by adding Gaussian noise: 
+
+zt0 = z0 + σt0 ϵ, ϵ ∼ N (0 , I),
+
+where σt0 is determined by the inference scheduler, and t0 controls the trade-off between preserving the source audio structure and following the target prompt. Starting from the perturbed latent zt0 , UAT follows the learned velocity field under the target text condition ynew to obtain the edited latent ˆz′
+
+> 0
+
+.The edited waveform is then reconstructed by the frozen VAE decoder. 
+
+Audio Captioning. For audio-to-text generation, the input audio is first encoded into a continuous latent representation z0 by the frozen audio VAE encoder. The audio latent is processed by the audio stream and provides audio-conditioned features to the text stream. The text sequence is initialized with fully masked tokens. UAT then performs dis-crete reverse diffusion over text tokens. At each step, the caption head predicts token distributions conditioned on the current partially reconstructed text sequence and the audio latent. The process progressively reconstructs the masked tokens and outputs the final natural-language description. 
+
+4 Experiments 
+
+4.1 Dataset Description 
+
+We construct a large-scale audio training corpus by integrating multiple public audio sources, including AudioSetCaps (Bai et al., 2025), VGGSound (Chen et al., 2020), AudioCaps 2.0 1, and WavCaps (Mei et al., 2024). The resulting corpus contains approx-imately 2.4M audio samples, totaling about 6.6K hours of audio. Detailed statistics are provided in Appendix A.1. 
+
+4.2 Implementation Details Model Architecture. UAT is initialized from the pretrained AudioX checkpoint 2, which follows the Stable Audio DiT architecture. The DiT backbone contains 24 transformer blocks with a hidden di-mension of 1536. The frozen VAE compresses au-dio into continuous latent representations, while the frozen T5-Base encoder provides 768-dimensional text features. Text branch refines text features in selected DiT blocks via audio-conditioned cross-attention and a residual feed-forward layer. 
+
+Training Details. For classifier-free guidance (CFG), text conditioning is dropped with a proba-bility of 0.1 during training. The loss balancing weight is set to λ = 0 .2. We train the model for 60,000 steps on 32 NVIDIA H20 GPUs us-ing AdamW with a learning rate of 8 × 10 −5 and a global batch size of 768. 
+
+Inference Details. For audio generation, we use 100 flow-matching sampling steps with a CFG scale of 7.0. For audio editing, we use the same 100-step flow-matching sampler with a CFG scale of 7.0, and start the editing trajectory from step 70. 
+
+4.3 Evaluation Evaluation Datasets. For audio generation, we evaluate on the AudioCaps (Kim et al., 2019) and VGGSound test sets. For audio editing, we evalu-ate on the Add, Delete, and Replace settings from AuditScore-Bench (Jia et al., 2025b). For audio captioning, we report results on AudioCaps cap-tioning benchmarks. A detailed description of the editing data is provided in Appendix A.2. 
+
+Evaluation Metrics. For audio generation, we evaluate model performance using both objective and subjective evaluations. For objective evalu-ation, we report KL divergence, Inception Score (IS) (Barratt and Sharma, 2018), Fréchet Distance (FD) (Heusel et al., 2017), Fréchet Audio Dis-tance (FAD) (Kilgour et al., 2019), and CLAP 
+
+> 1https://github.com/cdjkim/audiocaps/tree/ master/dataset2.0
+> 2https://huggingface.co/HKUSTAudio/AudioX
+
+5Model Type Model AudioCaps test set VGGSound test set KL ↓ IS ↑ FD ↓ FAD ↓ CLAP ↑ KL ↓ IS ↑ FD ↓ FAD ↓ CLAP ↑                                                                                                    
+
+> Specialized Models Tango 2 1.12 10.65 11.55 2.82 0.568 1.48 6.21 31.01 4.33 0.337 AudioLDM 1.98 6.67 34.71 8.01 0.355 1.49 6.41 35.66 9.88 0.432 AudioLDM 2 1.46 9.45 17.66 1.83 0.444 1.17 6.96 19.65 6.32 0.380 MAGNeT 1.69 6.90 27.09 3.12 0.380 1.28 6.12 28.80 4.80 0.335 Stable Audio Open 2.74 7.37 41.45 8.83 0.211 1.89 6.67 39.25 7.75 0.304 AudioX 1.37 12.05 13.03 2.03 0.488 1.29 8.97 21.09 5.31 0.439 Unified Models Unified-IO 2 2.79 4.12 82.54 21.88 0.189 2.25 3.96 80.94 21.02 0.174 UniAudio 2.0 3.25 4.81 53.55 9.99 0.087 2.69 5.34 49.39 10.25 0.151 Audio-Omni 1.39 9.94 45.43 2.00 0.498 1.33 8.31 53.97 4.56 0.407 Ours 1.39 12.47 14.47 2.87 0.491 1.28 9.34 22.07 4.91 0.434
+
+Table 1: Comparison of text-to-audio generation performance on the AudioCaps and VGGSound test sets. Bold numbers indicate the best results among unified models.                                   
+
+> Model OVL ↑REL ↑
+> Ground Truth 4.347 ±0.142 4.407 ±0.157
+> Unified-IO 2 2.853 ±0.200 2.967 ±0.214
+> UniAudio 2.0 3.620 ±0.171 3.160 ±0.180
+> Audio-Omni 4.047 ±0.133 3.893 ±0.157
+> Ours 4.260 ±0.131 4.260 ±0.155
+
+Table 2: Human evaluation results on overall quality (OVL) and relevance (REL). 
+
+score (Elizalde et al., 2023) 3. KL divergence, FD, and FAD quantify the distributional discrepancy be-tween generated and reference audio. IS measures the diversity of generated audio, while CLAP evalu-ates text-audio semantic alignment. For subjective evaluation, we randomly sample 30 examples from the test set and conduct human evaluation along two dimensions: overall quality and relevance to the text prompt. Each audio sample is rated by five human evaluators on a 1–5 scale. Details are provided in Appendix A.3. For audio editing, we use the CLAP score be-tween the edited audio and the target prompt as a proxy for instruction-following. We further report FAD and IS relative to the source audio to assess the preservation of distributional and perceptual characteristics from the original audio. For audio captioning, we report CIDEr (Vedan-tam et al., 2015), SPICE (Anderson et al., 2016), SPIDEr (Liu et al., 2017), SBERT similarity (SBERT-SIM) (Reimers and Gurevych, 2019), and FENSE (Zhou et al., 2022), computed using the 
+
+aac-metrics package 4, to assess both lexical over-lap and semantic-level caption quality. 
+
+> 3https://github.com/LAION-AI/CLAP
+> 4https://github.com/Labbeti/aac-metrics
+
+Baselines. We compare UAT with specialized task-specific baselines and unified audio-text mod-els. Specialized baselines include Tango 2 (Ma-jumder et al., 2024), AudioLDM (Liu et al., 2023), AudioLDM 2 (Liu et al., 2024), MAGNeT (Ziv et al., 2024), Stable Audio Open (Evans et al., 2025), and AudioX (Tian et al., 2026b) for audio generation; AP-adapter (Tsai et al., 2024), CycleD-iffusion (Wu and De la Torre, 2023), DDIM In-version (Ho et al., 2020; Song et al., 2020), and MusicGen (Copet et al., 2023) for audio editing; and MiDashengLM (Dinkel et al., 2025), Qwen2-Audio (Chu et al., 2024), Qwen3-Omni (Xu et al., 2025), Audio Flamingo 2 (Ghosh et al., 2025b), and Audio Flamingo 3 (Ghosh et al., 2025a) for au-dio captioning. Unified baselines include Unified-IO 2 (Lu et al., 2024), UniAudio 2.0 (Yang et al., 2026), and Audio-Omni (Tian et al., 2026c), with only Audio-Omni evaluated on audio editing be-cause the other unified models do not support this task. See Appendix A.4 for details. 
+
+5 Results 
+
+5.1 Main Results Audio Generation. Table 1 reports text-to-audio generation results on the AudioCaps and VG-GSound test sets. Compared with existing uni-fied audio-text models, UAT achieves the strongest overall generation performance. On AudioCaps, UAT obtains the best IS among all evaluated mod-els and substantially outperforms Unified-IO 2 and UniAudio 2.0 across all metrics. Compared with Audio-Omni, UAT achieves much higher IS and significantly lower FD, while maintaining compa-rable KL and CLAP scores. On VGGSound, UAT also achieves the best IS and the lowest KL among unified models, with FD and CLAP scores close 6Model Type Model Add Delete Replace CLAP ↑ FAD ↓ IS ↑ CLAP ↑ FAD ↓ IS ↑ CLAP ↑ FAD ↓ IS ↑                                                       
+
+> Specialized Models AP-adapter 0.387 45.683 4.138 0.401 48.148 3.088 0.432 47.309 4.117 CycleDiffusion 0.434 4.671 3.451 0.355 3.516 2.867 0.447 5.968 3.071 DDIM Inversion 0.384 4.348 3.266 0.316 5.736 2.544 0.385 6.111 2.844 MusicGen 0.382 2.599 3.646 0.342 4.284 3.126 0.404 4.230 3.731 Unified Models Audio-Omni 0.326 45.378 3.422 0.255 48.172 2.167 0.317 47.195 4.147
+> Ours 0.406 3.220 4.072 0.350 4.243 3.325 0.439 5.199 3.682
+> Table 3: Editing performance comparison under Add, Delete, and Replace settings. Bold numbers indicate the best performance among unified models.
+
+Model Type Method Params CIDEr SPICE SPIDEr SBERT-SIM FENSE 
+
+Specialized Models MiDashengLM 7.6B 0.397 0.133 0.265 0.583 58.04 Qwen2-Audio 8.2B 0.206 0.080 0.143 0.412 36.82 Qwen3-Omni 34.5B 0.270 0.131 0.200 0.559 54.66 Audio Flamingo 2 4.7B 0.418 0.112 0.265 0.503 49.30 Audio Flamingo 3 9B 0.614 0.184 0.399 0.635 63.36 Unified Models Unified-IO 2 1.1B 0.112 0.069 0.090 0.379 37.64 UniAudio 2.0 4.9B 0.603 0.147 0.375 0.571 56.06 
+
+Audio-Omni 7.9B 0.167 0.131 0.149 0.555 48.89 Ours 1.7B 0.406 0.139 0.272 0.572 54.08 
+
+> Table 4: Performance comparison on audio captioning metrics. Bold numbers indicate the best performance among unified models, and underlined numbers indicate the second-best performance.
+
+to the specialized AudioX model. These results indicate that introducing a text stream for caption-ing does not destroy the generation capability of the pretrained diffusion backbone. Although some specialized TTA models remain strong on specific metrics, UAT achieves a favorable balance between generation quality and unified modeling ability, showing that a diffusion-centric unified model can retain competitive audio synthesis performance. Table 2 further presents human evaluation results on overall quality and relevance. UAT achieves an OVL score of 4.260 and a REL score of 4.260, which are close to the ground-truth scores of 4.347 and 4.407. UAT also clearly outperforms other uni-fied models, including Unified-IO 2, UniAudio 2.0, and Audio-Omni. This confirms that the generated audio is not only strong under automatic metrics, but also preferred by human listeners in terms of perceptual quality and text relevance. 
+
+Audio Editing. Table 3 compares audio edit-ing performance under the Add, Delete, and Re-place settings. Compared with the unified baseline Audio-Omni, UAT achieves consistently higher CLAP scores and lower FAD across all three edit-ing scenarios, indicating better instruction follow-ing and stronger preservation of the original audio distribution. UAT also improves IS under the Add and Delete settings, although Audio-Omni obtains a higher IS under Replace. Compared with specialized editing baselines, UAT does not always achieve the best score on in-dividual metrics, but it shows a more balanced per-formance across semantic alignment, audio quality, and distributional fidelity. In particular, UAT avoids the severe FAD degradation observed in some meth-ods, while maintaining competitive CLAP and IS scores across Add, Delete, and Replace. These results suggest that UAT can support flexible au-dio editing within a unified diffusion framework, achieving a favorable trade-off between controlla-bility, quality, and generality. 
+
+Audio Captioning. Table 4 reports audio cap-tioning results. Compared with unified audio-text baselines, UAT achieves competitive captioning performance with a moderate model size. UAT substantially outperforms Unified-IO 2 and Audio-Omni on CIDEr, SPIDEr, SBERT similarity, and FENSE, and obtains the highest SBERT similarity among unified models. Although UniAudio 2.0 achieves higher CIDEr, SPICE, and SPIDEr, UAT uses fewer parameters and maintains much stronger audio generation and editing performance, making it a more balanced unified audio-text model. Compared with specialized understanding mod-7Pretrain Model Audio Generation Audio Caption KL ↓ IS ↑ FD ↓ FAD ↓ CLAP ↑ CIDEr ↑ SPICE ↑ SPIDEr ↑ SBERT-SIM ↑ FENSE ↑                    
+
+> AudioX 1.39 12.47 14.47 2.87 0.49 0.41 0.14 0.27 0.57 54.08
+> Stable Audio Open 2.33 8.10 27.51 7.08 0.29 0.38 0.12 0.25 0.55 52.26
+
+Table 5: Effect of different pre-trained audio diffusion backbones on audio generation and captioning performance. 3 6 12 24   
+
+> Number of DiT Blocks with Text Branches
+> 1.8
+> 2.0
+> 2.2
+> 2.4
+> 2.6
+> 2.8
+> 3.0
+> FAD  ↓
+> FAD ↓
+> SPIDEr ↑
+> 0.20
+> 0.22
+> 0.24
+> 0.26
+> 0.28
+> 0.30
+> SPIDEr  ↑
+
+Figure 4: Effect of text-branch depth on audio genera-tion and captioning performance. 
+
+els, UAT is competitive with several large audio-language models despite being optimized under a unified diffusion framework. It outperforms Qwen2-Audio and Qwen3-Omni on multiple cap-tioning metrics, and achieves results comparable to MiDashengLM and Audio Flamingo 2 on CIDEr and SPIDEr. Nevertheless, UAT still lags behind Audio Flamingo 3, reflecting that its understand-ing capability remains an area for future improve-ment. Overall, these results suggest that masked discrete diffusion is a viable mechanism for audio-conditioned text generation within a diffusion-centric unified audio-text model. 
+
+5.2 Ablation Studies 
+
+We conduct ablation studies on key design choices of UAT to study their effects on generation and understanding capabilities, with additional results provided in Appendix B. 
+
+Effect of text branch depth. We first investigate how the depth of the inserted text branch affects unified audio-text modeling. Here, depth refers to the number of DiT blocks augmented with an ad-ditional text branch, ranging from all 24 blocks to only the last few blocks. As shown in Figure 4, re-ducing the number of text-branch blocks from 24 to 3 gradually improves audio generation quality, as indicated by lower Audio FAD, but consistently de-grades captioning performance, reflected by lower Caption SPIDEr. This reveals a trade-off between preserving the original audio denoising capability and improving text-side semantic modeling. A deeper text branch provides more capacity for masked token recovery and enables richer audio-text interaction, leading to better captioning perfor-mance. In contrast, a shallower text branch perturbs the pretrained audio diffusion pathway less, thereby better preserving audio generation quality. These results suggest that the depth of the text branch should be carefully balanced for unified generation and understanding. 
+
+Effect of pretrained audio backbone. We fur-ther examine the effect of the pretrained audio diffusion backbone. As shown in Table 5, UAT initialized from AudioX consistently outperforms the variant initialized from Stable Audio Open on both audio generation and captioning metrics, in-dicating that a stronger pretrained text-to-audio diffusion backbone brings larger benefits to uni-fied audio-text modeling. Specifically, the AudioX-based model achieves better KL, IS, FD, FAD, and CLAP scores, suggesting that stronger pre-training provides more effective acoustic priors for audio synthesis. It also improves CIDEr, SPICE, SPI-DEr, SBERT similarity, and FENSE, showing that stronger audio representations and generation pri-ors can further benefit audio-conditioned seman-tic prediction. These results demonstrate that the choice of pretrained diffusion backbone affects not only generation quality but also the effectiveness of text generation in unified audio-text modeling. 
+
+6 Conclusion 
+
+In this paper, we introduced UAT, a diffusion-centric unified audio-text framework built upon a pretrained audio generation backbone. By inte-grating a dual-stream DiT, UAT jointly supports continuous latent diffusion for audio generation and editing, and masked discrete diffusion for au-dio captioning. Experiments demonstrate that UAT achieves a favorable balance between acoustic fi-delity and semantic understanding. Compared with existing unified models, UAT obtains superior per-formance on multiple metrics while remaining com-petitive with task-specific systems. These results highlight the potential of diffusion models not only as powerful audio generators but also as a founda-tion for unified audio-text modeling. 8Limitations 
+
+Although UAT demonstrates the feasibility of uni-fied audio-text diffusion modeling, it still has sev-eral limitations: (1) UAT relies on the capability of the underlying text-to-audio diffusion backbone. Since our model is built by extending a pretrained audio generation model, its generation and editing quality may still be constrained by the backbone’s ability in acoustic realism, prompt following, and coverage of diverse sound events. (2) The cur-rent understanding ability of UAT is still relatively limited compared with large autoregressive audio-language models. While UAT supports audio cap-tioning within the same diffusion-centric frame-work, tasks requiring complex reasoning, long-form responses, or external knowledge remain chal-lenging. (3) UAT has not yet been fully explored on broader audio-language tasks. Nevertheless, its unified architecture provides a natural path for fu-ture extension. Since new tasks can be introduced by changing the training data rather than modifying the model architecture, UAT can be extended to au-dio question answering and other audio-language reasoning tasks with corresponding annotated data. 
+
+Ethical Considerations 
+
+This work may benefit audio content creation, au-tomatic audio description, and multimodal acces-sibility by unifying audio generation, editing, and captioning in a single framework. However, audio generation and editing models may also be misused to create deceptive or unauthorized synthetic audio. Responsible use should include clear disclosure of generated or edited content, respect for consent and copyright, and safeguards such as watermarking or synthetic audio detection. Models may also inherit biases from training data, which calls for careful dataset curation and evaluation. AI assistants were used in the preparation of this work for data processing and language polishing. 
+
+References 
+
+Peter Anderson, Basura Fernando, Mark Johnson, and Stephen Gould. 2016. Spice: Semantic propositional image caption evaluation. In European conference on computer vision , pages 382–398. Springer. Jisheng Bai, Haohe Liu, Mou Wang, Dongyuan Shi, Wenwu Wang, Mark D Plumbley, Woon-Seng Gan, and Jianfeng Chen. 2025. Audiosetcaps: An en-riched audio-caption dataset using automated genera-tion pipeline with large audio and language models. 
+
+IEEE Transactions on Audio, Speech and Language Processing .Shane Barratt and Rishi Sharma. 2018. A note on the inception score. arXiv preprint arXiv:1801.01973 .Honglie Chen, Weidi Xie, Andrea Vedaldi, and An-drew Zisserman. 2020. Vggsound: A large-scale audio-visual dataset. In ICASSP 2020-2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 721–725. IEEE. Yunfei Chu, Jin Xu, Qian Yang, Haojie Wei, Xipin Wei, Zhifang Guo, Yichong Leng, Yuanjun Lv, Jinzheng He, Junyang Lin, and 1 others. 2024. Qwen2-audio technical report. arXiv preprint arXiv:2407.10759 .Jade Copet, Felix Kreuk, Itai Gat, Tal Remez, David Kant, Gabriel Synnaeve, Yossi Adi, and Alexandre Défossez. 2023. Simple and controllable music gen-eration. Advances in Neural Information Processing Systems , 36:47704–47720. Heinrich Dinkel, Gang Li, Jizhong Liu, Jian Luan, Yadong Niu, Xingwei Sun, Tianzi Wang, Qiyang Xiao, Junbo Zhang, and Jiahao Zhou. 2025. Midashenglm: Efficient audio understand-ing with general audio captions. arXiv preprint arXiv:2508.03983 .Benjamin Elizalde, Soham Deshmukh, and Huam-ing Wang. 2023. Natural language supervision for general-purpose audio representations. Preprint ,arXiv:2309.05767. Zach Evans, Julian D Parker, CJ Carr, Zack Zukowski, Josiah Taylor, and Jordi Pons. 2025. Stable audio open. In ICASSP 2025-2025 IEEE International Con-ference on Acoustics, Speech and Signal Processing (ICASSP) , pages 1–5. IEEE. Deepanway Ghosal, Navonil Majumder, Ambuj Mehrish, and Soujanya Poria. 2023. Text-to-audio generation using instruction guided latent diffusion model. In Proceedings of the 31st ACM international conference on multimedia , pages 3590–3598. Sreyan Ghosh, Arushi Goel, Jaehyeon Kim, Sonal Ku-mar, Zhifeng Kong, Sang-gil Lee, Chao-Han Yang, Ramani Duraiswami, Dinesh Manocha, Rafael Valle, and Bryan Catanzaro. 2025a. Audio flamingo 3: Ad-vancing audio intelligence with fully open large audio language models. In Advances in Neural Information Processing Systems , volume 38, pages 41819–41886. Curran Associates, Inc. Sreyan Ghosh, Zhifeng Kong, Sonal Kumar, S Sak-shi, Jaehyeon Kim, Wei Ping, Rafael Valle, Dinesh Manocha, and Bryan Catanzaro. 2025b. Audio flamingo 2: An audio-language model with long-audio understanding and expert reasoning abilities. In Forty-second International Conference on Ma-chine Learning .
+
+9Wenhao Guan, Kaidi Wang, Wangjin Zhou, Yang Wang, Feng Deng, Hui Wang, Lin Li, Qingyang Hong, and Yong Qin. 2024. LAFMA: A Latent Flow Matching Model for Text-to-Audio Generation. In Interspeech 2024 , pages 4813–4817. Yiwei Guo, Zhihan Li, Hankun Wang, Bohan Li, Chong-tian Shao, Hanglei Zhang, Chenpeng Du, Xie Chen, Shujie Liu, and Kai Yu. 2025. Recent advances in discrete speech tokens: A review. IEEE Transactions on Pattern Analysis and Machine Intelligence .Martin Heusel, Hubert Ramsauer, Thomas Unterthiner, Bernhard Nessler, and Sepp Hochreiter. 2017. Gans trained by a two time-scale update rule converge to a local nash equilibrium. Advances in neural informa-tion processing systems , 30. Jonathan Ho, Ajay Jain, and Pieter Abbeel. 2020. De-noising diffusion probabilistic models. Advances in neural information processing systems , 33:6840– 6851. Rongjie Huang, Mingze Li, Dongchao Yang, Jia-tong Shi, Xuankai Chang, Zhenhui Ye, Yuning Wu, Zhiqing Hong, Jiawei Huang, Jinglin Liu, and 1 oth-ers. 2024. Audiogpt: Understanding and generating speech, music, sound, and talking head. In Proceed-ings of the AAAI Conference on Artificial Intelligence ,volume 38, pages 23802–23804. Yuhang Jia, Yang Chen, Jinghua Zhao, Shiwan Zhao, Wenjia Zeng, Yong Chen, and Yong Qin. 2025a. Au-dioeditor: A training-free diffusion-based audio edit-ing framework. In ICASSP 2025-2025 IEEE Interna-tional Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 1–5. IEEE. Yuhang Jia, Hui Wang, Xin Nie, Yujie Guo, Lianru Gao, and Yong Qin. 2025b. Towards automatic evaluation and high-quality pseudo-parallel dataset construc-tion for audio editing: A human-in-the-loop method. 
+
+arXiv preprint arXiv:2508.11966 .Kevin Kilgour, Mauricio Zuluaga, Dominik Roblek, and Matthew Sharifi. 2019. Fréchet audio distance: A metric for evaluating music enhancement algorithms. 
+
+Preprint , arXiv:1812.08466. Chris Dongjoo Kim, Byeongchang Kim, Hyunmin Lee, and Gunhee Kim. 2019. Audiocaps: Generating cap-tions for audios in the wild. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Hu-man Language Technologies, Volume 1 (Long and Short Papers) , pages 119–132. Zijie Li, Henry Li, Yichun Shi, Amir Barati Farimani, Yuval Kluger, Linjie Yang, and Peng Wang. 2025. Dual diffusion for unified image generation and un-derstanding. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 2779– 2790. Haohe Liu, Zehua Chen, Yi Yuan, Xinhao Mei, Xubo Liu, Danilo Mandic, Wenwu Wang, and Mark D Plumbley. 2023. Audioldm: Text-to-audio genera-tion with latent diffusion models. In Proc. ICML ,pages 21450–21474. Haohe Liu, Yi Yuan, Xubo Liu, Xinhao Mei, Qiuqiang Kong, Qiao Tian, Yuping Wang, Wenwu Wang, Yux-uan Wang, and Mark D Plumbley. 2024. Audi-oldm 2: Learning holistic audio generation with self-supervised pretraining. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 32:2871– 2883. Siqi Liu, Zhenhai Zhu, Ning Ye, Sergio Guadarrama, and Kevin Murphy. 2017. Improved image caption-ing via policy gradient optimization of spider. In 
+
+Proceedings of the IEEE international conference on computer vision , pages 873–881. Jiasen Lu, Christopher Clark, Sangho Lee, Zichen Zhang, Savya Khosla, Ryan Marten, Derek Hoiem, and Aniruddha Kembhavi. 2024. Unified-io 2: Scal-ing autoregressive multimodal models with vision language audio and action. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pat-tern Recognition (CVPR) , pages 26439–26455. Navonil Majumder, Chia-Yu Hung, Deepanway Ghosal, Wei-Ning Hsu, Rada Mihalcea, and Soujanya Poria. 2024. Tango 2: Aligning diffusion-based text-to-audio generative models through direct preference optimization. In ACM Multimedia 2024 .Xinhao Mei, Chutong Meng, Haohe Liu, Qiuqiang Kong, Tom Ko, Chengqi Zhao, Mark D Plumbley, Yuexian Zou, and Wenwu Wang. 2024. Wavcaps: A chatgpt-assisted weakly-labelled audio caption-ing dataset for audio-language multimodal research. 
+
+IEEE/ACM Transactions on Audio, Speech, and Lan-guage Processing , 32:3339–3354. Chenlin Meng, Yutong He, Yang Song, Jiaming Song, Jiajun Wu, Jun-Yan Zhu, and Stefano Ermon. 2022. SDEdit: Guided image synthesis and editing with stochastic differential equations. In International Conference on Learning Representations .Nils Reimers and Iryna Gurevych. 2019. Sentence-bert: Sentence embeddings using siamese bert-networks. In Proceedings of the 2019 conference on empirical methods in natural language processing and the 9th international joint conference on natural language processing (EMNLP-IJCNLP) , pages 3982–3992. Jiaming Song, Chenlin Meng, and Stefano Ermon. 2020. Denoising diffusion implicit models. In International Conference on Learning Representations .Jinchuan Tian, Sang gil Lee, Zhifeng Kong, Sreyan Ghosh, Arushi Goel, Chao-Han Huck Yang, Wen-liang Dai, Zihan Liu, Hanrong Ye, Shinji Watanabe, Mohammad Shoeybi, Bryan Catanzaro, Rafael Valle, and Wei Ping. 2026a. UALM: Unified audio lan-guage model for understanding, generation and rea-soning. In The Fourteenth International Conference on Learning Representations .
+
+10 Zeyue Tian, Zhaoyang Liu, Yizhu Jin, Ruibin Yuan, Liumeng Xue, Xu Tan, Qifeng Chen, Wei Xue, and Yike Guo. 2026b. Audiox: A unified framework for anything-to-audio generation. In The Fourteenth In-ternational Conference on Learning Representations .Zeyue Tian, Binxin Yang, Zhaoyang Liu, Jiexuan Zhang, Ruibin Yuan, Hubery Yin, Qifeng Chen, Chen Li, Jing Lv, Wei Xue, and 1 others. 2026c. Audio-omni: Extending multi-modal understanding to ver-satile audio generation and editing. arXiv preprint arXiv:2604.10708 .Fang-Duo Tsai, Shih-Lun Wu, Haven Kim, Bo-Yu Chen, Hao-Chung Cheng, and Yi-Hsuan Yang. 2024. Audio prompt adapter: Unleashing music editing abilities for text-to-music with lightweight finetuning. arXiv preprint arXiv:2407.16564 .Ramakrishna Vedantam, C Lawrence Zitnick, and Devi Parikh. 2015. Cider: Consensus-based image de-scription evaluation. In Proceedings of the IEEE conference on computer vision and pattern recogni-tion , pages 4566–4575. Hui Wang, Shujie Liu, Lingwei Meng, Jinyu Li, Yifan Yang, Shiwan Zhao, Haiyang Sun, Yanqing Liu, Hao-qin Sun, Jiaming Zhou, and 1 others. 2025. Felle: Au-toregressive speech synthesis with token-wise coarse-to-fine flow matching. In Proceedings of the 33rd ACM International Conference on Multimedia , pages 10229–10238. Yuancheng Wang, Zeqian Ju, Xu Tan, Lei He, Zhizheng Wu, Jiang Bian, and 1 others. 2023. Audit: Audio editing by following instructions with latent diffusion models. Advances in Neural Information Processing Systems , 36:71340–71357. Chen Henry Wu and Fernando De la Torre. 2023. A la-tent space of stochastic diffusion models for zero-shot image editing and guidance. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 7378–7387. Jinheng Xie, Weijia Mao, Zechen Bai, David Junhao Zhang, Weihao Wang, Kevin Qinghong Lin, Yuchao Gu, Zhijie Chen, Zhenheng Yang, and Mike Zheng Shou. 2025. Show-o: One single transformer to unify multimodal understanding and generation. In Inter-national Conference on Learning Representations ,volume 2025, pages 28240–28264. Jin Xu, Zhifang Guo, Hangrui Hu, Yunfei Chu, Xiong Wang, Jinzheng He, Yuxuan Wang, Xian Shi, Ting He, Xinfa Zhu, and 1 others. 2025. Qwen3-omni technical report. arXiv preprint arXiv:2509.17765 .Dongchao Yang, Yuanyuan Wang, Dading Chong, Songxiang Liu, Xixin Wu, and Helen Meng. 2026. Uniaudio 2.0: A unified audio language model with text-aligned factorized audio tokenization. arXiv preprint arXiv:2602.04683 .Jinghua Zhao, Hang Su, Lichun Fan, Zhenbo Luo, Hui Wang, Haoqin Sun, and Yong Qin. 2025a. Omni-clst: Error-aware curriculum learning with guided selec-tive chain-of-thought for audio question answering. 
+
+Preprint , arXiv:2509.12275. Shanshan Zhao, Xinjie Zhang, Jintao Guo, Jiakui Hu, Lunhao Duan, Minghao Fu, Yong Xien Chng, Guo-Hua Wang, Qing-Guo Chen, Zhao Xu, and 1 others. 2025b. Unified multimodal understanding and gener-ation models: Advances, challenges, and opportuni-ties. arXiv preprint arXiv:2505.02567 .Chunting Zhou, Lili Yu, Arun Babu, Kushal Tirumala, Michihiro Yasunaga, Leonid Shamis, Jacob Kahn, Xuezhe Ma, Luke Zettlemoyer, and Omer Levy. 2025. Transfusion: Predict the next token and diffuse im-ages with one multi-modal model. In International Conference on Learning Representations , volume 2025, pages 6446–6469. Zelin Zhou, Zhiling Zhang, Xuenan Xu, Zeyu Xie, Mengyue Wu, and Kenny Q Zhu. 2022. Can audio captions be evaluated with image caption metrics? In ICASSP 2022-2022 IEEE International Confer-ence on Acoustics, Speech and Signal Processing (ICASSP) , pages 981–985. IEEE. Alon Ziv, Itai Gat, Gael Le Lan, Tal Remez, Felix Kreuk, Jade Copet, Alexandre Défossez, Gabriel Synnaeve, and Yossi Adi. 2024. Masked audio generation using a single non-autoregressive transformer. In Inter-national Conference on Learning Representations ,volume 2024, pages 43249–43268. 
+
+11 A Supplementary Experimental Settings 
+
+A.1 Training Dataset Detail 
+
+The training corpus consists of four filtered audio-text datasets, as summarized in Table 6. We filter these datasets to remove any overlap with the eval-uation test sets and retain audio clips of approxi-mately 10 seconds. For the VGGSound subset, part of the captions are adopted from the IF-Caps (Tian et al., 2026b) annotations. We use task-specific sampling ratios for different training objectives. For text-to-audio training, we sample from AudioSetCaps, AudioCaps 2.0, VG-GSound, and WavCaps with ratios of 50%, 20%, 15%, and 15%, respectively. For audio-to-text train-ing, we use AudioSetCaps, AudioCaps 2.0, and WavCaps with ratios of 15%, 60%, and 25%, re-spectively. This strategy allows generation training to benefit from large-scale and diverse audio-text pairs, while captioning training places more em-phasis on higher-quality caption annotations. 
+
+A.2 Audio Editing Test Set Details 
+
+AuditScore-Bench (Jia et al., 2025b) is constructed from the AudioCaps dataset (Kim et al., 2019) and comprises 240 test samples, covering three audio editing operations: Add, Delete, and Replace, with 80 samples for each category. Each sample consists of a real audio clip from AudioCaps paired with triplet annotations, including a natural-language editing instruction (e.g., “Add a woman talking.”), an original prompt describing the source audio, and a target prompt describing the desired edited audio. Specifically, the Add operation requires the model to introduce a new sound source while preserving the original acoustic events; the Delete operation requires removing a specified sound source without altering the remaining content; and the Replace op-eration requires substituting a sound source in the original audio with another type of sound source. 
+
+A.3 Subjective Evaluation Protocol 
+
+We conducted a randomized and anonymous sub-jective evaluation for audio generation. Audio sam-ples from different systems were pooled together and randomly shuffled before being presented to evaluators. The system identity and file name were hidden, and only the corresponding text prompt was shown. Evaluators were allowed to replay each audio sample as many times as needed before assigning scores on two 1–5 scales: overall quality (OVL) and relevance (REL). OVL measures overall 
+
+Dataset # Samples Duration 
+
+AudioSetCaps 1,993,704 5,539.176 h AudioCaps 2.0 91,254 253.483 h VGGSound 163,759 508.383 h WavCaps 115,048 319.578 h 
+
+Total 2,363,765 6,620.620 h 
+
+Table 6: Statistics of the training data used in our model.                     
+
+> Setting KL ↓IS ↑FD ↓FAD ↓CLAP ↑
+> Unify 1.39 12.47 14.47 2.87 0.491 Audio-only 1.33 13.04 11.83 1.92 0.501
+
+Table 7: Effect of single-task and unified training on text-to-audio generation. The audio-only variant is trained only with the continuous audio diffusion ob-jective, while the unified model is trained jointly. 
+
+audio quality, including clarity, naturalness, noise, distortion, and perceptual fidelity. REL measures how well the audio matches the text prompt, con-sidering the presence of key sound events, sound sources, background context, temporal order, and relative salience. All ratings were automatically saved and then aggregated by system. We report the mean score across all samples and evaluators, together with 95% confidence intervals to reflect rating uncertainty. 
+
+A.4 Baselines 
+
+For audio generation, we employ Tango2 5, Audi-oLDM 6, AudioLDM 2 7, MAGNeT 8, Stable Audio Open 9, and AudioX 10 . All models are evaluated using their official checkpoints and recommended inference configurations. For audio editing tasks, we employ four rep-resentative generative audio frameworks, namely DDIM Inversion, CycleDiffusion, AP - adapter 11 ,and MusicGen 12 . We adopt Tango 2 13 as the foun-dational generative model for DDIM Inversion and CycleDiffusion, where 125 out of 200 total denois-ing steps are used for inversion. For AP -adapter, 
+
+> 5https://huggingface.co/declare-lab/tango2
+> 6https://huggingface.co/cvssp/audioldm
+> 7https://huggingface.co/cvssp/audioldm2
+> 8https://huggingface.co/facebook/ audio-magnet-medium
+> 9https://huggingface.co/stabilityai/ stable-audio-open-1.0
+> 10 https://huggingface.co/HKUSTAudio/AudioX
+> 11 https://huggingface.co/cvssp/audioldm2
+> 12 https://huggingface.co/facebook/ musicgen-large
+> 13 https://huggingface.co/declare-lab/tango2
+
+12 Refiner CIDEr ↑ SPICE ↑ SPIDEr ↑ SBERT-SIM ↑ FENSE ↑
+
+Unify 0.406 0.139 0.272 0.572 54.08 Caption-only 0.370 0.128 0.249 0.564 53.37 
+
+Table 8: Effect of single-task and unified training on audio captioning. The caption-only variant is trained only with the text diffusion objective, while the unified model is jointly optimized with both audio and text diffusion losses.                                                              
+
+> Refiner Audio Generation Audio Captioning KL ↓IS ↑FD ↓FAD ↓CLAP ↑CIDEr ↑SPICE ↑SPIDEr ↑SBERT-SIM ↑FENSE ↑
+> 1-layer 1.41 12.75 14.29 3.00 0.482 0.380 0.131 0.255 0.558 52.98 3-layer 1.39 12.47 14.47 2.87 0.491 0.406 0.139 0.272 0.572 54.08 6-layer 1.42 12.37 14.81 3.05 0.483 0.354 0.129 0.242 0.563 50.04 12-layer 1.41 12.83 13.92 2.96 0.483 0.393 0.135 0.263 0.578 54.92
+
+Table 9: Ablation results with different numbers of refiners on audio generation and audio captioning tasks. 
+
+we adopt AudioLDM 2 14 as the foundational gen-erative model. For audio captioning, we compare our approach against five recent open-source audio-language models. For all baselines, we use the official check-points and follow each model’s recommended in-ference configuration. The five baselines are: Mi-DashengLM 15 , Qwen2-Audio 16 , Qwen3-Omni 17 ,Audio Flamingo 2 18 , and Audio Flamingo 3 19 . Mi-DashengLM, Qwen2-Audio, and Qwen3-Omni are evaluated using the ms-swift 20 framework, while Audio Flamingo 2 and Audio Flamingo 3 are evalu-ated with their official inference scripts. To ensure a fair comparison, all models are queried with the same user prompt:“ <audio>Write a short caption describing the sounds you hear.” 
+
+B Supplementary Experimental Results 
+
+Effect of single-task and unified training. We further compare UAT with single-task variants trained using only the audio diffusion objective or only the captioning objective. As shown in Table 7, the audio-only variant achieves better text-to-audio generation metrics than the unified model, indi-cating that introducing the text diffusion objective slightly perturbs the pretrained audio generation 
+
+> 14 https://huggingface.co/cvssp/audioldm2
+> 15 https://huggingface.co/mispeech/ midashenglm-7b-0804-fp32
+> 16 https://huggingface.co/Qwen/Qwen2-Audio-7B
+> 17 https://huggingface.co/Qwen/ Qwen3-Omni-30B-A3B-Instruct
+> 18 https://huggingface.co/nvidia/ audio-flamingo-2
+> 19 https://huggingface.co/nvidia/ audio-flamingo-3/
+> 20 https://github.com/modelscope/ms-swift
+
+pathway. This is consistent with the trade-off ob-served in the text-branch depth ablation. On the other hand, Table 8 shows that the uni-fied model consistently improves over the caption-only variant across all captioning metrics, including CIDEr, SPICE, SPIDEr, SBERT-SIM, and FENSE. These results suggest that joint audio diffusion training can provide useful acoustic-semantic rep-resentations for masked text diffusion. Overall, the unified objective does not aim to optimize each task in isolation; instead, it provides a balanced trade-off that enables a single diffusion-centric model to support audio generation, editing, and captioning simultaneously. 
+
+Effect of caption refiner. We introduce alightweight caption refiner before the vocabulary projection in the Caption Diffusion Head. The refiner consists of stacked Transformer-style self-attention blocks that refine the resulting text hidden states for caption reconstruction. It improves the expressiveness of the caption head while keeping the pretrained audio backbone reusable. As shown in Table 9, increasing the refiner depth from 1 to 3 consistently improves both audio gen-eration and captioning metrics, indicating that a moderate number of self-attention refinement lay-ers helps transform the backbone text states into more discriminative representations for the aux-iliary captioning objective. However, further in-creasing the depth does not yield monotonic im-provements. The 6-layer refiner performs worse across most metrics, suggesting that an overly deep caption head may introduce optimization difficulty or absorb the caption supervision within the head 13 itself, weakening its regularization effect on the shared audio-text backbone. The 12-layer refiner partially recovers on semantic captioning metrics, but still underperforms the 3-layer refiner on the main audio distribution metrics and CIDEr/SPIDEr. Overall, the 3-layer refiner provides the best bal-ance between sufficient text-side capacity and ef-fective joint audio-caption optimization. 14

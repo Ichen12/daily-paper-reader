@@ -1,0 +1,653 @@
+Title: BareWave: Waveform-Native Flow-Matching Text-to-Speech
+
+URL Source: https://arxiv.org/pdf/2606.09048v1
+
+Published Time: Tue, 09 Jun 2026 01:45:00 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# BareWave: Waveform-Native Flow-Matching Text-to-Speech 
+
+# Wei Fan 1∗ Chao-Hong Tan 2† Qian Chen 2† Wen Wang 2 Xiangang Li 2 Kejiang Chen 1†
+
+# Weiming Zhang 1 Nenghai Yu 1
+
+1Anhui Province Key Laboratory of Digital Security 
+
+2Tongyi Fun Team, Alibaba Group 
+
+range@mail.ustc.edu.cn; {chenkj,zhangwm,ynh}@ustc.edu.cn {tanchaohong.ch,tanqing.cq,w.wang}@alibaba-inc.com 
+
+## Abstract 
+
+Removing intermediate representations and separately trained de-coding stages has become an important direction in generative modeling. In text-to-speech, however, high-quality systems are still commonly built through an intermediate acoustic representation before waveform synthesis. In this work, we present BareWave, a fully waveform-native framework for direct text-to-wave gen-eration in flow-matching TTS. We consider this setting to raise three training challenges: raw-waveform modeling lacks a strong pretrained representational scaffold, different stages of training benefit from different noise schedules, and data-space perceptual objectives do not automatically share the temporal structure of the velocity-space flow objective. As a result, direct waveform training is hard to optimize efficiently, hard to push toward a strong final operating point with a fixed recipe, and hard to integrate effective perceptual refinement. Guided by this view, we develop a direct text-to-wave training framework that combines training-time rep-resentation alignment, staged noise scheduling, and velocity-aware perceptual alignment (VAPA), while preserving a single waveform-native inference path without pretrained components at test time. Experiments on zero-shot voice cloning show that strong intelligi-bility, speaker similarity, and naturalness can be achieved under a fully waveform-native inference path, supporting waveform-native flow-matching TTS as a practical direction. Project page with audio demos is available at https://barewave.github.io/. 
+
+## Keywords 
+
+text-to-speech, flow matching, waveform generation 
+
+## 1 Introduction 
+
+Removing intermediate representations and separately trained de-coding stages has become an important direction in generative modeling. Recent image generation work increasingly returns to raw pixel space and avoids tokenizers, autoencoders, or other sep-arately trained latent interfaces, seeking more direct and unified generation pipelines [ 5 , 19 , 22 , 25 , 27 , 31 ]. In speech synthesis, the corresponding ambition is to generate waveform directly from text and prompt audio, instead of first predicting an intermediate acous-tic representation and then invoking a separately trained waveform decoder. This waveform-native direction is conceptually attrac-tive because it promises a cleaner generation stack and a simpler deployment path.        
+
+> ∗Work done during Wei Fan’s internship at Tongyi Lab, Alibaba Group.
+> †Corresponding authors. Input Data
+> Hello
+> Transcription 𝑦𝑦 Prompt Wave 𝑥𝑥 ref
+> Output
+> 𝑥𝑥 gen
+> Unpatchify
+> Generated Wave Patch
+> Input Data
+> Generator
+> Text Preprocessor
+> Input Audio Processor
+> Intermediate Feature
+> Output
+> 𝑥𝑥 gen
+> Generated Feature
+> Vocoder ❄
+> Generator
+> Text Preprocessor
+> Input Audio Processor
+> Hello
+> Transcription 𝑦𝑦 Prompt Wave 𝑥𝑥 ref
+> (a) Intermediate-Representation TTS (b) Waveform-Native TTS (Ours)
+
+Figure 1: Mainstream TTS pipelines rely on intermediate representations and separate waveform decoders, whereas our framework is fully waveform-native. 
+
+As shown in Figure 1, state-of-the-art zero-shot TTS systems usually decompose synthesis into two stages: a generative model first predicts an intermediate speech representation, and a vocoder or waveform decoder renders the final waveform. This design has become dominant because it separates high-level speech generation from low-level waveform synthesis, making quality, controllabil-ity, and zero-shot generalization easier to achieve. Representative strong systems such as VALL-E, NaturalSpeech 3, and CosyVoice follow this pattern in different intermediate spaces [ 7 , 14 , 26 ]. Even recent simplified flow-matching systems such as E2-TTS and F5-TTS still synthesize in mel space rather than waveform space [ 4, 9]. Direct text-to-waveform TTS pursues a stricter goal. It removes the intermediate acoustic interface itself and asks a single model to absorb both text-conditioned speech generation and waveform rendering. Prior work has shown that this direction is feasible, and different systems have already removed different pieces of the con-ventional stack [ 1, 10 , 28 ]. However, as shown in Table 1, current direct systems still usually retain some inference-time dependency, such as auxiliary acoustic or linguistic inputs, a speaker encoder, a pretrained text encoder, or a separate vocoder. Direct TTS there-fore has not yet reached a recipe that is simultaneously simple, strongly competitive, zero-shot capable, and fully waveform-native at inference. 
+
+> 1
+> arXiv:2606.09048v1 [eess.AS] 8 Jun 2026
+
+Table 1: Dependency, capability and availability comparison of representative text-to-speech systems. Our framework uniquely achieves zero-shot voice cloning without inference dependencies. 
+
+Method Inference-Time Dependencies Reported Capability Availability Phoneme Inputs Duration Predictor Prosodic Inputs Speaker Embedding Pretrained Text Encoder Separate Vocoder Voice Cloning Open Source Wave-Tacotron [28] # # # # # # ✗ ✗
+
+FastSpeech 2s [23] # # # # ✗ ✗
+
+DiffAR [1] # # # ✗ ✓
+
+E3-TTS [10] # # # # ✓ ✗
+
+E2-TTS [9] # # # # # ✓ ✗
+
+F5-TTS [4] # # # # # ✓ ✓
+
+Ours # # # # # # ✓ ✓*
+
+> * Our code and checkpoints will be released soon.
+
+For waveform-native TTS, a more specific question is: once these inference-time components are removed, what training design is needed to make the resulting system work well? We consider this setting to raise three training challenges. First, raw-waveform mod-eling lacks a strong pretrained representational scaffold, so the model must organize linguistic, speaker, and acoustic structure in a space with much weaker priors. Second, different stages of training benefit from different noise schedules: early optimization favors a convergence-friendly distribution, whereas later refinement ben-efits from greater coverage of cleaner regions. Third, waveform-native generation requires data-space perceptual refinement for spectral quality, yet the velocity-space flow objective gives the main loss a time-dependent structure that auxiliary perceptual objectives do not automatically share. These factors make direct waveform TTS hard to optimize efficiently under matched budgets, hard to push toward a strong final operating point, and hard to integrate effective perceptual refinement with the velocity-space flow objec-tive. Guided by this view, we present BareWave, a system that keeps the inference path minimal and places all additional complexity in training design. We use training-time representation alignment to provide the missing speech prior. Specifically, we align the hid-den states of the generator with features extracted from a frozen self-supervised speech model. To better match the needs of opti-mization as training evolves, we combine staged noise scheduling with velocity-aware perceptual alignment. The early training phase utilizes a convergence-friendly logit-normal noise-level distribu-tion. In the subsequent stage, we switch to a uniform distribution that assigns higher sampling density to cleaner regions. Concur-rently, we introduce Velocity-Aware Perceptual Alignment (VAPA), which scales a multi-resolution spectral distance so that perceptual refinement reflects the temporal structure of the velocity-space flow objective. All auxiliary branches are removed at test time, so the model remains a single waveform-native generator. Experiments on zero-shot voice cloning show that strong speech synthesis can be achieved under a fully waveform-native inference path, without intermediate acoustic representations, pretrained inference-time components, or a separate vocoder. Ablation results further indicate that performance in this setting is strongly shaped by training design, including persistent training-time representa-tion guidance, staged noise scheduling, and velocity-aware percep-tual alignment. Taken together, these results show that waveform-native flow-matching TTS can support strong zero-shot voice cloning under a single direct text-to-wave inference path. Our main contributions are as follows: 
+
+• We present BareWave, a fully waveform-native framework for zero-shot TTS, with no intermediate acoustic represen-tation, pretrained inference-time component, or separate vocoder. 
+
+• We develop a direct text-to-wave training recipe that com-bines representation alignment, staged noise scheduling, and velocity-aware perceptual alignment while preserving a single waveform-native inference path. 
+
+• We observe that data-space perceptual losses are implicitly down-weighted relative to the velocity-space flow objective near cleaner timesteps, and propose Velocity-Aware Per-ceptual Alignment (VAPA) to match the temporal structure of the flow objective. 
+
+## 2 Related Work 2.1 Waveform-Space Speech Generation 
+
+Waveform generation for speech is commonly studied in two re-lated settings: vocoding and direct text-to-waveform synthesis. In the vocoder setting, a model is given an intermediate acoustic representation such as a mel-spectrogram and is asked to render waveform samples. In the direct TTS setting, the model must in-stead absorb both speech generation and waveform rendering into a single system. Neural vocoders are important because they isolate waveform modeling from linguistic planning, and this setting has established many effective waveform-level architectures and objectives. Rep-resentative examples include adversarial vocoders such as Parallel WaveGAN and HiFi-GAN, as well as diffusion-style waveform gen-erators such as DiffWave and WaveGrad [ 2 , 15 , 16 , 29 ]. However, a vocoder is not itself a full text-to-speech system, because it assumes that an upstream model has already produced the intermediate acoustic representation. 
+
+> 2
+
+Direct text-to-waveform TTS is therefore a more demanding problem, because the model must jointly solve text-conditioned speech generation and waveform synthesis. Prior work such as Wave-Tacotron, DiffAR, and E3-TTS has shown that direct wave-form synthesis is a viable TTS route, while also revealing that strong performance often still relies on additional structural support or conditioning signals [ 1 , 10 , 28 ], leaving a fully waveform-native zero-shot recipe unresolved. 
+
+## 2.2 Modern Zero-Shot TTS Pipelines 
+
+Zero-shot TTS studies whether a model can synthesize speech for a previously unseen speaker from text and a short reference ut-terance, without speaker-specific finetuning. Recent progress has made this setting much stronger and more practical through large-scale generative modeling. Representative systems include codec-based and latent-space pipelines such as VALL-E, NaturalSpeech 3, and CosyVoice, as well as simplified flow-matching systems such as E2-TTS and F5-TTS [ 4, 7, 9, 14 , 26 ]. This literature shows that explicit aligners, duration predictors, and heavily engineered text frontends are no longer always necessary for high-quality zero-shot synthesis. However, the dominant recipe in this literature there-fore still relies on intermediate representations, typically together with a pretrained codec model or a separate waveform decoder at inference, so whether comparable zero-shot performance can be achieved under a fully waveform-native inference path remains less explored. 
+
+## 2.3 Representation Alignment for Raw-Space Generation 
+
+Representation alignment uses external pretrained features as train-ing targets or priors, and is especially appealing when a generator must learn in a space whose structure is hard to recover directly. In image generation, REPA showed that aligning noisy hidden states with pretrained representations can improve the optimization of dif-fusion and flow models in raw space [ 30 ]. In speech, self-supervised models such as HuBERT and WavLM have become widely used across downstream tasks, making them natural sources of pre-trained structure [ 3, 12 ]. Accordingly, recent TTS work has begun to introduce such models into training-time alignment, for example through dual-modality alignment for accelerating diffusion-based synthesis [ 6]. For direct waveform TTS, where the intermediate acoustic interface is removed, representation alignment is a natural way to inject pretrained speech structure during training; however, how such alignment should be used as a training-only support in direct waveform TTS remains underexplored. 
+
+## 3 Method 3.1 Overview 
+
+We study zero-shot direct text-to-waveform synthesis with a waveform-native generator. Figure 2 gives an overview of the proposed waveform-native TTS framework. Given input text 𝑐 and a short prompt wave-form 𝑎 , the model directly produces the target waveform ˆ𝑥 without an intermediate acoustic representation or a separate vocoder at inference. Our architecture is a waveform-patch DiT backbone trained with conditional flow matching. The inference path is kept unchanged, while the extra support is introduced only during train-ing through representation alignment, staged noise scheduling, and velocity-aware perceptual alignment. 
+
+## 3.2 Preliminaries 
+
+3.2.1 Flow Matching. We formulate training as a conditional speech-infilling problem [ 4]. A random target span is selected as the region to generate, while the remaining waveform serves as the masked-speech context together with the full text condition. Consider a clean distribution 𝑥 ∼ 𝑝 data (𝑥 ) and a noise distribution 𝜖 ∼ 𝑝 noise (𝜖 ).During training, the noisy state 𝑧 𝑡 is defined by the standard linear interpolation path [18, 20]: 
+
+𝑧 𝑡 = 𝑡𝑥 + ( 1 − 𝑡 )𝜖, 𝑡 ∈ [ 0, 1], (1) where 𝑡 is the continuous time variable, so that 𝑧 𝑡 starts from the noise endpoint at 𝑡 = 0 and reaches the data endpoint at 𝑡 = 1. The corresponding flow velocity is the time derivative of 𝑧 𝑡 ,
+
+𝑣 = 𝜕𝑧 𝑡 
+
+𝜕𝑡 = 𝑥 − 𝜖. (2) Conditional flow matching learns a velocity field 𝑣 𝜃 (𝑧 𝑡 , 𝑡, 𝑐, 𝑎 ) under the text condition 𝑐 and the prompt-audio condition 𝑎 by minimiz-ing: 
+
+LCFM = E𝑥,𝜖,𝑡 
+
+∥𝑣 𝜃 (𝑧 𝑡 , 𝑡, 𝑐, 𝑎 ) − 𝑣 ∥22
+
+ . (3) At inference time, generation is performed by integrating the sam-pling ODE from 𝑡 = 0 to 𝑡 = 1.
+
+3.2.2 Prediction Space. The prediction space specifies which quan-tity the network outputs directly [ 18 ]. In our model, the network is parameterized to directly predict the clean waveform target: 
+
+ˆ𝑥 𝜃 = 𝑓 𝜃 (𝑧 𝑡 , 𝑡, 𝑐, 𝑎 ). (4) That is, the prediction target is the clean waveform 𝑥 rather than the noise 𝜖 or the velocity 𝑣 .
+
+3.2.3 Loss Space. While the loss is typically defined in a reference space, it can equivalently be expressed in other spaces. With a fixed reparameterization from one prediction space to another, this change induces an effective reweighting of the objective [ 18 ]. For the 𝑥 -prediction and 𝑣 -loss combination, we have: 
+
+ˆ𝑣 𝜃 = ˆ𝑥 𝜃 − 𝑧 𝑡 
+
+1 − 𝑡 , 𝑣 = 𝑥 − 𝑧 𝑡 
+
+1 − 𝑡 , (5) where ˆ𝑣 𝜃 is the induced velocity prediction converted from the network output ˆ𝑥 𝜃 , and 𝑣 is the target velocity induced by the clean waveform 𝑥 and the noisy state 𝑧 𝑡 . For speech infilling, the masked objective is written as: 
+
+Lfm = E𝑖 : 𝑀 𝑖 =1
+
+  ˆ𝑣 𝜃,𝑖 − 𝑣 𝑖 
+
+2 = E𝑖 : 𝑀 𝑖 =1
+
+1
+
+(1 − 𝑡 )2
+
+  ˆ𝑥 𝜃,𝑖 − 𝑥 𝑖 
+
+2, (6) where E𝑖 : 𝑀 𝑖 =1 denotes the average over waveform samples selected by the binary infilling mask 𝑀 , making Eq. (6) a reweighted form of the corresponding 𝑥 -loss. In implementation, whenever an 𝑥 -prediction is converted to the velocity-space quantity in Eq. (5) , we clip the denominator from below, using ¯𝑑 𝑡 = max (1 −𝑡, 𝜖 𝑡 ), to avoid numerical instability near the clean endpoint.                                                        
+
+> 3DiT Blocks DiT Blocks
+> Input
+> Projection
+> Predicted �𝑥𝑥
+> Hello
+> Masked Hello
+> ConvNeXt V2 Blocks Patchify
+> Conv
+> Blocks
+> Masked Speech
+> 1− 𝑚𝑚 ⊙ 𝑥𝑥 1
+> Noisy Speech
+> 1− 𝑡𝑡 𝑥𝑥 0+𝑡𝑡𝑥𝑥 1
+> Transcription 𝑦𝑦
+> Waveform
+> 𝑥𝑥 1
+> Characters 𝑧𝑧 Patchify
+> Text tokens
+> c
+> Audio tokens
+> Unpatchify
+> Masked Masked
+> Linear
+> DiT Blocks N×
+> Timestep
+> Text & Audio Tokens
+> Training Target
+> 𝑚𝑚 ⊙ 𝑥𝑥 1
+> Projector
+> SSL Model
+> ❄
+> ℒfm
+> ℒREPA
+> Scale
+> MHSA
+> Scale, Shift
+> Layer Norm
+> Scale
+> MLP
+> Scale, Shift
+> Layer Norm
+> Timestep
+> 𝑡𝑡 ∈ [0, 1]
+> 𝛾𝛾 2,𝛽𝛽 2
+> 𝛼𝛼 2
+> 𝛾𝛾 1,𝛽𝛽 1
+> 𝛼𝛼 1
+> MLP
+> Training Strategy:
+> Stage 1:
+> Timestep: 𝑡𝑡 ~logit normal
+> ℒ=ℒfm +𝜆𝜆 1ℒREPA
+> Timestep: 𝑡𝑡 ~uniform
+> ℒ=ℒfm +𝜆𝜆 1ℒREPA +𝜆𝜆 2ℒVAPA
+> Stage 2:
+> ℒVAPA
+> Training
+> Inference
+> DiT Blocks DiT Blocks
+> Input
+> Projection
+> Predicted �𝑥𝑥
+> Hello
+> To Generate Hello
+> ConvNeXt V2 Blocks Patchify
+> Conv
+> Blocks
+> Noise
+> 𝑥𝑥 0
+> Transcription 𝑦𝑦 Prompt Wave
+> 𝑥𝑥 ref
+> Characters 𝑧𝑧 Patchify
+> Text tokens
+> c
+> Audio tokens
+> Unpatchify
+> Discarded
+> Linear
+> DiT Blocks N×
+> Output
+> 𝑥𝑥 gen
+> ODE Solver
+> Sway Sampled Timestep 𝜋𝜋 (𝑡𝑡 )
+> cConcat
+> Add
+> NFE
+
+Figure 2: Overview of the proposed waveform-native TTS framework. In the training stage, the generator is guided by a main flow-matching branch and an auxiliary representation alignment branch. The optimization utilizes a staged schedule with distinct timestep ( 𝑡 ) distributions, where velocity-aware perceptual alignment is enabled only after the model reaches the refinement stage. At inference, all auxiliary components are discarded, preserving a single direct text-to-waveform generator. 
+
+3.2.4 Sampling and Classifier-Free Guidance. At sampling time, the waveform trajectory is generated by integrating the induced velocity field. The sampling ODE is: 
+
+d𝑧 𝑡 
+
+d𝑡 = ˜𝑣 𝜃 (𝑧 𝑡 , 𝑡, 𝑐, 𝑎 ). (7) In practice, we solve this ODE with a fixed-step Heun solver. Classifier-free guidance is enabled by randomly dropping text, prompt-audio, or both conditions during training to create conditional and un-conditional branches. Given the conditional velocity ˆ𝑣 cond  
+
+> 𝑡
+
+and the unconditional velocity ˆ𝑣 uncond  
+
+> 𝑡
+
+, inference uses: 
+
+˜𝑣 𝑡 = ˆ𝑣 uncond  
+
+> 𝑡
+
++ 𝑠 (𝑡 )   ˆ𝑣 cond  
+
+> 𝑡
+
+− ˆ𝑣 uncond 
+
+> 𝑡
+
+, (8) where 𝑠 (𝑡 ) equals the guidance strength within a prescribed guid-ance interval and reduces to 1 outside that interval. This suggests that the guidance only modifies the velocity field inside a specified time interval and otherwise falls back to the conditional branch. 
+
+## 3.3 Waveform-Patch DiT Backbone 
+
+Our generator operates on waveform patches rather than spec-trogram frames or codec tokens. The noisy waveform 𝑧 𝑡 is first patchified by a 1-D convolutional embedder whose kernel size and stride both match the waveform patch size. This produces a se-quence of waveform patch tokens that serves as the main signal stream of the transformer. To condition on the prompt audio 𝑎 , a dedicated convolutional frontend extracts coarse, downsampled acoustic features aligned to the target patch rate, which are then concatenated with a parallel stream of direct raw-waveform prompt patches. The text condition is represented at the character level, refined by lightweight ConvNeXt-style blocks, and inserted as in-context tokens before the audio stream. This yields a single token sequence in which text provides left-context guidance, while the noisy waveform and the hierarchical prompt-audio representations remain in the main generation stream. The resulting sequence is processed by DiT blocks with timestep modulation and rotary posi-tional encoding. The final layer predicts patch-wise clean waveform values, and a non-overlapping unpatchify operation maps the patch predictions back to the sample domain. The entire architecture is trained end-to-end from scratch; pre-trained models are utilized strictly to provide auxiliary supervision during training rather than being loaded as architectural components. As a result, the infer-ence path remains a single waveform-native generator from text and prompt audio to waveform samples, and the remaining design choices, described below, provide optimization support without introducing additional inference-time components. 
+
+## 3.4 Training Strategy 
+
+3.4.1 Training-Time Representation Alignment. To provide a speech prior during training, we align a selected hidden state of the gen-erator to frozen self-supervised speech features. Concretely, we extract a hidden representation ℎℓ from transformer layer ℓ and compare it against a frozen WavLM 1 teacher sequence ℎteacher com-puted from the ground-truth target waveform. Before the compar-ison, ℎℓ is linearly interpolated to the teacher length and passed through a lightweight alignment head 𝜙 (·) . Following prior dual-modality alignment designs [ 6], this head consists of two Conv1d– GroupNorm–Mish blocks followed by a 1 × 1 Conv1d output layer. 
+
+> 1
+
+https://huggingface.co/microsoft/wavlm-base-plus         
+
+> 4noisy clean
+> 01
+> 1
+> Timestep 𝑡
+> Relative scale
+> 𝑥
+> 𝑣 =𝑥 /( 1−𝑡 )
+
+Figure 3: Velocity-space scaling relative to a data-space quan-tity. The horizontal reference denotes 𝑥 , and the curve de-notes 𝑣 = 𝑥 /( 1 − 𝑡 ), which grows as 𝑡 → 1.
+
+The alignment loss is defined as: 
+
+LREPA = E𝑖 ∈Ω
+
+h
+
+1 − cos 
+
+
+
+𝜙 (ℎℓ )𝑖 , ℎ teacher 
+
+> 𝑖
+
+i 
+
+, (9) where E𝑖 ∈Ω denotes the average over valid aligned positions shared by the projected source sequence and the teacher sequence. This branch acts only as a training-time prior and does not alter the generator architecture itself. At inference, the teacher network and the projection head are removed. 
+
+3.4.2 Staged Noise Scheduling. Direct waveform TTS is highly sen-sitive to the noise-level distribution used during flow-matching training. Different sampling distributions over noise levels empha-size different denoising subproblems and lead to different operating points. We therefore do not rely on a single fixed noise schedule throughout optimization. Instead, we use a two-stage schedule in-dexed by normalized training progress 𝑢 ∈ [ 0, 1]. The first stage uses a convergence-friendly logit-normal noise-level distribution, and the second stage switches to a broader uniform continuation once the model has reached a workable waveform solution, which better supports learning to denoise from cleaner noise states, fur-ther improving detail quality. 
+
+𝑝 (𝑡 | 𝑢 ) =
+
+(
+
+𝑝 logit -normal (𝑡 ; 𝜇, 𝜎 ), 𝑢 < 𝜌, 𝑝 uniform (𝑡 ), 𝑢 ≥ 𝜌, (10) where 𝜌 denotes the stage-switch point. In practice, the first stage is parameterized by the logit-normal sampling family together with its (𝑃 mean , 𝑃 std ) setting, while the continuation stage switches the noise-level distribution to uniform. 
+
+3.4.3 Velocity-Aware Perceptual Alignment. Waveform-native gen-eration benefits from perceptual losses that explicitly constrain spectral structure. In the 𝑥 -prediction, 𝑣 -loss framework adopted here, the flow-matching objective is evaluated in velocity space while the perceptual objective is defined in data space. Figure 3 illus-trates the corresponding temporal scaling from an 𝑥 -space quantity to its velocity-space form. As Eq. (6) shows, the velocity-space evaluation applies an im-plicit 1/( 1 − 𝑡 )2 factor to data-space prediction errors, increasing their effective weight near cleaner timesteps. With a fixed nominal coefficient, a data-space perceptual loss does not carry this factor, so its relative weight against the main flow objective decreases near the clean endpoint, weakening its role in the low-noise refinement region emphasized by the flow loss. We address this with Velocity-Aware Perceptual Alignment (VAPA). Following WaveFM [ 21 ], we use a multi-resolution STFT percep-tual distance DSTFT ( ˆ𝑥, 𝑥 ) that combines phase, log-magnitude, local spectral-gradient, and Laplacian terms across multiple resolutions over the generated region. VAPA applies a velocity-aware temporal scaling to this perceptual distance: 
+
+LVAPA = E𝑥,𝜖,𝑡 
+
+(1 − 𝑡 )−𝛾 DSTFT 
+
+  ˆ𝑥 𝜃 (𝑧 𝑡 , 𝑡, 𝑐, 𝑎 ), 𝑥  . (11) Here 𝛾 controls the scaling strength. We use 𝛾 = 1, following the norm order of the base L1 STFT and mel distances; the same scaling is applied uniformly across all resolution and refinement terms. With 𝛾 = 1, the perceptual weight grows as 1/( 1 − 𝑡 ) near the clean endpoint, corresponding to the temporal scaling that an L1 𝑥 -space distance acquires under the 𝑥 -to-𝑣 loss-space conver-sion. For numerical stability, the implementation follows the same denominator-clipping convention as the flow-matching MSE con-version above: (1 − 𝑡 ) is replaced by ¯𝑑 𝑡 = max (1 − 𝑡, 𝜖 𝑡 ). This term is enabled only in the refinement stage ( 𝑢 ≥ 𝜌 ). 
+
+## 3.5 Training and Inference Objectives 
+
+The complete objective combines the basic flow-matching loss with the optional representation-alignment and velocity-aware percep-tual terms: 
+
+Ltotal = Lfm + 𝜆 1 LREPA + I[𝑢 ≥ 𝜌 ] 𝜆 2 LVAPA . (12) Here 𝜆 1 and 𝜆 2 control the strengths of the representation-alignment and velocity-aware perceptual terms, respectively, and I[𝑢 ≥ 𝜌 ]
+
+denotes the late-stage switch. The generator itself is shared across all stages, and only the training objective changes over the course of optimization. At inference, all training-only branches are removed, and the model keeps only the text in-context path, the concatena-tive prompt-audio path, and the waveform-patch generator. This yields a clean waveform-native inference graph with no interme-diate acoustic representation and no pretrained component in the test-time path. 
+
+## 4 Experiments 4.1 Experimental Setup 
+
+4.1.1 Training Data and Task. 
+
+In our experiments, the controlled same-data systems are trained on the English subset of the in-the-wild speech dataset Emilia [ 11 ]. We filter out utterances with transcription failures or misclassi-fied language labels, retain 19.4k hours of audio at 24kHz, and the evaluation task is zero-shot voice cloning from text and a short prompt utterance. Larger-data public systems are included as exter-nal benchmarks and are reported with their original training-data scale in Table 2. 
+
+4.1.2 Evaluation Protocol and Metrics. 
+
+For English objective evaluation, we follow the same protocol used by F5-TTS [4]. We report WER (%) for intelligibility and con-tent fidelity, SIM-o for speaker identity preservation, and UTMOS for perceptual naturalness. WER is computed with Whisper-large-v3 implemented through Faster-Whisper and reported as a percent-age, SIM-o is computed with a WavLM-large-based ECAPA-TDNN 
+
+> 5
+
+Table 2: Zero-shot voice cloning results on Seed-TTS test-en and LibriSpeech(-PC) test-clean, measured by WER (%), SIM-o, and UTMOS. Training data size and inference-time parameter count are shown for comparability.                                                                                 
+
+> Method Training data Params Seed-TTS test-en LibriSpeech-PC WER (%) ↓SIM-o ↑UTMOS ↑WER (%) ↓SIM-o ↑UTMOS ↑
+> Ground Truth ––1.86 0.734 3.53 2.48 0.695 4.10
+> Larger-data intermediate-representation references
+> CosyVoice 2 [8] 167K Multi. 618M 2.51 0.659 4.15 2.05 0.659 4.38 FireRedTTS [4] †248K Multi. ∼580M 3.82 0.46 –2.69 0.47 –
+> Same-data intermediate-representation baselines
+> F5-TTS Base [4] (+ Vocos) 19.4k EN 335.8M + 13.5M 2.09 0.573 3.83 3.17 0.597 4.10
+> E2-TTS Base [9] (+ Vocos) 19.4k EN 333M + 13.5M 3.50 0.582 3.41 4.32 0.632 3.84
+> Same-data waveform-native systems
+> Simple direct-wave baseline 19.4k EN 983.6M 2.42 0.424 3.35 3.45 0.416 3.60 Ours (basic training) 19.4k EN 983.6M 2.34 0.478 3.43 3.32 0.471 3.69 Ours (proposed training scheme) 19.4k EN 983.6M 1.75 0.602 3.72 2.88 0.614 4.01
+> †Numbers are taken from prior reported results. Bold and underline mark the best and second-best results among same-data systems.
+
+speaker verification model, and UTMOS is obtained from the open-source SpeechMOS evaluator. 
+
+4.1.3 Baselines. 
+
+Intermediate-representation baselines. For same-data intermediate-representation baselines, we include F5-TTS [ 4] and E2-TTS [ 9]. We train their Base configurations on the same 19.4k-hour Emilia Eng-lish subset used by our proposed method, and evaluate them with the default Vocos vocoder [ 24 ] and default inference settings. For larger-data reference systems, we include CosyVoice 2 [ 8], evaluated by running inference from its public checkpoint, and FireRedTTS values transcribed from the F5-TTS paper [ 4]. Reported-source numbers are marked with a dagger in Table 2. 
+
+Waveform-native baselines. We include two direct-wave base-lines to separate prompt-encoder gains from training-recipe gains. For the simple direct-wave baseline, we condition directly on raw waveform patches without the convolutional prompt frontend and train the model only with Lfm under a fixed logit-normal schedule. For the basic-training baseline, we add the dual-branch prompt en-coder described in Section 3.3 but keep the same minimal training recipe. Our full model retains this encoder and adds the proposed training design: representation alignment, late uniform continua-tion, and velocity-aware perceptual alignment. 
+
+4.1.4 Implementation Details. 
+
+Model architecture and optimization. Our waveform-native backbone uses 32 DiT blocks with 16 attention heads and hidden size 1280, resulting in approximately 983.6M total parameters. Dur-ing training, we use Muon with Adam [ 13 ] on 4 NVIDIA A800 GPUs, with Muon learning rate 10 −3 for DiT parameters and Adam learning rate 5 × 10 −5 with betas (0.9, 0.95 ) for the remaining pa-rameters. Weight decay is set to zero, and the learning rate remains constant after 20k warmup updates. For the models without REPA loss, we use batch size of 19200 audio frames, and for the models with REPA loss, we use batch size of 9600 audio frames due to mem-ory constraints. To account for this difference, all update counts reported hereafter are expressed as equivalent updates, normalized to match the total data volume seen by the base model without REPA. 
+
+Training schedule. Our first training stage uses a logit-normal distribution over 𝑡 , where logit (𝑡 ) ∼ N ( 𝜇, 𝜎 2). We sample 𝑠 ∼N ( 𝜇, 𝜎 2) and set 𝑡 = sigmoid (𝑠 ). All waveform-native runs use noise scale 0.1, with 𝜇 = −0.4 and 𝜎 = 0.8 in this first stage, and then switch to uniform continuation in the later stage. We train all the models for 640k equivalent updates. For REPA runs with uniform continuation, we switch to uniform at 240k updates. Following [ 4 ], we first drop the masked speech input with a rate of 0.3, then drop the masked speech again but with text input together with a rate of 0.2 [17] during training. 
+
+Training losses. The REPA branch uses 𝜆 1 = 0.0025 . When velocity-aware perceptual alignment is enabled, the multi-resolution STFT distance uses 𝜆 2 = 4 × 10 −4 with the WaveFM-style refined STFT setting, FFT sizes [1024 , 2048 , 512 ], hop sizes [128 , 256 , 64 ],window sizes [512 , 1024 , 256 ], 𝛾 = 1, and 𝜖 𝑡 = 0.01 . The refined distance follows WaveFM [ 21 ] in combining phase, log-magnitude, local time/frequency spectral-gradient, and Laplacian terms. It is the base perceptual distance used in the mechanism ablation; VAPA differs by applying the velocity-aware scaling above. 
+
+EMA and Inference settings. We maintain two EMA tracks with decay rates 0.9999 and 0.9996 throughout training, and we use the 0.9999 track for inference. During inference, we use 50 NFE steps and the full sampling interval [0, 1]. We also apply the sway sampling technique with coefficient 𝑠 = −1.0 [ 4], and a classifier-free guidance scale of 3.5. 
+
+## 4.2 Main Results 
+
+Table 2 reports zero-shot voice-cloning results on Seed-TTS test-en and LibriSpeech-PC. Project page with audio demos is available at https://barewave.github.io/. 
+
+4.2.1 Comparison with intermediate-representation systems. Among same-data systems, BareWave achieves competitive results. On Seed-TTS test-en, BareWave reaches 1.75% WER, 0.602 SIM-o, and 3.72 UTMOS, giving the best WER and SIM-o among same-data sys-tems. On LibriSpeech-PC, BareWave reaches 2.88% WER and 0.614             
+
+> 680 160 240 320 400
+> 5
+> 10
+> 15
+> 20
+> Equivalent Steps (k)
+> Metric value
+> WER (%)
+> w/o REPA
+> REPA
+> 80 160 240 320 400
+> 0.3
+> 0.4
+> 0.5
+> Equivalent Steps (k)
+> SIM-o
+> 80 160 240 320 400
+> 2.8
+> 3
+> 3.2
+> 3.4
+> 3.6
+> Equivalent Steps (k)
+> UTMOS
+
+Figure 4: Comparison of training curves with and without REPA on LibriSpeech(-PC) test-clean. Both models are trained on the same Emilia English subset. Using REPA provides a strong speech prior, which improves data efficiency and speaker similarity.                    
+
+> 00.25 0.50.75 1
+> 0
+> 1
+> 2
+> Logit-normal
+> Uniform
+> 𝑡
+> Density
+> Density 𝑝 (𝑡 )
+> 80 160 240 320 400
+> 0
+> 50
+> 100
+> Equivalent Steps (k)
+> Metric value
+> WER (%)
+> Logit-normal
+> Uniform
+> 80 160 240 320 400
+> 0
+> 0.2
+> 0.4
+> 0.6
+> Equivalent Steps (k)
+> SIM-o
+> 80 160 240 320 400
+> 2
+> 2.5
+> 3
+> 3.5
+> 4
+> Equivalent Steps (k)
+> UTMOS
+
+Figure 5: Analysis of early noise-level distributions evaluated on LibriSpeech(-PC) test-clean. Both models are trained on the same Emilia English subset without REPA from scratch. The left panel shows the density of the timestep 𝑡 for both logit-normal and uniform distributions. The remaining panels show the training curves for WER (%), SIM-o, and UTMOS. The logit-normal schedule focuses on middle noise levels and leads to faster early optimization than the uniform distribution. 
+
+SIM-o, improving over F5-TTS Base on both metrics, though trail-ing E2-TTS Base on SIM-o. These results suggest that a waveform-native inference path achieves strong content intelligibility, and that speaker-related structure can be organized effectively in waveform space. BareWave remains slightly below F5-TTS Base on UTMOS, which we attribute to the inherent difficulty of single-stage wave-form rendering without a dedicated vocoder. 
+
+4.2.2 Comparison with waveform-native systems. We next examine the same-data waveform-native systems. The simplest configura-tion predicts waveform patches directly from raw waveform patch prompts. We find that the simple direct-wave baseline already reaches 3.45% WER, 0.416 SIM-o, and 3.60 UTMOS. This indicates that di-rect waveform modeling is already capable of producing intelligible speech, and that the synthesized speech begins to capture the target speaker characteristics. A second baseline introduces a stronger prompt-wave frontend and improves to 3.32% WER, 0.471 SIM-o, and 3.69 UTMOS, showing that a stronger prompt-side represen-tation helps waveform-native TTS reach a better operating point. Compared with our basic-training waveform-native baseline, the full training recipe substantially narrows the remaining gap to F5-TTS. Specifically, representation alignment provides an addi-tional training-time representational scaffold, while staged noise 
+
+Table 3: Comparison results of different training recipes on LibriSpeech(-PC) test-clean near the 600k equivalent training budget.                      
+
+> Recipe WER (%) ↓SIM-o ↑UTMOS ↑
+> Base (w/o REPA) 3.32 0.471 3.69 + REPA 2.86 0.522 3.70 + late uniform 2.93 0.543 3.82 + late uniform + refined STFT 3.38 0.585 3.88 + late uniform + refined STFT + VAPA 3.52 0.610 3.97
+
+scheduling and velocity-aware perceptual alignment drive further improvements in speaker similarity and naturalness. 
+
+## 4.3 Ablation Study 
+
+4.3.1 REPA Ablation. Figure 4 isolates training-time representa-tion alignment by comparing REPA and non-REPA base models under matched seen-data budgets. The results show that REPA im-proves data efficiency throughout the training process. The most stable improvement is seen in SIM-o, while the model also reaches better WER and UTMOS points under the same data budget. This behavior is consistent with the role of REPA in our method, namely             
+
+> 740 120 200 280 320
+> 0
+> 10
+> 20
+> 30
+> Equivalent Steps (k)
+> Metric value
+> WER (%)
+> Layer 6
+> Layer 10
+> Layer 14
+> Layer 18
+> 40 120 200 280 320
+> 0.3
+> 0.4
+> 0.5
+> Equivalent Steps (k)
+> SIM-o
+> 40 120 200 280 320
+> 2.8
+> 3
+> 3.2
+> 3.4
+> 3.6
+> 3.8
+> Equivalent Steps (k)
+> UTMOS
+
+Figure 6: Effect of the REPA alignment target layer on training dynamics. The curves trace WER, SIM-o, and UTMOS over equivalent steps for different teacher layers. Deeper teacher layers reduce WER, while the intermediate layer 10 yields stronger SIM-o than the shallow layer-6 target, showing a metric trade-off across alignment targets. All runs use the same first-stage logit-normal setting ( 𝑃 mean = −0.4, 𝑃 std = 0.8) and are evaluated on LibriSpeech-PC.                                 
+
+> 00.25 0.50.75 1
+> 0
+> 1
+> 2
+> 3𝜇 =−1.2
+> 𝜇 =−0.8
+> 𝜇 =−0.4
+> 𝑡
+> Density
+> Density 𝑝 (𝑡 )
+> 40 120 200 280 360
+> 0
+> 10
+> 20
+> Equivalent Steps (k)
+> Metric value
+> WER (%)
+> 𝜇 =−1.2
+> 𝜇 =−0.8
+> 𝜇 =−0.4
+> 40 120 200 280 360
+> 0.3
+> 0.4
+> 0.5
+> Equivalent Steps (k)
+> SIM-o
+> 40 120 200 280 360
+> 3
+> 3.5
+> Equivalent Steps (k)
+> UTMOS
+
+Figure 7: Effect of the logit-normal mean 𝜇 on the noise-level distribution and training dynamics. The density panel shows how 
+
+𝜇 shifts the sampled noise levels, and the remaining panels trace WER, SIM-o, and UTMOS over equivalent steps. Lower 𝜇 gives lower WER in this sweep, while higher 𝜇 improves SIM-o and UTMOS. This indicates that the early noise-level distribution changes the model’s operating point rather than yielding a uniformly best setting. All runs use REPA layer 10, 𝑃 std = 0.8, and are evaluated on LibriSpeech-PC. 
+
+to provide a stronger speech prior during training and make it easier to organize representation in a waveform-native model. 
+
+4.3.2 Noise Schedule Ablation. Table 3 reports matched-budget recipe variants for the noise-schedule and perceptual-loss ablations. Building on the REPA-supported model, late uniform continuation yields 2.93% WER, 0.543 SIM-o, and 3.82 UTMOS (versus 2.86%, 0.522, and 3.70 without continuation). The continuation stage there-fore improves speaker similarity and naturalness while keeping WER in a narrow range. 
+
+4.3.3 Perceptual Loss Ablation. With late uniform continuation fixed, adding the refined STFT distance improves SIM-o from 0.543 to 0.585 and UTMOS from 3.82 to 3.88. Applying VAPA to the same refined spectral distance further improves SIM-o to 0.610 and UTMOS to 3.97, while WER remains in the same operating range, indicating that velocity-aware scaling makes the spectral distance more effective in the continuation stage. 
+
+## 4.4 Analysis 
+
+4.4.1 Early Noise-Level Distributions. The logit-normal noise-level distribution is important for fast early convergence. Figure 5 com-pares two from-scratch models that differ only in their noise-level distributions. While the uniform distribution puts more weight on cleaner states, the logit-normal schedule focuses on middle noise levels. This difference in density leads to a clear gap in training speed. The logit-normal model converges much faster in both WER (%) and SIM-o within the same training budget, while UTMOS is less strongly affected by the early optimization gap. These results show that the early stage benefits from the logit-normal noise-level distribution for faster optimization. 
+
+4.4.2 Input-Side Representation Hierarchy. Prompt-side represen-tation quality is a key factor in waveform-native TTS. Table 4 compares two prompt representation variants using the same train-ing data. The simple baseline uses only waveform patches from the prompt audio. In contrast, the version with representation hi-erarchy adds a downsampled prompt stream to the raw prompt path, creating a representation hierarchy. The results show that this 
+
+> 8
+
+Table 4: Evaluation of the input-side representation hierar-chy on LibriSpeech(-PC) test-clean. Both models are trained on the same Emilia English subset without REPA. The results show that representation hierarchy improves both WER (%) and SIM-o. 
+
+Variant WER (%) ↓ SIM-o ↑
+
+Simple direct-wave baseline 3.45 0.416 + Representation Hierarchy 3.32 0.471 
+
+2.4 2.6 2.8 3
+
+0.58 
+
+0.59 
+
+0.6
+
+0.61 
+
+> 2.5
+> 3.0
+> 3.5 4.0
+> 4.5 5.0
+> 6.0
+> 7.0
+> 8.0
+> 10.0
+
+WER (%) ↓
+
+> SIM-o  ↑
+> 3.5
+> 3.75
+> 4
+> UTMOS
+
+Figure 8: Comparison of different CFG strength values under the Heun-50 bf16 inference setting. Marker color indicates UTMOS. Stronger guidance shifts the operating point toward lower WER but eventually lowers both SIM-o and UTMOS. We select CFG 3.5 as the main operating point because it gives a good balance between the metrics. 
+
+stronger hierarchy improves both WER (%) and SIM-o. This sug-gests that providing more prompt-side information helps improve waveform-native performance. 
+
+4.4.3 REPA Layer Sensitivity. Figure 6 compares different teacher layers for training-time representation alignment across matched equivalent-step checkpoints. The sweep shows that the alignment target changes the balance between intelligibility, speaker simi-larity, and naturalness: deeper layers reduce WER, while layer 10 yields the strongest SIM-o. This analysis shows that the alignment target introduces a trade-off across metrics rather than uniformly improving all dimensions. 
+
+4.4.4 Logit-Normal Mean Sensitivity. Figure 7 compares different means for the logit-normal noise-level distribution across matched equivalent-step checkpoints. Lower means favor WER in this sweep, while higher means improve SIM-o and UTMOS. The result shows that the early noise-level distribution changes the operating point of the model, rather than producing a single uniformly best setting across all metrics. 
+
+4.4.5 Classifier-Free Guidance Strength. We further analyze the effect of CFG strength at inference. We scan over a CFG range from 2.5 to 10.0 under the Heun-50 bf16 setting and plot the WER and SIM-o results in Figure 8. Stronger CFG generally improves WER, but SIM-o peaks at CFG 3.5 before declining under stronger guidance. The trend suggests that stronger CFG helps improve content intelligibility, while excessive guidance harms speaker fea-ture preservation. In the main experiments, we choose CFG 3.5 because it achieves the best SIM-o and UTMOS in this sweep while maintaining competitive WER. 
+
+## 5 Limitations 
+
+Our waveform-native generator uses 983.6 M parameters, larger than the compared mel-based baselines, leading to higher training and inference cost. Architectural compression and distillation are promising directions for future work. 
+
+## 6 Conclusion 
+
+In this paper, we presented BareWave, a fully waveform-native zero-shot voice cloning framework. To address the three training challenges of direct waveform TTS, namely the lack of representa-tional priors, the absence of a universally optimal noise schedule, and the temporal mismatch between data-space perceptual objec-tives and the velocity-space flow objective, we introduced a training scheme comprising representation alignment, staged noise schedul-ing, and Velocity-Aware Perceptual Alignment (VAPA). All auxiliary components are removed at inference, preserving a single direct text-to-waveform path. Experiments show that this recipe achieves competitive results relative to strong mel-based baselines while maintaining a strictly waveform-native inference path. These find-ings support waveform-native flow-matching TTS as a practical direction for zero-shot speech synthesis. 
+
+## References                    
+
+> [1] Roi Benita, Michael Elad, and Joseph Keshet. 2024. DiffAR: Denoising Diffusion Autoregressive Model for Raw Speech Waveform Generation. In The Twelfth International Conference on Learning Representations . doi:10.48550/arXiv.2310. 01381 [2] Nanxin Chen, Yu Zhang, Heiga Zen, Ron J. Weiss, Mohammad Norouzi, and William Chan. 2021. WaveGrad: Estimating Gradients for Waveform Generation. In International Conference on Learning Representations .https://openreview.net/ forum?id=NsMLjcFaO8O [3] Sanyuan Chen, Chengyi Wang, Zhengyang Chen, Yu Wu, Shujie Liu, Zhuo Chen, Jinyu Li, Naoyuki Kanda, Takuya Yoshioka, Xiong Xiao, Jian Wu, Long Zhou, Shuo Ren, Yanmin Qian, Yao Qian, Jian Wu, Michael Zeng, Xiangzhan Yu, and Furu Wei. 2022. WavLM: Large-Scale Self-Supervised Pre-Training for Full Stack Speech Processing. IEEE Journal of Selected Topics in Signal Processing 16, 6 (2022), 1505–1518. doi:10.1109/JSTSP.2022.3188113 [4] Yushen Chen, Zhikang Niu, Ziyang Ma, Keqi Deng, Chunhui Wang, Jian Zhao, Kai Yu, and Xie Chen. 2025. F5-TTS: A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , Wanxiang Che, Joyce Nabende, Ekaterina Shutova, and Mohammad Taher Pilehvar (Eds.). Association for Computational Linguistics, Vienna, Austria, 6255–6271. doi:10. 18653/v1/2025.acl-long.313 [5] Zhennan Chen, Junwei Zhu, Xu Chen, Jiangning Zhang, Xiaobin Hu, Hanzhen Zhao, Chengjie Wang, Jian Yang, and Ying Tai. 2025. DiP: Taming Diffusion Models in Pixel Space. arXiv preprint arXiv:2511.18822 (2025). https://arxiv.org/ abs/2511.18822 [6] Jeongsoo Choi, Zhikang Niu, Ji-Hoon Kim, Chunhui Wang, Joon Son Chung, and Xie Chen. 2025. Accelerating Diffusion-based Text-to-Speech Model Training with Dual Modality Alignment. In Proceedings of Interspeech 2025 . 3459–3463. doi:10.21437/Interspeech.2025-1236 [7] Zhihao Du, Qian Chen, Shiliang Zhang, Kai Hu, Heng Lu, Yexin Yang, Hangrui Hu, Siqi Zheng, Yue Gu, Ziyang Ma, Zhifu Gao, and Zhijie Yan. 2024. CosyVoice: A Scalable Multilingual Zero-shot Text-to-speech Synthesizer based on Supervised Semantic Tokens. arXiv preprint arXiv:2407.05407 (2024). doi:10.48550/arXiv. 2407.05407
+> 9
+
+[8] Zhihao Du, Yuxuan Wang, Qian Chen, Xian Shi, Xiang Lv, Tianyu Zhao, Zhifu Gao, Yexin Yang, Changfeng Gao, Hui Wang, Fan Yu, Huadai Liu, Zhengyan Sheng, Yue Gu, Chong Deng, Wen Wang, Shiliang Zhang, Zhijie Yan, and Jingren Zhou. 2024. CosyVoice 2: Scalable Streaming Speech Synthesis with Large Language Models. arXiv preprint arXiv:2412.10117 (2024). doi:10.48550/arXiv. 2412.10117 [9] Sefik Emre Eskimez, Xiaofei Wang, Manthan Thakker, Canrun Li, Chung-Hsien Tsai, Zhen Xiao, Hemin Yang, Zirun Zhu, Min Tang, Xu Tan, Yanqing Liu, Sheng Zhao, and Naoyuki Kanda. 2024. E2 TTS: Embarrassingly Easy Fully Non-Autoregressive Zero-Shot TTS. In 2024 IEEE Spoken Language Technology Workshop (SLT) . doi:10.1109/SLT61566.2024.10832320 [10] Yuan Gao, Nobuyuki Morioka, Yu Zhang, and Nanxin Chen. 2023. E3 TTS: Easy End-to-End Diffusion-based Text to Speech. In 2023 IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) . https://arxiv.org/abs/2311. 00945 [11] Haorui He, Zengqiang Shang, Chaoren Wang, Xuyuan Li, Yicheng Gu, Hua Hua, Liwei Liu, Chen Yang, Jiaqi Li, Peiyang Shi, Yuancheng Wang, Kai Chen, Pengyuan Zhang, and Zhizheng Wu. 2024. Emilia: An Extensive, Multilingual, and Diverse Speech Dataset for Large-Scale Speech Generation. In 2024 IEEE Spoken Language Technology Workshop (SLT) . IEEE, 885–890. https://arxiv.org/ abs/2407.05361 [12] Wei-Ning Hsu, Benjamin Bolte, Yao-Hung Hubert Tsai, Kushal Lakhotia, Ruslan Salakhutdinov, and Abdelrahman Mohamed. 2021. HuBERT: Self-Supervised Speech Representation Learning by Masked Prediction of Hidden Units. IEEE/ACM Transactions on Audio, Speech, and Language Processing 29 (2021), 3451–3460. [13] Keller Jordan, Yuchen Jin, Vlado Boza, You Jiacheng, Franz Cesista, Laker New-house, and Jeremy Bernstein. 2024. Muon: An optimizer for hidden layers in neural networks. https://kellerjordan.github.io/posts/muon/ [14] Zeqian Ju, Yuancheng Wang, Kai Shen, Xu Tan, Detai Xin, Dongchao Yang, Eric Liu, Yichong Leng, Kaitao Song, Siliang Tang, Zhizheng Wu, Tao Qin, Xiangyang Li, Wei Ye, Shikun Zhang, Jiang Bian, Lei He, Jinyu Li, and Sheng Zhao. 2024. Nat-uralSpeech 3: Zero-Shot Speech Synthesis with Factorized Codec and Diffusion Models. In Proceedings of the 41st International Conference on Machine Learn-ing (Proceedings of Machine Learning Research, Vol. 235) . PMLR, 22605–22623. https://proceedings.mlr.press/v235/ju24b.html [15] Jungil Kong, Jaehyeon Kim, and Jaekyoung Bae. 2020. HiFi-GAN: Generative Ad-versarial Networks for Efficient and High Fidelity Speech Synthesis. In Advances in Neural Information Processing Systems , Vol. 33. https://proceedings.neurips. cc/paper/2020/hash/c5d736809766d46260d816d8dbc9eb44-Abstract.html [16] Zhifeng Kong, Wei Ping, Jiaji Huang, Kexin Zhao, and Bryan Catanzaro. 2021. DiffWave: A Versatile Diffusion Model for Audio Synthesis. In International Conference on Learning Representations . https://openreview.net/forum?id=a-xFK8Ymz5J [17] Matthew Le, Apoorv Vyas, Bowen Shi, Brian Karrer, Leda Sari, Rashel Moritz, Mary Williamson, Vimal Manohar, Yossi Adi, Jay Mahadeokar, and Wei-Ning Hsu. 2023. Voicebox: Text-Guided Multilingual Universal Speech Generation at Scale. In Advances in Neural Information Processing Sys-tems , Vol. 36. https://proceedings.neurips.cc/paper_files/paper/2023/hash/ 2d8911db9ecedf866015091b28946e15-Abstract-Conference.html [18] Tianhong Li and Kaiming He. 2025. Back to Basics: Let Denoising Generative Models Denoise. arXiv preprint arXiv:2511.13720 (2025). https://arxiv.org/abs/ 2511.13720 [19] Tianhong Li, Yonglong Tian, He Li, Mingyang Deng, and Kaiming He. 2024. Autoregressive Image Generation without Vector Quantization. In Advances in Neural Information Processing Systems , Vol. 37. doi:10.52202/079017-1797 [20] Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. 2023. Flow Matching for Generative Modeling. In International Conference on Learning Representations . https://arxiv.org/abs/2210.02747 [21] Tianze Luo, Xingchen Miao, and Wenbo Duan. 2025. WaveFM: A High-Fidelity and Efficient Vocoder Based on Flow Matching. In Proceedings of the 2025 Con-ference of the Nations of the Americas Chapter of the Association for Computa-tional Linguistics: Human Language Technologies (Volume 1: Long Papers) . Asso-ciation for Computational Linguistics, Albuquerque, New Mexico, 2187–2198. doi:10.18653/v1/2025.naacl-long.110 [22] Zehong Ma, Longhui Wei, Shuai Wang, Shiliang Zhang, and Qi Tian. 2025. DeCo: Frequency-Decoupled Pixel Diffusion for End-to-End Image Generation. arXiv preprint arXiv:2511.19365 (2025). https://arxiv.org/abs/2511.19365 [23] Yi Ren, Chenxu Hu, Xu Tan, Tao Qin, Sheng Zhao, Zhou Zhao, and Tie-Yan Liu. 2021. FastSpeech 2: Fast and High-Quality End-to-End Text to Speech. In 
+
+International Conference on Learning Representations . https://arxiv.org/abs/2006. 04558 [24] Hubert Siuzdak. 2023. Vocos: Closing the gap between time-domain and fourier-based neural vocoders for high-quality audio synthesis. arXiv preprint arXiv:2306.00814 (2023). [25] Michael Tschannen, André Susano Pinto, and Alexander Kolesnikov. 2025. JetFormer: An autoregressive generative model of raw images and text. In 
+
+International Conference on Learning Representations . https://proceedings.iclr. cc/paper_files/paper/2025/hash/d5a8e37f38a08c68162452dcba89ae9c-Abstract-Conference.html [26] Chengyi Wang, Sanyuan Chen, Yu Wu, Ziqiang Zhang, Long Zhou, Shujie Liu, Zhuo Chen, Yanqing Liu, Huaming Wang, Jinyu Li, Lei He, Sheng Zhao, and Furu Wei. 2023. Neural Codec Language Models are Zero-Shot Text to Speech Synthesizers. arXiv preprint arXiv:2301.02111 (2023). https://arxiv.org/abs/2301. 02111 [27] Shuai Wang, Ziteng Gao, Chenhui Zhu, Weilin Huang, and Limin Wang. 2025. PixNerd: Pixel Neural Field Diffusion. arXiv preprint arXiv:2507.23268 (2025). https://arxiv.org/abs/2507.23268 [28] Ron J. Weiss, R. J. Skerry-Ryan, Eric Battenberg, Soroosh Mariooryad, and Diederik P. Kingma. 2021. Wave-Tacotron: Spectrogram-Free End-to-End Text-to-Speech Synthesis. In 2021 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . https://research.google/pubs/wave-tacotron-spectrogram-free-end-to-end-text-to-speech-synthesis/ [29] Ryuichi Yamamoto, Eunwoo Song, and Jae-Min Kim. 2020. Parallel WaveGAN: A Fast Waveform Generation Model Based on Generative Adversarial Networks with Multi-Resolution Spectrogram. In 2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . doi:10.1109/ICASSP40776.2020. 9053795 [30] Sihyun Yu, Sangkyung Kwak, Huiwon Jang, Jongheon Jeong, Jonathan Huang, Jin-woo Shin, and Saining Xie. 2025. Representation Alignment for Generation: Train-ing Diffusion Transformers Is Easier Than You Think. In International Conference on Learning Representations . https://openreview.net/forum?id=DJSZGGZYVi [31] Yongsheng Yu, Wei Xiong, Weili Nie, Yichen Sheng, Shiqiu Liu, and Jiebo Luo. 2025. PixelDiT: Pixel Diffusion Transformers for Image Generation. arXiv preprint arXiv:2511.20645 (2025). https://arxiv.org/abs/2511.20645 
+
+> 10
+
+## A Detailed Experimental Setup A.1 Training Data and Preprocessing 
+
+All waveform-native runs in this work are trained on the Eng-lish subset of Emilia. We build the training set after filtering out utterances with transcription failure or language mismatch. Af-ter filtering, the resulting English corpus contains 19.4k hours of speech. During training, we retain only samples whose durations lie between 0.3 s and 30 s. Each utterance is converted to mono when necessary and resampled to 24 kHz. For waveform input, we remove only the DC offset before batching and do not apply additional normalization. 
+
+## A.2 Detailed Evaluation Protocol 
+
+Cross-sentence evaluation protocol. For English objective eval-uation, we use a cross-sentence zero-shot voice-cloning protocol on LibriSpeech-PC test-clean. We use the released 4-to-10-second LibriSpeech-PC test-clean subset with 1127 evaluation samples 2.Each target utterance is paired with a same-speaker prompt utter-ance under the cross-sentence setting. 
+
+Inference input construction. For each evaluation pair, the synthesis text is formed by concatenating the prompt transcript and the target transcript. Unless otherwise specified, the target duration is estimated from the prompt duration and the prompt/target text-length ratio, avoiding oracle duration information at test time. 
+
+## A.3 Implementation Details 
+
+Table 5: Waveform-patch DiT backbone settings used for our experiments.          
+
+> Parameter Value
+> Waveform-patch DiT backbone
+> Patch size 768 samples Patch stride 768 samples Bottleneck dimension 768 Depth 32 Hidden size 1280 Attention heads 16 MLP ratio 4.0 Total parameters 983.6M
+
+Model architecture. Our model is built around a waveform-patch DiT generator. The noisy target waveform is tokenized with non-overlapping 768-sample patches, so one generator token corre-sponds to 32 ms at 24 kHz. The output layer predicts clean wave-form values at the same patch resolution, and a non-overlapping unpatchify operation reconstructs the waveform in the sample domain. 
+
+Text conditioning and backbone. The text condition is repre-sented at the character level. Before interacting with audio, the character sequence is first refined in its own text stream by four ConvNeXt blocks with embedding dimension 512, expansion ratio 
+
+> 2https://github.com/swivid/f5-tts
+
+Table 6: Optimization, loss, and sampling settings used for our experiments.                                                     
+
+> Parameter Value
+> Optimization and batching
+> Hardware 4 NVIDIA A800 GPUs Batch type Dynamic frame-wise batching Optimizer Muon (DiT backbone), AdamW (oth-ers) Learning rates 10 −3(Muon) / 5×10 −5(AdamW) AdamW betas (0.9,0.95 )
+> Warmup 20k updates Weight decay 0Gradient clipping 1.0
+> Flow matching and training losses
+> Noise scale 0.1 Mask ratio [0.7,1.0]
+> Corruption schedule Logit-normal (− 0.4,0.8)for eq. up-dates <240 k; uniform [0,1]for eq. updates ≥240 kPrompt-audio drop prob. 0.3 Prompt-audio + text drop prob. 0.2 REPA teacher WavLM-base+ REPA source layer 18th DiT block REPA projection width 2048 REPA loss weight 𝜆 1=0.0025
+> VAPA loss weight 𝜆 2=4×10 −4
+> STFT FFT sizes 1024, 2048, 512 STFT Hop sizes 128, 256, 64 STFT Window sizes 512, 1024, 256
+> Sampling
+> Solver Heun NFE 50 CFG 3.5 EMA 0.9999 Guidance interval [0,1]
+> Sway coefficient −1.0
+
+2, and depthwise kernel size 7. This separate text modeling stage is used to organize the text condition before joint modeling with long audio sequences. The resulting text tokens are then inserted as in-context tokens before the audio stream, yielding a single sequence in which text provides left-context guidance while the noisy wave-form and the prompt-audio representations remain in the main generation stream. The unified sequence is then processed by a 32-block DiT backbone with hidden size 1280, 16 attention heads, and MLP ratio 4.0. Table 5 summarizes the principal backbone hyperparameters. 
+
+Optimization and batching. During training, we use Muon on the DiT parameters and AdamW on the remaining parameters 3. The corresponding learning rates are 10 −3 and 5 × 10 −5, with AdamW betas (0.9, 0.95 ), zero weight decay, 20k warmup updates, and gra-dient clipping of 1.0. For models without REPA, the batch size is 
+
+> 3https://github.com/KellerJordan/Muon
+> 11
+
+19200 waveform patches; when REPA is enabled, the budget is re-duced to 9600 because of the additional frozen-teacher branch. To keep comparisons fair, all update counts are reported as equivalent updates, obtained by normalizing runs with different batch budgets to the same seen-data scale. 
+
+Training objective. The model directly predicts the clean wave-form and is trained with a masked flow-matching objective. For each training example, a random target span is selected as the region to generate, while the remaining waveform serves as the masked-speech condition together with the full text condition. For each utterance, the masked region covers between 70% and 100% of the waveform, yielding a speech-infilling objective with long missing spans. Classifier-free guidance is trained by dropping the prompt-audio condition with probability 0.3 and jointly dropping prompt audio and text with probability 0.2. Table 6 summarizes the principal optimization, loss, and sampling hyperparameters.

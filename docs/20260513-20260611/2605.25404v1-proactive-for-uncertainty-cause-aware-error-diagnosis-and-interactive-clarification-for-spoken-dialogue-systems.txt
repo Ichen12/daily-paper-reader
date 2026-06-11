@@ -1,0 +1,805 @@
+Title: Proactive for Uncertainty: Cause-Aware Error Diagnosis and Interactive Clarification for Spoken Dialogue Systems
+
+URL Source: https://arxiv.org/pdf/2605.25404v1
+
+Published Time: Tue, 26 May 2026 01:44:47 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Proactive for Uncertainty: Cause-Aware Error Diagnosis and Interactive Clarification for Spoken Dialogue Systems 
+
+Yizhou Peng *1 Ziyang Ma *1,2 Changsong Liu 1
+
+Yi-Wen Chao 1 Xie Chen 2 Eng Siong Chng 1
+
+> 1
+
+Nanyang Technological University, Singapore 2Shanghai Jiao Tong University, China 
+
+Abstract 
+
+Cascaded Automatic Speech Recognition – Large Language Model (ASR-LLM) pipelines remain popular for industrial Spoken Dialogue Systems (SDS), primarily because their de-coupled design ensures perceptual verifiabil-ity. However, cascaded systems suffer from error propagation, as transcription failures in-evitably cascade to subsequent components, thereby degrading the final interaction quality. Although ASR confidence scores offer a sim-ple filter for unreliable inputs, this approach is fundamentally limited because it typically fails to detect deletion errors or to distinguish between acoustic (inability to hear clearly) and linguistic (inability to understand) mismatches, both of which require targeted recovery strate-gies. In this paper, we propose a cause-aware error recovery paradigm that fundamentally re-thinks robustness in SDS. Unlike traditional confidence filtering, we introduce a suite of small precision-focused detectors that exploit deep ASR latent representations to disentangle token-level errors into perception, comprehen-sion, and deletion failures. This fine-grained diagnostic intelligence empowers the LLM to orchestrate targeted, multi-turn clarification strategies, effectively transforming ambiguous signals into seamless user interactions. Exper-imental results validate the precision of our approach, which more than doubles the recall on domain-shift errors (57.96% vs. 23.66%) compared to baselines. Crucially, this diagnos-tic precision yields up to a 30% reduction in WER and a 17% improvement on the down-stream task across diverse accents, distortions, and domains. 
+
+1 Introduction 
+
+Modern spoken dialogue systems (SDS) generally follow two paradigms: cascaded pipelines or end-to-end (E2E) architectures. While E2E models, 
+
+> *Equal contribution.
+
+such as SALMONN (Tang et al., 2023), Qwen-Omni (Chu et al., 2023, 2024; Xu et al., 2025b), Step-Audio (Huang et al., 2025; Wu et al., 2025), and full-duplex models (Ma et al., 2025; Défossez et al., 2024), have gained significant traction for their low latency and joint optimization of linguis-tics and para-linguistics understanding, their intrin-sic "black-box" nature poses severe challenges for industrial deployment, where explainability and rapid debugging are paramount. Consequently, the cascaded pipeline in which user speech is first transcribed by an automatic speech recognition (ASR) model and then processed by a Large Lan-guage Model (LLM) remains the mainstream for real-world applications (An et al., 2024; Liu et al., 2025). However, a critical limitation of these pipelines is that the ASR output is not always reliable. In real-world conditions characterized by background noise, accents, or domain-specific vocabulary, tran-scription errors are inevitable. Without a mecha-nism to assess whether the transcript matches the user’s actual speech, these errors propagate down-stream, corrupting intent recognition and response generation (Everson et al., 2024). While confi-dence scoring offers a baseline for error detection, it is insufficient due to model miscalibration (Kuhn et al., 2025) and an inherent inability to capture deletion errors. Furthermore, standard metrics fail to distinguish between acoustic distortions ( per-ception ) and domain mismatches, such as Out-of-Vocabulary (OOV) words ( comprehension ). This distinction is critical because heterogeneous failure modes require distinct recovery strategies. We propose a lightweight, cause-aware frame-work for cascaded spoken dialogue systems that proactively resolves ASR errors. Leveraging di-verse embeddings from a frozen ASR model, our model detects token-level errors and diagnoses their underlying causes. These diagnostics guide an LLM in generating targeted clarification strategies 
+
+> arXiv:2605.25404v1 [cs.CL] 25 May 2026
+
+to resolve uncertainties through efficient multi-turn dialogue. The resulting clarified transcript prevents error propagation to downstream tasks while mini-mizing unnecessary user reprompts. Our contribu-tions are threefold: 
+
+Cause-Aware Error Detection. We formulate lightweight modules, including Comprehension ,
+
+Perception , Deletion , and Distortion Event detec-tors, that leverage internal embeddings of a frozen ASR to provide token-level causal diagnostics, cru-cially including deletion errors .
+
+LLM-Driven Clarification. We propose a clari-fication strategy that uses diagnostic error outputs to prompt an LLM with targeted recovery ques-tions. The cause-conditioning strategy enables the system to mimic human-like repair conversations, dynamically adapting its enquiries based on the specific cause of the failures. 
+
+Interactive System Evaluation. We empirically validate the framework against competing ap-proaches across several domains, demonstrating that targeted clarification significantly reduces WER and directly improves downstream task out-comes across diverse accents and distortions. 
+
+2 Related Work 
+
+2.1 Sound Event Detection 
+
+Sound Event Detection (SED) evolved from early GMM-HMM approaches to deep architectures like CRNNs, which became a dominant paradigm for temporal modeling (Cakir et al., 2017). Transformer-based methods (e.g., AST (Gong et al., 2021)) subsequently advanced global context mod-eling. Recently, Self-Supervised Learning (SSL) has achieved state-of-the-art performance by lever-aging massive unlabeled data (Gong et al., 2022). However, multi-task frameworks that integrate SED directly with ASR remain underexplored, par-ticularly with respect to joint modeling strategies that incorporate environmental awareness without compromising ASR performance. 
+
+2.2 ASR Confidence Estimation and Error Detection 
+
+ASR confidence estimation assesses the reliability of recognition. While early hybrid systems relied on lattice-based posteriors, E2E models necessitate new approaches for subword sequences. Recent research focuses on deriving confidence directly from neural decoder outputs, particularly for RNN-Transducers (RNN-T). Methodologies range from efficient non-parametric entropy measures (Laptev and Ginsburg, 2023) to auxiliary neural predictors that formulate token-level estimation as binary clas-sification (Ogawa and Hori, 2017; Ogawa et al., 2023; Wang et al., 2021). Furthermore, since down-stream tasks typically operate on words, effective aggregation strategies have been validated to propa-gate these calibrated subword signals to word-level reliability estimates (Onea¸ t˘ a et al., 2021; Qiu et al., 2021). However, these methods inherently cannot flag deletion errors, as no emitted token exists for frames the model skips. 
+
+2.3 ASR Error Correction and Clarification 
+
+Research addresses ASR noise through down-stream adaptation or direct correction. Ap-proaches include adapting SLU models to error patterns (Zhu et al., 2018) and leveraging rich struc-tures like word confusion networks (Everson et al., 2024). Recently, LLM-based post-correction has gained traction, showing promise in contact-center data (Koilakuntla et al., 2024), multilingual set-tings (Li et al., 2024), and generalized error cor-rection frameworks like HyPoradise (CHEN et al., 2023; Ma et al., 2024; Asano et al., 2025). In parallel, the dialogue community has established benchmarks (e.g., Qulac, ClarQ) for asking clar-ifying questions to resolve semantic intent ambi-guity (Aliannejadi et al., 2019; Kumar and Black, 2020; Dhole, 2020). However, these interactive methods typically assume reliable text input and lack mechanisms to ground clarification decisions in ASR-derived evidence. Notably, the challenge of error recovery in spoken dialogue predates the LLM era: foundational work by Bohus (2007) and Skantze (2007) established principled frameworks for error awareness and recovery strategies in con-versational interfaces, demonstrating that effective recovery requires balancing interaction efficiency against the risk of misunderstanding. Our work revisits this challenge in the context of modern cas-caded ASR-LLM pipelines, grounding clarification decisions in fine-grained, cause-aware diagnostics rather than coarse confidence signals. 
+
+3 Method 
+
+3.1 Baseline: Entropy-based Error Detection 
+
+To mitigate the overconfidence often observed in RNN-T models using standard softmax or Shannon Speech Encoder  Decoder          
+
+> Joiner
+> Rule-based Fusion
+> Comprehension Error Detector
+> 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+> Perception Error Detector
+> 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+> Deletion Error Detector
+> 0,0,0,0,0,0,0,0,0,0, 1,1,1,0,0
+> Distortion Event Detector
+> 1, 1, 1, 0, 0, 1, 1, 0, 3, 3, 3, 3
+> _Gene ri _tree _philosoph ical _question s _that _can _ask _a _friend
+> <noise>Generi</noise> <unknown>tree</unknown>
+> philosophical questions that <del> can ask a friend
+
+Figure 1: Architecture of the Cause-Aware Error Detector. The Parakeet-tdt ASR backbone (purple) feeds four trainable modules: the frame-level Deletion Error Detector (green) and three token-level error detectors (orange). The duration prediction of Joiner ˆdt provides the temporal information for token alignment. The deletion error and distortion event detectors use the embeddings output from the speech encoder. In contrast, the comprehensive and perception error detectors use joint embeddings that are identical to the input of the joiner network. Outputs are aggregated via rule-based fusion to tag error spans with their specific causes (e.g., <noise> , <del> , and <unknown> ), enabling the LLM to generate targeted clarification enquiries before downstream processing. 
+
+entropy, we adopt a training-free confidence mea-sure based on Tsallis entropy (Laptev and Ginsburg, 2023). This approach introduces a tunable entropic index α ∈ (0 , 1) to better manage probability dis-tribution sensitivity. The Tsallis Confidence for a token u over a vocabulary of size |V| is defined as: 
+
+Ctoken (u) = exp 
+
+ |V| 1−α−P 
+
+> Vpαv
+> 1−α
+
+
+
+− 1exp 
+
+ |V| 1−α−11−α
+
+
+
+− 1
+
+. (1) To evaluate words composed of token sequences 
+
+{u1, . . . , u K }, the word-level confidence is the arithmetic mean of its constituent token scores: 
+
+Cword (W ) = 1
+
+K
+
+> K
+
+X
+
+> k=1
+
+Ctoken (uk). (2) Finally, a word is classified as an Error if its con-fidence falls below a calibrated threshold τ . The threshold τ is tuned on each set to satisfy a specific strictness constraint, maximizing error detection recall while ensuring the False Positive Rate (FPR) remains below a target limit β.
+
+3.2 Token and Duration Transducer 
+
+We utilize the Parakeet-tdt-0.6b-v2 (en) 1 model, which pairs a FastConformer encoder (80ms/frame) 
+
+> 1
+
+https://huggingface.co/nvidia/parakeet-tdt-0. 6b-v2 
+
+with a Token-and-Duration Transducer (TDT) de-coder (Xu et al., 2025a). TDT optimizes in-ference by jointly predicting the subword token 
+
+ˆyt ∈ V (where |V| = 1024 ) and its duration 
+
+ˆdt ∈ { 0, 1, 2, 3, 4}.During greedy decoding, the model selects the optimal pair ( ˆ yt, ˆdt) via the Joiner and advances the encoder state by ˆdt frames ( t ← t + ˆdt), allowing it to skip redundant frames for faster inference. 
+
+3.3 ASR Error Detectors 
+
+To directly flag recognition failures, we deploy three specialized detectors: the Deletion , Com-prehension , and Perception Error Detectors, as shown in Figure 1. The Comprehension and Per-ception detectors operate at the token level and are designed to capture substitution and insertion 
+
+errors. The Deletion detector addresses the com-plementary case of missing content. For word-level evaluation, a word is labeled as an error if any of its constituent tokens are classified as erroneous. To maintain efficiency, all detectors share a uni-fied classification formulation. Given an input em-bedding x and a task-specific label set C, each de-tector predicts the class ˆy via: 
+
+ˆy = argmax 
+
+> c∈C
+
+P (c | x) (3) 
+
+Comprehension & Perception Detectors: These modules operate at the token level and utilize the Cause-Aware Error Detectors  Dialogue Manager & Clarifier  (LLM1) 
+
+> ASR
+> User Response
+> Errors are clarified
+> Errors are not clarified
+> Final Output
+> Errors Detection
+> K-iters
+> Errors clarification
+> TTS
+> User Simulator
+> (LLM 2)
+> Simulation (Proxy) for Benchmarking
+> Human-in-the-loop Clarification (And Proxy)
+
+Figure 2: The complete Cause-Aware Error Recovery pipeline. The process begins with the User’s initial inquiry, which is transcribed by the ASR and immediately analyzed by Cause-Aware Error Detectors. If failures are identified, the Dialogue Manager (LLM1) orchestrates targeted error-correction strategies to resolve ambiguities, prompting the user for clarification directly via speech input (solid arrows). The dashed pathway indicates the automated benchmarking setup, where a User Simulator (LLM2) and TTS are employed solely as a Proxy to simulate this interaction for experimental evaluation. 
+
+TDT joint embedding zjoint  
+
+> u
+
+as input ( x = zjoint  
+
+> u
+
+). This embedding is defined as: 
+
+zjoint  
+
+> u
+
+= Wehenc  
+
+> tu
+
++ Wdhdec  
+
+> u
+
++ bz (4) where henc  
+
+> tu
+
+and hdec  
+
+> u
+
+are the encoder and decoder states, respectively. Both use the binary class set 
+
+C = {Correct , Error }.
+
+Deletion Detector: Unlike the token-level mod-ules, this detector operates at the frame level to identify speech content missed by the decoder. It utilizes the raw encoder outputs as input ( x = henc  
+
+> t
+
+)with the class set C = {Correct , Deletion }. To dis-tinguish valid deletions from silence, we apply a masking condition based on TDT emissions: 
+
+et = I(ˆ yt = Del ) · I(No Emission at t) (5) To count distinct deletion events, we aggregate con-secutive positive flags into single instances. 
+
+3.4 Distortion Event Detector 
+
+Distinct from detecting ASR errors, the Distortion Event Detector characterizes the acoustic environ-ment at the token level (see Appendix A.7 for the empirical rationale behind this separation). It uti-lizes the same formulation (Eq. 3) but operates on the Encoder embeddings ( x = henc  
+
+> tu
+
+) aligned to the token duration. We define a set of six environmental states: 
+
+Cevent (detailed in Appendix A.3), comprising: 
+
+Clean, Interference, Noise, Room Impulse Re-sponse (RIR), Packet Loss, Missing . This ensures the distortion classification is strictly grounded in the specific acoustic frame aligned with the token emission. 
+
+3.5 Cause-Aware Clarification Pipeline 
+
+We propose an iterative framework with up to K
+
+rounds that integrates a frozen ASR backbone, error detectors, and an LLM-based Dialogue Manager into a unified recovery loop, as shown in Figure 2. Given a user utterance Uspeech , the ASR model generates a transcript Utranscript while the detec-tor suite produces a structured error profile E =
+
+{Ycomp , Y perc , Y del , Y event }. This profile identi-fies both the location and root cause of failures. The Dialogue Manager uses (Utranscript , E ) to se-lect a targeted strategy: prompting repetition or seeking a quieter room if Perception errors are flagged; or asking clarifying questions or request-ing that the word be spelled if comprehension er-rors are detected. When multiple detectors flag the same token, we apply a deterministic priority rule ( Comprehension > Perception > Deletion ): linguistic mismatches take precedence because acoustic-oriented strategies (e.g., “repeat”) would not resolve an OOV error. For clarification, the system engages in a K-iteration dialogue to resolve errors. In each step 
+
+k, the Dialogue Manager & Clarifier formulates a query Q(k) 
+
+> clarif y
+
+addressing the specific unresolved errors in E(k). The user’s spoken response is re-transcribed and re-analyzed to refine the hypothe-sis. This cycle repeats until the detectors confirm a clean transcript or the maximum K is reached, yielding Uf inal . Note that for dataset-level bench-marking, we simulate the "User" role using an LLM to generate clarifying text and a TTS model to syn-thesize the speech response, as shown in the dashed arrow in Figure 2. 
+
+4 Experimental Setup 
+
+4.1 Datasets and Data Construction 
+
+We utilize three distinct corpora to cover a wide range of linguistic and acoustic conditions for train-ing and evaluation: LibriSpeech (Panayotov et al., 2015) as a standard reading benchmark, SPGIS-peech2 (Grossman et al., 2025) for financial do-main teleconference speech, and AESRC2020 (Shi et al., 2021) for diverse English accents. To illus-trate the robustness of the proposed method, we further include Out-of-Domain (OOD) evaluation sets: Gigaspeech (Chen et al., 2021), WSJ (Paul and Baker, 1992), Openhermes (Teknium, 2023), and Alpaca (Taori et al., 2023), where the final two subsets (Wang et al., 2025) are also used for spoken dialogue evaluation. (Data details in Ap-pendix A.2). 
+
+Comprehension Task. To capture intrinsic model failures caused by domain shifts or accents, we employ the raw, clean recordings from these corpora paired with their groundtruth transcripts. • Labeling Strategy: We align the clean ASR hypothesis Hclean against the groundtruth 
+
+YGT . A token is labeled as a Comprehension Error if it belongs to the corresponding word that is a substitution or insertion. 
+
+Perception Task and Event Detection. To target errors induced by acoustic distortion, we generate LibriSpeech-distortions and SPGI2-distortions by applying nine synthetic acoustic conditions to the clean subsets, namely Interference, Missing, Multi-dist (No RIR), Multi-dist (RIR), Noise, Noise (Par-tial), Packet Loss, RIR, RIR+Noise. • Labeling Strategy: We employ a differential labeling approach, treating the clean hypoth-esis Hclean as a pseudo-oracle. By aligning the distorted hypothesis Hdist against it, we label a token as a Perception Error if it is dif-ferent in Hdist , and as a Deletion Error if it is present in Hclean but missing in Hdist .
+
+4.2 Model Configuration 
+
+We freeze the Parakeet-tdt-0.6b-v2 backbone. All four detectors employ an identical architecture: a 
+
+5-layer 1D-CNN , selected based on systematic ab-lation over linear, MLP, CNN, and Transformer ar-chitectures (Appendix A.6). The Distortion Event Detector uses a 6-class output head (defined in 
+
+Cevent ), while the other modules use binary clas-sification heads. Each detector comprises ≈10M parameters. Full training hyperparameters are pro-vided in Appendix A.4. For K-round clarification and Spoken Dialogue Evaluation, we set K = 3, and utilize GPT-5.2 to power the Dialogue Manager (LLM1), the User Simulator (LLM2), and the Model-as-a-Judge (MaJ) scorer, alongside CosyVoice3 (Du et al., 2025) for TTS. We implement a rigorous quar-antine protocol to prevent context leakage: LLM2 is provided with the user’s specific target intent, whereas LLM1 is explicitly denied access to this groundtruth. This ensures that the Dialogue Man-ager must resolve ambiguities dynamically during conversation, rather than cheating by relying on hidden context. 
+
+5 Quantitative Evaluations 
+
+We evaluate the proposed framework in two phases: component-level detection accuracy and system-level interactive effectiveness evaluation. We evaluate the framework in two phases: component-level detection accuracy ( Recall , FPR ,
+
+F1 ) and system-level recovery effectiveness (WERR , MaJ scoring). Metric definitions are in Appendix A.5. 
+
+5.1 Token Level Evaluation 
+
+We perform token-level error detection on the in-domain test sets, including AESRC-Test and SPGI2-Test, because we have only the artificial token-level label under these conditions. Table 1 presents the performance of the Deletion, Percep-tion, and Comprehension error detectors. The re-sults demonstrate the efficacy of decoupling error detection tasks to achieve targeted sensitivity. Deletion Error Detector Percep. / Compr. Error Detector Test Condition FPR ( ↓) Recall ( ↑) FPR ( ↓) Recall ( ↑)                                              
+
+> Perception Task
+> Interference 0.62 62.44 4.79 66.29 Missing 1.87 92.42 5.52 64.10 Multi-dist (No RIR) 1.27 82.23 5.72 65.82 Multi-dist (RIR) 1.46 77.52 8.50 72.75 Noise 0.33 46.17 5.63 73.14 Noise (Partial) 0.28 38.84 4.75 66.84 Packet Loss 0.32 39.70 4.37 62.14 RIR 0.29 23.60 4.61 62.57 RIR + Noise 0.47 44.36 8.37 74.10
+> Avg. 0.77 56.36 5.81 67.53
+> Comprehension Task
+> AESRC-Test -1.61 47.98 SPGI2-Test -1.78 70.26
+
+Table 1: Token-level Error Detection Evaluation. False Positive Rates ( FPR ) and Recall Rates are reported. Perception Task evaluates the synthetic distorted SPGI2-Test using both the Deletion and Percep tion Error Detector. Comprehension Task evaluates two clean sets using Compr ehension Error Detector. 
+
+Perception Task Performance In acoustic dis-tortion tasks, the Perception Error Detector is ro-bust (67.53% average recall, 5.81% FPR) and most effective in noisy environments (> 73% Recall). Conversely, the Deletion Error Detector prioritizes precision (0.77% FPR). While it excels at iden-tifying missing segments (92.42% Recall), per-formance drops significantly in RIR conditions (23.60% Recall), as reverberation smears the sharp signal boundaries required to identify deletions. 
+
+Comprehension Task Performance The Com-prehension Error Detector maintains a conservative profile on linguistic tasks ( <1.8% FPR). Recall is domain-dependent: it performs well on the finance-specific SPGI2-Test (70.26%). Still, it shows mod-erate recall on the accented AESRC (47.98%), in-dicating the model is more sensitive to terminology errors than accent deviations. 
+
+5.2 Word Level Evaluation 
+
+To evaluate the system’s practical utility, we aggre-gate token-level predictions into word-level error flags. Table 2 benchmarks our proposed detectors against the Tsallis Entropy Baseline across three diverse testing conditions. To ensure a fair compar-ison, we tune the baseline’s confidence threshold to match the FPR of the proposed method. 
+
+Comparison with Entropy Baseline Our pro-posed method consistently outperforms the entropy baseline across both tasks. In the Perception Task ,it achieves a superior average Recall of 52.26% 
+
+compared with 41.57%, indicating that our learned modules capture signal artifacts more effectively than simple model confidence. This performance gap becomes even more profound in the Compre-hension Task : our method drastically improves Re-call from 23.66% to 57.96% on SPGI2-Test and from 13.26% to 39.38% on AESRC-Test . These results demonstrate that, although the entropy base-line fails when the ASR model is "confidently wrong" under a clean recording environment , our supervised detector successfully identifies these intrinsic failures. 
+
+Deletion Detector Specialization The Deletion Error Detector continues to exhibit a precision-oriented behavior at the word level. Its aver-age FPR on the Perception task is significantly lower ( 4.70% ) than the Perception Error Detector (9.64% ). Despite its narrower scope, it achieves a respectable Average Recall of 44.67% , with particular effectiveness in the Missing condition (63.37%), validating its role as a specialized trigger for handling missing words. 
+
+OOD Generalization We further evaluate ro-bustness on datasets unseen during training (Gi-gaspeech, OpenHermes, Alpaca, WSJ). Our pro-posed method demonstrates strong generalization, notably achieving 71.05% Recall on Alpaca (vs. 53.33% baseline) and 29.72% on wsj-eval92 (vs. 7.37% baseline). In contrast, the Deletion Detector shows near-zero recall on OpenHermes and Alpaca; as noted in Table 2, this is an expected artifact of the test sets containing almost no deletion errors, rather than a model failure. Deletion Error Detector Percep. / Compr. Error Detector Entropy Baseline Proposed Method Test Condition FPR (↓) Recall (↑) FPR † (↓) Recall (↑) FPR (↓) Recall (↑)
+
+Perception Task (SPGI2-Test-Distorted) 
+
+Interference 4.82 38.67 8.32 37.99 8.31 47.48 
+
+Missing 6.00 63.37 9.78 37.01 9.78 49.05 
+
+Multi-dist (No RIR) 5.27 56.81 9.82 39.41 9.82 50.06 
+
+Multi-dist (RIR) 6.69 47.42 14.28 53.33 14.25 61.56 
+
+Noise 3.85 22.35 9.39 41.40 9.39 54.37 
+
+Noise (Partial) 3.67 21.94 8.04 37.28 8.04 47.93 
+
+Packet Loss 3.34 24.41 7.21 33.57 7.21 43.88 
+
+RIR 3.31 20.79 8.31 37.84 8.31 48.24 
+
+RIR + Noise 3.99 20.21 12.78 51.03 12.78 60.01 
+
+Avg. 4.70 44.67 9.66 41.57 9.64 52.26 Comprehension Task (Clean) 
+
+AESRC-Test - 1.13 13.26 1.13 39.38 
+
+SPGI2-Test - 4.01 23.66 3.98 57.96 
+
+Out-of-Domain 
+
+Gigaspeech 3.35 23.15 5.37 26.02 5.37 29.70 
+
+OpenHermes 0.20 0.00 ‡ 2.00 75.00 2.07 43.63 Alpaca 0.30 0.00 ‡ 4.35 53.33 4.65 71.05 
+
+wsj-eval92 0.00 2.52 0.69 7.37 0.69 29.72  
+
+> †
+
+The threshold was tuned to align the Baseline FPR with the Proposed Method for fair comparison.  
+
+> ‡
+
+0% recall on OpenHermes/Alpaca due to negligible deletion errors ( <2 instances). 
+
+Table 2: Word-level Error Detection Evaluation. False Positive Rates ( FPR ) and Recall Rates are reported. We benchmark the proposed Deletion , Perception , and Comprehension Error Detectors against the Entropy-based Baseline . Evaluations span three conditions: Perception , Comprehension , and Out-of-Domain (OOD) . Note that the Entropy method serves as the comparator for Perception or Comprehension Error Detectors for corresponding tasks, respectively, or a combination of the two detectors for OOD conditions. 
+
+Distortion Type F1 Score ( ↑) Acc ( ↑)
+
+Clean 91.89 88.92 Noisy 15.79 35.85 RIR 6.76 9.59 Interference 29.26 38.79 Packet Loss 26.32 25.44 Missing 78.58 73.67 
+
+Average 41.43 85.49 
+
+Table 3: Token-level Evaluation Results for Sound Event Detection. F1 score (scale of 100) and 
+
+Acc uracy(%) are reported for each distortion type. Macro-F1 is reported for Average. 
+
+5.3 Speech Event Detection 
+
+Table 3 evaluates the multi-class classification capa-bility of the Distortion Event Detector . The model achieves an overall Macro Average Accuracy of 
+
+85.49% , primarily driven by its effectiveness in identifying Clean speech and Missing segments. The high performance on the Missing class further corroborates the reliability of our deletion detection strategy, distinguishing explicit signal loss from other artifacts. However, the model struggles to differentiate between fine-grained additive distortions. Perfor-
+
+Setup Init. Refinement (WER ↓)ASR Step 1 Step 2 Step 3 
+
+WSJ-eval92 
+
+HyPoradise (2023) † 7.60 7.30 – 6.30 
+
+Proposed 4.23 4.02 3.90 3.85 
+
+Other Datasets (Proposed method) 
+
+Gigaspeech 14.57 12.88 12.47 12.28 
+
+SPGI-noise 17.57 15.24 13.85 12.31 
+
+AESRC-Indian 6.08 4.91 4.79 4.74 
+
+> †
+
+HyPoradise : Step 1 is 0-shot; Step 3 is 10-shot. 
+
+Table 4: WER comparison for 3 rounds of interac-tive clarification. We compare 0-shot and 10-shot Hy-Poradise (CHEN et al., 2023) on the WSJ-eval92 set against the proposed method, and report the WER of the proposed method on other datasets. 
+
+mance drops significantly for RIR (F1=6.76) and 
+
+Noisy (F1=15.79) conditions. This suggests that while the ASR backbone’s embeddings strongly encode the presence or absence of speech (Clean vs. Missing), the representations for different en-vironmental corruptions (e.g., reverb vs. back-ground noise) are highly entangled, making spe-cific cause classification challenging at the token level. A detailed misdiagnosis analysis on the Initial Round 1 Round 2 Round 3 0510 15 20 25 30    
+
+> Reduction (%)
+> HyPoradise-0shot HyPoradise-10shot
+> WERR Progression
+> Gigaspeech WSJ-eval92 AESRC-Indian SPGI-noise Initial Round 1 Round 2 Round 3 010 20 30 40
+> Reduction (%)
+> WERR Progression (Upperbound)
+
+Figure 3: WERR performance of 3-round Clarification for the four test sets. Two reference horizontal dashed lines are results extracted from HyPoradise (CHEN et al., 2023) for WSJ-eval92. 
+
+SPGI2-Test-Noise subset confirms that 69.4% of noise-induced errors are correctly attributed, with the main failure mode being conservative “Clean” classification rather than cross-category confusion (Appendix A.8). 
+
+5.4 3-Round Enquiry Clarification 
+
+We validate the complete recovery pipeline through a single experimental run of 3-round clarification on specific hard-to-recognize subsets: the AESRC-Indian accent , the SPGI-noise condition, and a fil-tered version of Gigaspeech ( ≈11k samples) where utterances requiring complex numeric normaliza-tion were excluded. Table 4 reports the absolute WER, while Figure 3 illustrates the relative WERR progression. 
+
+Robustness on in/out domain Subsets. The sys-tem achieves consistent gains across all subsets, with WERR peaking at 29.9% on SPGI and 22.0% on AESRC , demonstrating robust recovery from both severe environmental noise and firm accent shifts. The WERR increases monotonically with each round, confirming that our multi-turn strategy effectively corrects residual errors. 
+
+Baseline Comparison. On WSJ-eval92 , our WERR surpasses HyPoradise’s (2023) zero-shot baseline but trails their 10-shot result. How-ever, they optimize a much weaker baseline (WER=7.60%), making gains easier. Our method refines a stronger backbone (WER=4.23%) to a su-perior result (WER= 3.85% ), significantly outper-forming their best absolute result (WER=6.30%).                  
+
+> Experimental Setting Dial Quality (MaJ) Input Source WER OpenH Alpaca
+> Reference Upper Bounds
+> GT Oracle 86.6 84.8 ASR Clean 85.4 83.6
+> Distortion & Recovery
+> ASR Dist †74.6 68.8
+> Clarified 3-round 83.0 80.8
+> †Follow the setting as SPGI2-Test-Multi-dist (No RIR)
+
+Table 5: Downstream Dialogue Evaluation on 
+
+OpenH ermes and Alpaca test sets. MaJ scores (scaled 0-100) compare our proposed 3-Round Clarification 
+
+against the ASR-Dist baseline, with ASR-Clean and 
+
+Ground Truth inputs serving as upper bounds. 
+
+5.5 Spoken Dialogue Evaluation 
+
+We assess downstream utility using the MaJ score on instruction-following tasks via a single exper-imental run, as shown in Table 5. While distor-tions significantly degrade performance, our cause-aware error detection and clarification pipeline re-stores the score to 83.0 and 80.8 . This recovery effectively bridges the gap to the clean baseline (∼85, 84), demonstrating that our semantic correc-tions directly translate to improved task execution. A supplementary qualitative evaluation of 141 clar-ification rounds confirms that approximately 60% of system queries are judged both natural and ef-fective by MaJ scoring (Appendix A.12). 
+
+6 Conclusion 
+
+In this work, we presented a framework to make Spoken Dialogue Systems proactive against un-certainty . We found that traditional confidence-based filtering is insufficient for cascaded sys-tems, as it fails to distinguish between acoustic-perception failures and linguistic-comprehension gaps. To address this, we introduced a cause-aware diagnosis mechanism that leverages spe-cialized detectors to pinpoint the root cause of errors, doubling error detection recall with com-parable precision under domain shifts compared with baselines. By coupling this diagnostic preci-sion with interactive clarification , our approach enables LLMs to resolve ambiguities through user-in-the-loop engagement, offering context-sensitive mitigation strategies tailored to the specific fail-ure reason , ranging from requests for repetition to suggestions for environmental adjustments. Experi-mental results confirm the efficacy of this paradigm, demonstrating a 30% reduction in WER and a 17% improvement in downstream utility . Ul-timately, this validates that moving from passive error filtration to proactive, cause-aware resolution is essential for building resilient dialogue agents. 
+
+Limitations 
+
+This study has several limitations that also imply practical risks. We deliberately constrained the LLM to edit only detector-flagged tokens to iso-late detector precision, which may cause the sys-tem to miss unflagged errors and underestimate LLM–detector synergy. All experiments target English speech only; other languages may intro-duce challenges such as tonal distinctions or ag-glutinative morphology. Training data is drawn from SPGISpeech2 (financial) and AESRC (Ac-cented English) with simulated distortions, so per-formance may degrade under real-world conditions (e.g., non-stationary noise, overlapping speakers) or unseen domains. We report automatic metrics without subjective human validation, leaving open the question of whether cause-aware clarifications feel natural to users. Finally, artifacts from the zero-shot voice-cloning TTS can bias end-to-end scores downward, making our results a conservative lower bound. 
+
+Ethics Statement 
+
+Our experiments use only publicly available datasets, including community benchmarks and competition datasets that are claimed to have been desensitized, and we do not collect new data or conduct human evaluation. 
+
+Potential risks. The primary risks of this work relate to (i) misinterpretation or misuse of model outputs, and (ii) performance disparities across do-mains, accents, or conditions represented in the benchmarks. We clearly report limitations and po-tential problems in Limitations. 
+
+AI assistance disclosure. We utilized AI tools, including ChatGPT, Gemini, Claude, and Gram-marly, to assist with language editing, initial code generation, and README preparation. In accor-dance with ACL policy, we disclose the scope of this use; the authors have manually verified all out-puts and retain full responsibility for the final work. 
+
+References 
+
+Mohammad Aliannejadi, Hamed Zamani, Fabio Crestani, and W. Bruce Croft. 2019. Asking clar-ifying questions in open-domain information-seeking conversations. Preprint , arXiv:1907.06554. Keyu An, Qian Chen, Chong Deng, Zhihao Du, Changfeng Gao, Zhifu Gao, Yue Gu, Ting He, Hangrui Hu, Kai Hu, and et al. 2024. Funaudiollm: Voice understanding and generation foundation mod-els for natural interaction between humans and llms. 
+
+arXiv preprint arXiv:2407.04051 .Yuya Asano, Sabit Hassan, Paras Sharma, Anthony B Sicilia, Katherine Atwell, Diane Litman, and Malihe Alikhani. 2025. Contextual asr error handling with llms augmentation for goal-oriented conversational ai. In Proceedings of COLING 2025 (Industry Track) .Dan Bohus. 2007. Error awareness and recovery in conversational spoken language interfaces . Ph.D. thesis, Carnegie Mellon University. Emre Cakir, Giambattista Parascandolo, Toni Heit-tola, Heikki Huttunen, and Tuomas Virtanen. 2017. Convolutional recurrent neural networks for poly-phonic sound event detection. IEEE/ACM Transac-tions on Audio, Speech, and Language Processing ,25(6):1291–1303. CHEN CHEN, Yuchen Hu, Chao-Han Huck Yang, Sabato Marco Siniscalchi, Pin-Yu Chen, and Eng-Siong Chng. 2023. Hyporadise: An open baseline for generative speech recognition with large language models. In Advances in Neural Information Process-ing Systems , volume 36, pages 31665–31688. Curran Associates, Inc. Guoguo Chen, Shuzhou Chai, Guanbo Wang, Jiayu Du, Wei-Qiang Zhang, Chao Weng, Dan Su, Daniel Povey, Jan Trmal, Junbo Zhang, and et al. 2021. Gi-gaspeech: An evolving, multi-domain asr corpus with 10,000 hours of transcribed audio. arXiv preprint arXiv:2106.06909 .Yunfei Chu, Jin Xu, Qian Yang, Haojie Wei, Xipin Wei, Zhifang Guo, Yichong Leng, Yuanjun Lv, Jinzheng He, Junyang Lin, and et al. 2024. Qwen2-audio technical report. arXiv preprint arXiv:2407.10759 .Yunfei Chu, Jin Xu, Xiaohuan Zhou, Qian Yang, Shil-iang Zhang, Zhijie Yan, Chang Zhou, and Jingren Zhou. 2023. Qwen-audio: Advancing universal audio understanding via unified large-scale audio-language models. arXiv preprint arXiv:2311.07919 .Alexandre Défossez, Laurent Mazaré, Manu Orsini, Amélie Royer, Patrick Pérez, Hervé Jégou, Edouard Grave, and Neil Zeghidour. 2024. Moshi: a speech-text foundation model for real-time dialogue. arXiv preprint arXiv:2410.00037 .Kaustubh D. Dhole. 2020. Resolving intent ambigui-ties by retrieving discriminative clarifying questions. 
+
+Preprint , arXiv:2008.07559. Zhihao Du, Changfeng Gao, Yuxuan Wang, Fan Yu, Tianyu Zhao, Hao Wang, Xiang Lv, Hui Wang, Xian Shi, Keyu An, and et al. 2025. Cosyvoice 3: Towards in-the-wild speech generation via scaling-up and post-training. arXiv preprint arXiv:2505.17589 .Kevin Everson, Yile Gu, Huck Yang, Prashanth Gu-runath Shivakumar, Guan-Ting Lin, Jari Kolehmainen, Ivan Bulyko, Ankur Gandhe, Shalini Ghosh, Wael Hamza, Hung-yi Lee, Ariya Rastrow, and Andreas Stolcke. 2024. Towards asr robust spoken language understanding through in-context learning with word confusion networks. In arXiv preprint arXiv:2401.02921 .Yuan Gong, Yu-An Chung, and James Glass. 2021. Ast: Audio spectrogram transformer. In Proceedings of Interspeech , pages 571–575. Yuan Gong, Yu-An Chung, and James Glass. 2022. Ssast: Self-supervised audio spectrogram trans-former. In Proceedings of the AAAI Conference on Artificial Intelligence .Raymond Grossman, Taejin Park, Kunal Dhawan, An-drew Titus, Sophia Zhi, Yulia Shchadilova, Weiqing Wang, Jagadeesh Balam, and Boris Ginsburg. 2025. Spgispeech 2.0: Transcribed multi-speaker finan-cial audio for speaker-tagged transcription. arXiv preprint arXiv:2508.05554 .Ailin Huang, Boyong Wu, Bruce Wang, Chao Yan, Chen Hu, Chengli Feng, Fei Tian, Feiyu Shen, Jing-bei Li, Mingrui Chen, and et al. 2025. Step-audio: Unified understanding and generation in intelligent speech interaction. arXiv preprint arXiv:2502.11946 .Bramhendra Koilakuntla, Prajesh Rana, Paras Ahuja, Srikanth Konjeti, and Jithendra Vepa. 2024. Lever-aging large language models for post-transcription correction in contact centers. In Interspeech 2024 ,pages 2038–2039. Korbinian Kuhn, Verena Kersken, and Gottfried Zim-mermann. 2025. Evaluating asr confidence scores for automated error detection in user-assisted correction interfaces. In Proceedings of the Extended Abstracts of the CHI Conference on Human Factors in Com-puting Systems , CHI EA ’25, New York, NY, USA. Association for Computing Machinery. Vaibhav Kumar and Alan W. Black. 2020. ClarQ: A large-scale and diverse dataset for clarification ques-tion generation. In Proceedings of the 58th Annual Meeting of the Association for Computational Lin-guistics , pages 7296–7301. Aleksandr Laptev and Boris Ginsburg. 2023. Fast entropy-based methods of word-level confidence esti-mation for end-to-end automatic speech recognition. In 2022 IEEE Spoken Language Technology Work-shop (SLT) , pages 152–159. Sheng Li, Chen Chen, Chin Yuen Kwok, Chenhui Chu, Eng Siong Chng, and Hisashi Kawai. 2024. Investi-gating asr error correction with large language model and multilingual 1-best hypotheses. In Proc. Inter-speech 2024 .Zhanxun Liu, Yifan Duan, Mengmeng Wang, Pengchao Feng, Haotian Zhang, Xiaoyu Xing, Yijia Shan, Haina Zhu, Yuhang Dai, Chaochao Lu, and et al. 2025. X-talk: On the underestimated potential of modular speech-to-speech dialogue system. arXiv preprint arXiv:2512.18706 .Rao Ma, Mengjie Qian, Mark Gales, and Kate Knill. 2024. Asr error correction using large language mod-els. Preprint , arXiv:2409.09554. Ziyang Ma, Yakun Song, Chenpeng Du, Jian Cong, Zhuo Chen, Yuping Wang, Yuxuan Wang, and Xie Chen. 2025. Language model can listen while speak-ing. In Proceedings of the AAAI Conference on Arti-ficial Intelligence , volume 39, pages 24831–24839. Atsunori Ogawa and Takaaki Hori. 2017. Error detec-tion and accuracy estimation in automatic speech recognition using deep bidirectional recurrent neural networks. Speech Communication , 89:70–83. Atsunori Ogawa, Naohiro Tawara, Takatomo Kano, and Marc Delcroix. 2023. Blstm-based confidence es-timation for end-to-end speech recognition. arXiv preprint arXiv:2312.14609 .Dan Onea¸ t˘ a, Alexandru Caranica, Adriana Stan, and Horia Cucu. 2021. An evaluation of word-level con-fidence estimation for end-to-end automatic speech recognition. In Proceedings of the 8th IEEE Spoken Language Technology Workshop (SLT 2021) , Shen-zhen, China. Vassil Panayotov, Guoguo Chen, Daniel Povey, and Sanjeev Khudanpur. 2015. Librispeech: an asr cor-pus based on public domain audio books. In 2015 IEEE international conference on acoustics, speech and signal processing (ICASSP) , pages 5206–5210. IEEE. Douglas B Paul and Janet M Baker. 1992. The design for the wall street journal-based csr corpus. In Pro-ceedings of the Workshop on Speech and Natural Language , pages 357–362. Association for Computa-tional Linguistics. David Qiu, Qiujia Li, Yanzhang He, Yu Zhang, Bo Li, Liangliang Cao, Rohit Prabhavalkar, Deepti Bhatia, Wei Li, Ke Hu, and et al. 2021. Learning word-level confidence for subword end-to-end asr. In IEEE International Conference on Acoustics, Speech, and Signal Processing (ICASSP) .Xian Shi, Fan Yu, Yizhou Lu, Yuhao Liang, Qiangze Feng, Daliang Wang, Yanmin Qian, and Lei Xie. 2021. The accented english speech recognition chal-lenge 2020: Open datasets, tracks, baselines, results and methods. In ICASSP 2021-2021 IEEE Interna-tional Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 6918–6922. IEEE. G Skantze. 2007. Error handling in spoken dialogue systems-managing uncertainty, grounding and mis-communication: Chapter 2, spoken dialogue systems. 
+
+KTH Computer Science and Communication .David Snyder, Guoguo Chen, and Daniel Povey. 2015. Musan: A music, speech, and noise corpus. Preprint ,arXiv:1510.08484. Changli Tang, Wenyi Yu, Guangzhi Sun, Xianzhao Chen, Tian Tan, Wei Li, Lu Lu, Zejun Ma, and Chao Zhang. 2023. Salmonn: Towards generic hearing abilities for large language models. arXiv preprint arXiv:2310.13289 .Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li, Carlos Guestrin, Percy Liang, and Tatsunori B Hashimoto. 2023. Stanford alpaca: An instruction-following llama model. https:// github.com/tatsu-lab/stanford_alpaca .Teknium. 2023. Openhermes 2.5: An open dataset of synthetic data for instruction tuning. Hugging Face Dataset. Jean-Marc Valin, Koen Vos, and Timothy B Terriberry. 2012. Definition of the opus audio codec. In Request for Comments: 6716 . IETF. Bin Wang, Xunlong Zou, Geyu Lin, Shuo Sun, Zhuo-han Liu, Wenyu Zhang, Zhengyuan Liu, AiTi Aw, and Nancy F Chen. 2025. Audiobench: A universal benchmark for audio large language models. NAACL .Mingqiu Wang, Hagen Soltau, Laurent El Shafey, and Izhak Shafran. 2021. Word-level confidence estimation for rnn transducers. arXiv preprint arXiv:2110.15222 .Boyong Wu, Chao Yan, Chen Hu, Cheng Yi, Chengli Feng, Fei Tian, Feiyu Shen, Gang Yu, Haoyang Zhang, Jingbei Li, and et al. 2025. Step-audio 2 technical report. arXiv preprint arXiv:2507.16632 .Hainan Xu, Travis M. Bartley, Vladimir Bataev, and Boris Ginsburg. 2025a. Hainan: Fast and accurate transducer for hybrid-autoregressive asr. In The Thir-teenth International Conference on Learning Repre-sentations .Jin Xu, Zhifang Guo, Hangrui Hu, Yunfei Chu, Xiong Wang, Jinzheng He, Yuxuan Wang, Xian Shi, Ting He, Xinfa Zhu, Yuanjun Lv, Yongqi Wang, Dake Guo, He Wang, Linhan Ma, Pei Zhang, Xinyu Zhang, Hongkun Hao, Zishan Guo, and 19 others. 2025b. Qwen3-omni technical report. arXiv preprint arXiv:2509.17765 .Su Zhu, Ouyu Lan, and Kai Yu. 2018. Robust spoken language understanding with unsupervised asr-error adaptation. In Proceedings of ICASSP 2018 , pages 6179–6183. 
+
+A Appendix 
+
+A.1 Open Source and Reproducibility 
+
+To facilitate future research and ensure the repro-ducibility of our results, we commit to releasing the complete codebase upon submission of the pa-per. This release will include the whole pipeline, covering data preprocessing, distortion simulation, model training, inference scripts, and the interac-tive LLM clarification module. 2 Also, the model weights of the classifiers are included in the repo. 
+
+A.2 Dataset Details 
+
+Table 6 summarizes the statistics for all datasets used in our experiments. Below we detail the source corpora and distortion generation protocols. 
+
+A.2.1 Comprehension Corpora 
+
+We utilize three distinct datasets to represent vary-ing levels of linguistic difficulty: • AESRC2020 : Sourced from the Accented English Speech Recognition Challenge , this dataset contains studio-quality recordings cov-ering eight distinct English accents: Ameri-can, British, Chinese, Indian, Japanese, Ko-rean, Portuguese, and Russian. • LibriSpeech-clean : A standard benchmark derived from audiobooks. We use the 
+
+train-clean-100 and dev-clean subsets to represent high-quality, standard reading speech. • SPGI2-clean : A subset of the SPGISpeech2 corpus, consisting of multi-speaker sponta-neous conversational teleconference record-ings from the financial domain. We selected segments shorter than 20 seconds, yielding 460 hours from the original 3780-hour cor-pus. 
+
+A.2.2 Out-of-Domain (OOD) Corpora 
+
+To evaluate the robustness of our error recov-ery pipeline against unseen domains and acous-tic conditions, we incorporate four distinct Out-of-Domain (OOD) datasets. These sets introduce varying levels of difficulty, ranging from standard reading tasks to complex, instruction-following di-alogue scenarios. • Gigaspeech : A large-scale multi-domain cor-pus derived from audiobooks, podcasts, and YouTube. For our OOD evaluation, we use a subset of the test split that excludes seg-ments requiring complex numeric normal-ization, yielding approximately 11,000 sam-ples. This dataset challenges the model with                                              
+
+> 2https://anonymous.4open.science/r/ Cause-Aware-Error-Detection-and-Correction-7E4D Exp. Task Dataset Split # Samples Duration (hrs) Comprehension
+> AESRC2020 Train 119k 142.0 Valid 5.6k 6.7 Test 14.5k 16.8 LibriSpeech-clean Train 28.5k 100.6 Dev 5.5k 10.5 SPGI2-clean Train 159k 421.0 Valid 6.9k 18.3 Test 7.6k 20.5
+> Perception
+> LibriSpeech-distortions Train 4.8k †16.7 †
+> Dev 0.9k †1.7 †
+> SPGI2-distortions Train 26.5k †70.0 †
+> Valid 1.1k †3.0 †
+> Test 1.3k †3.5 †
+> Out-of-Domain
+> Gigaspeech Test 19.9k 40 WSJ-eval92 Test 333 0.7 OpenHermes Test 100 1.5 Alpaca Test 100 1.5
+> †Averaged per nine distortion subset.
+
+Table 6: Statistics of the datasets used for Comprehension (Linguistic) and Perception (Acoustic) experiments. For the Perception datasets, we generate 9 types of distortions: Interference, Noise, Noise-partial, RIR, RIR-Noise, Packet Loss, Missing, Multi-dist (w/o RIR), and Multi-dist (w/ RIR). Note that the statistics for distorted sets are reported per distortion type . For Out-of-Domain evaluation, we only have test sets, while their training data is not included in our experiments. 
+
+diverse recording environments and sponta-neous speaking styles. • WSJ-eval92 : The standard evaluation set from the Wall Street Journal (CSR-I) cor-pus. It consists of high-quality read speech of news text. We use this as a benchmark for "clean" but domain-shifted performance, en-abling comparison with established baselines such as HyPoradise. • OpenHermes : A massive collection of syn-thetic instruction-following datasets, initially designed for fine-tuning Large Language Models (LLMs). We use the 100-sample sub-set from AudioBench (Wang et al., 2025). • Alpaca : Similar to OpenHermes, this dataset consists of 52,000 instructions generated by OpenAI’s text-davinci-003. We use the 100-sample subset from AudioBench (Wang et al., 2025). 
+
+A.3 Perception Corpora Construction 
+
+For the Perception task, we introduced five fun-damental distortion types: Noise, Interference, Reverberation (RIR), Packet Loss, and Signal Missing . We define these distortions as follows: 
+
+Noise (Additive). This represents environmental background sounds that degrade the signal-to-noise ratio (SNR) of the target speech. We sample non-speech noise clips from the MUSAN corpus (Sny-der et al., 2015) and add them to the clean audio at SNRs uniformly sampled from the range [−5, 20] 
+
+dB. 
+
+Reverberation (RIR). Reverberation simulates the multipath propagation of sound in enclosed spaces. We convolve the clean speech with Room Impulse Responses (RIRs) selected from the MU-SAN corpus (Snyder et al., 2015), specifically tar-geting "medium" and "large" room profiles to in-troduce significant late reflections and spectral col-oration. 
+
+Interference (Competing Speaker). This event simulates the "cocktail party problem" where a sec-ondary speaker talks simultaneously. We select in-terfering speech segments (distinct from the target speaker) and mix them additively with the target au-dio. The mixing SNR is sampled from [5 , 20] dB to ensure the target remains dominant but challenged. 
+
+Packet Loss (Low-Bitrate Compression). To simulate transmission artifacts and information loss typical of unstable network conditions (e.g., VoIP), we employ aggressive lossy compression. We uti-lize FFmpeg with the Opus codec (Valin et al., 2012), a standard for real-time communication. Randomly selected segments are compressed to extremely low bitrates b ∈ { 1, 2, 4, 8} kbps using the following command: 
+
+ffmpeg -i $in -c:a libopus -b:a $b $out 
+
+This process introduces blocking artifacts and spec-tral truncation analogous to severe packet loss con-cealment. 
+
+Missing (Temporal Masking). This models hardware failures or mute errors where audio data is completely lost. We simulate this by strictly zero-ing out (masking) a randomly selected contiguous segment of the audio waveform (setting amplitude to 0). By applying these to the clean subsets of Lib-riSpeech and SPGI2, we generated nine distinct test conditions representing single-source, partial, and composite distortions: 1. Single-Source: Noise (entire segment), RIR (entire segment). 2. Partial/Composite: Interference, Packet Loss, Missing, Noise-partial (applied to random sub-segments), RIR+Noise, Multi-distortion (w/ RIR), and Multi-distortion (w/o RIR). 
+
+Data Sampling. To construct the training and evaluation sets for these nine conditions, we main-tained the original Train/Valid/Test splits from the source corpora. For each specific distortion sub-set, we randomly sampled 1/6 of the corresponding clean source samples. This sampling ratio ensures sufficient coverage while intentionally creating data overlap across different distortion types, preventing the model from overfitting to a specific subset size. 
+
+A.4 Training Details 
+
+Both the encoder outputs (projected via the internal 
+
+1024 → 640 projection) and the joint embeddings share a unified dimension of dmodel = 640 . For the 
+
+Tsallis entropy baseline, we set the entropic index 
+
+α = 0 .33 .All four detectors use a kernel size of 5 and a dropout rate of 0.2. Models are trained with the AdamW optimizer for 40 epochs, using a learning rate of 2 × 10 −4, weight decay of 0.01 , and a batch size of 192. All models were trained on a single NVIDIA A40-48GB GPU. The final model was derived by averaging the top 5 checkpoints (saved at 500-step intervals) sorted by validation set error recall. For the LLM-based evaluation pipeline, we use GPT-5.2 (snapshot: 2025-12-11). 
+
+A.5 Evaluation Metrics 
+
+To comprehensively assess the performance of the proposed framework, we employ a diverse set of metrics covering error detection, event classifica-tion, and dialogue recovery. 
+
+A.5.1 Error Detection Metrics 
+
+For the binary error detectors (Comprehension, Per-ception, Deletion) at both the token and word levels, we prioritize the trade-off between sensitivity and false alarms. We define the Positive class as an 
+
+Error and the Negative class as a Correct token. Consequently, the confusion matrix components are defined as: True Positive ( TP ): An actual error correctly detected by the model. False Negative (FN ): An actual error missed by the model. False Positive ( FP ): A correct token incorrectly flagged as an error. True Negative ( TN ): A correct token classified adequately as correct. Consequently, Recall and False Positive Rate (FPR) are defined as: • Recall (Sensitivity): Measures the proportion of actual errors correctly identified by the de-tector. Recall = TP TP + FN (6) • FPR (Precisions): Measures the proportion of correct tokens that are incorrectly flagged as errors. Low FPR is critical to prevent un-necessary user interruptions. FPR = FP FP + TN (7) 
+
+A.5.2 Events Classification Metrics 
+
+For the multi-class Distortion Event Detector , we utilize standard classification metrics evaluated at the token level: • Accuracy: The ratio of correctly classified frames to the total number of frames. • F1 Score: The mean of precision and recall, averaged across all six environmental classes to account for class imbalance. A.5.3 Error Correction Metrics 
+
+To evaluate the improvement in transcript quality after the clarification loop: • Word Error Rate (WER): The standard metric for ASR performance, calculated as WER = S+D+IN , where S, D, I are substitu-tions, deletions, and insertions, and N is the number of words in the reference. • WER Reduction (WERR): Quantifies the relative improvement achieved by the system compared to the initial frozen ASR baseline. 
+
+A.5.4 Dialogue Quality Metrics 
+
+To assess the generative performance of the clarification pipeline, we employ a Model-as-a-Judge (MaJ) framework using OpenAI’s GPT-5.2. Adopting the evaluation protocol from Au-dioBench (Wang et al., 2025) 3, the judge assigns a quality score (scale 0–100) based on the seman-tic alignment of the Predicted Answer with the reference Groundtruth Question and Groundtruth Answer triplet. 
+
+A.6 Ablation on Classifier Architecture 
+
+A key design choice in our framework is the ar-chitecture of the lightweight classification heads attached to the frozen ASR backbone. To justify the selection of the 1D-CNN classifier described in Section 4.2, we conducted an ablation study over nine architectural configurations, evaluating each on the Perception Error Detection task using the SPGI2-distortion validation set. 
+
+Results. Table 7 reports the findings. Three clear trends emerge: 
+
+(1) Local context is essential. The jump from non-contextual baselines (Linear/MLP, Macro F1 
+
+≤ 0.654) to the CNN variants (Macro F1 ≥ 0.759) demonstrates that temporal context from neighbor-ing frames is critical for distinguishing real er-rors from transient fluctuations. A single-frame classifier achieves high accuracy on the dominant Clean class but catastrophically fails on the minor-ity Noisy class (F1 = 0.112). 
+
+(2) CNN outperforms Transformer on this task. 
+
+The Conv-Transformer hybrid (Macro F1 = 0.688) underperforms the pure CNN (0.766) despite hav-ing more parameters and global attention. We at-tribute this to the short-range, localized nature of                                         
+
+> 3https://github.com/AudioLLMs/AudioBench
+> Architecture Clean F1 Noisy F1 Macro F1
+> Non-contextual
+> Linear (640 →2) 0.968 0.112 0.540 2-layer MLP 0.969 0.234 0.602 MLP + enc-proj 0.970 0.337 0.654
+> CNN variants
+> CNN ( k= 5 ,L= 2 )0.975 0.542 0.759 CNN ( k= 5 ,L= 4 )0.976 0.555 0.766
+> CNN ( k= 5 ,L= 5 )0.975 0.542 0.759
+> Hybrid / Transformer
+> MLP + enc-proj + CNN 0.971 0.382 0.677 + full-range 0.971 0.369 0.670 Conv-TF 0.971 0.404 0.688
+> Table 7: Architecture ablation for the Perception Error Detector on the SPGI2-distortion validation set. “enc-proj” denotes the encoder’s internal 1024 →640 pro-jection. Conv-TF uses 2 CNN layers followed by 3 Transformer layers with 8 attention heads. All models use a hidden dimension of 640 and are trained for 40 epochs. The “full-range” setting means that we label the whole perception error (full range of frames) with the label, while other settings only label the first frame.
+
+acoustic distortion patterns: error signals are typi-cally confined to a few adjacent frames, matching the CNN’s inductive bias for local pattern detec-tion. The Transformer’s global attention introduces unnecessary capacity that leads to overfitting on the relatively small training set. 
+
+(3) Depth saturates at 4 layers. Among the CNN variants, L = 4 achieves the best Macro F1 (0.766), while L = 5 shows no further gain (0.759). This suggests that a receptive field spanning approxi-mately 17 frames ( ∼1.4 s at 80 ms/frame) is suf-ficient to capture the relevant distortion context without overfitting. We adopt the L = 5 configu-ration in the final system for a marginal receptive field increase as a safety margin, though the L = 4 
+
+variant is equally viable. 
+
+A.7 Rationale for separating Perception and Distortion Detectors 
+
+Our architecture explicitly disentangles the Per-ception Error Detector from the Distortion Event Detector due to their distinct feature dependencies. Through ablation studies, we observed conflicting requirements for optimal performance: • Perception Error Detection requires under-standing the alignment between the acous-tic signal and the linguistic history to iden-tify misrecognized content. Consequently, it achieves superior performance when utilizing the Joint embedding defined as Eq.4, which Predicted Distortion True Noise RIR Interf. PktLoss Missing Clean Noise 758 47 11 6 3 268 (%) 69.4 4.3 1.0 0.5 0.3 24.5 
+
+Table 8: Cause attribution analysis on SPGI-Test-Noise. For 1,093 true noise-induced perception errors, we re-port how the Distortion Event Detector classified the un-derlying cause. The dominant correct attribution ( 69.4% 
+
+Noise) validates the detector’s reliability under adverse conditions. 
+
+fuses the encoder’s acoustic representations with the decoder’s label history. • Distortion Event Detection , conversely, re-lies on preserving raw signal characteristics to identify environmental noise, artifacts, or blur-ring. Our experiments show that the Encoder embedding retains this necessary acoustic in-formation, whereas the Joint embedding tends to abstract it during fusion. Empirically, attempting to unify these tasks into a single model using Joint embeddings resulted in a significant performance degradation for distortion detection. 
+
+A.8 Failure Analysis and Misdiagnosis 
+
+To assess the robustness of the cause-aware detec-tors in adversarial conditions, we analyze the mis-diagnosis rate : cases where the detector correctly identifies an error but attributes it to the wrong en-vironmental cause. This analysis is critical because an incorrect cause attribution can lead to an inap-propriate recovery strategy (e.g., asking the user to repeat when the issue is network packet loss). 
+
+Setup. We focus on the SPGI-Test-Noise subset, which contains 1,093 true perception errors caused by additive noise. For each correctly detected error token, we compare the Distortion Event Detector ’s predicted cause against the known ground-truth distortion type. 
+
+Results. Table 8 presents the cause attribution breakdown. Of the 1,093 noise-induced errors, 
+
+69.4% are correctly attributed to the “Noise” cate-gory, confirming that the detector reliably identifies the dominant environmental cause. The most com-mon misattribution is to “Clean” (24.5%), which re-flects the conservative detection strategy discussed in Section A.10: at the token emission instant, the                           
+
+> Condition / Accent WER (%)
+> Perception Task (SPGI-Test)
+> Clean Baseline 13.61 Interference 14.92 Missing 31.42 Packet Loss 12.23 Noise 17.57 Noise (Partial) 14.62 RIR 13.77 RIR + Noise 21.34 Multi-dist (No RIR) 21.21 Multi-dist (RIR) 26.25
+> Comprehension Task (AESRC-Test)
+> Average 5.36
+> American 3.74 British 0.72 Chinese 5.11 Indian 6.08 Japanese 9.74 Korean 6.83 Portuguese 5.08 Russian 7.81
+> Out-of-Domain Test Sets
+> Gigaspeech 11.69 OpenHermes †4.00 Alpaca †4.12 wsj-eval92 4.23
+> †Synthesized speech
+
+Table 9: WER results of Parakeet-tdt-v2 model on the in-domain and out-of-domain test sets. 
+
+acoustic features occasionally retain sufficient clar-ity for the model to perceive them as undistorted, even though the surrounding context is noisy. Criti-cally, misattributions to other distortion types (RIR: 4.3%, Interference: 1.0%, Packet Loss: 0.5%, Miss-ing: 0.3%) are rare, indicating that the detector does not confuse fundamentally different failure modes. 
+
+Impact on Recovery Strategy. The 24.5% “Clean” misattribution does not result in a missed error: the token is still flagged by the Perception Error Detector. Instead, the system falls back to a generic “please repeat” strategy rather than the more targeted “move to a quieter environment” sug-gestion. While suboptimal, this fallback remains a valid recovery action. In contrast, cross-category confusion (e.g., Noise → Interference) is suffi-ciently rare ( <5%) that inappropriate strategies (e.g., “wait for the other speaker to finish”) are unlikely to confuse users in practice. 
+
+A.9 ASR Results over Test Sets 
+
+Table 9 details the baseline performance (WER) of the Parakeet-tdt-v2 backbone across all evaluation conditions. In the Perception Task , although the model re-mains robust to mild interference, severe signal degradations, such as Signal Missing (31.42%) and 
+
+Multi-distortion (26.25%), cause substantial perfor-mance drops relative to the clean baseline (13.61%). In the Comprehension Task , we observe signifi-cant variance across accents: while standard British and American English yield low WERs ( <4%), heavily accented speech such as Japanese (9.74%) and Russian (7.81%) presents a much more com-plex challenge. Finally, the OOD results indicate that, although the model excels on clean reading and instructional speech (WSJ, OpenHermes, and Alpaca), it still struggles with the spontaneous and diverse nature of Gigaspeech (11.69%). 
+
+A.10 Confusion Matrix for Distortion Event Detection 
+
+Figure 4 compares the confusion matrices for our distortion detection module at the acoustic frame level (Figure 4a) versus the subword token level 
+
+(Figure 4b). 
+
+Impact of Sampling Strategy. The shift from frame-level to token-level evaluation reveals how the detector performs at the critical time-steps that drive ASR output. While the global frame-level ac-curacy captures the detector’s behavior across the entire audio duration (including silence and transi-tions), the token-level metrics isolate the instants of symbol generation. We observe that performance metrics shift based on this sampling; for instance, the recall for Signal Missing drops from 91.1% (frame) to 73.7% (token), likely because true si-lence produces fewer tokens, and the few tokens emitted during missing segments often align with transient noise spikes that are harder to classify. 
+
+Conservative Detection Strategy. A consistent "conservative" bias is evident in both settings. The model frequently defaults to the Clean class when distortion features are not overwhelming. • Subtle Distortions (RIR, Packet Loss): This bias is particularly pronounced for reverber-ation and packet loss. At the token level, 85.6% of RIR emission frames and 69.8% of 
+
+Packet Loss emission frames are misclassified as Clean . This indicates that at the exact mo-ments of token emission, the acoustic features often retain enough clarity for the model to perceive them as "clean," despite the underly-ing distortion. • High Precision on Clean Speech: Con-versely, this conservative threshold ensures very high reliability for actual Clean speech, with 88.9% accuracy at the token level, mini-mizing false alarms that could trigger unnec-essary clarification turns. 
+
+A.11 In-depth Statistics Analysis for K-round Clarification (theoretical performance) 
+
+To assess the upper bound of our framework, we conducted a "theoretical performance" analysis shown in Figure 5. In this setting, the acoustic feedback loop is idealized: the User Simulator’s response is fed directly into the Dialogue Man-ager as text, bypassing the TTS synthesis and ASR recognition steps. This isolates the error correction logic from potential recognition errors during the clarification turn itself. 
+
+Performance Potential (WERR & Improved Rate). Eliminating acoustic noise from user feed-back unlocks significant performance gains. As seen in the WERR and Improved Rate subplots, the theoretical reduction is substantially higher than the practical acoustic scenarios. Notably, SPGI-noise achieves a WERR of over 45% (vs. ∼30% in the practical setting), indicating that the dialogue manager correctly identifies and formulates strate-gies for complex noise-induced errors, provided the user’s feedback is received clearly. 
+
+Convergence & Complexity (Final Rate). The 
+
+Final Rate metric tracks the percentage of samples successfully resolved (clean transcript confirmed) at each round. • Rapid Convergence: Gigaspeech and WSJ 
+
+exhibit a "fast saturation" behavior, where the majority of errors are resolved in Round 1 (Gigaspeech reaches ∼65% Final Rate imme-diately). This suggests that errors in these domains are often simple misunderstandings resolvable with a single clarification. • Iterative Resolution: In contrast, SPGI-noise shows a linear growth trend across all three rounds. This implies that environmental distortions create complex, multi-layered er-ror spans that require iterative decomposition (e.g., first fixing the entity, then the context) rather than a "one-shot" fix. Clean Noisy RIR Interference PacketLoss Missing          
+
+> Predicted Label
+> Clean Noisy RIR Interference PacketLoss Missing
+> True Label 94.2% (953207) 3.1% (31671) 0.8% (8545) 0.9% (9037) 0.4% (3597) 0.5% (5486) 56.1% (106495) 38.6% (73319) 4.0% (7541) 1.0% (1844) 0.2% (474) 159 81.8% (70979) 9.9% (8560) 7.3% (6353) 0.6% (525) 0.4% (308) 20 66.1% (23039) 0.9% (322) 0.2% (80) 31.9% (11101) 0.9% (299) 168.0% (15298) 1.2% (271) 0.6% (134) 1.5% (330) 28.3% (6370) 0.5% (106) 8.9% (4962) 100691.1% (50720) Combined Confusion Matrix (Accuracy: 78.58%)
+> 020 40 60 80 100 Percentage (%)
+
+(a) Frame-level confusion matrix Clean Noisy RIR Interference PacketLoss Missing            
+
+> Predicted Label
+> Clean Noisy RIR Interference PacketLoss Missing
+> True Label 88.9% (497869) 7.1% (39589) 1.6% (9072) 1.2% (6822) 0.6% (3245) 0.6% (3322) 57.3% (7167) 35.9% (4488) 0.8% (103) 1.9% (239) 0.8% (104) 3.3% (417) 85.6% (4534) 2.4% (126) 9.6% (508) 1.2% (64) 1.2% (62) 159.8% (3420) 0.5% (27) 338.8% (2217) 0.8% (46) 269.8% (3569) 1.6% (80) 1.0% (49) 1.8% (93) 25.4% (1301) 0.4% (22) 26.2% (7120) 24 6413 73.7% (20049) Combined Confusion Matrix (Accuracy: 85.49%)
+> 020 40 60 80 100 Percentage (%)
+
+(b) Token-level confusion matrix 
+
+Figure 4: Confusion matrices showing classification performance for distortion events. (a) Frame-level predictions aggregated across all events. (b) Token-level predictions aggregated across all events. Both matrices are normalized by row to yield percentages, facilitating comparison of performance across classes with different sample sizes. 
+
+Safety & Stability (False Positive Rate). The 
+
+False Positive Rate (FPR) measures samples where the clarification process degraded the WER. Even in this theoretical setting, the FPR remains low ( ≤
+
+1.2%) for WSJ and AESRC. Gigaspeech shows a slightly higher FPR ( ∼5.5%), likely due to its spontaneous nature and ambiguous groundtruths, yet the trade-off remains highly favorable given the substantial WERR gains. 
+
+A.12 Qualitative Evaluation of Clarification Naturalness 
+
+While our primary evaluation relies on automatic metrics to ensure reproducibility and scale, review-ers rightly note that the user experience of the clar-ification process is equally important. To assess whether the system’s clarification attempts feel nat-ural and effective, we conducted a qualitative anal-ysis using the Model-as-a-Judge (MaJ) framework on the Alpaca and OpenHermes evaluation sets. 
+
+Setup. We sampled all 141 clarification rounds generated during the 3-round interactive evaluation (Section 5.5). Each round was scored by GPT-5.2 along two binary dimensions: (1) Naturalness :whether the clarification question reads as a plausi-ble, conversational follow-up rather than a mechan-ical prompt; and (2) Effectiveness : whether the clarification successfully elicited the information needed to correct the flagged error. We additionally report the distribution of overall MaJ quality scores (0–100) across all rounds. 
+
+Results. Tables 10 and 11 summarize the find-ings. Approximately 60% of clarification attempts 
+
+Dimension Pass Count Pass Rate 
+
+Natural 83 / 141 58.9% Effective 85 / 141 60.3% 
+
+Table 10: Binary naturalness and effectiveness eval-uation of 141 clarification rounds on the Alpaca and OpenHermes evaluation sets, scored by the MaJ frame-work. 
+
+Overall Assessment Rounds Percentage 
+
+90–100 (Excellent) 18 12.8% 75–89 (Good) 67 47.5% 55–74 (Mixed) 40 28.4% 0–54 (Poor) 16 11.3% 
+
+Table 11: Distribution of overall MaJ quality scores across 141 clarification rounds. Scores are binned into four tiers. 
+
+are judged both natural and effective, and the ma-jority of rounds (60.3%) receive an overall MaJ score of 75 or above (Good or Excellent). The re-maining 40% of rounds fall into the Mixed or Poor categories, often corresponding to cases where (i) the system’s clarification question is overly verbose or formulaic, or (ii) the flagged error involves rare slang or proper nouns that resist targeted question-ing. 
+
+Discussion. These results indicate that while cause-aware clarification substantially outperforms blind confidence filtering in resolving errors, the 
+
+phrasing of clarification questions remains a bot-tleneck. The 11.3% Poor rate is concentrated in deletion-error scenarios, where the system must ask Initial Round 1 Round 2 Round 3 010 20 30 40 Reduction (%) 
+
+WERR (Word Error Rate Reduction) 
+
+Gigaspeech WSJ-eval92 AESRC-Indian SPGI-noise Initial Round 1 Round 2 Round 3 020 40 60 80 Rate (%) 
+
+Final Rate 
+
+Initial Round 1 Round 2 Round 3 010 20 30 40 50 Rate (%) 
+
+Improved Rate 
+
+Initial Round 1 Round 2 Round 3 012345Rate (%) 
+
+False Positive Rate Performance Analysis Across Clarification Rounds Figure 5: Theoretical performance limits of the 3-round clarification loop under ideal feedback conditions (bypassing the user simulator’s TTS/ASR). We were done so. 
+
+> <del> we were <unknown>done</unknown>
+> <unknown>so.</unknown> (WER=66.7%)
+> I didn’t catch the first part —could you repeat that bit
+> (maybe a little closer to the mic), and also did you mean
+> “we were done” or “we were down,” and is the last word
+> “so,” “soon,” or something else?
+> We were donezo. And yeah, I meant done,
+> like D U N Z O, not down. The last word is
+> Dunzo, not so, or soon.
+> <del> we were Dunzo Dunzo. (WER=33.3%)
+> For the line ending with “we were …”, could you repeat
+> the very beginning before “we were” (a bit closer to the
+> mic if you can), and did you say “Dunzo” just once (“we
+> were Dunzo”) or twice (“we were Dunzo, Dunzo”)?
+> I didn't say anything before we were, and I said it
+> just once. We were done, Zoe.
+> <FINAL> We were done, Zoe. (WER=66.7%)
+
+Figure 6: A failed case of iterative clarification. The groundtruth of the user input is: We were dunzo. 
+
+about content that was never transcribed: a funda-mentally harder conversational task. We note that this evaluation is conducted with a simulated user; real users may exhibit more cooperative behavior (e.g., proactively offering context), potentially im-proving effectiveness. Nevertheless, these results highlight the need for future work on optimizing dialogue strategies, particularly to reduce verbosity and improve the pragmatic appropriateness of re-pair initiations. 
+
+A.13 Case Study of K-round Clarification 
+
+We present two examples of the system’s perfor-mance in resolving speech-recognition errors. The first example (Figure 6) illustrates a failure case: de-spite the user explicitly spelling out the correction ("D-U-N-Z-O"), the system fails to integrate this constraint, resulting in a hallucinated entity ("Zoe") and a high final WER. The second example (Fig-ure 7) demonstrates a successful interaction: the system accurately identifies low-confidence seg-ments within a complex financial statement (e.g., mistaking "gradation" for "radiation"). Through iterative, targeted questioning, the system correctly incorporates the user’s feedback, progressively re-ducing the WER from 41.0% to 2.4%. gary, <unknown>uh</unknown> <del> <noise>gary,</noise> 
+
+<noise>the</noise> question <noise>that</noise> came up 
+
+<noise>about</noise> <unknown>auto</unknown> 
+
+<unknown>reserves</unknown> relative to <noise>yours.</noise> i think 
+
+<unknown>it's</unknown> helpful to <noise>mention,</noise> <del> 
+
+<noise>you</ noise > < noise >know,</ noise > < noise >that</ noise > our 
+
+<unknown>criticizing</unknown> classified <noise>vulnerations</noise> 
+
+<unknown>are</unknown> <unknown>typically</unknown> higher 
+
+<noise >than</noise> <unknown>the</unknown> 
+
+<unknown>other</unknown> <unknown>hand</unknown> because of our 
+
+aggressive <noise>radiation.</noise> (WER=41.0%) 
+
+For your note to Gary, could you please repeat the part 
+
+after “the question that came up about … reserves 
+
+relative to yours” (maybe move closer to the mic/in a 
+
+quieter spot), and also confirm whether you meant “auto 
+
+reserves” or a different term (if different, can you spell it)? 
+
+I think it's helpful to mention that our criticized and 
+
+classified loan ratios are typically higher than the 
+
+other banks because of our aggressive gradation, 
+
+and I meant our reserves, not auto reserves. 
+
+gary, <unknown>uh</unknown> <del> <noise>gary,</noise> 
+
+<noise>the</noise> question <noise>that</noise> came up 
+
+<noise>about</noise> our reserves relative to <noise>yours.</noise> i 
+
+think it's helpful to mention <noise>mention,</noise> <del> 
+
+<noise>you</noise> <noise>know,</noise> <noise>that</noise> our 
+
+criticized and classified loan ratios are typically higher than the other 
+
+banks because of our aggressive gradation. (WER=34.2%) 
+
+Could you please repeat the opening to Gary (from “Gary 
+
+…” up through “relative to yours”) in a quieter spot or 
+
+closer to the mic so I can catch those words clearly? 
+
+Gary, the question came up about our reserves, 
+
+relative to peers. 
+
+gary, the question came up about our reserves, relative to peers. i 
+
+think it's helpful to mention <noise>mention,</noise> <del> 
+
+<noise>you</noise> <noise>know,</noise> <noise>that</noise> 
+
+our criticized and classified loan ratios are typically higher than the 
+
+other banks because of our aggressive gradation. (WER=34.2%) 
+
+Gary, uh Gary, the question that came up about auto 
+
+reserves relative to yours. I think it's helpful to mention, 
+
+you know, that our criticizing classified vulnerations are 
+
+typically higher than the other hand because of our 
+
+aggressive radiation. 
+
+In the next part, did you mean: “I think it’s helpful to 
+
+mention, you know, that our criticized and classified loan 
+
+ratios…” (and not something else around “helpful to 
+
+mention … you know … that”)? 
+
+Yes, I meant it. I think it's helpful to mention that our 
+
+criticized and classified loan ratios not you know 
+
+<FINAL> gary, the question came up about our reserves, relative 
+
+to peers. i think it's helpful to mention that our criticized and 
+
+classified loan ratios are typically higher than the other banks 
+
+because of our aggressive gradation. (WER=2.4%) Figure 7: A good case of iterative clarification. The groundtruth of the user input is: Gary, the question came up about our reserves relative to peers. I think it is helpful to mention that our criticized and classified loan ratios are typically higher than the other banks because of our aggressive gradation.
