@@ -1,0 +1,603 @@
+Title: Tight Boundary Prediction in Speaker Diarization Using Causal-Anticausal Consistency
+
+URL Source: https://arxiv.org/pdf/2606.11795v1
+
+Published Time: Thu, 11 Jun 2026 00:44:47 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Tight Boundary Prediction in Speaker Diarization Using Causal–Anticausal Consistency 
+
+# Shota Horiguchi ID ∗∗ , Marc Delcroix ID , Naohiro Tawara ID , Takanori Ashihara ID , Atsushi Ando ID 
+
+# NTT, Inc., Japan 
+
+horiguchi@ieee.org 
+
+# Abstract 
+
+Multi-talker conversational automatic speech recognition data are often used to train speaker diarization models. Because such data prioritize semantic continuity, pauses and boundary mar-gins are included within speech segments, resulting in loose an-notations. Models trained on such data tend to internalize mech-anisms that reproduce this looseness, although tight speech in-tervals are sometimes preferable for downstream applications. In this paper, we address the novel task of enabling models to produce tight predictions using loose labels. Our method gen-erates tighter pseudo labels using causal and anticausal models, which are inherently incapable of learning loosening behavior. We further propose a co-training scheme that iteratively tight-ens labels and updates both models for more progressive re-finement. Experimental results show that the proposed method recovers about 70 % of the tightening effect achieved by ideal tight-label training and improves downstream performance. 
+
+Index Terms : speaker diarization, tight boundary, causal– anticausal consistency, co-training 
+
+# 1. Introduction 
+
+Speaker diarization is the task of determining who is speaking when from an audio signal. It is typically addressed using mod-els that take audio as input and output speaker-wise speech seg-ments [1–8]. Training such models requires a large amount of data annotated with speaker-wise speech intervals, and in prac-tice, multi-talker automatic speech recognition (ASR) corpora are often used for this purpose [9–12]. A recent study has shown that speech segments in ASR corpora are often loosely annotated [13]: pauses within utter-ances are labeled as part of speech, and segment boundaries are padded at both ends to prevent truncation [14–18]. When diarization models are trained with such loose labels, their out-puts also tend to be loose (Fig. 1, left). This property is not al-ways desirable for applications that rely on diarization results. For example, in guided source separation (GSS) [19,20], where diarization results are used as prior knowledge to estimate time-frequency masks, tighter intervals provide stronger constraints on speech absence. Speaker diarization or channel-wise voice activity detection (VAD) is also used to generate training data for spoken dialogue models [21–23] and to evaluate the nat-uralness of conversational statistics in generated data [24, 25]. In these cases, loose outputs may blur conversational struc-ture: pauses may be classified as parts of speech intervals, or backchannel may be treated as part of interruptions. Therefore, there is a need for speaker diarization models that can produce tighter speech intervals. 
+
+> **
+
+indicates the corresponding author. Tight   
+
+> Input recording Diarization model Boundary padding & Pause filling Diarization (tight)
+> Latent tight segments
+> Diarization (tight) Prediction Tight No padding or filling learned Padding or filling prevented Loose
+> Model trained with loose annotation Model trained with tight annotation Loose prediction Tight prediction Diarization (tight) Conventional training This study
+
+Figure 1: Comparison of model behavior in conventional train-ing and in this study. 
+
+At present, the only way to train a model that can predict segments with tight boundaries is to provide tight labels as su-pervision (Fig. 1, center). In the prior study [13], forced align-ment was used to tighten loose segments in ASR corpora; how-ever, this approach requires recordings in which each speaker is recorded on a separate channel, such as headset recordings. For audio uploaded to sharing platforms, which are fundamen-tal data sources for training high-performing models nowa-days [26, 27], all speakers’ speech is mixed into a single chan-nel, making this method inapplicable. On the other hand, man-ual tight annotation is costly. One dataset series that provides such tight annotations is DIHARD I–III [28–30]. According to the DIHARD III evaluation plan [31], it was found that manual annotation to this spec [...] required use of highly skilled and experienced annotators [...] making the annota-tion extremely slow and costly [...] with real time rates typi-cally greater than 15X and sometimes exceeding 30X . Another example is VoxConverse [32], which provides annotations for YouTube videos. It accelerates annotation by leveraging face-tracking results from video data. However, this approach as-sumes videos in which speakers are clearly visible and still “takes around twice the video duration ” to annotate. Paying this level of additional cost on top of transcription expenses is not practical. In this paper, we address a novel task: training a model to output tight segments from loose annotations in ASR corpora (Fig. 1, right). In conventional diarization model training, loose target labels result in similarly loose outputs (Fig. 1, left). This occurs because the model becomes entangled not only with de-tecting underlying tight speech segments but also with padding segment boundaries and filling pauses. To address this task, we propose a method that generates tighter pseudo labels from the outputs of causal and anticausal models and uses them to train a final non-causal model. Even when trained with loose labels, causal and anticausal models are inherently incapable of learning to pad segment boundaries or fill pauses. A causal model cannot pad before a speech segment, 
+
+> arXiv:2606.11795v1 [eess.AS] 10 Jun 2026
+
+whereas an anticausal model cannot pad after it. Moreover, nei-ther model can immediately determine whether a silence fol-lowing a speech segment corresponds to an actual termination or a pause to be filled. As a result, their capability to repro-duce loose boundaries is inherently limited compared with that of a non-causal model. Accordingly, we use their outputs to mask loose annotations and generate tighter pseudo labels. We further propose the co-training of causal and anticausal models. At each training step, the labels are tightened using their outputs and immediately used for parameter updates, thereby enabling progressive tightening. Finally, we empirically demonstrate that a non-causal model trained with the resulting tighter pseudo la-bels produces tighter predictions than one trained with loose labels, leading to improvements in downstream tasks. 
+
+# 2. Related work 
+
+2.1. Speaker diarization 
+
+Training end-to-end neural diarization (EEND) models requires a large-scale dataset. In early studies, since it was difficult to achieve large-scale training using only real data, simulated mix-tures were used for pretraining [1, 4–6]. In recent years, an increasing number of corpora have been developed for multi-talker ASR; as a result, it has become possible to aggregate such corpora and combine them with corpora curated for diarization, thereby constructing large-scale datasets composed entirely of real recordings for training [9–12, 33, 34]. At the same time, evaluation has also been conducted on these corpora using the same parameters to demonstrate that the models can generalize across a wide range of domains without adaptation to specific domains [11, 12, 34]. However, a recent study identified issues with training on a compound dataset of ASR and diarization corpora [13]. The study pointed out that speech boundaries in ASR corpora are generally looser than those in diarization corpora. This is be-cause ASR corpora tend to avoid splitting segments at short pauses, so as not to break sentences in the middle, or trun-cate speech at segment boundaries. When an EEND model is trained on a compound dataset with mixed boundary preci-sion, it leads to corpus-specific memorization of boundary tight-ness. This behavior is undesirable for real-world applications, since it becomes unclear whether the model will output tight or loose boundaries for data from unseen domains. It has also been empirically shown that tight boundaries are beneficial in backend applications such as speech separation and ASR, espe-cially when combined with subsequent boundary-loosening op-erations such as morphological closing. In light of these facts, it is preferable for speaker diarization models to predict tight speech segments that exclude silent intervals. The only pro-posed solution in the aforementioned study was to tighten all la-bels in the compound dataset via forced alignment, which limits its applicability to corpora with speaker-wise channel-separated recordings. In contrast, this paper addresses a more challenging problem: enabling EEND models to produce tight boundaries using only loose labels with single-channel mixture recordings. 
+
+2.2. Training from unreliable labels 
+
+The problem we address is that segments annotated as speech may in fact contain silent portions. This is related to the broader literature on machine learning with noisy labels. The most common setting assumes that labels are incorrect with some probability due to unreliable annotators. Typical approaches include the use of noise transition matrices [35, 36] and label smoothing [37]. A more realistic setting assumes that the er-rors are more likely for hard samples. Representative methods include sample reweighting [38], curriculum learning [39, 40], and co-training [41, 42], which select high-confidence samples based on the probabilities output from the prediction models. In the speaker diarization and segmentation domain, collar-aware training has been proposed to address annotation noise [43, 44]. However, this approach simplifies the problem by allowing the model to ignore predictions near segment boundaries and is therefore not aligned with our objective, which is to accurately predict those boundaries instead. What fundamentally distinguishes our problem from these settings is that both ASR-oriented (i.e., loosely annotated) la-bels and diarization-oriented (i.e., tightly annotated) labels are valid when viewed from their respective perspectives. It has been experimentally shown that models can learn the character-istics of either labeling scheme and generalize well [13]. From a diarization-oriented perspective, the errors in ASR-oriented labels, which are mostly false alarms, tend to be distributed around true utterance boundaries. When trained with ASR-oriented labels, a model learns to confidently predict speech in such intervals by leveraging contextual information, even when no speech is actually present, as illustrated in Fig. 1. There-fore, the aforementioned confidence-based noisy-label training approaches are not applicable in this setting. 
+
+# 3. Problem formulation 
+
+3.1. Formulation of the conventional speaker diarization 
+
+Speaker diarization is the problem of estimating speaker-wise speech activity at each frame. Let X = [ x1, . . . , xT ] ∈ RD×T
+
+denote frame-wise D-dimensional acoustic features, where T
+
+is the number of frames. Given X, the goal is to estimate the speaker activities ˆY = [ ˆy1, . . . , ˆyT ] ∈ { 0, 1}S×T , where S is the number of speakers and ˆyt := [ˆ y1,t , . . . , ˆyS,t ]T represents the speaker activity vector, with ˆys,t = 1 indicating that speaker 
+
+s is active at time frame t.In the EEND framework [1, 2], a model is trained to out-put frame-wise posterior probabilities P = [p1, . . . , pT ] ∈
+
+(0 , 1) S×T where pt := [ p1,t , . . . , p S,t ]T, which yield ˆY by ap-plying a threshold τ :
+
+ˆys,t =
+
+(
+
+1 (ps,t ≥ τ ),
+
+0 (ps,t < τ ). (1) Hereafter, we use ϕτ (·) to denote the elementwise extension of the above thresholding rule, yielding ˆY = ϕτ (P ), and we set τ = 0 .5 throughout this paper. Such a model is trained in a supervised manner using the loss between the true label 
+
+Y = ( ys,t ) ∈ { 0, 1}S×T and the prediction P . Since the model output is permutation-free in the speaker order, it is necessary to first find speaker correspondence between them. Let P (Y ) := ΠP,Y P denote the permutation of P whose speaker order best matches Y , where the permutation matrix ΠP,Y is defined as 
+
+ΠP,Y := arg min 
+
+> Π∈PS
+
+∥ΠP − Y ∥F . (2) Here, PS is the set of S × S permutation matrices and ∥·∥ F
+
+denotes the Frobenius norm. In this paper, we adopt a variant of EEND that outputs pos-terior probabilities for each powerset class of speakers [10]. Let 
+
+P(S) denote the powerset of the speaker index set {1, . . . , S }.In this case, the model outputs qt := [ q1,t . . . , q R,t ]T ∈ (0 , 1) R
+
+at each frame t, where qr,t represents the probability of the r-th class corresponding to the speaker set Rr ∈ P (S). Follow-Annotated label (loose) True label (tight, unknown) Causal prediction Anticausal prediction         
+
+> Pause filling Padding at the beginning Padding at the end (a) Conceptual illustration 0.0
+> 0.5
+> 1.0
+> 0.0
+> 0.5
+> 1.0
+> 0246810
+> 0.0
+> 0.5
+> 1.0
+> Time [s] Speech probability
+> Label (loose) Label (tight) Causal prediction Anticausal prediction (b) Labels and actual inference results for three 10-second chunks
+
+Figure 2: Behavior of causal and anticausal models in single-speaker cases. 
+
+ing the previous studies [10], we only consider the overlap of at most two speakers, and thus restrict Rr such that |R r | ≤ 2,which results in R = P2
+
+> i=0
+
+ Si
+
+. In this paper, we set S = 4 ,so the set of possible classes is given by Rr ∈ {∅ , {1}, {2},
+
+{3}, {4}, {1, 2}, {1, 3}, {1, 4}, {2, 3}, {2, 4}, {3, 4}} . We de-fine a mapping Q2P : Q 7 → P from the powerset posterior 
+
+Q = [ q1, . . . , qT ] to the speaker-wise posterior P , where the conversion is given by 
+
+ps,t = X 
+
+> r:s∈R r
+
+qr,t . (3) Using the posterior probabilities for the powerset classes, the training objective to be minimized is defined as the multi-class cross-entropy loss: 
+
+ℓ Q(Y ), Y  = − 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+X  
+
+> Rr∈P (S)
+> |R r|≤ 2
+
+y′ 
+
+> r,t
+
+log q(Y ) 
+
+> r,t
+
+, (4) where y′ 
+
+> r,t
+
+= 1 if the reference label yt corresponds to Rr , and 
+
+y′ 
+
+> r,t
+
+= 0 otherwise, and Q(Y ) = ( q(Y ) 
+
+> r,t
+
+) is the permuted version of Q, aligned to Y using the corresponding P derived from (3). 
+
+3.2. Formulation of speaker diarization in this study: Treating annotated labels as weak supervision 
+
+Prior studies treated annotated label ˜Y = (˜ ys,t ) ∈ { 0, 1}S×T
+
+as the ground truth during training, i.e., Y = ˜Y . However, as noted earlier, the labeling criteria differ substantially between ASR and diarization corpora. In contrast, we consistently re-gard tight labels as the true labels Y . We assume that the anno-tated labels in ASR corpora have loose boundaries, i.e., frames annotated as speech may in fact be silent: 1
+
+ys,t ∈
+
+(
+
+{0, 1} (˜ ys,t = 1) ,
+
+{0} (˜ ys,t = 0) . (5) This paper addresses the problem of training a model to estimate the unknown tight labels Y using only the annotated, potentially loose labels ˜Y .In this paper, we train models using a compound set of ASR and diarization corpora. We assume that it is known a pri-ori whether each sample originates from an ASR corpus (i.e., loosely annotated) or a diarization corpus (i.e., tightly anno-tated). For ASR corpora, we generate pseudo labels by tight-ening the original annotations ˜Y using the proposed methods described in the following section. For diarization corpora, we assume that Y = ˜Y .
+
+> 1In practice, the speech intervals obtained via forced alignment may fall outside the loose annotation. However, the extent of such deviations is very small (less than 2 % according to [13]). Therefore, in this work, we define the problem under the assumption that the tight intervals are always contained within the loose intervals.
+
+# 4. Proposed method 
+
+4.1. Concept 
+
+As illustrated in Fig. 1, conventional training leads speaker di-arization models to estimate not only who is speaking when but also to pad segment boundaries and fill pauses. If the former functionality can be isolated, it would benefit downstream tasks. However, once these functions are internalized in a diarization model, disentangling them becomes challenging. Considering how the latter functionality is realized, it likely requires the model to first identify latent tight speech segments and then use contextual information to produce loose bound-aries that match the looseness of the so-called ground truth la-bels. Leveraging this insight, we propose a method that deliber-ately employs causal and anticausal architectures to prevent the model from performing padding segment boundaries and filling pauses, thereby separating these functionalities. 2
+
+We first explain the operating principle of the proposed method in a simple single-speaker case in Sec. 4.2. Next, in Sec. 4.3, we discuss additional challenges that arise in the multi-speaker setting, typically addressed by speaker diariza-tion, along with their solutions. Finally, in Sec. 4.4, we intro-duce a training strategy that enables more efficient use of the proposed method. 
+
+4.2. Preliminary: Label tightening in single-speaker cases 
+
+4.2.1. Causal–anticausal consistency 
+
+First, for simplicity, we consider single-speaker cases, i.e., S =1. To determine how much to pad segment boundaries or how long to fill a silent interval, a model must first identify tightly bounded speech segments and then examine the surrounding context. Since diarization models are typically based on bidi-rectional [1], fully attentive [2,5], or large-receptive-field archi-tectures [33,43], such capabilities tend to be acquired implicitly. However, disentangling the detection of tight speech segments from context-based segment expansion and pause filling is dif-ficult because all of these functions are learned together. In this paper, we intentionally adopt a unidirectional architecture that deprives the model of such abilities, with the aim of separat-ing these functions. Specifically, we employ two unidirectional models: one can only see the past frames, and the other can only see the future frames. For simplicity, we call the former the causal model and the latter the anticausal model .We first describe the behavior of the causal model (Fig. 2(a), third row). Since it cannot access future frames, it cannot pad the beginning of a speech segment, even when trained with loose labels. Moreover, once speech is interrupted, the model cannot predict whether it will resume shortly after-
+
+> 2Interested readers may also refer to a study on sound event detec-tion using causal and anticausal models with weak labels [45].
+
+Label 
+
+> Annotated label (loose) True label (tight, unknown)
+
+Prediction 
+
+> Causal prediction Anticausal prediction
+> Speaker confusion
+> Speaker 1 Speaker 2 Speaker 1 Speaker 2 Speaker 1 Speaker 2 Speaker 1 Speaker 2
+
+(a) Labels and predictions Not detected threshold Sub-threshold interval    
+
+> Averaged prediction Tightened label Prediction Threshold Mask Average
+
+(b) Basic tightening Prediction Averaged prediction Tightened label Prediction of VAD 
+
+> Not tightened threshold Sub-threshold interval
+
+(c) VAD tightening Detected  
+
+> Averaged prediction Tightened label Reassigned prediction Reassign
+> Tightened
+> Prediction
+> threshold Sub-threshold interval
+
+(d) SC tightening 
+
+Figure 3: Example of label tightening in a two-speaker case. 
+
+ward. As a result, it cannot determine whether a subsequent silent interval should be treated as part of a speech segment or as the end of speech. Consequently, the model becomes progres-sively less confident after speech offset, resulting in lower pos-terior probabilities. The anticausal model exhibits analogous behavior. It cannot pad the end of a speech segment, and the posterior probability before speech onset gradually increases, as shown in the fourth row of Fig. 2(a). Representative exam-ples from actual predictions are also shown in Fig. 2(b). From these observations, both the causal and anticausal models should yield high speech posteriors over the true speech intervals. In contrast, in the padded or filled regions, one of the two models is expected to fail to detect speech in principle. Therefore, by appropriately combining the outputs of these two models, it becomes possible to recover tight speech segments. In this paper, we simply take the average of posteriors followed by thresholding for combination. It is also possible to use this thresholded average directly as the tightened label; however, because it is based on inference, it inevitably contains inference errors. Among these errors, missed detections cannot be distinguished from those caused by the tightening process itself. In contrast, false-alarm speech can be filtered out by exploiting the property in (5), namely that regions annotated as silence in the loose labels are guaranteed to be silent. This filtering is equivalent to masking the loose speech segments using the causal prediction ⃗ P ∈ (0 , 1) S×T
+
+and anticausal prediction ⃖ P ∈ (0 , 1) S×T . The final tightened labels are given by 
+
+Ytight = ˜Y ⊙ ϕτ
+
+⃗ P +⃖ P
+
+2
+
+
+
+, (6) where ⊙ denotes the Hadamard product. This Ytight is used as the target labels for training the final non-causal model. 
+
+4.2.2. Restoration of over-tightened speech segments 
+
+It is difficult to determine whether the reduction of speech from 
+
+ˆY to Ytight results from a correct tightening or from erroneous deletions caused by inference errors. Moreover, when this la-bel update is repeatedly applied, as described in Sec. 4.4, the method may suffer from over-tightening. Although annotated segment boundaries may be inaccurate, each annotated inter-val should still contain speech and thus should not be removed entirely. We thus propose restoring lost segments due to tight-ening using the corresponding segments from the loose annota-tions. In this paper, we relax the constraint by regarding cases in which more than 50 % of a segment is removed as excessive deletion, and restore the corresponding loose segment. 
+
+4.3. Label tightening in multi-speaker cases 
+
+For speaker diarization purposes, the tightening method de-scribed in Sec. 4.2 should be extended to multi-speaker cases. We introduce the following three types of tightening methods. 
+
+4.3.1. Basic tightening 
+
+The simplest variant applies the procedure in Sec. 4.2 speaker-wise, as depicted in Fig. 3(b). Since the orders of speakers in ⃗
+
+P ,⃖ P , and ˜Y are not necessarily the same, we first align ⃗ P and ⃖
+
+P and then align them with ˜Y by ⃖
+
+P ← Π⃖ 
+
+> P , ⃗P
+
+⃖ P , (7) ⃗
+
+P , ⃖ P ← Π⃗ P +⃖P  
+
+> 2,˜Y
+
+⃗ P , Π⃗ P +⃖P  
+
+> 2,˜Y
+
+⃖ P . (8) We then apply the tightening procedure in Sec. 4.2 in a speaker-wise manner. To avoid redundancy, the following explanation of the tightening methods assumes that the speaker order has already been aligned by (7)–(8). 
+
+4.3.2. VAD tightening 
+
+In multi-speaker cases, inference results may include speaker confusion additionally. In the example shown in Fig. 3, we as-sume that the final speech segment of the speaker 2 is incor-rectly predicted as the speaker 1’s speech in the output of the causal model (Fig. 3(a)). In such a situation, the same speech segment would be attributed to different speakers in the causal and anticausal outputs. When the posteriors are averaged as in the basic tightening approach, the label-tightening mask may disappear for both speakers (Fig. 3(b)). To address this issue, the second tightening method is de-signed to be robust against speaker confusion by constructing the mask based on voice activity detection (VAD), as shown in Fig. 3(c). Because the models output probabilities over the pow-erset classes, the silence-class output ( ⃗q 0,t and ⃖q 0,t for causal and anticausal output, respectively) can be regarded as the com-plement of the speech probabilities. Let ⃗ Q>0 ∈ (0 , 1) S×T be obtained by stacking S copies of [1 −⃗q 0,1, . . . , 1 −⃗q 0,T ] ver-Algorithm 1: Posterior reassignment in SC tightening 
+
+Input : Prediction P = {ps,t }, annotated label 
+
+˜Y = {˜ys,t }, threshold τ
+
+Output: Reassigned prediction P 
+
+> 1
+
+for t = 1 to T do  
+
+> 2
+
+M ← ∅ ▷ Indices of missed speakers  
+
+> 3
+
+F ← ∅ ▷ Indices of false alarm  
+
+> 4
+
+for s = 1 to S do ▷ Find candidates  
+
+> 5
+
+if ˜ys,t = 1 ∧ ps,t ≤ τ then ▷ Missed speaker  
+
+> 6
+
+PushBack (M, s ) 
+
+> 7
+
+else if ˜ys,t = 0 ∧ ps,t > τ then ▷ False alarm  
+
+> 8
+
+PushBack (F, s ) 
+
+> 9
+
+while M̸ = ∅ ∧ F̸ = ∅ do ▷ Reassignment  
+
+> 10
+
+s1 ← PopFront (M) 
+
+> 11
+
+s2 ← PopFront (F) 
+
+> 12
+
+Swap (ps1,t , p s2,t )
+
+tically, and define ⃖ Q>0 analogously. Using these, we obtain the tightened labels as follows, replacing (6): 
+
+Ytight = ˜Y ⊙ ϕτ
+
+⃗ Q>0 +⃖ Q>0
+
+2
+
+
+
+. (9) This corresponds to removing regions predicted as non-speech from the annotations. 
+
+4.3.3. SC tightening 
+
+While VAD tightening mitigates speaker confusion in predic-tions, it becomes overly conservative and is ineffective in over-lapped intervals, as shown in Fig. 3(c). In the third approach, we trust the number of speakers estimated at each frame, whereas VAD tightening relies solely on speech presence. We refer to this method as speaker-counting (SC) tightening. The SC tightening procedure is summarized in Algorithm 1. In short, at each time frame, it identifies the missed speaker(s) and the false-alarmed speaker(s) (line 4–8), and swaps their pos-terior probabilities as much as possible (line 9–12). This en-ables label tightening while mitigating the impact of speaker confusion in the predictions, as illustrated in Fig. 3(d). It may be noted that when multiple missed or false-alarm speakers require posterior swapping, the reassignment process depends on the ordering of speakers in P and ˜Y . This is because the swapping procedure terminates when either list becomes empty (line 9). To address this, we reorder the speakers in ˜Y in advance in descending order of speaking duration. This priori-tizes speakers for whom speaker confusion would have a larger impact if left uncorrected and makes the algorithm determinis-tic. Note that the speaker ordering in P is already permuted to align with ˜Y based on the correlation of their speech intervals via (2). Therefore, cases in which multiple speakers simulta-neously become swap candidates are rare in practice, given the limited number of speakers ( S = 4 ). 
+
+4.4. Progressive label tightening via co-training of causal and anticausal models 
+
+The methods described in Sec. 4.3 enable us to obtain labels that are tighter than the original annotations. However, since both the causal and anticausal models are themselves trained with loose labels, they tend to reproduce the looseness of the annotations as much as possible. As a result, the tightening effect remains limited. A straightforward approach to overcome 
+
+Algorithm 2: Co-training of causal and anticausal models 
+
+Input : Training dataset D = {(Xi, ˜Yi)}Ni=1 , causal model ⃗
+
+f with parameters ⃗ θ, anticausal model ⃖ f with parameters ⃖ θ
+
+Output: Updated parameters ⃗ θ and ⃖ θ 
+
+> 1
+
+foreach minibatch (X, ˜Y) do 
+
+> 2
+
+⃗ Q ←⃗ f (X;⃗ θ) ▷ Forward causal 
+
+> 3
+
+⃖ Q ←⃖ f (X;⃖ θ) ▷ Forward anticausal 
+
+> 4
+
+⃗ P,⃖ P ← Q2P (⃗Q), Q2P (⃖ Q) ▷ Eq. (3)  
+
+> 5
+
+Ytight ← Tighten   ˜Y,⃗ P,⃖ P ▷ Sec. 4.3  
+
+> 6
+
+Ytight ← Restore  Ytight , ˜Y ▷ Sec. 4.2.2  
+
+> 7
+
+Update ⃗ θ on ℓ(⃗Q, Ytight ) ▷ Backward causal  
+
+> 8
+
+Update ⃖ θ on ℓ(⃖Q, Ytight ) ▷ Backward anticausal 
+
+this issue is to retrain the causal and anticausal models with the tightened labels and repeat the tightening process based on their outputs. Repeating this procedure is expected to progressively produce tighter labels. In practice, however, this approach is inefficient because each loop requires separate training of the causal and anticausal models, while the improvement achieved within a single loop is marginal. To resolve this inefficiency, we propose the co-training of causal and anticausal models, in which tightening is applied at every minibatch. The pseudocode is provided in Algorithm 2. We assume that both causal and anticausal models have been trained using loose labels, resulting in parameters ⃗ θ and ⃖ θ, re-spectively. Note that bold symbols denote batched tensors, e.g., 
+
+X ∈ RB×D×T , where B is the batch size. The loss function defined on a single sample in (4) and the posterior conversion 
+
+Q2P are extended to batched inputs by applying them indepen-dently along the batch dimension. In each training step, we first run forward passes of both the causal and anticausal models to obtain their inference results (line 2–3), followed by powerset-to-multilabel conversion (line 4). We then apply tightening and restoration to generate refined labels for the minibatch (line 5– 6). Finally, the tightened labels are used as supervision to com-pute the loss, and the parameters of both models are updated accordingly (line 7–8). Once co-training is complete, we infer all ASR-corpus sam-ples in the training dataset using the causal and anticausal mod-els with the resulting parameters ⃗ θ and ⃖ θ. We then train a final non-causal model from scratch using the tightened labels as su-pervision. 
+
+# 5. Experimental settings 
+
+5.1. Speaker diarization pipeline 
+
+We adopted the EEND-vector clustering framework [4], which consists of i) local diarization with a 10-second window and a 1-second shift, ii) speaker embedding extraction for each detected speaker in each window, and iii) clustering of the speaker em-beddings to determine speaker correspondence across windows. The proposed method is applied to the local diarization models, whose detailed configurations are described in Sec. 5.2. For speaker embedding extraction, we use ECAPA-TDNN trained on the VoxCeleb 1&2 datasets [46]. For clustering, we use ag-glomerative hierarchical clustering. The clustering parameters, i.e., the threshold value and the minimum cluster size, were tuned using the validation set of the compound dataset. 5.2. Local diarization model 
+
+Many high-performing diarization models rely on large-scale self-supervised pretrained models [11,12,34,47]. A representa-tive example is WavLM [48], which is publicly available. How-ever, it does not support causal and anticausal processing, and training such models from scratch is not feasible for every-one. For proof of concept, we instead use models based on a speaker embedding extractor pretrained via multi-speaker iden-tification [33], which offers a good trade-off between perfor-mance and training cost. Similarly, we use ECAPA-TDNN [49] and ReDimNet [50] as the frontend encoders, respectively, each followed by a classification backend. The specific pretraining procedure using the VoxCeleb 1&2 datasets [51] also follows that described in the reference paper. The causal and anticausal models are implemented by re-placing each component in the architectures with a unidirec-tional version. Our purpose here is not to implement per-fectly streamable models, but rather to prevent the models from padding segment boundaries or filling pauses based on contex-tual information. Therefore, some components are intentionally left unchanged, even though they are not streaming-ready. De-tailed implementation is described in the following subsections. In this section, we restrict our discussion to causal models, where only past frames are accessible at each time step. The an-ticausal case is analogous, with access limited to future frames. 
+
+5.2.1. ECAPA-TDNN 
+
+The non-causal parts of the original ECAPA-TDNN are 1D convolutional layers, batch normalization, and squeeze-and-excitation (SE) blocks [49]. 
+
+1D convolutional layers. We simply replaced each with the causal alternative. Their kernel size was kept unchanged. 
+
+Batch normalization. While batch normalization also incorpo-rates future information during training, inference relies solely on the learned mean and variance. As a result, no future in-puts are accessed during inference, and operational causality is maintained. Hence, batch normalization is retained without modification. 
+
+SE blocks. SE blocks recalibrate channel-wise importance based on the global average [52]. Let Z := [ z1, . . . , zT ] ∈
+
+RD×T be an input sequence of vector representations and ¯z := 
+
+> 1
+> T
+
+PTt=1 zt. The operations in the SE block are denoted as 
+
+s = g(¯z) ∈ (0 , 1) D , (10) 
+
+Z′ = Z ⊙ [s, . . . , s
+
+| {z }
+
+> T
+
+] ∈ RD×T , (11) where g(·) is a nonlinear transformation implemented by two-stacked fully connected layers. The SE block is not causal be-cause it relies on the global average ¯z. While its causal variant has been proposed [53], we found that it led to performance degradation. Simply leveraging a global average does not en-able local context-dependent boundary padding or pause filling, and therefore does not conflict with the objective of this study. Accordingly, we retrain the original SE block without modifi-cation in the causal model. 
+
+5.2.2. ReDimNet 
+
+We use the B2 variant of ReDimNet [50]. The non-causal part of ReDimNet is 1D/2D convolutional layers, Transformer en-coders, and batch normalization. 
+
+1D/2D convolutional layers. As in ECAPA-TDNN, both layers were replaced with causal versions using the same kernel sizes. Table 1: Components of the compound diarization dataset.                            
+
+> Duration (hours) Corpus Label Train Val Test AMI-MHM [15] ASR-oriented (loose) 81 10 9AMI-SDM [15] ASR-oriented (loose) 80 10 9AliMeeting [16] ASR-oriented (loose) 111 411 MSDWild [54] Diarization-oriented (tight) 64 210 VoxConverse [32] Diarization-oriented (tight) 18 244 Total 354 28 82
+
+Transformer encoders. For each self-attention module in Transformer encoders, we applied a causal mask that prevents each query from attending to future keys. 
+
+Batch normalization. As in ECAPA-TDNN, we did not re-place batch normalization with a causal variant. 
+
+5.2.3. Classification backend 
+
+The classification backend consists of a single-layer long short-term memory (LSTM) network followed by a fully-connected layer, following the prior study [33]. For the causal model, we use a unidirectional LSTM in the left-to-right direction. 
+
+5.3. Diarization dataset 
+
+We use the compound dataset of ASR and diarization corpora in our experiments, which is standard in recent speaker di-arization studies [9, 10, 33, 34]. While the proposed method can progressively tighten loose annotations without tight su-pervision, evaluating the validity of the resulting labels still requires ideal tight labels. In this paper, for ASR-oriented data, we use the corpora for which forced-alignment-based labels are publicly available [13] 3: AMI mixed headset mi-crophones (AMI-MHM) [15], AMI single distant microphone (AMI-SDM) [15], and AliMeeting [16]. As the diarization cor-pora, we use the MSDWild few-talker set (MSD) [54] and Vox-Converse (VC) [32]. The sizes of each corpus and the com-pound dataset are listed in Table 1. We also use DIHARD III [30] as an out-of-domain corpus exclusively for evaluation, which is tightly annotated with the original labels. 
+
+5.4. Training of diarization models 
+
+Except for the co-training stage, the frontend encoders were ini-tialized with weights obtained from multi-speaker identification pretraining, while the classification backend was trained from random weights. The batch size was set to 32, and training was conducted for up to 180k steps. We used the Adam op-timizer [55], with the learning rate linearly increased to 0.001 over the first 1k steps, followed by exponential decay with a factor of 0.8 every 6k steps. In co-training, we initialize the causal and anticausal models with the weights obtained from the above training and further train them for up to 6k steps us-ing the procedure described in Algorithm 2. The optimization is performed using Adam with a fixed learning rate of 0.0001. In co-training and subsequent training with tightened la-bels, it is difficult to properly assess convergence unless the val-idation set has tightly annotated labels. In our experiments, we assume that tight annotations are available only for the valida-tion sets listed in Table 1, which is a common setting in previous studies on learning from noisy labels [38, 39]. The case where no ideal tight labels are available is left for future work. 
+
+> 3https://github.com/nttcslab-sp/diar-forced-alignment
+
+Table 2: DERs (%) on the in-domain corpora. For DER computation, we used tight labels obtained via forced alignment as the reference. For the ASR corpora, the relative improvement achieved by the proposed method is shown in parentheses, where the DER with loose-label training is treated as the baseline and that with tight-label training as the topline.                                                                                                           
+
+> Supervision for ASR corpora Encoder: ECAPA-TDNN Encoder: ReDimNet Corpus type: ASR Diarization Corpus type: ASR Diarization Model Label Tightening AMI-MHM AMI-SDM AliMeeting MSD VC AMI-MHM AMI-SDM AliMeeting MSD VC
+> Baseline & topline
+> (B1 ) Non-causal Loose N/A 35.24 (0.0 %) 38.79 (0.0 %) 29.39 (0.0 %) 27.53 12.32 34.92 (0.0 %) 38.51 (0.0 %) 27.67 (0.0 %) 26.07 11.38 (B2 ) Non-causal Tight N/A 16.12 (100.0 %) 20.54 (100.0 %) 23.49 (100.0 %) 26.23 11.75 14.83 (100.0 %) 19.48 (100.0 %) 20.64 (100.0 %) 26.19 12.09
+> Proposed method
+> (P1 ) Non-causal Loose Basic 23.36 (62.1 %) 25.94 (70.4 %) 26.93 (41.7 %) 27.52 12.26 20.37 (72.4 %) 25.37 (69.0 %) 24.81 (40.7 %) 25.55 11.02 (P2 ) Non-causal Loose VAD 24.30 (57.2 %) 28.29 (57.5 %) 26.40 (50.7 %) 28.09 12.21 19.73 (75.6 %) 25.16 (70.2 %) 23.69 (56.6 %) 27.08 11.96 (P3 ) Non-causal Loose SC 20.96 (74.7 %) 25.29 (74.0 %) 26.10 (55.8 %) 27.28 12.29 19.14 (78.5 %) 23.62 (78.2 %) 23.75 (55.8 %) 26.08 11.56
+
+Table 3: DER (%) on DIHARD III, an out-of-domain corpus annotated with diarization-oriented tight labels.                                    
+
+> Supervision for ASR corpora Encoder Model Label Tightening ECAPA-TDNN ReDimNet
+> Baseline & topline
+> (B1 ) Non-causal Loose N/A 29.96 (0.0 %) 29.89 (0.0 %)
+> (B2 ) Non-causal Tight N/A 25.63 (100.0 %) 26.07 (100.0 %)
+> Proposed method
+> (P1 ) Non-causal Loose Basic 27.29 (61.7 %) 26.52 (88.2 %)
+> (P2 ) Non-causal Loose VAD 28.38 (36.5 %) 26.38 (91.9 %)
+> (P3 ) Non-causal Loose SC 27.06 (67.0 %) 25.28 (120.7 %)
+
+5.5. Evaluation 
+
+Speaker diarization performance is evaluated using diarization error rate (DER), defined as the sum of the missed detection rate (MI), the false alarm rate (FA), and the speaker confusion rate (CF). For the ASR corpora, we use labels obtained via forced alignment as a reference for DER computation, as they can be considered ideal tight labels. For the diarization corpora, we use the provided labels as reference. 
+
+# 6. Results 
+
+6.1. Speaker diarization 
+
+6.1.1. Main results 
+
+We first present the overall results on the in-domain corpora in Table 2. For the baseline models ( B1 ), we use the annotated la-bels shown in Table 1 as supervision, whereas the topline mod-els ( B2 ) use the ideally tightened labels via forced alignment for the ASR corpora, while the diarization corpora are used as is since their annotations are already tight. We observed a sub-stantial DER gap between the two models for the ASR corpora, while the DERs remain largely unchanged on the diarization corpora. This trend is consistent with the prior study showing that models tend to learn the degree of label tightness specific to each corpus [13]. The objective of the proposed method is to close this gap without relying on ideal tight labels. By applying the proposed method, DER was significantly reduced for the ASR corpora, indicating that the models can successfully produce tightened outputs ( P1 –P3 ). This substan-tially reduced the discrepancy in boundary tightness across do-mains and enhanced model interpretability. This fact is also supported by the results on the out-of-domain dataset, shown in Table 3. The baseline model exhibited a high DER on the DI-HARD III corpus, and the gap from the topline indicates that the model tended to produce loose speech intervals. In contrast, the proposed method enforced consistently tight outputs, prevent-Causal Anticausal Non-causal Basic VAD SC 
+
+0
+
+10 
+
+20 
+
+30    
+
+> AMI-MHM
+> Basic VAD SC
+> AMI-SDM
+> Basic VAD SC
+> AliMeeting
+> Basic VAD SC
+
+0
+
+10 
+
+20 
+
+30    
+
+> Basic VAD SC Basic VAD SC DER (%)
+> ECAPA-TDNN ReDimNet
+
+Figure 4: DER (%) of causal and anticausal models after co-training compared with non-causal models ( P1 –P3 ). 
+
+ing predictions from being affected by unpredictable loosening behavior. Among the three tightening methods, the SC-based approach achieved DER reductions comparable to or greater than those of the other methods. Detailed analyses of each tight-ening method are provided in Sec. 6.1.2. We also report the performance of the causal and anticausal models obtained through co-training for each tightening method in Fig. 4. Notably, the non-causal model trained with pseudo labels generated from the outputs of the causal and anticausal models consistently outperformed the original causal and an-ticausal models. This indicates that label tightening based on causal–anticausal consistency was effective. Figure 5 shows an example of a 10-second chunk with the corresponding loose and tight labels and the inference results using the ReDimNet-based models. Comparing the loose la-bel (first row) and the tight label (second row), it is clear that some speech intervals are merged in the loose label. When a model was trained with such loose labels, its predictions also became loose (third row), whereas the proposed methods pro-duce tighter predictions (fourth to sixth row). 
+
+6.1.2. Analysis of tightening methods and ablation study 
+
+Figure 6 compares the tightening methods on the ASR corpora and includes an ablation study of co-training in terms of FA vs. MI + CF. Without co-training, all tightening methods reduced FA at the cost of a slight increase in MI + CF, resulting in mod-est improvements in DERs. With co-training, FA was reduced more substantially, yielding further improvement in DER. How-ever, the resulting MI + CF was higher than that of the topline models trained with tight labels. Among the tightening methods, SC tightening achieved the best DER, whereas VAD tightening yielded the lowest MI. This Loose label (Annotation)      
+
+> Tight label (Unknown)
+> Baseline (Trained with loose label
+> )
+> Proposed (Basic)
+> Proposed (VAD)
+> 0246810
+> Proposed (SC)
+
+Time [s] Figure 5: Example of labels and pro-cessing results for a 10-second chunk. aTrained with loose label aTrained with ideal tight label aBasic VAD SC w/o co-training w/ co-training      
+
+> Baseline Topline Proposed method 010 20 010 MI + CF (%)
+> AMI-MHM
+> 010 20 010 20
+> AMI-SDM
+> 010 010 20
+> AliMeeting FA (%)
+
+Figure 6: FA vs. MI+CF of each method using the ReDimNet-based models. The di-agonal dashed lines represent equal-DER contours, since DER=MI+FA+CF. MI FA CF 0 10 20 30 Proposed (SC) Proposed (VAD) Proposed (Basic) Loose label (Annotation)       
+
+> AMI-MHM
+> 010 20 30
+> AMI-SDM
+> 010 20 30
+> AliMeeting DER (%)
+
+Figure 7: Qualities of tightened training-set la-bels obtained using ReDimNet-based models measured by DER against ideal tight labels. For each proposed method, the three bars (from top to bottom) represent vanilla, with restora-tion, and with restoration and co-training. 
+
+result was consistent with the discussion in Sec. 4.3.2 that VAD tightening behaves conservatively. The impact of this over-tightening on downstream tasks is discussed in Sec. 6.2. 
+
+6.1.3. Analysis of tightened labels 
+
+We next analyzed each corpus’s tightened training-set labels, rather than the model outputs. The results are shown in Fig. 7. We first examine the case without restoration in Sec. 4.2.2 or co-training in Sec. 4.4. Each tightening method substantially reduced FA; however, it also significantly increased MI, and in some cases, the total error even exceeded that of the origi-nal loose labels. Introducing restoration made the reduction in FA somewhat smaller while effectively restraining the increase in MI. Furthermore, when co-training was applied, particularly on AMI-MHM and AMI-SDM, FA was substantially reduced and the increase in MI was controlled. This resulted in efficient tightening and a large reduction in DER. On AliMeeting, al-though some FA could still be traded off for MI, DER remained almost unchanged. Nevertheless, as shown in Fig. 6, training with tightened labels yielded lower DER than training without tightening, indicating that the proposed method still improved performance. This may be because the MI introduced during label generation tended to occur in inherently hard-to-detect re-gions, thereby limiting its impact on the final DER. 
+
+6.2. Multi-talker ASR 
+
+Finally, we evaluated each diarization system in two multi-talker ASR pipelines: single-channel ASR and multi-channel ASR. Both pipelines used diarization results from AMI-SDM, obtained using the ReDimNet-based models. 
+
+Multi-channel ASR. The ASR performance was measured un-der the AMI multiple distant microphone (AMI-MDM) setup, which uses the recordings of an eight-channel microphone ar-ray. Note that AMI-SDM used for diarization corresponds to the recordings from the first channel of each microphone array. As the multi-channel ASR pipeline, we enhanced each utter-ance with GSS [19, 20] followed by transcription with Whis-per large-v3 [26]. Following the previous study [13], we used a morphological closing before beamforming in GSS, with the width tuned on the validation set. 
+
+Single-channel ASR. As a single-channel ASR pipeline, we used self-enrolled diarization-conditioned Whisper (SE-DiCoW) [56]. It directly takes a multi-talker recording with the corresponding diarization results as inputs. We also used a mor-Table 4: tcpWER (%) on AMI. The numbers in parentheses rep-resent deletion, insertion, and substitution errors. 
+
+Multi-channel ASR Single-channel ASR Label Tightening (GSS + Whisper) (SE-DiCoW) 
+
+Baseline & topline 
+
+(B1 ) Loose N/A 30.28 (19.57 / 5.36 / 5.35) 28.30 (12.70 / 9.05 / 6.55) 
+
+(B2 ) Tight N/A 28.57 (18.85 / 4.66 / 5.17) 25.93 (11.83 / 7.59 / 6.51) 
+
+Proposed method 
+
+(P1 ) Loose Basic 31.43 (20.57 / 5.67 / 5.20) 28.21 (13.51 / 8.47 / 6.23) 
+
+(P2 ) Loose VAD 29.44 (19.00 / 4.80 / 5.63) 26.31 (11.88 / 7.66 / 6.77) 
+
+(P3 ) Loose SC 30.19 (19.83 / 5.20 / 5.32) 26.68 (12.77 / 7.55 / 6.36) 
+
+phological closing before feeding into the SE-DiCoW model. 
+
+Results. In Table 4, we reported time-constrained minimum-permutation word error rates (tcpWERs) computed using the MeetEval toolkit with the CHiME-8 text normalizer [57]. Con-sistent with the previous study [13], training with tight labels improved tcpWER over loose-label training. For the proposed methods, both VAD and SC tightening achieved better results than the model trained with loose labels ( B1 vs. B2 ). In terms of DER, SC tightening ( P3 ) achieved the best performance as in Table 2; however, an increase in MI + CF led to higher deletion errors in ASR, making VAD tightening ( P2 ) preferable in prac-tice. Incorporating downstream-task awareness into the training procedure remains an important direction for future work. 
+
+# 7. Conclusions 
+
+In this paper, we proposed a training method for speaker diariza-tion models with loose ASR labels while enabling tight bound-ary inference. By leveraging the asymmetric padding properties of causal and anticausal models, the method refines loose anno-tations through co-training. This eliminates the need for costly manual annotation or access to headset microphones, making tight-boundary training applicable to more diverse datasets. 
+
+Limitations. Determining convergence in co-training still re-quires a small amount of ideal tight labels for validation. More-over, our experiments were limited to moderately sized datasets with forced-alignment-based labels. Large-scale evaluation without tight labels remains future work. In addition, our model was smaller than large-scale pretrained models [48], which may limit performance compared with causalized large mod-els [58]. Finally, progressive tightening sometimes degraded downstream performance, and identifying an optimal degree of tightening is another promising direction. 8. Generative AI Use Disclosure 
+
+The authors used a large language model (ChatGPT) only to assist with language editing and polishing. All technical content was developed and verified by the authors. 
+
+# 9. References 
+
+[1] Y. Fujita, N. Kanda, S. Horiguchi, K. Nagamatsu, and S. Watan-abe, “End-to-end neural speaker diarization with permutation-free objectives,” in Proc. Interspeech , 2019, pp. 4300–4304. [2] Y. Fujita, N. Kanda, S. Horiguchi, Y. Xue, K. Nagamatsu, and S. Watanabe, “End-to-end neural speaker diarization with self-attention,” in Proc. ASRU , 2019, pp. 296–303. [3] I. Medennikov, M. Korenevsky, T. Prisyach, Y. Khokhlov, M. Ko-renevskaya, I. Sorokin, T. Timofeeva, A. Mitrofanov, A. An-drusenko, I. Podluzhny, A. Laptev, and A. Romanenko, “Target-speaker voice activity detection: a novel approach for multi-speaker diarization in a dinner party scenario,” in Proc. Inter-speech , 2020, pp. 274–278. [4] K. Kinoshita, M. Delcroix, and N. Tawara, “Integrating end-to-end neural and clustering-based diarization: Getting the best of both worlds,” in Proc. ICASSP , 2021, pp. 7198–7202. [5] S. Horiguchi, Y. Fujita, S. Watanabe, Y. Xue, and P. Garc´ ıa, “Encoder-decoder based attractors for end-to-end neural diariza-tion,” IEEE/ACM TASLP , vol. 30, pp. 1493–1507, 2022. [6] D. Wang, X. Xiao, N. Kanda, T. Yoshioka, and J. Wu, “Target speaker voice activity detection with transformers and its integra-tion with end-to-end neural diarization,” in Proc. ICASSP , 2023. [7] M. H¨ ark¨ onen, S. J. Broughton, and L. Samarakoon, “EEND-M2F: Masked-attention mask transformers for speaker diarization,” in 
+
+Proc. Interspeech , 2024, pp. 37–41. [8] M. Cheng, Y. Lin, and M. Li, “Sequence-to-sequence neural di-arization with automatic speaker detection and representation,” 
+
+IEEE TASLPRO , vol. 33, pp. 2719–2734, 2025. [9] H. Bredin, “pyannote.audio 2.1 speaker diarization pipeline: prin-ciple, benchmark, and recipe,” in Proc. Interspeech , 2023, pp. 1983–1987. [10] A. Plaquet and H. Bredin, “Powerset multi-class cross entropy loss for neural speaker diarization,” in Proc. Interspeech , 2023, pp. 3222–3226. [11] J. Han, F. Landini, J. Rohdin, A. Silnova, M. Diez, and L. Burget, “Leveraging self-supervised learning for speaker diarization,” in 
+
+Proc. ICASSP , 2025. [12] J. Han, F. Landini, J. Rohdin, A. Silnova, M. Diez, J. Cernocky, and L. Burget, “Fine-tune before structured pruning: Towards compact and accurate self-supervised models for speaker diariza-tion,” in Proc. Interspeech , 2025, pp. 1583–1587. [13] S. Horiguchi, N. Tawara, T. Ashihara, A. Ando, and M. Delcroix, “Can we really repurpose multi-speaker ASR corpus for speaker diarization?” in Proc. ASRU , 2025. [14] Y. Fu, L. Cheng, S. Lv, Y. Jv, Y. Kong, Z. Chen, Y. Hu, L. Xie, J. Wu, H. Bu, X. Xu, J. Du, and J. Chen, “AISHELL-4: An open source dataset for speech enhancement, separation, recognition and speaker diarization in conference scenario,” in Proc. Inter-speech , 2021, pp. 3665–3669. [15] J. Carletta, “Unleashing the killer corpus: experiences in creating the multi-everything AMI Meeting Corpus,” Language Resources and Evaluation , vol. 41, no. 2, pp. 181–190, 2007. [16] F. Yu, S. Zhang, Y. Fu, L. Xie, S. Zheng, Z. Du, W. Huang, P. Guo, Z. Yan, B. Ma, X. Xu, and H. Bu, “M2MeT: The ICASSP 2022 multi-channel multi-party meeting transcription challenge,” in Proc. ICASSP , 2022, pp. 6167–6171. [17] J. Barker, S. Watanabe, E. Vincent, and J. Trmal, “The fifth ‘CHiME’ Speech Separation and Recognition Challenge: dataset, task and baselines,” in Proc. Interspeech , 2018, pp. 1561–1565. [18] M. Van Segbroeck, A. Zaid, K. Kutsenko, C. Huerta, T. Nguyen, X. Luo, B. Hoffmeister, J. Trmal, M. Omologo, and R. Maas, “DiPCo—dinner party corpus,” in Proc. Interspeech , 2020, pp. 434–436. [19] C. Boeddeker, J. Heitkaemper, J. Schmalenstoeer, L. Drude, J. Heymann, and R. Haeb-Umbach, “Front-end processing for the CHiME-5 dinner party scenario,” in Proc. CHiME-5 , 2018, pp. 35–40. [20] D. Raj, D. Povey, and S. Khudanpur, “GPU-accelerated guided source separation for meeting transcription,” in Proc. Interspeech ,2023, pp. 3507–3511. [21] A. D´ efossez, L. Mazar´ e, M. Orsini, A. Royer, P. P´ erez, H. J´ egou, E. Grave, and N. Zeghidour, “Moshi: a speech-text foundation model for real-time dialogue,” arXiv:2410.00037, 2024. [22] Y.-K. Fu, C.-K. Lee, H.-H. Wang, and H.-y. Lee, “Investigat-ing the effects of large-scale pseudo-stereo data and different speech foundation model on dialogue generative spoken language model,” arXiv:2407.01911, 2024. [23] A. Ohashi, S. Iizuka, J. Jiang, and R. Higashinaka, “Towards a japanese full-duplex spoken dialogue system,” in Proc. Inter-speech , 2025, pp. 1783–1787. [24] B. Veluri, B. Peloquin, B. Yu, H. Gong, and S. Gollakota, “Be-yond turn-based interfaces: Synchronous LLMs as full-duplex di-alogue agents,” in Proc. NAACL , 2024, pp. 21 390–21 402. [25] W. Cui, L. Zhu, X. Li, and Z. Gui, “TurnGuide: Enhancing mean-ingfull full duplex spoken interactions via dynamic turn-level text-speech interleaving,” arxiv:2508.07375, 2026. [26] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak su-pervision,” in Proc. ICML , 2023, pp. 28 492–28 518. [27] S. Ghosh, A. Goel, J. Kim, S. Kumar, Z. Kong, S.-g. Lee, C.-H. H. Yang, R. Duraiswami, D. Manocha, R. Valle et al. , “Audio Flamingo 3: Advancing audio intelligence with fully open large audio language models,” in Proc. NeurIPS , 2025. [28] N. Ryant, K. Church, C. Cieri, A. Cristia, J. Du, S. Ganapathy, and M. Liberman, “First DIHARD challenge evaluation plan,” https://zenodo.org/record/1199638, 2018. [29] ——, “The Second DIHARD Diarization Challenge: Dataset, task, and baselines,” in Proc. Interspeech , 2019, pp. 978–982. [30] N. Ryant, P. Singh, V. Krishnamohan, R. Varma, K. Church, C. Cieri, J. Du, S. Ganapathy, and M. Liberman, “The third DI-HARD diarization challenge,” in Proc. Interspeech , 2021, pp. 3570–3574. [31] N. Ryant, K. Church, C. Cieri, J. Du, S. Ganapathy, and M. Liberman, “Third DIHARD challenge evaluation plan,” arXiv:2006.05815, 2020. [32] J. S. Chung, J. Huh, A. Nagrani, T. Afouras, and A. Zisserman, “Spot the conversation: Speaker diarisation in the wild,” in Proc. Interspeech , 2020, pp. 299–303. [33] S. Horiguchi, A. Ando, M. Delcroix, and N. Tawara, “Pretrain-ing multi-speaker identification for neural speaker diarization,” in 
+
+Proc. Interspeech , 2025, pp. 1608–1612. [34] J. Han, P. P´ alka, M. Delcroix, F. Landini, J. Rohdin, J. Cernock` y, and L. Burget, “Efficient and generalizable speaker diarization via structured pruning of self-supervised models,” arXiv:2506.18623, 2025. [35] N. Natarajan, I. S. Dhillon, P. K. Ravikumar, and A. Tewari, “Learning with noisy labels,” in Proc. NeurIPS , vol. 26, 2013, pp. 1196–1204. [36] G. Patrini, A. Rozza, A. Krishna Menon, R. Nock, and L. Qu, “Making deep neural networks robust to label noise: A loss cor-rection approach,” in Proc. CVPR , 2017, pp. 1944–1952. [37] M. Lukasik, S. Bhojanapalli, A. Menon, and S. Kumar, “Does label smoothing mitigate label noise?” in Proc. ICML . PMLR, 2020, pp. 6448–6458. [38] M. Ren, W. Zeng, B. Yang, and R. Urtasun, “Learning to reweight examples for robust deep learning,” in Proc. ICML , 2018, pp. 4334–4343. [39] L. Jiang, Z. Zhou, T. Leung, L.-J. Li, and L. Fei-Fei, “MentorNet: Learning data-driven curriculum for very deep neural networks on corrupted labels,” in Proc. ICML , 2018, pp. 2304–2313. [40] S. Guo, W. Huang, H. Zhang, C. Zhuang, D. Dong, M. R. Scott, and D. Huang, “CurriculumNet: Weakly supervised learning from large-scale web images,” in Proc. ECCV , 2018, pp. 135–150. [41] B. Han, Q. Yao, X. Yu, G. Niu, M. Xu, W. Hu, I. Tsang, and M. Sugiyama, “Co-teaching: Robust training of deep neural net-works with extremely noisy labels,” in Proc. NeurIPS , vol. 31, 2018, pp. 8527–8537. [42] X. Yu, B. Han, J. Yao, G. Niu, I. Tsang, and M. Sugiyama, “How does disagreement help generalization against label corruption?” in Proc. ICML , 2019, pp. 7164–7173. [43] N. Zeghidour, O. Teboul, and D. Grangier, “DIVE: End-to-end speech diarization via iterative speaker embeddings,” in Proc. ASRU , 2021, pp. 702–709. [44] J. Kalda and T. Alum¨ ae, “Collar-aware training for streaming speaker change detection in broadcast speech,” in Proc. Odyssey 2022 , 2022, pp. 141–147. [45] J. Ebbers and R. Haeb-Umbach, “Forward-backward convolu-tional recurrent neural networks and tag-conditioned convolu-tional neural networks for weakly labeled semi-supervised sound event detection,” in Proc. DCASE , 2020, pp. 41–45. [46] A. Nagrani, J. S. Chung, and A. Zisserman, “VoxCeleb: A large-scale speaker identification dataset,” in Proc. Interspeech , 2017, pp. 2616–2620. [47] A. Plaquet, N. Tawara, M. Delcroix, S. Horiguchi, A. Ando, and S. Araki, “Mamba-based segmentation model for speaker diariza-tion,” in Proc. ICASSP , 2025. [48] S. Chen, C. Wang, Z. Chen, Y. Wu, S. Liu, Z. Chen, J. Li, N. Kanda, T. Yoshioka, X. Xiao et al. , “WavLM: Large-scale self-supervised pre-training for full stack speech processing,” IEEE Journal of Selected Topics in Signal Processing , vol. 16, no. 6, pp. 1505–1518, 2022. [49] B. Desplanques, J. Thienpondt, and K. Demuynck, “ECAPA-TDNN: Emphasized channel attention, propagation and aggrega-tion in TDNN based speaker verification,” in Proc. Interspeech ,2020, pp. 3830–3834. [50] I. Yakovlev, R. Makarov, A. Balykin, P. Malov, A. Okhotnikov, and N. Torgashov, “Reshape dimensions network for speaker recognition,” in Proc. Interspeech , 2024, pp. 3235–3239. [51] A. Nagrani, J. S. Chung, W. Xie, and A. Zisserman, “VoxCeleb: Large-scale speaker verification in the wild,” Computer Speech & Language , vol. 60, p. 101027, 2020. [52] J. Hu, L. Shen, and G. Sun, “Squeeze-and-excitation networks,” in Proc. CVPR , 2018, pp. 7132–7141. [53] J. Yu, W. Han, A. Gulati, C.-C. Chiu, B. Li, T. N. Sainath, Y. Wu, and R. Pang, “Dual-mode ASR: Unify and improve streaming ASR with full-context modeling,” in Proc. ICLR , 2021. [54] T. Liu, S. Fan, X. Xiang, H. Song, S. Lin, J. Sun, T. Han, S. Chen, B. Yao, S. Liu, Y. Wu, Y. Qian, and K. Yu, “MSDWild: Multi-modal speaker diarization dataset in the wild,” in Proc. Inter-speech , 2022, pp. 1476–1480. [55] D. P. Kingma and J. Ba, “Adam: A method for stochastic opti-mization,” in Proc. ICLR , 2015. [56] A. Polok, D. Klement, S. Cornell, M. Wiesner, J. ˇCernock` y, S. Khudanpur, and L. Burget, “SE-DiCoW: Self-enrolled diarization-conditioned Whisper,” in Proc. ICASSP , 2026. [57] T. von Neumann, C. Boeddeker, M. Delcroix, and R. Haeb-Umbach, “MeetEval: A toolkit for computation of word error rates for meeting transcription systems,” in Proc. CHiME , 2023, pp. 27–32. [58] X.-Y. Zhao, Q.-S. Zhu, and J. Zhang, “Speech enhancement us-ing self-supervised pre-trained model and vector quantization,” in 
+
+Proc. APSIPA ASC , 2022, pp. 330–334.

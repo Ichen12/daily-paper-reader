@@ -1,0 +1,525 @@
+Title: AuRA: Internalizing Audio Understanding into LLMs as LoRA
+
+URL Source: https://arxiv.org/pdf/2606.11033v1
+
+Published Time: Wed, 10 Jun 2026 01:26:54 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# AuRA: Internalizing Audio Understanding into LLMs as LoRA 
+
+Bo Cheng 1,2* , Lei Shi 1*† , Zhanyu Ma 1, Yuan Wu 2,Jun Xu 1† , Jiuchong Gao 1† , Jinghua Hao 1, Renqing He 11Meituan, 2Jilin University 
+
+chengbo9691@gmail.com, shilei74@meituan.com 
+
+Abstract 
+
+Recent efforts to extend large language mod-els (LLMs) to speech inputs typically rely on cascaded ASR-LLM pipelines, end-to-end speech-language models, or bridge/distillation-based adaptation. While these routes respec-tively reuse strong pretrained components, en-able native speech-language interaction, or of-fer lightweight adaptation, they often suffer from transcript-interface latency, costly multi-modal training, or sequential speech-language coupling. To address these limitations, we present AuRA , a method that distills audio en-coding capability into the LLM. Specifically, AuRA feeds the same speech input to an ASR encoder (as a teacher) and a LoRA-adapted LLM (as a student) through a lightweight au-dio embedding layer, and uses layer-wise dis-tillation to align the student’s hidden states with corresponding teacher representations, thereby internalizing speech representations into lightweight LLM-side adaptations. Com-pared with cascaded and serial bridge methods, AuRA enables tighter speech-language joint modeling and efficient parallel end-to-end infer-ence, while also reusing pretrained speech and language models rather than requiring large-scale multimodal training. On multiple speech-language benchmarks, AuRA consistently out-performs cascaded systems, speech-to-LLM adaptation baselines, and large-scale speech-language and multimodal models in both effec-tiveness and efficiency. 
+
+1 Introduction 
+
+Large language models (LLMs) have become a general interface for knowledge reasoning, ques-tion answering, and agentic interaction. Extending these capabilities from text to speech is a key step toward natural voice assistants and agents, since many real-world interactions are spoken rather than 
+
+> *
+
+Equal contribution. 
+
+> †
+
+Corresponding author. Cascaded 
+
+> ASR -LLM
+> Pipelines
+> End -to -end
+> Speech -language
+> Models
+> Bridge/Distillation -
+> based Adaptation
+> ASR Encoder
+> Teacher
+> LoRA -adapted LLM
+> Student
+> Audio
+> Distillation
+
+Speech -to -language Paradigms 
+
+AuRA 
+
+Figure 1: Illustration of representative speech-language modeling paradigms and our proposed distillation-based adaptation framework. 
+
+typed. A speech-capable LLM should be able to understand semantics, follow instructions, and com-plete tasks while maintaining low latency and low cost. This creates a practical challenge: how can we reuse strong pretrained speech and language models while enabling efficient speech-language joint modeling? As summarized in Figure 1, existing approaches typically fall into three categories. Cascaded ASR-LLM pipelines first transcribe speech with an au-tomatic speech recognition (ASR) model and then rely on a text LLM for downstream reasoning. They are easy to build and benefit from strong pretrained components such as Whisper (Radford et al., 2023) and Qwen (Qwen Team, 2024), but sep-arate optimization and the intermediate transcript interface make them suboptimal for joint speech-language modeling and add decoding-encoding la-tency. End-to-end speech-language or multimodal models, such as Qwen2-Audio (Chu et al., 2024) and Qwen2.5-Omni (Xu et al., 2025), can support tighter native interaction between speech percep-tion and language reasoning, but usually rely on large-scale multimodal data and expensive training recipes. Bridge or distillation methods, including lightweight speech-to-LLM adaptation approaches 1
+
+> arXiv:2606.11033v1 [cs.LG] 9 Jun 2026
+
+such as BLSP (Wang et al., 2023a) and DiVA (Held et al., 2025), are more parameter- and data-efficient, yet mainstream designs still process speech and lan-guage largely sequentially, which may limit joint modeling tightness and reduce inference efficiency when a substantial speech encoder or adapter re-mains active at inference time. To address these limitations, we propose AuRA 
+
+(Audio Understanding as LoRA ), a method for in-ternalizing audio understanding into the LLM via lightweight LLM-side low-rank adaptation (LoRA). The key idea is to treat audio understanding not as an external encoder output that is fed into the LLM, but as a capability distilled into the LLM’s early transformations, drawing inspiration from re-cent work on adapting visual and language modal-ities within a unified model (Wang et al., 2025). During training, AuRA processes the same speech input with an ASR encoder (as a teacher) and a LoRA-adapted LLM (as a student), and then ap-plies layer-wise distillation to align the student’s audio-conditioned hidden states with correspond-ing teacher representations. At inference time, the ASR encoder is removed, while the model still ben-efits from the speech representations distilled from the teacher. This design offers three advantages. First, com-pared with cascaded ASR-LLM pipelines, AuRA avoids the decoding-encoding overhead and infor-mation loss of transcript interfaces, allowing au-dio information to enter LLM layers directly for speech-language joint modeling. Second, com-pared with large-scale end-to-end speech-language models, AuRA reuses pretrained speech and lan-guage models, substantially reducing the cost of multimodal training. Third, compared with se-rial bridge or distillation methods, AuRA enables tighter cross-modal interaction and a more efficient, parallel inference path. Our main contributions are summarized as follows: • We propose AuRA , an encoder-free speech-to-language adaptation paradigm that inter-nalizes speech understanding directly into lightweight LLM-side LoRA adapters, elimi-nating the need for a heavy speech encoder at inference time. • We design a layer-wise cross-modal distilla-tion mechanism that aligns the student LLM’s early hidden states with corresponding repre-sentations of an ASR teacher to effectively transfer speech comprehension. • We demonstrate that AuRA delivers gains in both effectiveness and efficiency on mul-tiple speech-language benchmarks, outper-forming cascaded, bridge-based, and large-scale speech-language baselines in perfor-mance while also reducing inference latency and memory usage. 
+
+2 Related Work 
+
+2.1 Speech-Language Modeling 
+
+Speech-language modeling can be roughly grouped into three paradigms. Cascaded ASR–LLM sys-tems transcribe speech first and then rely on a text LLM for downstream reasoning; this design re-mains practical because it cleanly reuses mature recognizers and speech models such as Whisper, wav2vec 2.0, and HuBERT (Radford et al., 2023; Baevski et al., 2020; Hsu et al., 2021), but the tran-script also becomes a bottleneck interface between speech and language. At the other end, end-to-end speech-language models couple auditory percep-tion and language generation more directly, as seen in SpeechGPT, SALMONN, and LTU (Zhang et al., 2023; Tang et al., 2024; Gong et al., 2024). More re-cent audio-language systems such as Qwen2-Audio and Qwen2.5-Omni further broaden this paradigm (Chu et al., 2024; Xu et al., 2025). These models typically rely on larger multimodal corpora and heavier training pipelines. Between these two ends, lightweight speech-to-LLM adaptation methods such as SALM and SLM retain pretrained back-bones while learning lightweight adaptation mod-ules (Chen et al., 2024; Wang et al., 2023b). Re-lated bridge-style approaches, including BLSP and its variant, and DiVA, follow a similar philosophy with lightweight connectors or distillation modules (Wang et al., 2023a, 2024; Held et al., 2025). AuRA is most closely related to this last line of work, but differs in that it internalizes speech understanding into LLM-side LoRA adapters, removes the speech encoder at inference time, and enables more effi-cient, parallel inference. 
+
+2.2 PEFT and LoRA 
+
+Parameter-efficient fine-tuning (PEFT) aims to adapt large pretrained models by updating only a small number of task-specific parameters rather than fully fine-tuning the entire network. Repre-sentative PEFT approaches include adapter-based tuning (Houlsby et al., 2019), prefix tuning (Li and Liang, 2021), and prompt tuning (Lester et al., 22021). These methods show that frozen pre-trained models can be specialized effectively with lightweight additional parameters. Among PEFT methods, LoRA has become especially influential for parameterizing weight updates with low-rank matrices (Hu et al., 2022). Subsequent variants such as QLoRA and DoRA further improve effi-ciency or adaptation capacity while preserving the same low-rank perspective (Dettmers et al., 2023; Liu et al., 2024). Recent work has also extended this line beyond text-only adaptation to multimodal instruction tuning and continual adaptation, as il-lustrated by MixLoRA and ProgLoRA (Shen et al., 2024; Yu et al., 2025). Cross-modal transfer meth-ods such as LaRA and VoRA push this tendency fur-ther (Shaik et al., 2024; Wang et al., 2025). AuRA follows this broader trend in the speech setting. 
+
+3 Method 
+
+3.1 Overview 
+
+AuRA follows a teacher-student training workflow, as illustrated in Figure 2. Given an input speech waveform and a text prompt containing an audio placeholder, AuRA converts the speech signal into a compact sequence of audio tokens in the LLM embedding space for the student branch, while a frozen ASR teacher processes the same audio in parallel during training. The student-side audio tokens replace the placeholder and are processed by an LLM whose pretrained backbone weights re-main frozen, while trainable LoRA adapters are in-serted into its early layers. During training, a frozen ASR teacher encoder instantiated from Whisper-Large-v3 (Radford et al., 2023) provides layer-wise representation supervision for the LoRA-adapted student layers. During inference, the ASR teacher and all distillation heads are removed, leaving only the lightweight audio patch embedding module and the LoRA-adapted LLM. 
+
+3.2 Audio Patch Embedding 
+
+Given a raw audio waveform, we extract a Whisper-style Mel-spectrogram X ∈ RM ×T with M Mel bins and T frames. To obtain a fixed number of au-dio tokens and support efficient batching, the time axis is padded or truncated to a fixed length ¯T and divided into non-overlapping patches of p frames. This produces P =
+
+l ¯Tp
+
+m
+
+audio patches. The k-th patch is flattened as xk ∈ RM p and projected into the LLM hidden dimension d:
+
+ak = LN ( Waxk + ba + rk) , k = 1 , . . . , P, 
+
+(1) where Wa ∈ Rd×M p and ba are learned projec-tion parameters, rk ∈ Rd is a learned positional embedding, and LN denotes layer normalization. The resulting audio token sequence is 
+
+A = [ a1, . . . , aP ] ∈ RP ×d. (2) Given a text prompt with an audio placeholder, we replace the placeholder embedding with A and obtain the final mixed input sequence E ∈ RS×d,where S is the sequence length after audio-token insertion. This operation places speech tokens and text tokens in the same embedding space and within the same transformer context, so their in-teraction is handled directly by the LLM through standard self-attention rather than by a separate fusion module. We also construct a binary audio mask ma ∈ { 0, 1}S , where mas = 1 if and only if position s corresponds to an inserted audio to-ken. Audio-token positions are excluded from the language modeling targets. 
+
+3.3 LoRA-adapted LLM Student 
+
+The backbone LLM is kept frozen, and trainable LoRA adapters are inserted into the first N trans-former layers. We denote these adapted layers as 
+
+I = {0, . . . , N −1}. For each selected linear trans-formation, the frozen projection W is augmented with a low-rank update: 
+
+LoRA( x) = Wx + αr BAx , (3) where A ∈ Rr×din and B ∈ Rdout ×r are trainable low-rank matrices, r is the LoRA rank, and α is the LoRA scaling coefficient. The trainable branch first projects the input into an r-dimensional bot-tleneck through A and then projects it back to the output dimension through B; its output is added to the frozen backbone projection. Equivalently, the effective projection after explicit merging is 
+
+Weff = W + αr BA . Following our implementa-tion, A is initialized with Kaiming uniform (He et al., 2015) and B is initialized to zero, so the residual branch is zero at initialization and the module starts from the original pretrained model. In practice, adapters are applied to the attention projections {q, k, v, o } and the MLP projections 
+
+{up , gate , down } of the selected early layers. 3Audio     
+
+> ……
+> ……
+> ……
+> …
+> Layer -wise Audio Distillation Loss
+
+❄ Frozen 🔥 Trainable    
+
+> Audio Tokens Text Tokens Teacher Tokens
+> +Add
+> Teacher  Model
+
+❄ 
+
+> Layer N -1
+> Layer 1
+> Layer 0
+> Layer K
+> …
+> …
+> Audio Patch
+> Embedding Module
+
+🔥 Audio Token Sequence    
+
+> …
+> …
+> 🔥 LoRA
+> LLM Layer L
+
+❄  
+
+> LLM Layer 0
+
+❄  
+
+> LLM Layer 1
+
+❄  
+
+> LLM Layer N-1
+
+❄         
+
+> <BOS> Please transcribe …<EOS> <Audio>
+> ……
+> ………
+> +
+> 🔥 LoRA +
+> 🔥 LoRA +
+> 🔥 LoRA +
+> Student  Model
+
+Figure 2: Overview of AuRA. A frozen ASR teacher supervises LoRA-adapted early LLM layers through layer-wise distillation; at inference time, only the audio patch embedding module and LoRA-adapted LLM are retained. 
+
+Because audio enters AuRA as low-level con-tinuous tokens rather than mature linguistic sym-bols, we place LoRA in the first N layers so that the model can absorb acoustic and phonetic cues early and convert them into text-compatible hid-den states, while the deeper frozen layers retain the pretrained LLM’s higher-level semantic and reasoning capabilities. This design localizes audio-specific learning to a lightweight set of LLM-side parameters and lets the adapted early layers bridge speech-conditioned inputs to representations that can be directly consumed by the frozen upper lay-ers, enabling AuRA to remove the speech encoder at inference time while still benefiting from speech-derived supervision during training. 
+
+3.4 Teacher-Student Distillation Student Audio States. To transfer speech under-standing into the LoRA-adapted student, we align intermediate student representations with layer-wise features from the frozen ASR teacher. For a sample b, let H(b) 
+
+> i
+
+∈ RLb×d denote the hidden states output by the i-th adapted LLM layer, where 
+
+i ∈ I . Since only the inserted audio tokens corre-spond to the speech signal, we extract the audio-token hidden states as 
+
+Ha, (b) 
+
+> i
+
+= H(b) 
+
+> i
+
+[ma, (b) = 1] ∈ RPb×d. (4) 
+
+Teacher Layer and Temporal Alignment. For the frozen ASR teacher, let Zj ∈ RTw ×dw denote the hidden states at teacher layer j, where Tw is the teacher sequence length and dw is the teacher hidden size. Each adapted student layer i ∈ I is paired with a teacher layer m(i). A simple and effective choice is a low-level one-to-one mapping, i.e., m(i) = i for the adapted early layers, while alternative mappings are analyzed in the experi-ments. Because the teacher encoder processes long au-dio as segment batches, its hidden states are first regrouped by sample before alignment. For a sam-ple b, let {Z(b,s )
+
+> m(i)
+
+}Kb 
+
+> s=1
+
+be the teacher segments from layer m(i), where Z(b,s ) 
+
+> m(i)
+
+∈ RTs×dw and Kb is the number of teacher segments for sample b. We dis-card padded frames according to the teacher at-tention mask when available, and concatenate the remaining frames along time: 
+
+Z(b) 
+
+> m(i)
+
+= Concat t
+
+¯Z(b,s )
+
+> m(i)
+
+Kb 
+
+> s=1
+
+. (5) where ¯Z(b,s ) 
+
+> m(i)
+
+denotes the valid, non-padding frames of segment s, yielding Z(b) 
+
+> m(i)
+
+∈ RT (b)  
+
+> w×dw
+
+. We then align this per-sample teacher sequence to the student audio-token length Pb = |Ha, (b) 
+
+> i
+
+|:
+
+˜Z(b) 
+
+> m(i)
+
+= A
+
+
+
+Z(b)
+
+> m(i)
+
+, P b
+
+
+
+. (6) 
+
+A(Z, P ) = 
+
+
+
+AvgPool P (Z), T > P, 
+
+Z, T = P, 
+
+Interp linear  
+
+> P
+
+(Z), T < P, 
+
+(7) where T is the temporal length of Z, AvgPool P
+
+is adaptive average pooling with output length 4P , and Interp linear  
+
+> P
+
+is 1D linear interpolation with align_corners=False . This gives ˜Z(b) 
+
+> m(i)
+
+∈
+
+RPb×dw . For readability, we omit the sample super-script below and use P to denote the audio-token length of a generic sample. 
+
+Projection and Distillation Objective. For each adapted layer, a layer-specific projection head gi :
+
+Rd → Rdw maps the student hidden states into the teacher hidden space: 
+
+ˆZi = gi(Hai ) ∈ RP ×dw . (8) Each gi consists of RMS normalization (Zhang and Sennrich, 2019), a linear layer, GELU activation (Hendrycks and Gimpel, 2016), and a second linear layer. The layer-wise distillation loss combines cosine distance and mean squared error: 
+
+L(i)audio = λcos 
+
+
+
+1 − cos 
+
+ˆZi, ˜Zm(i)
+
+ 
+
++ λmse 
+
+1
+
+P d w
+
+ˆZi − ˜Zm(i) 
+
+> 2
+> F
+
+.
+
+(9) The cosine term aligns the direction of the projected student representation with the teacher target, while the MSE term preserves its absolute scale in the teacher space. Their combination provides a more stable alignment objective than either term alone. The final audio distillation objective averages this loss over all adapted layers: 
+
+Laudio = 1
+
+N 
+
+> N−1
+
+X
+
+> i=0
+
+L(i)audio . (10) This averaging distributes supervision across the whole adapted early stack instead of concentrating the training signal on a single layer. 
+
+3.5 Training and Inference 
+
+The layer-wise audio distillation objective de-scribed above effectively transfers speech repre-sentations from the frozen ASR teacher into the LoRA-adapted LLM layers. In practice, AuRA can accept either speech or text inputs during both train-ing and inference. For example, it can be used for standalone ASR tasks or text question answering. In such cases, training can be performed with a standard autoregressive cross-entropy loss on the transcription tokens or answer tokens, while mask-ing out the audio tokens or question tokens from the prediction targets. At inference time, the ASR teacher encoder and projection heads {gi}N −1 
+
+> i=0
+
+are discarded. The model keeps only the audio patch embedding module and the LoRA-adapted LLM, forming an encoder-free audio-conditioned genera-tion path with substantially lower inference cost. 
+
+4 Experiments 
+
+4.1 Experimental Setup Benchmarks and Metrics. We evaluate AuRA and the baselines on HeySquad (Wu et al., 2023) and Spoken Dialect Question Answering (SDQA) (Faisal et al., 2021). HeySquad is built from SQuAD (Rajpurkar et al., 2016), and we use its open-source validation set with around 1K QA pairs 1. SDQA evaluates robustness to global phono-logical variation in English, and we use its 494 questions with ground-truth answers 2. Following benchmark protocols and recent spoken-QA work, we report PEDANTS for HeySquad and CFM for SDQA (Li et al., 2024). 
+
+Implementation Details. Unless otherwise spec-ified, AuRA uses Qwen2.5-7B-Instruct (Qwen Team, 2024) as the language backbone and the Whisper-large-v3 encoder as the frozen ASR teacher. Audio is resampled to 16 kHz and converted into 128-bin Whisper-style Mel-spectrograms, which are divided into temporal patches of p = 16 frames. For audio adaptation, we insert rank-256 LoRA adapters into the first N = 4 
+
+LLM layers and apply them to both attention and MLP projections. AuRA adaptation uses 10K Com-monVoice (Ardila et al., 2020) ASR examples and 10K text-only QA examples from VoRA-TextQA-Mixed (Wang et al., 2025). Additional preprocess-ing, optimization, and hyperparameter details are provided in Appendix A. 
+
+Baselines. We compare AuRA with three cate-gories of baselines: (1) cascaded ASR–LLM sys-tems, represented by Cascade , which first tran-scribes speech with Whisper-large-v3 and then generates answers with Qwen2.5-7B-Instruct; (2) speech-to-LLM adaptation methods, including 
+
+DiVA (Held et al., 2025) and BLSP (Wang et al., 2023a), which connect speech representations to LLMs through lightweight adaptation or distillation strategies and are built on Llama-3-8B and Llama-2-7B, respectively; and (3) large-scale audio-native models, including Qwen2-Audio (Chu et al., 2024) and Qwen2.5-Omni (Xu et al., 2025), which are 
+
+> 1https://huggingface.co/datasets/yijingwu/HeySQuAD_human
+> 2https://huggingface.co/datasets/WillHeld/SD-QA
+
+5Model Spoken-Dialect QA (%) ↑ Lat. (s) ↓ Mem. (GB) ↓                                           
+
+> USA GBR PHL IND-S IND-N IRL AUS NZL NGA ZAF KEN AVG
+> Cascade 45.85 45.60 42.48 44.52 41.96 44.62 46.90 45.98 42.72 44.83 22.65 42.55 0.94 19.2 Qwen2-Audio 37.32 37.67 35.26 35.19 33.74 36.16 37.27 37.95 33.57 35.02 34.98 35.83 0.57 27.6 Qwen2.5-Omni 42.63 43.16 43.52 43.42 43.47 43.51 43.71 43.69 42.98 43.01 43.69 43.34 0.52 13.9 BLSP 38.46 39.07 35.84 36.39 36.59 38.64 39.95 37.60 35.44 36.62 35.13 37.25 0.42 26.5 DiVA 47.98 47.54 44.79 47.28 44.16 47.11 48.23 47.96 45.62 45.24 43.81 46.34 0.63 18.9
+> AuRA 49.04 48.97 48.55 48.79 48.48 48.47 48.56 48.66 48.69 48.83 49.21 48.75 0.40 10.6
+
+Table 1: SDQA performance across regional accents using CFM. Best results are highlighted in bold .                        
+
+> Model PEDANTS (%) ↑Lat. (s) ↓Mem. (GB) ↓
+> Cascade 47.95 0.96 19.2 Qwen2-Audio 39.14 0.60 27.6 Qwen2.5-Omni 47.20 0.61 13.9 BLSP 39.70 0.47 26.5 DiVA 45.96 0.71 18.9
+> AuRA 49.90 0.37 10.6
+
+Table 2: HeySquad performance in PEDANTS, infer-ence latency, and peak GPU memory. Best results are highlighted in bold .
+
+trained on large-scale audio or multimodal data and use released 7B configurations. Overall, the com-pared systems use 7B-scale language backbones and are trained for speech and text tasks. 
+
+4.2 Main Results 
+
+Beyond the benchmark effectiveness metrics above, practical speech assistants and agents also require efficient inference. We therefore additionally report two efficiency metrics: inference latency, measured as the mean end-to-end wall-clock inference time per sample over each benchmark, and GPU mem-ory usage, measured as the peak inference-time GPU memory consumption of each model on a single NVIDIA H20 GPU. The results are summa-rized in Tables 1 and 2. For a more intuitive view of the accuracy-efficiency trade-off, we also visualize the SDQA results in Figure 3. Overall, AuRA achieves the best answer accu-racy on both SDQA and HeySquad. On SDQA, AuRA obtains an average CFM score of 48.75%, outperforming the strongest baseline DiVA by 2.41%. More importantly, AuRA performs consis-tently well across all regional accents, with scores concentrated around 48% to 49%, demonstrating strong robustness to diverse spoken dialects. On HeySquad, AuRA reaches the highest PEDANTS score of 49.90%, outperforming second-ranked Cascade by 1.95%. These results show that AuRA improves speech-based question answering accu-racy across both dialect-focused and general QA settings, demonstrating stronger audio understand-ing capability. In addition to accuracy improvements, AuRA also demonstrates clear inference efficiency advan-tages. It achieves the lowest latency on both SDQA and HeySquad, with 0.40s and 0.37s per sample, respectively. This indicates that AuRA improves answer accuracy while enabling faster inference, making it more suitable for real-time speech-based question answering. Finally, the memory comparison further high-lights the practicality of AuRA. As shown in Ta-bles 1 and 2, AuRA requires only 10.6 GB peak GPU memory during inference, which is lower than all baselines with measured memory. Compared with Qwen2.5-Omni, AuRA reduces peak mem-ory usage by 3.3 GB, and compared with DiVA, it reduces memory usage by 8.3 GB. This smaller memory footprint makes AuRA more suitable for resource-constrained or real-time deployment sce-narios. Taken together, these results demonstrate that AuRA achieves favorable gains in both accuracy and efficiency. Compared with existing cascade-based and end-to-end speech-language baselines, it consistently improves speech-based question an-swering accuracy, exhibits strong robustness across regional spoken dialects, and simultaneously re-duces both inference latency and GPU memory us-age. These advantages stem directly from AuRA’s core design: it internalizes speech representations into lightweight LLM-side adaptations through au-dio patch embeddings and early-layer LoRA mod-ules, while removing the ASR teacher encoder at inference time to enable more efficient parallel end-to-end inference. 60.4 0.5 0.6 0.7 0.8 0.9 1.0        
+
+> Latency (s)
+> 34
+> 36
+> 38
+> 40
+> 42
+> 44
+> 46
+> 48
+> 50
+> SDQA CFM (%)
+> Latency vs. Accuracy
+> Cascade
+> Qwen2-Audio
+> Qwen2.5-Omni
+> BLSP
+> DiVA
+> AuRA
+> 10.0 12.5 15.0 17.5 20.0 22.5 25.0 27.5
+> Memory (GB)
+> 34
+> 36
+> 38
+> 40
+> 42
+> 44
+> 46
+> 48
+> 50
+> SDQA CFM (%)
+> Memory vs. Accuracy
+> Cascade
+> Qwen2-Audio
+> Qwen2.5-Omni
+> BLSP
+> DiVA
+> AuRA
+
+Figure 3: Accuracy-efficiency trade-offs on SDQA. The left panel plots latency versus accuracy, and the right panel plots memory versus accuracy. Each point corresponds to one model, where lower latency or memory and higher accuracy are preferable. AuRA lies on the favorable frontier under both efficiency views. 
+
+Setting Spoken-Dialect QA (%) HeySquad (%) USA GBR PHL IND-S IND-N IRL AUS NZL NGA ZAF KEN AVG 
+
+Distill 47.31 47.57 47.72 47.49 47.50 47.91 47.59 47.87 48.07 47.78 47.65 47.68 48.92 Transcript 47.45 47.41 47.59 47.72 47.18 46.99 47.25 47.28 47.53 47.19 47.71 47.39 49.11 
+
+Transcript + Distill 49.04 48.97 48.55 48.79 48.48 48.47 48.56 48.66 48.69 48.83 49.21 48.75 49.90 
+
+Table 3: Audio supervision ablation on SDQA (CFM) and HeySquad (PEDANTS). Best results are highlighted in 
+
+bold .
+
+4.3 Ablation Study 
+
+To connect the gains in the main results back to AuRA’s training design, we further study two fac-tors: the choice of audio supervision signals, and the form of the teacher-student alignment loss. These ablations help clarify whether AuRA’s im-provements come from any single component or from the way multiple design choices work to-gether. 
+
+Supervision Signals. We first study the role of different audio supervision signals. Table 3 com-pares transcript-level cross-entropy, layer-wise au-dio distillation, and their combination. Each single-signal variant already produces a strong model, showing that both provide useful speech super-vision on their own; combining them, however, further improves performance to 48.75 / 49.90 on the two benchmarks, surpassing both distillation-only (47.68 / 48.92) and cross-entropy-only (47.39 / 49.11). This is consistent with their roles in AuRA: transcript cross-entropy provides a more precise supervision signal at the output level, while layer-wise distillation supplies denser supervision over intermediate audio-conditioned representa-tions. The full model benefits from both constraints together. 
+
+Alignment Loss. We next ablate the loss com-ponents used for representation alignment. Ta-ble 4 shows that the combined objective is clearly stronger than either individual loss: the full loss reaches 48.75 / 49.90 on SDQA / HeySquad, com-pared with 47.17 / 46.33 for MSE-only and 47.52 / 48.31 for cosine-only. The fact that cosine-only already outperforms MSE-only also suggests that directional agreement is especially important when transferring teacher representations. This matches the design intuition in Section 3: the cosine term encourages semantic alignment in direction, while the MSE term constrains absolute scale and makes the matching objective more stable. In other words, AuRA benefits not only from teacher supervision itself, but from applying that supervision through a balanced alignment objective. 
+
+4.4 Mechanism Analysis 
+
+Beyond identifying which design choices improve performance, we also analyze how those gains arise. To this end, we study AuRA from two complementary angles: how teacher supervision should be injected into the shallow student stack, and whether the speech pathway learns sufficiently faithful speech representations to support down-stream reasoning on par with a text-only reference while preserving the backbone’s reasoning ability. 7Setting Spoken-Dialect QA (%) HeySquad (%) USA GBR PHL IND-S IND-N IRL AUS NZL NGA ZAF KEN AVG                                        
+
+> MSE 47.80 47.31 47.68 46.75 47.18 46.72 46.92 47.21 46.81 47.21 47.32 47.17 46.33 Cosine 46.99 47.40 47.59 47.72 47.66 47.67 47.74 47.85 47.33 46.96 47.78 47.52 48.31
+> MSE + Cosine 49.04 48.97 48.55 48.79 48.48 48.47 48.56 48.66 48.69 48.83 49.21 48.75 49.90
+
+Table 4: Alignment loss ablation on SDQA (CFM) and HeySquad (PEDANTS). Best results are highlighted in bold .
+
+Teacher-Student Layer Mapping. We first study how teacher representations should be mapped to the adapted student layers. Following the design in Section 3, AuRA places LoRA in shal-low LLM layers because speech enters the model as low-level continuous tokens and must first be converted into text-compatible hidden states. We therefore focus this analysis on shallow student adaptation and organize Table 5 along two axes. The first block fixes low-level one-to-one teacher supervision and varies the number of adapted stu-dent layers N . The second block then fixes the student to the first four LLM layers and varies the teacher schedule, covering both layer position and spacing through low-, mid-, high-level, and pro-gressive supervision. The results show that shallow student adaptation is effective but has a useful depth range: increas-ing N from 1 to 4 improves performance from 47.20 / 47.65 to 48.75 / 49.90, whereas N = 8 
+
+drops to 47.08 / 47.99. Too few adapted layers lack capacity to absorb speech information, while overly deep adaptation may weaken coordination with higher-level semantic representations. With the four-layer student fixed, low-level teacher su-pervision remains strongest overall; mid- and high-level teachers stay competitive on some metrics, but neither surpasses low-level alignment on both benchmarks. The weak progressive result (46.39 / 47.68) further suggests that when teacher signals come from deeper layers farther from the input, the larger cross-layer gap can be difficult for a small shallow LLM adaptation stack to absorb. 
+
+Gold-Transcript Reference. On the other hand, we compare AuRA’s speech-input inference against a text-only Qwen2.5-7B-Instruct reference given gold transcripts in Table 6. AuRA performs on par with this reference on both benchmarks, suggesting that its speech pathway preserves task-relevant in-formation and that the backbone’s reasoning ability is not substantially degraded after speech adapta-tion.                                                 
+
+> Setting T-Layers SDQA (%) ↑HeySquad (%) ↑
+> Number of adapted student layers (teacher: low-level)
+> N= 1 [1] 47.20 47.65
+> N= 2 [1 ,2] 47.45 49.27
+> N= 4 [1 , . . . , 4] 48.75 49.90
+> N= 8 [1 , . . . , 8] 47.08 47.99
+> Teacher schedule (student: first 4)
+> Low-level [1 ,2,3,4] 48.75 49.90
+> Mid-level [15 ,16 ,17 ,18] 48.55 48.08 High-level [29 ,30 ,31 ,32] 47.80 49.27 Progressive [8 ,16 ,24 ,32] 46.39 47.68
+
+Table 5: Teacher–student layer mapping ablation over student depth and teacher schedules.            
+
+> Model Input SDQA (%) ↑HeySquad (%) ↑
+> Qwen2.5-7B Gold text 48.49 49.31 AuRA Speech 48.75 49.90
+
+Table 6: Gold-transcript reference diagnostics. 
+
+5 Conclusion 
+
+We present AuRA, a lightweight speech-to-LLM adaptation method that internalizes speech under-standing into LLM-side LoRA adapters. By pro-cessing the same speech input with a frozen ASR teacher and a LoRA-adapted LLM student, AuRA transfers audio encoding capability into early LLM hidden states through layer-wise distillation, al-lowing the heavy speech encoder to be removed at inference time. Experiments on SDQA and HeySquad show that AuRA improves both answer accuracy and inference efficiency, remains robust across diverse spoken accents, and reduces end-to-end latency and peak GPU memory usage. These results suggest that distilling speech capability into lightweight LLM-side adaptations offers an effec-tive and efficient path for speech-LLM integration. 
+
+6 Limitations 
+
+Despite its strong accuracy and efficiency, AuRA still has limitations. AuRA currently uses Whisper-large-v3 as the main distillation teacher, so the 8transferred speech capability primarily comes from ASR-oriented transcription and acoustic represen-tations; from a mechanism perspective, paralinguis-tic cues such as emotion, tone, and prosody may still be lost. However, the AuRA framework is not limited to ASR teachers. Incorporating richer speech teachers or multi-task supervision to fur-ther internalize such paralinguistic understanding into the LLM is an important direction for future extension. 
+
+References 
+
+Rosana Ardila, Megan Branson, Kelly Davis, Michael Kohler, Josh Meyer, Michael Henretty, Reuben Morais, Lindsay Saunders, Francis Tyers, and Gre-gor Weber. 2020. Common voice: A massively-multilingual speech corpus. In Proceedings of the twelfth language resources and evaluation confer-ence , pages 4218–4222. Alexei Baevski, Henry Zhou, Abdelrahman Mohamed, and Michael Auli. 2020. wav2vec 2.0: A framework for self-supervised learning of speech representations. In Advances in Neural Information Processing Sys-tems .Zhehuai Chen, He Huang, Andrei Andrusenko, Oleksii Hrinchuk, Krishna C. Puvvada, Jason Li, Subhankar Ghosh, Jagadeesh Balam, and Boris Ginsburg. 2024. Salm: Speech-augmented language model with in-context learning for speech recognition and transla-tion. In ICASSP 2024 - 2024 IEEE International Conference on Acoustics, Speech and Signal Process-ing (ICASSP) . IEEE. Yunfei Chu, Jin Xu, Qian Yang, Haojie Wei, Xipin Wei, Zhifang Guo, Yichong Leng, Yuanjun Lv, Jinzheng He, Junyang Lin, and 1 others. 2024. Qwen2-audio technical report. arXiv preprint arXiv:2407.10759 .Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, and Luke Zettlemoyer. 2023. QLoRA: Efficient finetun-ing of quantized LLMs. In Advances in Neural Infor-mation Processing Systems .Fahim Faisal, Sharlina Keshava, Md Mahfuz Ibn Alam, and Antonios Anastasopoulos. 2021. Sd-qa: Spoken dialectal question answering for the real world. In 
+
+Findings of the Association for Computational Lin-guistics: EMNLP 2021 , pages 3296–3315. Yuan Gong, Hongyin Luo, Alexander H. Liu, Leonid Karlinsky, and James Glass. 2024. Listen, think, and understand. In International Conference on Learning Representations .Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. 2015. Delving deep into rectifiers: Surpassing human-level performance on imagenet classification. In Proceedings of the IEEE International Conference on Computer Vision , pages 1026–1034. William Held, Yanzhe Zhang, Minzhi Li, Weiyan Shi, Michael J Ryan, and Diyi Yang. 2025. Distilling an end-to-end voice assistant without instruction train-ing data. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Vol-ume 1: Long Papers) , pages 7876–7891. Dan Hendrycks and Kevin Gimpel. 2016. Gaus-sian error linear units (GELUs). Preprint ,arXiv:1606.08415. Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski, Bruna Morrone, Quentin De Laroussilhe, Andrea Gesmundo, Mona Attariyan, and Sylvain Gelly. 2019. Parameter-efficient transfer learning for NLP. In 
+
+Proceedings of the 36th International Conference on Machine Learning , pages 2790–2799. PMLR. Wei-Ning Hsu, Benjamin Bolte, Yao-Hung Hubert Tsai, Kushal Lakhotia, Ruslan Salakhutdinov, and Abdel-rahman Mohamed. 2021. Hubert: Self-supervised speech representation learning by masked prediction of hidden units. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 29:3451–3460. Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2022. LoRA: Low-rank adaptation of large language models. In International Conference on Learning Representations .Brian Lester, Rami Al-Rfou, and Noah Constant. 2021. The power of scale for parameter-efficient prompt tuning. In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing ,pages 3045–3059, Online and Punta Cana, Domini-can Republic. Association for Computational Lin-guistics. Xiang Lisa Li and Percy Liang. 2021. Prefix-tuning: Optimizing continuous prompts for generation. In 
+
+Proceedings of the 59th Annual Meeting of the Asso-ciation for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 1: Long Papers) , pages 4582– 4597, Online. Association for Computational Lin-guistics. Zongxia Li, Ishani Mondal, Huy Nghiem, Yijun Liang, and Jordan Lee Boyd-Graber. 2024. PEDANTS: Cheap but effective and interpretable answer equiva-lence. In Findings of the Association for Computa-tional Linguistics: EMNLP 2024 , pages 9373–9398, Miami, Florida, USA. Association for Computational Linguistics. Shih-Yang Liu, Chien-Yi Wang, Hongxu Yin, Pavlo Molchanov, Yu-Chiang Frank Wang, Kwang-Ting Cheng, and Min-Hung Chen. 2024. DoRA: Weight-decomposed low-rank adaptation. In Proceedings of the 41st International Conference on Machine Learn-ing , pages 32100–32121. PMLR. Qwen Team. 2024. Qwen2.5 technical report. Preprint ,arXiv:2412.15115. 
+
+9Alec Radford, Jong Wook Kim, Tao Xu, Greg Brock-man, Christine McLeavey, and Ilya Sutskever. 2023. Robust speech recognition via large-scale weak su-pervision. In International conference on machine learning , pages 28492–28518. PMLR. Pranav Rajpurkar, Jian Zhang, Konstantin Lopyrev, and Percy Liang. 2016. Squad: 100,000+ questions for machine comprehension of text. In Proceedings of the 2016 conference on empirical methods in natural language processing , pages 2383–2392. Zuhair Hasan Shaik, Pradyoth Hegde, Prashant Ban-nulmath, and Deepak K T. 2024. LaRA: Large rank adaptation for speech and text cross-modal learning in large language models. In Findings of the Associ-ation for Computational Linguistics: EMNLP 2024 ,pages 8201–8211, Miami, Florida, USA. Association for Computational Linguistics. Ying Shen, Zhiyang Xu, Qifan Wang, Yu Cheng, Wen-peng Yin, and Lifu Huang. 2024. Multimodal in-struction tuning with conditional mixture of LoRA. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 637–648, Bangkok, Thailand. Association for Computational Linguistics. Changli Tang, Wenyi Yu, Guangzhi Sun, Xianzhao Chen, Tian Tan, Wei Li, Lu Lu, Zejun Ma, and Chao Zhang. 2024. Salmonn: Towards generic hearing abilities for large language models. In International Conference on Learning Representations .Chen Wang, Minpeng Liao, Zhongqiang Huang, Jin-liang Lu, Junhong Wu, Yuchen Liu, Chengqing Zong, and Jiajun Zhang. 2023a. Blsp: Boot-strapping language-speech pre-training via behavior alignment of continuation writing. arXiv preprint arXiv:2309.00916 .Chen Wang, Minpeng Liao, Zhongqiang Huang, and Jiajun Zhang. 2024. Blsp-kd: Bootstrapping language-speech pre-training via knowledge distilla-tion. Preprint , arXiv:2405.19041. Han Wang, Yongjie Ye, Bingru Li, Yuxiang Nie, Jinghui Lu, Jingqun Tang, Yanjie Wang, and Can Huang. 2025. Vision as LoRA. arXiv preprint arXiv:2503.20680 .Mingqiu Wang, Wei Han, Izhak Shafran, Zelin Wu, Chung-Cheng Chiu, Yuan Cao, Yongqiang Wang, Nanxin Chen, Yu Zhang, Hagen Soltau, Paul K. Rubenstein, Lukas Zilka, Dian Yu, Zhong Meng, Golan Pundak, Nikhil Siddhartha, Johan Schalkwyk, and Yonghui Wu. 2023b. Slm: Bridge the thin gap be-tween speech and text foundation models. Preprint ,arXiv:2310.00230. Yijing Wu, SaiKrishna Rallabandi, Ravisutha Srini-vasamurthy, Parag Pravin Dakle, Alolika Gon, and Preethi Raghavan. 2023. Heysquad: A spo-ken question answering dataset. arXiv preprint arXiv:2304.13689 .Jin Xu, Zhifang Guo, Jinzheng He, Hangrui Hu, Ting He, Shuai Bai, Keqin Chen, Jialin Wang, Yang Fan, Kai Dang, Bin Zhang, Xiong Wang, Yunfei Chu, and Junyang Lin. 2025. Qwen2.5-omni technical report. 
+
+Preprint , arXiv:2503.20215. Yahan Yu, Duzhen Zhang, Yong Ren, Xuanle Zhao, Xiuyi Chen, and Chenhui Chu. 2025. Progressive LoRA for multimodal continual instruction tuning. In Findings of the Association for Computational Linguistics: ACL 2025 , pages 2779–2796, Vienna, Austria. Association for Computational Linguistics. Biao Zhang and Rico Sennrich. 2019. Root mean square layer normalization. In Advances in Neural Informa-tion Processing Systems 32 , pages 12360–12371. Dong Zhang, Shimin Li, Xin Zhang, Jun Zhan, Pengyu Wang, Yaqian Zhou, and Xipeng Qiu. 2023. Speechgpt: Empowering large language models with intrinsic cross-modal conversational abilities. In 
+
+Findings of the Association for Computational Lin-guistics: EMNLP 2023 , pages 15757–15773, Singa-pore. Association for Computational Linguistics. 
+
+10 A Appendix 
+
+A.1 Additional Experimental Details Training Data. For AuRA adaptation, we use a small mixture of speech-transcription pairs and text-only QA examples. The speech portion con-sists of 10,000 examples sampled from the En-glish subset of CommonVoice (Ardila et al., 2020), where each speech sample is paired with a human-validated transcription. We use CommonVoice be-cause it is publicly available and contains speech collected from real users under diverse recording conditions, providing natural speaker variation be-yond studio-quality read speech. The text-only portion consists of 10,000 examples from VoRA-TextQA-Mixed (Wang et al., 2025), which helps preserve the instruction-following and language modeling ability of the LLM after introducing audio-specific trainable components. 
+
+Audio Preprocessing and Adaptation. Audio waveforms are resampled to 16 kHz, limited to a maximum duration of 30 seconds, and converted into Whisper-style Mel-spectrograms with 128 Mel bins. The audio patch embedding module di-vides each Mel-spectrogram into non-overlapping temporal patches of p = 16 frames. We use the Whisper-large-v3 encoder as the frozen ASR teacher. For audio adaptation, we insert LoRA adapters into the first N = 4 LLM layers with rank 
+
+r = 256 . The adapters are applied to the attention projections {q, k, v, o } and the MLP projections 
+
+{up , gate , down }.
+
+Optimization. The cosine and MSE weights in the layer-wise distillation loss are set to λcos = 1 .0
+
+and λmse = 0 .1, respectively. We train AuRA for 3 epochs with a global batch size of 128, linearly warm up the learning rate to 2 × 10 −4 over the first 100 steps, and then use a constant learning-rate schedule. The training run completes in approxi-mately 1.5 hours on 8 NVIDIA H20 GPUs. Unless otherwise specified, the reported results are based on a single random run. 
+
+A.2 Hyperparameter Analysis 
+
+Table 9 reports the HeySquad results from the sweep over LoRA rank and the number of adapted layers. Full dialect-level SDQA results, including the average CFM score, are provided in Table 7. This analysis complements the main ablations by testing whether AuRA’s default configuration is sensitive to the amount of trainable LoRA capacity and the depth of LLM-side adaptation. Overall, the results suggest that simply increas-ing either the LoRA rank or the number of adapted layers does not monotonically improve perfor-mance. The default setting, rank r = 256 with 
+
+N = 4 adapted layers, achieves the best over-all balance across the two benchmarks. Smaller rank values can benefit from deeper adaptation on SDQA, as shown by the improvement from N = 4 
+
+to N = 24 under rank 128, but this trend is not consistent on HeySquad. Conversely, larger rank values do not always help: under rank 512, increas-ing the adapted depth to 24 layers substantially de-grades HeySquad performance. These results sup-port the design choice of using a moderate amount of trainable capacity concentrated in the early LLM layers. The dialect-level SDQA results in Table 7 further show that the selected configuration is not driven by a single accent group. Rank 256 with four adapted layers obtains the best average SDQA score and remains best or tied-best on several dialect subsets, including USA, GBR, PHL, IND-S, ZAF, and KEN. Some alternative settings remain competitive on particular dialects, such as rank 128 with 24 layers or rank 512 with 8 layers, but they do not provide the same balance across SDQA and HeySquad. We therefore use rank 256 and four adapted layers as the default configuration in the main experiments. 
+
+A.3 Backbone Scaling 
+
+Table 10 reports HeySquad results under a smaller-backbone setting with Qwen2.5-3B-Instruct. AuRA retains its accuracy and latency advantages over the corresponding cascade baseline. Full dialect-level SDQA results are provided in Table 8. This setting is intended to test whether AuRA’s gain depends on the larger 7B backbone used in the main experiments, or whether the same adaptation principle remains effective when the language model capacity is reduced. The results show that the advantage of AuRA persists even with the smaller backbone. On HeySquad, AuRA improves PEDANTS from 44.36 to 45.82 while reducing end-to-end latency from 1.01s to 0.46s. The dialect-level SDQA results in Table 8 show a similar trend, where AuRA im-proves the average CFM score from 39.83 to 43.40 and outperforms the cascade baseline on most di-alect groups. These results suggest that the pro-posed adaptation strategy is not tied to a specific 11 Rank Layers USA GBR PHL IND-S IND-N IRL AUS NZL NGA ZAF KEN Avg.                                                                                                                                                             
+
+> 128 445.24 46.15 45.55 44.71 45.00 45.22 45.53 45.00 45.67 45.23 45.14 45.31 128 846.59 47.06 46.76 46.31 46.68 46.55 46.67 46.58 47.13 46.75 46.87 46.72 128 12 47.29 47.37 47.44 47.63 47.33 47.23 47.13 47.23 47.79 47.40 47.17 47.36 128 24 48.54 48.89 48.55 48.66 48.63 48.92 48.63 48.72 48.82 48.65 48.74 48.70 256 449.04 48.97 48.55 48.79 48.48 48.47 48.56 48.66 48.69 48.83 49.21 48.75
+> 256 847.21 46.98 47.17 47.07 47.49 46.74 47.14 46.99 47.36 46.78 46.91 47.08 256 12 46.92 46.98 47.04 47.11 47.00 47.46 47.38 47.39 47.58 46.84 47.10 47.16 256 24 48.49 48.76 48.20 48.58 48.29 48.40 48.47 48.41 48.35 48.66 48.42 48.46 512 446.46 46.50 47.09 46.65 46.78 46.43 46.30 46.64 46.91 46.60 46.14 46.59 512 848.29 48.27 48.36 48.33 48.70 48.54 48.53 48.51 48.99 48.38 48.20 48.46 512 12 47.19 47.82 46.80 46.97 46.68 46.88 47.36 46.75 47.03 47.79 47.51 47.16 512 24 45.49 45.81 46.61 45.64 45.71 46.28 45.26 45.59 45.54 45.61 45.86 45.76
+
+Table 7: Dialect-level SDQA hyperparameter analysis of LoRA rank and adapted layers with Qwen2.5-7B-Instruct. CFM is reported for each dialect and averaged across dialects.                                          
+
+> Model Spoken-Dialect QA (%) ↑Latency (s) ↓
+> USA GBR PHL IND-S IND-N IRL AUS NZL NGA ZAF KEN AVG
+> Cascade 42.06 43.04 39.24 40.84 39.16 42.73 43.91 43.75 39.82 41.61 21.99 39.83 0.99
+> AuRA 43.47 43.40 43.51 42.92 43.23 43.11 43.34 43.68 43.56 43.39 43.76 43.40 0.43
+
+Table 8: Dialect-level SDQA results with Qwen2.5-3B-Instruct. CFM is reported for each dialect and averaged across dialects, and the best results are highlighted in bold .               
+
+> Rank Layers HeySquad (%) ↑
+> 128 446.20 848.01 12 48.69 24 48.56 256 449.90
+> 847.99 12 49.09 24 48.88 512 447.16 849.34 12 48.59 24 43.90
+
+Table 9: Hyperparameter analysis of LoRA rank and adapted layers on HeySquad with Qwen2.5-7B-Instruct. PEDANTS is reported, and the best result is highlighted in bold .        
+
+> Model HeySquad ↑Hey Lat. ↓
+> Cascade 44.36 1.01
+> AuRA 45.82 0.46
+
+Table 10: Backbone scaling results on HeySquad with Qwen2.5-3B-Instruct. We report PEDANTS and end-to-end latency in seconds. 
+
+backbone size and remains effective even when the LLM capacity is reduced. 
+
+A.4 Supplementary Notes on Mechanism Analysis 
+
+For the teacher–student layer mapping results in Table 5 of the main paper, one useful interpretation is that the low-level mapping works best not sim-ply because shallow layers are easier to fit, but be-cause deeper teacher states are farther from the raw audio input and therefore introduce a larger cross-layer gap for the shallow LoRA-adapted LLM stack to absorb. When only a small number of early LLM layers are adapted, supervision from deeper or more widely spaced teacher layers can become too abstract relative to the student depth, which helps explain the weaker mid/high/progressive set-tings. For the gold-transcript reference in Table 6, AuRA reaching performance on par with the text-only reference suggests not only that task-relevant information is preserved along the speech pathway, but also that the backbone LLM’s reasoning ability is not substantially degraded after speech adapta-tion. In other words, AuRA appears to retain the language model’s original downstream reasoning strength while replacing the input modality from gold text to speech. 12
