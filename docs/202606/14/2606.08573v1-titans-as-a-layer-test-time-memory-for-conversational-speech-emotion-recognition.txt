@@ -1,0 +1,206 @@
+Title: Titans-as-a-Layer: Test-Time Memory for Conversational Speech Emotion Recognition
+
+URL Source: https://arxiv.org/pdf/2606.08573v1
+
+Published Time: Tue, 09 Jun 2026 01:10:38 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# Titans-as-a-Layer: Test-Time Memory for Conversational Speech Emotion Recognition 
+
+Daniel Chen 1 Qicong Hu 1 Yang Xiao 2 Ting Dang 2 Hong Jia 1
+
+# Abstract 
+
+Speech emotion recognition (SER) is commonly formulated as utterance-level classification, al-though conversational emotion depends on a speaker’s usual vocal range and the emotional con-text established by previous utterances. Speech-language models provide strong pretrained acous-tic and semantic representations, and can adapts them to SER labels via finetune, but this mecha-nism still missing per-dialogue state. We study whether test-time neural memory can supply this missing context while leaving the large au-dio language models (LALMs) backbone intact. Building on Titans, we introduce a plug-and-play Memory-as-a-Layer (MAL) adapter that writes dialogue history into a small neural memory and reads it back as an audio-token-aligned residual update, avoiding changes to the host model’s to-ken positions. Across different audio LLMs and emotion recognition datasets evaluations, our de-sign improves SER performs across different eval-uation metrics, supporting test-time memory as a residual contextual mechanism for conversational SER. 
+
+# 1. Introduction 
+
+Speech emotion is conveyed not only by lexical content, but also by the manner in which that content is produced. In conversational speech emotion recognition (SER), the acous-tic evidence supporting an emotion label is therefore rarely contained within an isolated utterance. Prosodic and par-alinguistic cues, including pitch, intensity, speaking rate and voice quality, must be interpreted relative to the speaker’s 
+
+recent vocal behaviour and the affective evolution of the 
+
+> 1
+
+Department of Computer Science, University of Auckland, Auckland, New Zealand 2School of Computer and Information Technology, Melbourne, Australia. Correspondence to: Ting Dang 
+
+<ting.dang@unimelb.edu.au >.
+
+Published at ICML 2026 Workshop on the Impact of Machine Learning for Audio , Seoul, South Korea. PMLR 306, 2026. Copy-right 2026 by the author(s). 
+
+dialogue . We refer to this short-term vocal reference as the speaker baseline. For instance, an increase in pitch may signal anger for one speaker, enthusiasm for another, or no salient affective change if it lies within that speaker’s recent expressive range. Conversational SER is thus inher-ently both local and contextual: it depends on the current waveform while also requiring information from preceding utterances in the same interaction. Large-scale speech pretraining and audio–text alignment provide a strong foundation for SER, as contemporary speech-language models encode both linguistic content and non-lexical attributes such as prosody, energy and speaking style (Radford et al., 2023; Tang et al., 2024; Chu et al., 2024; Kong et al., 2024). In standard SER pipelines, how-ever, these representations are commonly used at the utter-ance level: each speech segment is encoded and classified independently (Jia et al., 2025; Zhang et al., 2025). Con-sequently, evidence that is distributed across speakers and dialogue history cannot be retained intrinsically, and must instead be introduced through explicit context tokens, con-catenated inputs, or an additional mechanism for maintain-ing dialogue state. LoRA (Hu et al., 2022) efficiently adapts LALMs to SER without full-model fine-tuning, but the learned update is static and dialogue-independent. It improves task alignment, yet cannot maintain speaker baselines, affective trajectories, or previous-utterance information. Extending the attention context may also disturb the positional structure learned during pretraining. These limitations motivate inference-time memory with a fixed backbone. Titans (Behrouz et al., 2024) treats memory as a compact neural module updated during inference, storing prior information as model state rather than explicit context tokens. For conversational SER, this separates task adaptation from dialogue-state modelling: LoRA aligns the model to emotion recognition, while test-time memory preserves dialogue-specific evidence for sub-sequent utterances. Motivated by these, we introduce a plug-and-play Memory-as-a-Layer (MAL) adapter based on Titans for LALMs. MAL inserts a Titans-style neural memory branch within the language-model stack and injects its output as an audio-token-aligned residual update. The adapter does not alter 1
+
+> arXiv:2606.08573v1 [cs.LG] 7 Jun 2026 Titans-as-a-Layer: Test-Time Memory for Conversational Speech Emotion Recognition
+
+the pretrained LALMs: it neither prepends memory tokens to the LALMs input, nor shifts audio-token positions, nor requires the backbone to process the dialogue history as an extended context window. Instead, dialogue information is written into and retrieved from a separate memory state. Across multiple datasets, LALMs backbones and evaluation metrics, MAL consistently improves conversational SER performance, demonstrating that test-time memory provides a robust mechanism for incorporating dialogue-level context without compromising the pretrained model interface. Our contributions are: • We introduce a Titans-style memory branch that up-dates audio-token representations in place, preserving the host model’s token layout while adding an explicit pathway for dialogue-level state. • We introduce a two-stage optimisation scheme in which LoRA first provides task adaptation for SER, after which the LoRA-tuned model is frozen and MAL is trained to supply dialogue-specific contextual refine-ment. This design encourages memory to act as an additive state mechanism rather than as a competing task adapter. • We evaluate multiple LALMs across diverse SER datasets and metrics, demonstrating that the proposed method achieves state-of-the-art SER performance. 
+
+# 2. Related Work 
+
+2.1. Memory in large language models 
+
+Existing memory mechanisms for sequence models ad-dress the limited context available to standard Transformers. Transformer-XL introduces segment-level recurrence (Dai et al., 2019); Compressive Transformer stores compressed representations of past activations (Rae et al., 2020); Recur-rent Memory Transformer uses learned memory tokens (Bu-latov et al., 2022); and linear-attention variants improve the efficiency of long-range sequence modeling (Yang et al., 2024). Titans (Behrouz et al., 2024) extends this direc-tion by representing long-term memory as a small neural module whose parameters are updated during inference, together with sliding-window attention and learned persis-tent memory tokens. Titans-style memory has also been adapted beyond text: VideoTitan (Park et al., 2025) applies the mechanism to video sequence modeling and reports strong results on long video benchmarks, including Weath-erBench (Rasp et al., 2020). However, these approaches do not directly address frozen speech-language models for conversational SER, where the memory mechanism must preserve the audio-token interface while carrying informa-tion across utterances. 
+
+2.2. Static task adapters and adaptive memory. 
+
+Adapter-based fine-tuning methods such as LoRA (Hu et al., 2022) adapt pretrained models by adding trainable low-rank updates while keeping the backbone fixed. For SER, such adapters can learn a task-specific mapping from pretrained speech representations to emotion labels with far fewer train-able parameters than full fine-tuning. This makes LoRA an appropriate task-adaptation baseline for large speech-language models. However, a trained adapter is static at test time: the same learned update is applied to every dialogue, regardless of the speaker’s vocal range or the preceding emotional context. This leaves open the question of whether an adaptive memory component can add dialogue-specific state after task adaptation has been learned. 
+
+# 3. Method 
+
+3.1. Test-time memory 
+
+We consider conversational speech emotion recognition, where a dialogue is an ordered utterance stream D =(x1, . . . , x N ) with utterance-level labels (y1, . . . , y N ). Each utterance xi is encoded into Ti audio-token embeddings and inserted into the language-model sequence at the audio-token positions. We use test-time memory to denote a dialogue-specific state that is updated online during inference while the backbone and trained adapters remain fixed. For utterance xi, the model predicts using the current utterance and the memory accumulated from previous utterances: 
+
+ˆyi = fΘ(xi, Si−1), Si = UΦ(Si−1, x i). (1) Here Si is the dialogue memory state after utterance xi, fΘ
+
+is the fixed inference model, and UΦ is the learned memory update rule. The memory state is reset at dialogue bound-aries. At test time, no model parameters are optimized; only the dialogue-specific state Si evolves. For MAL, the memory state is layer-specific: 
+
+Si = {S(ℓ) 
+
+> i
+
+}L−1 
+
+> ℓ=0
+
+, (2) where S(ℓ) 
+
+> i
+
+is the NeuralMemory state for language-model block ℓ after processing utterance xi.
+
+3.2. Memory integration ablation 
+
+We compare three ways of integrating a Titans memory branch into a frozen LALM. This ablation uses Ultra-vox v0.4 on IEMOCAP and attaches a single memory branch, so that the comparison isolates the injection mech-anism. Let h ∈ RT ×D be the audio-token hidden states in the language-model residual stream, let P ∈ RNp×D be per-sistent memory tokens, and let M be a Titans NeuralMem-ory module. We write [ · ; · ] for sequence concatenation 2Titans-as-a-Layer: Test-Time Memory for Conversational Speech Emotion Recognition 
+
+and [Np+1:] for removing the persistent-token prefix. The audio-aligned memory output is 
+
+m = M([ P ; h])[ Np+1:] , m ∈ RT ×D. (3) 
+
+Memory as Context (MAC) prepends memory to the language-model input: 
+
+HMAC = [ P ; m ; h ]. (4) This increases the sequence length and shifts the positional indices of the original tokens. 
+
+Memory as Gating (MAG) keeps the sequence length fixed and gates the residual stream: 
+
+HMAG = h ⊙ σ(Wg m), (5) where Wg is learned, σ(·) is the sigmoid function, and ⊙
+
+denotes elementwise multiplication. 
+
+Memory-as-a-Layer (MAL) instead applies an additive memory update to the audio-token hidden states while pre-serving the original token positions. The zero-shot baseline obtains 44.52 WF1. MAC improves this to 49.90 WF1, MAG obtains 50.32 WF1, and MAL reaches 57.48 WF1. Therefore, we use MAL as the main memory integration strategy. 
+
+3.3. Memory-as-a-Layer (MAL) for LALM 
+
+For utterance xi and language-model block ℓ, let hi,ℓ ∈
+
+RTi×D denote the hidden states at the audio-token positions before the block. MAL modifies these states in place: it does not add, remove, or reorder tokens in the host sequence. The memory branch uses an internal dimension dm, so the audio states are projected into memory space and projected back afterward. For each block ℓ, MAL computes 
+
+zi,ℓ =  Pℓ ; W (ℓ)in hi,ℓ 
+
+, (6) 
+
+(ri,ℓ , S (ℓ) 
+
+> i
+
+) = Mℓ
+
+
+
+zi,ℓ ; S(ℓ)
+
+> i−1
+
+
+
+, (7) 
+
+δi,ℓ = W (ℓ)out ri,ℓ [Np+1:] , (8) 
+
+˜hi,ℓ = hi,ℓ + tanh( αℓ) δi,ℓ . (9) Here W (ℓ)in : D→dm and W (ℓ)out : dm→D are learned projec-tions, Pℓ ∈ RNp×dm are persistent memory tokens, and Mℓ
+
+is a Titans NeuralMemory module (Behrouz et al., 2024). The module reads the previous dialogue state S(ℓ)
+
+> i−1
+
+, pro-cesses the current memory input zi,ℓ , returns memory output 
+
+ri,ℓ , and updates the state to S(ℓ) 
+
+> i
+
+for subsequent utterances. After the memory branch, we discard the Np persistent-token prefix and keep only the Ti audio-aligned outputs. The           
+
+> Figure 1. Memory-as-a-Layer branch architecture. Audio em-beddings are projected down to the memory dimension d, passed through a Titans NeuralMemory module (depth-2 MLP), projected back to D, and added to the original embeddings through a zero-initialised residual gate ˜h=h+ tanh( α)·δ.
+
+scalar gate αℓ ∈ R is initialized to zero, so tanh( αℓ) = 0 
+
+at initialization and ˜hi,ℓ = hi,ℓ . Thus, adding MAL initially preserves the frozen host computation. We attach independent MAL branches to every language-model layer. In the placement ablation, dense every-layer placement with smaller branch capacity ( dm=128 , Np=8 )outperformed sparser placements, such as every-8th layer at quartile positions {7, 15 , 23 , 31 } with dm=256 .
+
+Trainable parameters. The trainable MAL parameters are 
+
+{W (ℓ)in , W (ℓ)out , Mℓ, α ℓ, P ℓ}L−1 
+
+> ℓ=0
+
+. (10) All backbone, audio-encoder, and projector parameters re-main frozen. 
+
+3.4. Sequential training schedule 
+
+We use a sequential schedule to separate static task adapta-tion from dialogue-state memory learning. Jointly optimiz-ing LoRA and MAL did not improve over the LoRA-only baseline, likely because both modules modify the same residual stream while only MAL maintains state across ut-terances. Diagnostic ablations showed that removing LoRA after joint training had little effect, whereas removing Titans memory substantially degraded performance. We therefore train in two phases. 
+
+Phase 1: task adaptation. We train LoRA with MAL removed, so the model learns the SER decision boundary without memory updates. LoRA is trained for three epochs 3Titans-as-a-Layer: Test-Time Memory for Conversational Speech Emotion Recognition      
+
+> Table 1. Model Performance Results Across Benchmarks. Bold = best and underline = second-best within each fully evaluated backbone– dataset block.
+
+Model IEMOCAP MELD Multidialog WA (%) UA (%) WF1 (%) WF1 (%) Macro-F1 (%) WF1 (%) Macro-F1 (%) 
+
+Qwen2-Audio 58.92 59.82 58.25 39.05 20.56 28.27 17.65 + LoRA 82.40 82.61 82.42 54.45 38.32 56.37 37.16 + Titans+LoRA 83.66 84.20 83.67 56.84 40.99 57.54 37.94 
+
+Audio Flamingo 3 76.57 76.45 76.31 45.14 30.11 31.64 21.08 + LoRA 84.59 85.02 84.57 57.81 44.43 55.11 34.78 + Titans+LoRA 85.21 85.37 85.20 58.18 44.66 56.07 35.82 
+
+Ultravox-v0.4 45.29 47.09 44.53 25.33 22.70 34.24 19.78 + LoRA 63.89 62.84 63.78 48.58 31.97 54.85 30.74 + Titans+LoRA 65.49 65.43 65.61 49.63 32.64 55.04 33.32 
+
+> WA = Weighted Accuracy; UA = Unweighted Accuracy; WF1 = Weighted F1.
+
+with rank r=32 , scaling αLoRA =64 , AdamW, and learning rate 2×10 −5.
+
+Phase 2: memory training. We select the best LoRA checkpoint, then freeze LoRA, the LALM backbone, audio encoder, and projector. MAL is trained for two epochs while all other components remain fixed. The projection and Neu-ralMemory parameters {Win , W out , M} use learning rate 
+
+1×10 −4 and gradient clipping threshold 1.0; the residual gates {αℓ} use learning rate 2×10 −4 and clipping threshold 
+
+2.0.
+
+# 4. Experimental setup 
+
+4.1. Datasets 
+
+We use three conversational speech emotion recognition datasets for the evaluated settings. For IEMOCAP (Busso et al., 2008), we used its standard four-class configuration (angry/happy/neutral/sad), with 5,531 utterances across 5
+
+sessions and two consistent speakers per session, evalu-ated under leave-one-session-out (LOSO) cross-validation. For MELD (Poria et al., 2019), we tested on the seven-class multi-party TV-dialogue setting with the standard train/dev/test split, totalling 13,706 utterances. For Mul-tiDialog (Park et al., 2024), we used the gold subset of 9
+
+emotion-accurate actors, containing 6,681 dialogues and 47,004 utterances with the same seven-class schema as MELD. 
+
+4.2. Models 
+
+We use three models to assess whether the memory ef-fect persists across different backbone designs: Ultra-vox v0.4 (Fixie.ai, 2024), Qwen2-Audio (Chu et al., 2024), and Audio Flamingo 3 (Goel et al., 2025). 
+
+# 5. Results 
+
+The results in Table 1 show that incorporating Titans con-sistently improves performance over both the original back-bone models and standard LoRA fine-tuning across the fully evaluated settings. On IEMOCAP, Titans+LoRA achieves the best results for all three backbones, improving over LoRA by up to 1.60% in WA, 2.59% in UA, and 1.83% in WF1. These gains are particularly evident for Ultravox-v0.4, where Titans+LoRA increases WF1 from 63.78% to 65.61%, indicating that Titans provides additional mod-elling benefits beyond parameter-efficient fine-tuning alone. Similar improvements are observed on MELD, where Ti-tans+LoRA improves Audio Flamingo 3 from 57.81% to 58.18% WF1 and from 44.43% to 44.66% Macro-F1, while also improving Ultravox-v0.4 from 48.58% to 49.63% WF1 and from 31.97% to 32.64% Macro-F1. On Multidialog, Titans+LoRA further improves Ultravox-v0.4, especially in Macro-F1, increasing performance from 30.74% to 33.32%. This suggests that Titans is particularly effective in improv-ing recognition of underrepresented classes. Overall, the consistent gains across datasets, metrics, and backbone ar-chitectures demonstrate that Titans complements LoRA by enhancing the model’s ability to capture task-relevant emo-tional and conversational representations. 
+
+# 6. Conclusion 
+
+Through this work, we study whether a NeuralMemory module (Titans) can augment frozen, LoRA-tuned LALMs with cross-utterance memory at test time. The evaluated settings show additive gains over the corresponding LoRA baselines, with the clearest evidence on IEMOCAP and ad-ditional support from the evaluated MELD runs. The key finding is that a sequential training schedule improves mem-4Titans-as-a-Layer: Test-Time Memory for Conversational Speech Emotion Recognition 
+
+ory in a LoRA-tuned model for speech emotion recognition. These results support test-time memory as a lightweight complement to parameter-efficient fine-tuning for conversa-tional emotion recognition, while broader coverage across all backbone–dataset combinations and comparisons against other memory architectures remain important next steps. 
+
+# References 
+
+Behrouz, A., Zhong, P., and Mirrokni, V. Titans: Learning to memorize at test time. arXiv preprint arXiv:2501.00663 ,2024. Bulatov, A., Kuratov, Y., and Burtsev, M. S. Recurrent memory transformer. In Advances in Neural Information Processing Systems (NeurIPS) , volume 35, pp. 11079– 11091, 2022. Busso, C., Bulut, M., Lee, C.-C., Kazemzadeh, A., Mower, E., Kim, S., Chang, J. N., Lee, S., and Narayanan, S. S. IEMOCAP: Interactive emotional dyadic motion capture database. Language Resources and Evaluation , 42(4): 335–359, 2008. Chu, Y., Xu, J., Yang, Q., Wei, H., Wei, X., Guo, Z., Leng, Y., Lv, Y., He, J., Lin, J., Zhou, C., and Zhou, J. Qwen2-audio technical report. arXiv preprint arXiv:2407.10759 ,2024. Dai, Z., Yang, Z., Yang, Y., Carbonell, J., Le, Q. V., and Salakhutdinov, R. Transformer-XL: Attentive language models beyond a fixed-length context. In Proceedings of the 57th Annual Meeting of the Association for Computa-tional Linguistics (ACL) , pp. 2978–2988, 2019. Fixie.ai. Ultravox: An open-source speech–language model. 
+
+https://github.com/fixie-ai/ultravox ,2024. v0.4 release. Goel, A., Ghosh, S., Kim, J., Kong, Z., Kumar, S.-g., Lee, S.-g., Valle, R., Ping, W., and Catanzaro, B. Au-dio Flamingo 3: Advancing audio intelligence with fully open large audio–language models. arXiv preprint arXiv:2507.08128 , 2025. Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., and Chen, W. LoRA: Low-rank adaptation of large language models. In International Conference on Learning Representations (ICLR) , 2022. Jia, H., Fu, S., Xia, F., Kostakos, V., and Dang, T. Be-yond scale: Small language models are comparable to gpt-4 in mental health understanding. arXiv preprint arXiv:2507.08031 , 2025. Kong, Z., Goel, A., Badlani, R., Ping, W., Valle, R., and Catanzaro, B. Audio Flamingo: A novel audio language model with few-shot learning and dialogue abilities. In 
+
+Proceedings of the 41st International Conference on Ma-chine Learning (ICML) , 2024. Park, S. J., Kim, S., Choi, Y., Lee, H.-G., Kang, J.-H., Shin, J. W., and Kim, S.-G. Let’s go real talk: Spoken dialogue model for face-to-face conversation. In Proceedings of the 62nd Annual Meeting of the Association for Compu-tational Linguistics (Volume 1: Long Papers) , pp. 16334– 16348. Association for Computational Linguistics, 2024. doi: 10.18653/v1/2024.acl-long.860. URL https: //aclanthology.org/2024.acl-long.860 .Park, Y.-J., Seo, M., and Jeon, H.-G. VideoTitans: Scal-able video prediction with integrated short- and long-term memory. In Advances in Neural Information Pro-cessing Systems (NeurIPS) , 2025. URL https:// openreview.net/forum?id=86enCXORIV .Poria, S., Hazarika, D., Majumder, N., Naik, G., Cambria, E., and Mihalcea, R. MELD: A multimodal multi-party dataset for emotion recognition in conversations. In Pro-ceedings of the 57th Annual Meeting of the Association for Computational Linguistics (ACL) , pp. 527–536, 2019. Radford, A., Kim, J. W., Xu, T., Brockman, G., McLeavey, C., and Sutskever, I. Robust speech recognition via large-scale weak supervision. In Proceedings of the 40th In-ternational Conference on Machine Learning , pp. 28492– 28518. PMLR, 2023. Rae, J. W., Potapenko, A., Jayakumar, S. M., Hillier, C., and Lillicrap, T. P. Compressive transformers for long-range sequence modelling. In International Conference on Learning Representations (ICLR) , 2020. Rasp, S., Dueben, P. D., Scher, S., Weyn, J. A., Mouatadid, S., and Thuerey, N. WeatherBench: A benchmark data set for data-driven weather forecasting. Journal of Advances in Modeling Earth Systems , 12(11):e2020MS002203, 2020. Tang, C., Yu, W., Sun, G., Chen, X., Tan, T., Li, W., Lu, L., Ma, Z., and Zhang, C. SALMONN: Towards generic hearing abilities for large language models. In Interna-tional Conference on Learning Representations (ICLR) ,2024. Yang, S., Wang, B., Shen, Y., Panda, R., and Kim, Y. Gated linear attention transformers with hardware-efficient train-ing. In Proceedings of the 41st International Conference on Machine Learning (ICML) , 2024. Zhang, T., Xue, X., Ruan, L., Fu, S., Xia, F., D’Alfonso, S., Kostakos, V., Dang, T., and Jia, H. Menta: A small language model for on-device mental health prediction. 
+
+arXiv preprint arXiv:2512.02716 , 2025. 5

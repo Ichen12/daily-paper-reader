@@ -6,68 +6,74 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-06-13
-- 运行时间：2026-06-13 20:32:23 UTC
+- 最新运行日期：2026-06-14
+- 运行时间：2026-06-14 20:31:03 UTC
 - 运行状态：成功
-- 本次总论文数：16
-- 精读区：5
+- 本次总论文数：18
+- 精读区：7
 - 速读区：11
 
 ### 今日简报（AI）
-今日解读16篇语音研究，聚焦声学对抗攻击与语音模型无损压缩两大高分方向。精读推荐《Hearing the Unspoken》利用语言模型先验提升对抗攻击隐蔽性，以及《Towards Data-free and Training-free Compression》通过参数聚类实现零数据零训练压缩。建议关注无数据压缩技术在实际语音模型部署中的轻量化应用，以及对抗攻击对语音助手安全性的新挑战。
-- 详情：[/202606/13/README](/202606/13/README)
+今日精读两篇9分论文，聚焦多语言多文化音频大模型评估基准与免编码器语音建模技术。值得优先关注GlobeAudio（评估自然场景）和LLM可读频谱图（简化结构）；建议跟踪后续应用落地，尤其多语言场景优化。
+- 详情：[/202606/14/README](/202606/14/README)
 
 ### 精读区论文标签
-1. [Hearing the Unspoken: Language Model Priors for Acoustic Adversarial Attacks](/202606/13/2606.06833v1-hearing-the-unspoken-language-model-priors-for-acoustic-adversarial-attacks)  
+1. [GlobeAudio: A Multilingual Multicultural Benchmark for Naturalistic Evaluation of Large Audio-Language Models](/202606/14/2606.08194v1-globeaudio-a-multilingual-multicultural-benchmark-for-naturalistic-evaluation-of-large-audio-language-models)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：利用语言模型先验对ASR进行对抗攻击
-2. [Towards Data-free and Training-free Compression for Speech Foundation Models Using Parameter Clustering](/202606/13/2606.11836v1-towards-data-free-and-training-free-compression-for-speech-foundation-models-using-parameter-clustering)  
+   evidence：多语言多文化音频语言模型基准
+2. [LLM can Read Spectrogram: Encoder-free Speech-Language Modeling](/202606/14/2606.10231v2-llm-can-read-spectrogram-encoder-free-speech-language-modeling)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：语音基础模型压缩，在ASR上评估
-3. [DuplexOmni: Real-Time Listening, Seeing, Thinking, and Speaking for Full-Duplex Interaction](/202606/13/2606.09186v1-duplexomni-real-time-listening-seeing-thinking-and-speaking-for-full-duplex-interaction)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：实时语音交互，包含识别与合成
-4. [Anchoring the Unknown: Open-Set Model Attribution via Proxy-Anchor Learning](/202606/13/2606.10758v1-anchoring-the-unknown-open-set-model-attribution-via-proxy-anchor-learning)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：TTS来源归因与开放集检测
-5. [RAIL: Rethinking Auditory Intelligence in Large Audio-Language Models with a CHC-Grounded Benchmark](/202606/13/2606.11260v1-rail-rethinking-auditory-intelligence-in-large-audio-language-models-with-a-chc-grounded-benchmark)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：面向大型音频语言模型的听觉认知基准
+   evidence：无编码器的语音语言建模用于ASR和TTS
+3. [UR-BERT: Scaling Text Encoders for Massively Multilingual TTS Through Universal Romanization and Speech Token Prediction](/202606/14/2606.11681v2-ur-bert-scaling-text-encoders-for-massively-multilingual-tts-through-universal-romanization-and-speech-token-prediction)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：多语言文本转语音编码器
+4. [AudioX-Turbo: A Unified Framework for Efficient Anything-to-Audio Generation](/202606/14/2606.12555v1-audiox-turbo-a-unified-framework-for-efficient-anything-to-audio-generation)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：文本到音频生成，多模态扩散变换器
+5. [Balancing ASR and diarization in end-to-end LLMs for multi-talker speech recognition](/202606/14/2606.13095v1-balancing-asr-and-diarization-in-end-to-end-llms-for-multi-talker-speech-recognition)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：基于LLM的多说话人语音识别方法
+6. [Towards Personalized Federated Learning for Dysarthric Speech Recognition](/202606/14/2606.13253v1-towards-personalized-federated-learning-for-dysarthric-speech-recognition)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：构音障碍语音识别的个性化联邦学习
+7. [Ontology Memory-Augmented ASR Correction for Long Text-Speech Interleaved Conversations](/202606/14/2606.13464v1-ontology-memory-augmented-asr-correction-for-long-text-speech-interleaved-conversations)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：基于本体记忆的长对话ASR纠错
 
 ### 速读区论文标签
-1. [SEAM: Shortcut-Aware Real-Time Detection of Scripted vs. Spontaneous Speech for Interview Guardrails](/202606/13/2606.06837v1-seam-shortcut-aware-real-time-detection-of-scripted-vs-spontaneous-speech-for-interview-guardrails)  
+1. [TRADE: Transducer-Augmented Decoder for Speech LLM](/202606/14/2606.08486v1-trade-transducer-augmented-decoder-for-speech-llm)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：自动语音识别流式推理
+2. [ViP-VL: Vietnamese Self-supervised Speech Pretraining Model with Vector-Quantization Learning](/202606/14/2606.10360v2-vip-vl-vietnamese-self-supervised-speech-pretraining-model-with-vector-quantization-learning)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：用于ASR等任务的自监督语音预训练
+3. [Emo-LiPO: Listwise Preference Optimization for Fine-Grained Emotion Intensity Control in LLM-based Text-to-Speech](/202606/14/2606.13006v1-emo-lipo-listwise-preference-optimization-for-fine-grained-emotion-intensity-control-in-llm-based-text-to-speech)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：文本到语音中的情绪强度控制
+4. [Endpoint Anticipation for Low-Latency Spoken Dialogue](/202606/14/2606.13450v1-endpoint-anticipation-for-low-latency-spoken-dialogue)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：端点预测实现低延迟口语对话，使TTS管道推测执行
+5. [OmniCap-IF: Benchmarking and Improving Instruction Following Abilities for Omni-Video Captioning](/202606/14/2606.08572v1-omnicap-if-benchmarking-and-improving-instruction-following-abilities-for-omni-video-captioning)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：实时脚本与自发语音检测
-2. [Audio Imitator: Controlling Timbre and Tempo in Video2Audio Synthesis with Audio Reference](/202606/13/2606.07182v1-audio-imitator-controlling-timbre-and-tempo-in-video2audio-synthesis-with-audio-reference)  
+   evidence：全模态视频字幕指令跟随基准
+6. [HydraQE: OSU's Submission for the IWSLT 2026 Speech Translation Metrics Shared Task](/202606/14/2606.08748v1-hydraqe-osus-submission-for-the-iwslt-2026-speech-translation-metrics-shared-task)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：属性感知的音频生成，通过视频和参考音频控制音色和节奏
-3. [Cross-Modal Masking for Robust Silent Speech Synthesis Using sEMG and Lipreading](/202606/13/2606.09667v1-cross-modal-masking-for-robust-silent-speech-synthesis-using-semg-and-lipreading)  
+   evidence：使用ASR骨干的语音翻译质量估计
+7. [ParaBridge: Bridging Paralinguistic Perception and Dialogue Behavior in Speech Language Models](/202606/14/2606.10581v1-parabridge-bridging-paralinguistic-perception-and-dialogue-behavior-in-speech-language-models)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：使用sEMG和唇读的无声语音合成，采用多模态掩码
-4. [ANCHOR: Autoregressive Non-intrusive Chunk-Ordered Refinement for Joint Multi-Resolution Speech Quality Modeling](/202606/13/2606.10233v1-anchor-autoregressive-non-intrusive-chunk-ordered-refinement-for-joint-multi-resolution-speech-quality-modeling)  
+   evidence：桥接语音语言模型中的副语言感知和对话行为
+8. [Benchmarking Neural Speech Compression from a Rate-Distortion Perspective](/202606/14/2606.11631v1-benchmarking-neural-speech-compression-from-a-rate-distortion-perspective)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：流媒体系统的增量语音质量建模
-5. [Benchmarking Neural Speech Compression from a Rate-Distortion Perspective](/202606/13/2606.11631v1-benchmarking-neural-speech-compression-from-a-rate-distortion-perspective)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：从率失真角度对神经语音编解码器进行基准测试
-6. [FSC-Net: Integrating Fast Fourier Convolutions and Progressive Learning for Speech Bandwidth Extension](/202606/13/2606.06962v1-fsc-net-integrating-fast-fourier-convolutions-and-progressive-learning-for-speech-bandwidth-extension)  
+   evidence：神经语音压缩基准测试
+9. [Titans-as-a-Layer: Test-Time Memory for Conversational Speech Emotion Recognition](/202606/14/2606.08573v1-titans-as-a-layer-test-time-memory-for-conversational-speech-emotion-recognition)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：使用快速傅里叶卷积的FSC-Net用于语音带宽扩展
-7. [G-MaP-SE: Guided Speech Enhancement via GMM-Based Prior Matching](/202606/13/2606.08580v1-g-map-se-guided-speech-enhancement-via-gmm-based-prior-matching)  
+   evidence：对话语音情感识别结合测试时记忆
+10. [A Finetuned SpeechLLM for Joint Multi-Granular L2 Assessment and Natural-Language Rationales](/202606/14/2606.09470v1-a-finetuned-speechllm-for-joint-multi-granular-l2-assessment-and-natural-language-rationales)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：语音增强方法，可提升ASR性能
-8. [A Comparative Study of Pre-trained Speech Encoders and Training Objectives for Large-Scale Indic Spoken Language Identification](/202606/13/2606.09317v1-a-comparative-study-of-pre-trained-speech-encoders-and-training-objectives-for-large-scale-indic-spoken-language-identification)  
+   evidence：使用SpeechLLM进行语音评估
+11. [MeCo: One-Step MeanFlow-based Corrector for Multi-Channel Speech Separation](/202606/14/2606.09677v1-meco-one-step-meanflow-based-corrector-for-multi-channel-speech-separation)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：预训练语音编码器用于口语语言识别的比较研究
-9. [A Finetuned SpeechLLM for Joint Multi-Granular L2 Assessment and Natural-Language Rationales](/202606/13/2606.09470v1-a-finetuned-speechllm-for-joint-multi-granular-l2-assessment-and-natural-language-rationales)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：使用SpeechLLM进行自动L2语音评估
-10. [ParaBridge: Bridging Paralinguistic Perception and Dialogue Behavior in Speech Language Models](/202606/13/2606.10581v1-parabridge-bridging-paralinguistic-perception-and-dialogue-behavior-in-speech-language-models)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：语音语言模型中的副语言感知与对话行为
-11. [Tight Boundary Prediction in Speaker Diarization Using Causal-Anticausal Consistency](/202606/13/2606.11795v1-tight-boundary-prediction-in-speaker-diarization-using-causal-anticausal-consistency)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：使用因果-反因果一致性进行说话人日志化中的紧凑边界预测
+   evidence：多通道语音分离生成校正器
 
 
 <div class="dpr-home-promo-card">

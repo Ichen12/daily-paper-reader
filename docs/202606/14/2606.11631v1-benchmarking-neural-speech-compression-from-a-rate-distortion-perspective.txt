@@ -1,0 +1,1443 @@
+Title: Benchmarking Neural Speech Compression from a Rate-Distortion Perspective
+
+URL Source: https://arxiv.org/pdf/2606.11631v1
+
+Published Time: Thu, 11 Jun 2026 00:35:57 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 1
+
+# Benchmarking Neural Speech Compression from a Rate-Distortion Perspective 
+
+Jun Xu ∗, Zhengxue Cheng ∗, Member, IEEE, Fengxi Zhang, Yuhan Liu, Li Song †, Senior Member, IEEE, and Wenjun Zhang, Fellow, IEEE 
+
+Abstract —Learning-based speech compression has achieved promising low-bitrate performance, but many neural speech codecs still describe quantized latents with preset-rate discrete symbols or apply entropy coding only after symbol generation. Such designs decouple representation learning from probabil-ity modeling, limiting their ability to exploit the non-uniform usage and temporal dependencies of learned speech latents. In this paper, we benchmark neural speech compression from a rate–distortion perspective and further investigate entropy-constrained coding for low-bitrate speech compression. We first formulate a unified learning-based speech coding pipeline and provide a benchmark-style analysis of recent neural speech codecs, showing that explicit probability modeling remains under-explored in learned speech compression. We then propose ECC, an Entropy-Constrained Codec that combines scalar quantization with a learned entropy model. ECC integrates hyperprior-based side information, channel-wise context modeling, latent residual prediction, and lightweight temporal modeling to es-timate latent likelihoods for rate estimation during training and arithmetic coding during inference. To further improve low-bitrate efficiency, ECC introduces entropy skip, which omits highly predictable residual symbols using decoder-available scale estimates without transmitting additional skip masks. Extensive experiments show that ECC achieves a favorable low-bitrate rate–distortion trade-off over conventional and neural codec baselines, reducing BD-rate by 39.9% on ViSQOL and 76.3% on PESQ on average over two widely-used test sets. Ablation and diagnostic studies further validate the effectiveness of entropy modeling. Project Page: https://avery-xu.github.io/ECC-demo/ 
+
+Index Terms —Speech Compression, Neural Speech Codec, Rate–Distortion Optimization, Entropy-Constrained Coding, En-tropy Model 
+
+I. I NTRODUCTION 
+
+# SPEECH compression is essential for representing speech signals under constrained transmission, storage, and com-putational budgets. It is particularly important for low-bitrate communication scenarios, such as mobile, real-time, and satel-lite speech services, where intelligibility and perceptual quality must be preserved with only a few hundred to a few thousand bits per second. Recent 3GPP standardization efforts on non-terrestrial networks and ultra-low-bitrate speech codecs further highlight the need for efficient speech coding under extremely limited bit budgets [1], [2]. Conventional codecs, such as AAC [3], Opus [4], EVS [5], and AMR [6], have long supported speech and audio com-
+
+∗Jun Xu and Zhengxue Cheng contributed equally to this work. 
+
+> †
+
+Corresponding author: Li Song. Jun Xu, Zhengxue Cheng, Fengxi Zhang, Yuhan Liu, Li Song, and Wenjun Zhang are with the School of Information Science and Electronic Engineering, Shanghai Jiao Tong University, Shanghai 200240, China (e-mail: {xujunzz, zxcheng, zhangfengxi, liu1025221459, song li, zhangwenjun }@sjtu.edu.cn) Classical Speech Codec  
+
+> (OPUS, EVS, AMR, etc )
+
+Existing Neural Speech Codec         
+
+> (Soundstream etc.)
+> Fixed transform
+> Hand crafted modules, saturated RD performance High speech fidelity, but not targeted for best RD
+> Linear
+> Transform Quantize Entropy
+> Coding
+> 10 32
+> Nonlinear
+> Transform
+> Index stream
+> 2 7 5 2 7 3 …
+
+Proposed ECC        
+
+> （Entropy -Constrained Codec ）
+> Quantize Entropy
+> Model
+> Explicit entropy model
+> Vector
+> Quantize
+> 012…n
+> Learnable transform Without entropy model
+> Learnable transform With entropy model
+> End -to -end rate -distortion optimization
+
+Our Contributions    
+
+> ARD -oriented benchmark of neural
+> speech codecs
+> Entropy -constrained coding for
+> strong low -bitrate RD efficiency Nonlinear
+> Transform
+> STFT/
+> MDCT…
+
+Fig. 1. Positioning of Proposed ECC. Conventional codecs rely on hand-designed transforms, quantization rules, and entropy-coding tools. Recent neural speech codecs learn nonlinear representations but often describe their quantized latents using preset-rate indices or symbols, leaving probability modeling decoupled from representation learning. ECC integrates learned en-tropy modeling into the neural transform-coding pipeline, so that scalar latents are optimized for both reconstruction quality and statistical compressibility under an end-to-end rate–distortion objective. 
+
+munication through carefully engineered transform, prediction, quantization, and entropy-coding modules. These pipelines are reliable and deployment-friendly, but their coding efficiency is ultimately constrained by hand-designed signal models and manually optimized coding tools. As illustrated in Fig. 1, this handcrafted transform-coding paradigm differs fundamentally from recent neural codecs, which learn nonlinear speech representations from data. Recent neural speech codecs have moved beyond hand-designed signal models by learning nonlinear analysis and syn-thesis transforms directly from data. Following the transform-coding paradigm [7], most of them adopt an encoder-quantizer-decoder pipeline and improve low-bitrate quality through stronger backbones, perceptual losses, and discrete latent representations [8]–[12]. Despite these advances, many existing codecs still describe their quantized latents using preset-rate discrete symbols, whose nominal cost is determined by frame rate, quantizer depth, and codebook size. Therefore, the learned representation and the actual coding distribution are often optimized in a decoupled manner. From a source-coding perspective, this decoupling creates a mismatch between the generated symbol streams and the probability distributions used for coding. Speech latents and codec indices are not uniformly distributed random symbols;  
+
+> arXiv:2606.11631v1 [eess.AS] 10 Jun 2026 JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 2
+
+instead, they inherit strong predictability from pitch period-icity, phonetic continuity, speaker-dependent dynamics, and temporal context. Fixed-length coding assigns the same num-ber of bits to frequent and rare symbols, and therefore cannot exploit the marginal non-uniformity and temporal dependency of the generated symbol streams. Post-hoc entropy coding can reduce the lossless storage or transmission cost of a fixed symbol stream, but it cannot reshape the latent representation that produced the stream. This motivates entropy-constrained training, where the transform, quantizer, and probability model are optimized jointly so that the learned latents are both reconstructive and statistically compressible. In this paper, we benchmark neural speech compression from a rate–distortion perspective, with a particular focus on entropy-constrained coding. We provide a unified formulation and benchmark-style analysis of recent neural speech codecs, revealing that explicit probability modeling remains under-explored. We further propose ECC, an Entropy-Constrained Codec that integrates learned entropy modeling and entropy skip into scalar-latent speech coding, and validate its effec-tiveness through objective, subjective, ablation, and diagnostic experiments. The main contributions are summarized as follows:  
+
+> •
+
+We present a unified formulation and RD-oriented bench-mark analysis of recent neural speech codecs, clarifying the gap between preset-rate discrete representations and learned probability modeling.  
+
+> •
+
+We propose ECC , a novel Entropy-Constrained Codec that integrates scalar quantization, channel-wise proba-bilistic entropy modeling, and entropy skip for highly predictable latents using end-to-end rate–distortion op-timization for speech compression.  
+
+> •
+
+We provide comprehensive objective, subjective, abla-tion, complexity, post-hoc entropy-coding, and general-ization evaluations, showing consistent low-bitrate RD advantages over conventional and neural codec base-lines, including 44.2%/35.7% ViSQOL and 69.4%/83.3% PESQ BD-rate reductions over FunCodec [11] on Lib-riTTS [13]/VCTK [14] datasets. One related preliminary publication is our conference pa-per [15], which explored an early rate-aware learned speech compression framework. Different from that, this paper fo-cuses on benchmarking neural speech compression from a rate–distortion perspective, with a unified formulation, a taxon-omy of recent neural speech codecs, the entropy skip mecha-nism, and expanded objective, subjective, complexity, post-hoc entropy-coding, ablation, and generalization analyses. II. P ROBLEM FORMULATION 
+
+This section establishes a unified mathematical formula-tion for learning-based speech compression. Although exist-ing neural codecs differ in their choice of input domain, transform architecture, quantization mechanism, and entropy coding strategy, they inherently share a common data path from waveform representations to continuous latents, discrete symbols, bitstreams, and final reconstruction. 
+
+A. Basic Pipeline of Learning-based Speech Coding 
+
+Let x ∈ RT denote an input speech waveform. A learning-based codec first maps x to a signal-domain representation u
+
+through a front-end transform, 
+
+u = T (x), (1) where T can be identity mapping for time-domain coding or a predefined time–frequency transform such as STFT or MDCT. An analysis transform fθ (·) then converts u into a continu-ous latent sequence, 
+
+y = fθ (u), y ∈ RT ′×D , (2) where T ′ is the number of latent frames and D is the latent dimensionality. The quantizer Q(·) maps y to discrete symbols 
+
+s, and the corresponding dequantization or embedding lookup produces reconstructed latents ˆy,
+
+s = Q(y), ˆy = DQ(s). (3) Here, s may denote codebook indices in VQ/RVQ-based codecs or integer-valued coordinates in SQ-based codecs. For transmission or storage, the discrete symbols are loss-lessly converted into a binary bitstream b by an entropy coder, 
+
+b = B(s; pc), R(s) ≈ − log 2 pc(s), (4) where pc denotes the coding distribution and R(s) is the expected code length. Fixed-length index coding corresponds to a uniform and non-adaptive coding distribution determined by the symbol alphabet size. In contrast, entropy-constrained coding estimates pc from latent statistics, allowing arithmetic or range coding to achieve an expected code length close to 
+
+− log 2 pc(s).Finally, a synthesis transform gϕ(·) reconstructs the signal-domain representation, and the inverse front-end transform returns it to the waveform domain, 
+
+ˆu = gϕ(ˆ y), ˆx = T −1(ˆ u). (5) This pipeline provides a common view of recent neural speech codecs, regardless of whether they differ in domain, backbone architecture, quantization strategy, or entropy-coding design. 
+
+B. Challenges and Opportunities 
+
+The central challenge of learning-based speech compres-sion is to learn latents that are reconstructive, compact, and statistically compressible. They should preserve perceptually important speech information while producing discrete sym-bols whose probability structure can be efficiently modeled. Speech signals contain temporal and spectral regularities, such as pitch periodicity, phonetic continuity, and speaker-dependent dynamics, which may remain as dependencies across time, channels, and quantization stages. Preset-rate dis-crete representations ignore these statistics because their nom-inal cost is fixed by the quantizer configuration, while post-hoc entropy coding can only compress an already generated symbol stream. This motivates entropy-constrained learning, where the probability model provides a differentiable rate term during training and coding probabilities during inference, enabling the transform, quantizer, and entropy model to jointly produce latents that are easier to entropy-code. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 3§III. A Input/Output Domain §III.B Encoder -Decoder Backbone §III.C Quantization and Entropy §III.D Training Objectives 
+
+Time -Domain Codec Time -Frequency -Domain Codec 
+
+Enc Dec Enc Dec T->F F->T 
+
+Taxonomy of Neural Speech Compression 
+
+> Entropy
+> model
+
+Distortion for Fidelity 
+
+CNN -Local Trans for Local & Long CNN -Local & RNN -Long 
+
+> conv
+
+*N 
+
+…
+
+> RNN
+
+in in out out 
+
+Distortion for Perception SQ Rate Estimation 
+
+Discriminator 
+
+VQ -based Codec SQ -based Codec 
+
+Enc   
+
+> Latent
+> 𝑅 !∗#
+> 2…8
+> Index
+> 𝑍 !
+
+Dec 
+
+> index
+
+𝑍 !∗#
+
+CNN -Local & Trans -Long 
+
+> Trans
+
+*M 
+
+…in out 
+
+> conv
+
+*N 
+
+…
+
+*M 
+
+> conv
+
+*N 
+
+…
+
+> Trans
+
+*N 
+
+… out in 
+
+CNN -Local & Linear Attention -Long 
+
+in 
+
+conv 
+
+L-Attn *N 
+
+… out                 
+
+> 𝑇
+> 𝐷
+> VQ
+> 𝑅 !∗#→𝑍 !
+> Codebook
+> 012…n
+> dVQ
+> 𝑍 !→𝑅 !∗#
+> Codebook
+> 012…n
+> Latent
+> 𝑅 !∗#
+> 𝑇
+> 𝐷
+> SQ
+> 𝑅 !∗#→𝑍 !∗#
+> dSQ
+> 𝑍 !∗#→𝑅 !∗#
+
+Enc Dec     
+
+> Entropy
+> Encode
+> Entropy
+> Decode
+> Bitstream
+> 𝐵 $
+> Entropy Coding
+> Signal Level Freq Level
+> 𝑇
+> 𝐷
+> 𝑇
+> 𝐷
+> Latent Level Adversarial Feat Matching Estimated Rate
+
+VQ Learnable Codebook                               
+
+> Update Codebook
+> 012…n012…n
+> EnCodec [6] etc. Vocos [9] etc.
+> SoundStream [11] etc. HiFi -Codec [17] etc. Mimi [13] etc. TS3 -Codec [15] etc. ECC_Proposed
+> DAC [25] etc. TAAE [14], ECC_proposed
+> APCodec [8] etc. ECC_Proposed FunCodec [7] etc. SpeechTokenizer [30] etc.
+
+Fig. 2. Taxonomy of recent learning-based speech compression methods. We organize the design space along four axes: input/output domain, encoder– decoder backbone, quantization and entropy coding, and training objectives. The taxonomy highlights how codec designs differ in signal representation, temporal modeling, discrete symbol construction, and whether probability modeling is integrated into training and coding. 
+
+III. B ENCHMARKING RECENT NEURAL SPEECH CODECS 
+
+This section reviews recent learning-based speech codecs under the unified pipeline in Section II. As summarized in Fig. 2 and Table I, existing methods are organized along four axes: input/output domain, encoder–decoder backbone, quantization and entropy coding, and training objective. This taxonomy highlights how different codec designs represent speech signals, model temporal dependencies, construct dis-crete symbols, and handle coding costs. 
+
+A. Input and Output Domains 
+
+Existing codecs differ first in the signal domain where neural coding is performed. Time-domain codecs directly process waveforms, as in SoundStream [8] and EnCodec [9], keeping the signal path simple while requiring the neural transform to learn both local waveform patterns and spec-tral structure. Time–frequency-domain codecs introduce ex-plicit spectral front ends, such as STFT features in Fun-Codec [11], amplitude–phase modeling in APCodec [23], inverse-transform-aware decoding in Vocos [19], and MDCT preprocessing in MDCTCodec [24]. These designs expose spectral sparsity and harmonic regularities before coding, but also introduce choices on windowing, hop size, phase representation, and inverse transform design. Overall, time-domain coding favors end-to-end waveform modeling, whereas time–frequency-domain coding injects signal-structure priors that may ease representation learning and latent compression. 
+
+B. Encoder-Decoder Backbone 
+
+The encoder–decoder backbone determines how local acoustic details and long-range speech dependencies are rep-resented before quantization. CNN-based codecs, such as SoundStream [8] and DAC [10], are efficient and deployment-friendly, but their finite receptive fields can limit long-context modeling. Hybrid CNN–RNN systems, including EnCodec [9] and HiFi-Codec [16], add recurrent temporal modeling to con-volutional features. Recent codecs further introduce attention-based modules, such as the CNN–Transformer design in Mimi [12] and Transformer-heavy structures in TAAE [30] and TS3-Codec [31]. These designs improve temporal context modeling, but usually require more computation, data, and model capacity. This trend suggests that effective speech coding benefits from combining efficient local modeling with lightweight long-range dependency modeling. 
+
+C. Quantization and Entropy 
+
+Quantization maps continuous latents into discrete symbols for compression. VQ-based designs remain dominant, with RVQ widely used since SoundStream [8] because successive codebooks progressively refine residual errors. Recent variants improve capacity, utilization, or robustness through grouped quantization [16], probabilistic residual selection [20], multi-resolution or cross-scale quantization [18], [21], factorized codebooks [10], and streamable scalar-vector designs [29]. Simpler quantizers have also gained traction. SVQ-based sys-JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 4
+
+TABLE I SUMMARY OF RECENT NEURAL SPEECH CODEC WORKS 
+
+Name Venue/Year Domain Encoder Decoder Quantizer Entropy Training Objective 
+
+SoundStream [8] TASLP 2021 Time CNN CNN RVQ ✗ GAN, Feat, Rec EnCodec [9] TMLR 2023 Time CNN+RNN CNN+RNN RVQ ✗ GAN, Feat, Rec, VQ DAC [10] NeurIPS 2023 Time CNN CNN RVQ ✗ GAN, Feat, Rec, VQ HiFi-Codec [16] arXiv 2023 Time CNN+RNN CNN+RNN GRVQ ✗ GAN, Feat, Rec, VQ AudioDec [17] ICASSP 2023 Time CNN CNN RVQ ✗ GAN, Feat, Rec, VQ ESC [18] arXiv 2024 Time+Freq Trans Trans CSRVQ ✗ Rec, VQ Vocos [19] ICLR 2024 Time+Freq CNN CNN RVQ ✗ GAN, Feat, Rec NDVQ [20] SLT 2024 Time CNN+RNN CNN+RNN RNDVQ ✗ GAN, Feat, Rec, VQ SNAC [21] NeurIPS WS 2024 Time CNN+RNN CNN MSRVQ ✗ GAN, Feat, Rec, VQ FunCodec [11] ICASSP 2024 Time+Freq CNN+RNN CNN+RNN RVQ ✗ GAN, Feat, Rec, VQ SpeechTokenizer [22] ICLR 2024 Time CNN+RNN CNN RVQ ✗ GAN, Feat, Rec, VQ APCodec [23] TASLP 2024 Time+Freq CNN CNN RVQ ✗ GAN, Feat, Rec, VQ MDCTCodec [24] SLT 2024 Time+Freq CNN CNN RVQ ✗ GAN, Feat, Rec, VQ Mimi [12] arXiv 2024 Time CNN+Trans CNN+Trans RVQ ✗ GAN, Feat, Rec, VQ BigCodec [25] arXiv 2024 Time CNN+RNN CNN+RNN SVQ ✗ GAN, Feat, Rec, VQ Spectral Codecs [26] arXiv 2024 Time+Freq CNN CNN FSQ ✗ GAN, Feat, Rec SemanticCodec [27] JSTSP 2024 Time CNN+Trans Trans RVQ ✗ Diff, VQ SQ-Codec [28] TASLP 2025 Time CNN CNN FSQ ✗ GAN, Rec StreamCodec [29] SPL 2025 Time+Freq CNN CNN RSVQ ✗ GAN, Feat, Rec, VQ TAAE [30] ICLR 2025 Time CNN+Trans CNN+Trans FSQ ✗ GAN, Feat, Rec TS3-Codec [31] INTERSPEECH 2025 Time Trans Trans SVQ ✗ GAN, Feat, Rec, VQ WavTokenizer [32] ICLR 2025 Time CNN+Trans CNN+Trans SVQ ✗ GAN, Feat, Rec, VQ FocalCodec [33] NeurIPS 2025 Time CNN+Trans CNN BSQ ✗ GAN, Feat, Rec, Ent SpecTokenizer [34] INTERSPEECH 2025 Time+Freq CNN+RNN CNN+RNN SVQ ✗ GAN, Feat, Rec, Cmt 
+
+ECC (Ours) This work Time+Freq CNN+L-Attn CNN+L-Attn SQ ✓ GAN, Feat, Rec, Rate  
+
+> Note: The “Entropy” column indicates whether an explicit learned probability model is integrated into codec training or latent coding; post-hoc lossless compression of generated indices is discussed separately. Objective abbreviations: Rec, reconstruction loss; GAN, adversarial loss; Feat, feature matching; VQ, vector-quantization loss; Cmt, commitment loss; Ent, entropy-related auxiliary loss; Diff, diffusion objective; MP, masked prediction; Rate, explicit rate term.
+
+tems, including BigCodec [25], TS3-Codec [31], and WavTo-kenizer [32], reduce quantization depth by relying on stronger transforms. FSQ and related scalar designs [35] are adopted in SQ-Codec [28], Spectral Codecs [26], and FocalCodec [33], reducing codebook management complexity. From a compression perspective, many neural speech codecs still rely on nominal token rates determined by codebook size, quantizer count, and frame rate. Post-hoc entropy coding, as used for EnCodec-style RVQ indices [9], reduces the lossless index-stream cost but does not affect the learned representation. Entropy-constrained coding instead integrates probability modeling and rate estimation into training, making coding cost part of representation learning. This principle has been extensively studied in learned image compression, from factorized priors, content-weighted priors, hyperpriors, and conditional probability models [36]–[39], to autoregressive– hierarchical models and stronger likelihood models [40]– [42]. Later work further improves the accuracy–latency trade-off with masked, checkerboard, channel-wise, space–channel, Transformer, hierarchical, and dictionary-based contexts [43]– [56]. For speech compression, the same principle suggests modeling side information, decoded channel context, and temporal context during training, rather than treating entropy coding as a post-hoc stage. 
+
+D. Training Objectives 
+
+As summarized in Table I, training objectives usually com-bine reconstruction fidelity, perceptual quality, quantization stability, and coding-related constraints. Reconstruction losses (Rec ) are computed in waveform, spectral/mel, or latent spaces, while VQ-based codecs add codebook or commitment losses ( VQ /Cmt ) to stabilize discrete representation learning. Related commitment terms are also used in scalar or lookup-free tokenizers such as SpecTokenizer [34]. Perceptual quality is commonly improved with adversarial losses ( GAN ) and feature matching ( Feat ), and diffusion objectives ( Diff ) are used in generative decoders such as SemanticCodec [27]. Coding-aware objectives remain less common. Focal-Codec [33] introduces an entropy-related auxiliary term ( Ent ), whereas the proposed codec uses an explicit learned rate term (Rate ) from the probability model; Section IV gives the RD formulation. Beyond rate–distortion optimization, other objec-tives shape token semantics through masked prediction [57]– [61], source or speaker disentanglement [62]–[71], SSL or LLM distillation [12], [22], [27], [72]–[74], and supervised phonetic or ASR-style tokenization [75]–[79]. IV. M OTIVATION FOR ENTROPY MODELING 
+
+Fig. 3 motivates entropy-aware coding for neural speech codec symbols. Fixed-rate RVQ remains attractive for deploy-ment because it provides simple rate control and stable token budgets. However, from a source-coding perspective, preset-rate symbol streams can be suboptimal when their distributions are non-uniform and temporally dependent. We first identify two inefficiencies in RVQ index streams, and then contrast post-hoc index coding with end-to-end entropy-aware training. 
+
+A. Two Inefficiencies of RVQ Indices 
+
+Many VQ/RVQ-based neural speech codecs use a preset token rate. For an RVQ module with Nq stages and codebook size Kj at stage j, the fixed-length rate per latent frame is 
+
+Rfixed =
+
+> Nq
+
+X
+
+> j=1
+
+log 2 Kj . (6) JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 5   !       
+
+> 
+> 
+> 
+> 
+> 
+> 
+>       
+>       
+
+…
+
+> Vocab
+> Prob
+> 0.9
+> 0
+> 0.2
+> 1
+> 0.16
+> 0.05
+> 0.0
+> 0.2
+> 0.18
+> 0.17
+> 0.16
+> 0.2
+> Arithmetic Encoding
+
+Problem 1: Fixed rate is not content -adaptive 
+
+Problem 2: Entropy gap from non -uniform index usage       
+
+> 𝑯 𝒛 <𝑹 𝐟𝐢𝐱𝐞𝐝 =𝒍𝒐 𝒈 𝟐 𝑲
+> Neural
+> Codec
+> Neural
+> Codec
+> RVQ indices
+> 3 5 6 0 0 6 …
+> RVQ indices
+> 8 9 25 4 5 …
+> Speech sample 1
+> Speech sample 2
+> Different
+> redundancy ，
+> Same
+> code length
+
+Possible Solution 1: Post -hoc index entropy coding 
+
+> RVQ
+> indices
+> Compressed
+> indices
+
+Possible Solution 2: Entropy -aware training (Ours)      
+
+> 𝓛 =𝑹 +𝝀 𝑫
+
+𝑧 ! 𝑧 ̂!𝑄 (. ) 
+
+> Original
+> Speech
+> Reconstructed
+> Speech
+> Encoder
+> Decoder
+> Quantization
+> 𝑅
+> 𝐷
+> Total training loss:
+> 𝑝 (𝑍 '|𝑍 '())
+> Unbalanced usage
+> for different
+> codewords
+> Neural
+> Codec
+
+🔥 
+
+## ❄
+
+> Fixed codec
+> Modeled index
+> probability
+> Not optimized with codec training
+> Jointly optimize reconstruction
+> and index entropy
+
+Fig. 3. Motivation for entropy-aware neural speech coding. The left part illustrates two sources of redundancy in fixed-length RVQ indices: content-independent rate allocation and non-uniform codeword usage. Speech contents with the same duration are assigned the same nominal code length under a preset RVQ configuration, although their redundancy can differ substantially; moreover, dataset-level codeword usage is highly non-uniform, so the index entropy H(Z)
+
+can be lower than the fixed-length rate Rfixed . The right part contrasts post-hoc index entropy coding with the proposed entropy-aware training, where the rate estimate participates in representation learning. 
+
+At a fixed frame rate, an utterance with T ′ latent frames therefore costs T ′Rfixed bits regardless of its content. This is the first limitation shown in Fig. 3: for the same frame count, an information-rich speech segment and a highly predictable or repetitive segment are assigned the same number of RVQ index bits. The resulting index cost is fixed before observing the actual symbol statistics, and therefore cannot reflect the different predictability of different speech segments. The second limitation is uneven codeword usage. Fixed-length index coding implicitly treats all entries in a codebook as equally costly, but trained RVQ codebooks are often used non-uniformly. For an utterance, let Z = {Zt,j : 1 ≤ t ≤
+
+T ′, 1 ≤ j ≤ Nq } be the full RVQ index sequence. An ideal entropy coder approaches the sequence entropy H(Z), while fixed-length coding spends T ′Rfixed bits. Under an empirical distribution of RVQ indices, the ideal redundancy relative to fixed-length coding can be decomposed as 
+
+∆R = T ′Rfixed − H(Z) = ∆ Rmarg + ∆ Rdep , (7) 
+
+∆Rmarg = X
+
+> t,j
+
+[log 2 Kj − H(Zt,j )] , (8) 
+
+∆Rdep = X
+
+> t,j
+
+H(Zt,j ) − H(Z). (9) The marginal ∆Rmarg measures loss caused by non-uniform codeword usage: if a codebook entry distribution is skewed, then H(Zt,j ) < log 2 Kj and fixed-length coding wastes bits. The dependency term ∆Rdep captures additional predictability across time and quantization stages. Thus, even before chang-ing the neural codec itself, generated RVQ indices contain exploitable statistical structure beyond fixed-length coding. 
+
+B. Solution 1: Post-Hoc Index Coding 
+
+A direct response is to keep the pretrained RVQ codec unchanged and add an index coder after training. Given a fixed index sequence i, a post-hoc coder estimates a marginal or conditional distribution, such as qη (it | i<t ), and passes the resulting probabilities to an arithmetic coder. Its expected index-stream length is 
+
+Rindex ≈ E − log 2 qη (i). (10) This strategy reduces bitrate by using arithmetic coding prob-abilities for frequent or predictable indices, while remaining compatible with existing codecs because encoder, RVQ code-books, and decoder are unchanged. However, it is only a lossless compression stage over a fixed representation: it can reduce transmitted index cost at a given reconstruction point, but cannot improve reconstruction quality, codebook usage, or the transform that generated the indices. Therefore, the representation is not trained to become easier to entropy-code. 
+
+C. Solution 2: Entropy-Aware Training 
+
+Our codec uses the second solution in Fig. 3: the rate model is included in representation learning itself. Instead of generating fixed-cost RVQ indices and compressing them afterward, it estimates conditional probabilities for quantized scalar latents from side information and decoded context: 
+
+p(ˆ y | ψ) =  
+
+> T′
+
+Y
+
+> t=1
+> D
+
+Y
+
+> c=1
+
+p(ˆ yt,c | C t,c , ψ ), (11) where ψ denotes side information and Ct,c is the available temporal or channel-wise context for element (t, c ). This probability model provides a differentiable rate estimate, 
+
+Rlatent ≈ E [− log 2 q(ˆ y | ψ, C )] , (12) which can be optimized jointly with reconstruction losses. The rate term includes side information and the conditional cost of the primary latents: 
+
+Rlatent = − log 2 p(ˆ z) − log 2 p(ˆ y | ˆz, C), (13) where ˆz is transmitted side information and C is decoded context. For fixed-rate RVQ, R is a nominal token rate; JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 6Domain Transformation 
+
+> Pre -Conv 2D
+> Down Sample
+> AE
+> SQ
+> DSQ
+
+𝑥 
+
+𝑔 ! ×N
+
+𝑥 #
+
+> Domain Inversion
+> Pre -Conv 2D
+> Up Sample
+> ×N
+
+𝑔 "
+
+𝑦 
+
+𝑦 #
+
+𝑦 #
+
+𝑦 % 𝑟   
+
+> Entropy -Constraint Optimization Conv -RWKV Mixture (CRM) Block
+> Conv 1x1
+> (T & C) Split
+> Conv -Res
+> Block
+> Concatenate
+> Conv 1 ×1
+> RWKV
+> Block
+> In -Proj
+> Out -Proj
+
+𝓕 #$ 
+
+𝓕 %& & 𝓕 '()* 
+
+𝓕 %&&  
+
+> +
+
+𝓕 '()* 
+
+> +
+
+𝓕 ,-. 
+
+> Hybrid Spectro -Temporal
+> Feature Learning
+> RBS  ↓ 2
+> Subpel
+> Conv 3  ↑ 2
+
+𝓕 /0123 𝓕 431$ 
+
+> 𝑝 (𝑦 $!|𝑦 &"!)
+
+ℎ"
+
+> AD
+> CRM
+> Block
+> CRM
+> Block
+> CRM
+> Block
+> RBS  ↓ 2
+> Conv 3  ↓ 2
+
+ℎ! 
+
+> CRM
+> Block
+
+𝑧 
+
+> SQ
+> AE
+> AD
+> DSQ
+
+𝑧 ̂
+
+𝑧 ̂
+
+𝑧 ̂ 
+
+> Fig. 4. Overview of the proposed Entropy-Constrained Codec (ECC). ECC uses STFT-domain analysis–synthesis transforms with CRM blocks, scalar quantization, a hyperprior, and a channel-wise entropy model for latent probability estimation. Latent residual prediction (LRP) refines decoded slices, while entropy skip omits highly predictable residual symbols according to decoder-available scale estimates. Skipped residuals are reconstructed as zeros, and only non-skipped symbols are arithmetic coded. Here, SQ/DSQ denote scalar quantization/dequantization, and AE/AD denote arithmetic encoding/decoding.
+
+for post-hoc index coding, R is the compressed length of a fixed index stream; for entropy-aware training, R is a learned entropy estimate jointly optimized with the transform, quan-tizer, entropy model, and decoder. Scalar quantization avoids learned codebook lookup and codebook-utilization balancing, while the entropy model captures the marginal and conditional structure needed for efficient compression. V. M ETHODOLOGY 
+
+A. Overview of the Proposed Framework 
+
+Following Section IV, ECC jointly learns the analysis– synthesis transform, the latent probability model, and the reconstruction objective. As shown in Fig. 4, the waveform 
+
+x ∈ RT is first converted to the STFT representation 
+
+Xstft ∈ CF ×T ′
+
+and mapped by the analysis transform ga to the primary latent y. A hyper-analysis transform ha further generates the hyper-latent z, whose quantized version ˆz is transmitted as side information and decoded by hs to provide context features. The primary latent is coded slice by slice using a channel-wise entropy model. For each slice, hyperprior features and previously decoded slices predict the probability distribution used for rate estimation during training and arithmetic coding during inference. Entropy skip omits highly predictable resid-ual symbols, LRP refines decoded slices, and the synthesis transform followed by iSTFT reconstructs the waveform. By combining channel-wise context with lightweight temporal modeling, ECC exploits both inter-channel dependency and long-range speech structure for probability estimation. 
+
+B. Spectro-Temporal Analysis and Synthesis Transform 
+
+The transform operates in the time–frequency domain to exploit speech spectral sparsity and locality. The encoder first converts the waveform into an STFT representation and applies convolutional downsampling with CRM blocks. The decoder mirrors this hierarchy with transposed convolutions and finally reconstructs the waveform through iSTFT. This analysis–synthesis path can be written as 
+
+Xstft = STFT( x),y = ga(Xstft ; ϕ),
+
+ˆx = iSTFT( gs(¯ y; θ)) ,
+
+(14) where ¯y is the refined latent representation after quantization, entropy modeling, and LRP. Each CRM block splits the input feature Fin into two channel groups, (Fcnn , Frwkv ) = Split( Fin ). The CNN branch captures local time–frequency patterns, while the RWKV branch provides linear-time long-range temporal mod-eling [80]–[82]. The two branches are fused by a 1 × 1
+
+convolution and added back residually: 
+
+Fout = Fin + Wfuse 
+
+ Concat( HCNN (Fcnn ), HRWKV (Frwkv )) ,
+
+(15) 
+
+where HCNN and HRWKV denote the two branch transforma-tions. Across scales, shallow high-resolution stages use fewer RWKV layers, while deeper low-resolution stages use more layers to capture longer temporal dependencies at lower cost. 
+
+C. Channel-Wise Probabilistic Entropy Modeling 
+
+The entropy model estimates scalar-latent code lengths and supplies decoder context. As illustrated in Fig. 5, it consists of a hyperprior path, a channel-wise context model, and LRP. The hyperprior path produces side information as 
+
+z = ha(y; ϕh) (16) 
+
+ˆz = Q(z), (17) 
+
+Fmean , Fscale = hs(ˆ z; θh). (18) The quantized hyper-latent ˆz is coded with a factorized prior, 
+
+pˆz (ˆ z) = Y
+
+> j
+
+pˆzj (ˆ zj ), (19) JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 7LRP 
+
+> Concatenate
+
+𝑦 "!
+
+𝑟 !
+
+𝑦 $!
+
+𝑦 $"! 𝓕 #$%& 
+
+Latent Residual Prediction (LRP) 
+
+Channel -wise Slice Autoregressive Model   
+
+> Conv 3
+> GELU
+> Parameters Net
+> Conv 3
+> GELU
+> Conv 3
+> Concaten
+> ate
+> Concaten
+> ate
+> RWKV
+> (Scale)
+> RWKV
+> (Mean)
+> Parameters
+> Net (Scale)
+> Parameters
+> Net (Mean)
+
+𝓕 '(%)$ 
+
+𝓕 #$%& 
+
+𝑦 $"!
+
+𝑝 (𝑦 "!|𝑦 $"!)
+
+> Conv 3
+> GELU
+> Conv 3
+> GELU
+> Conv 3
+> LRP
+
+𝑦 $"!
+
+as 
+
+priors  
+
+> Slice 1
+> Slice 2
+> Slice N
+> …
+> Slice i
+> …
+
+𝑦 
+
+𝑝 (𝑦 "! 𝑦 $"! : 𝜎 > 𝜏 
+
+> Arithmetic
+> Coding
+> 𝜇
+> 𝜎
+
+𝑦 $"!
+
+Entropy Skip for Highly Predictable Latent 
+
+𝑝 (𝑦 "! 𝑦 $"! : 𝜎 < 𝜏           
+
+> 𝑦 #=𝜇
+> Very Small
+> 𝜎
+> 𝜇
+> Fig. 5. Channel-wise entropy model. The hyperprior path converts the primary latent yinto side information ˆzand decodes it into context features Fmean
+> and Fscale . The channel-wise context model processes latent slices sequentially and predicts Gaussian parameters for each slice from the hyperprior features and previously decoded slices. LRP refines the decoded slice before it is passed to the synthesis transform and to subsequent context prediction.
+
+and is decoded before y, making Fmean and Fscale available to both encoder and decoder. The transforms ha and hs also use CRM blocks to capture temporal structure. The primary latent y ∈ RT ′×Cy is evenly partitioned into 
+
+S channel slices {y0, y 1, . . . , y S−1}. When coding slice i, the model conditions on the hyperprior features and previously refined slices ¯y<i , and predicts scale and mean by 
+
+σi = Gscale (Concat( Fscale , ¯y<i )) , (20) 
+
+μi = Gmean (Concat( Fmean , ¯y<i )) . (21) The quantized-slice probability is modeled by a Gaussian density convolved with a unit-width uniform distribution: 
+
+pˆyi|ˆz, ¯y<i (ˆ yi) =  N (μi, σ 2 
+
+> i
+
+) ∗ U  − 12 , 12
+
+ (ˆ yi). (22) Training uses uniform noise for differentiable likelihood es-timation and deterministic rounding with a straight-through estimator on the reconstruction path. At inference time, arith-metic coding uses the corresponding discrete probability mass. After decoding, LRP compensates for scalar-quantization error before the slice is used by the synthesis transform and later context prediction. Let ˜yi denote the decoded symbol after the entropy-skip decision; without skip, ˜yi = ˆ yi. The residual and refined slice are computed as 
+
+ri = GLRP (Concat(˜ yi, Fmean , ¯y<i )) , (23) 
+
+¯yi = ˜ yi + ri. (24) The refined slice ¯yi is the latent representation consumed by both the decoder and subsequent entropy contexts. Since LRP uses only the decoded slice, hyperprior features, and previously refined slices, it is fully decoder-available and does not introduce additional side information. 
+
+D. Entropy Skip for Highly Predictable Latents 
+
+Each primary-latent scalar is modeled by a Gaussian distri-bution conditioned on the hyperprior and already decoded con-text [39], [40]. For element n in coding order, with predicted mean and scale (μn, σ n), mean-centered scalar quantization codes the residual 
+
+dn = yn − μn, ˆdn = round( dn), ˆyn = μn + ˆdn. (25) Equivalently, arithmetic coding is applied to the integer resid-ual symbol ˆdn. Its convolved Gaussian likelihood is 
+
+pn(v) = 
+
+Z v+ 12 
+
+> v−12
+
+N  t; 0 , σ 2
+
+> n
+
+ dt. (26) At inference time, pn( ˆdn) gives the residual-symbol probabil-ity mass. Small predicted scales imply that residuals are likely to round to zero. For d ∼ N (0 , σ 2) with unit-step rounding, 
+
+P (round( d) = 0) = P (−0.5 ≤ d < 0.5) = 2Φ 
+
+ 0.5
+
+σ
+
+
+
+− 1, (27) 
+
+where Φ( ·) denotes the cumulative distribution function of the standard normal distribution. We therefore skip residuals whose decoder-available scale is below a threshold: 
+
+sn = I(σn ≤ τσ ) , (28) where τσ is the skip threshold. Because sn depends only on the decoder-available scale estimate σn, encoder and decoder make the same decision before residual decoding; rules that inspect dn or ˆdn are oracle diagnostics only (Section VI-C3). If sn = 1 , no residual symbol is transmitted and decoder sets it to zero; otherwise, residual is entropy coded normally: 
+
+˜dn = (1 − sn) ˆdn, ˜yn = μn + ˜dn. (29) The decision does not depend on dn or ˆdn; it only uses σn,which is available at both encoder and decoder before resid-ual decoding. Only non-skipped residual symbols enter the bitstream, and the same skip decisions place decoded symbols back while leaving skipped positions as zero residuals. Since the skip mask is derived only from decoder-available scale estimates, it does not require additional signaling and preserves encoder–decoder synchronization. This usage is similar to entropy skip in [83], where highly predictable symbols are omitted in a decoder-synchronized manner. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 8
+
+During training, skipped elements are masked out from the primary-latent likelihood loss, matching the zero emitted rate in the bitstream and reducing the noise-relaxation mismatch for low-scale residuals. For non-skipped elements, we use 
+
+¯dn = dn + un, un ∼ U  − 12 , 12
+
+ , (30) and compute the skip-aware primary-latent rate as 
+
+Ly, skip rate = − X
+
+> n
+
+(1 − sn) log 2 pn( ¯dn). (31) The hyper-latent rate is computed normally and is unaffected by this mask. 
+
+E. Two-Stage Rate-Distortion Optimization 
+
+The codec is trained with learned rate terms plus spectral and adversarial distortions, without VQ, codebook, or com-mitment losses: 
+
+Ltotal = Ly, skip rate + Lz 
+
+> rate
+
++ λrd D,
+
+D = λmel Lmel + λadv LAdv + λfm LFM + λwav Lwav . (32) 
+
+Here Ly, skip rate is defined in Eq. (31), Lz 
+
+> rate
+
+is the factorized hyper-latent rate, and Lwav = ∥x − ˆx∥1 is enabled only for objective-metric-oriented fine-tuning. 
+
+1) Training Schedule: Training proceeds in two stages. Stage 1 trains a high-rate perceptual model with λrd = 10 ,disables entropy skip and waveform L1, and uses mel, adver-sarial, and feature-matching losses with MPD and MS-STFT discriminators. Stage 2 fine-tunes rate-specific models from high to low bitrates, adjusts λrd for each target rate, enables entropy skip, and adds waveform L1 to improve objective reconstruction quality. 
+
+2) Reconstruction Losses: The main reconstruction term is a multi-scale mel-spectrogram loss, which captures spectral structure at different temporal resolutions: 
+
+Lmel = X
+
+> a∈A
+
+ ∥S a(x) − S a(ˆ x)∥1
+
++ β∥ log Sa(x) − log Sa(ˆ x)∥2
+
+, (33) where Sa denotes the mel-spectrogram transform at scale a,
+
+A is the set of spectral scales, and β is a fixed log-magnitude weight. The optional waveform loss Lwav is used only when optimizing models for objective metrics. 
+
+3) Adversarial and Feature-Matching Losses: We use ad-versarial discriminators inspired by DAC [10]. MPD captures periodic waveform structure, while MS-STFT operates on multi-resolution complex spectra. Let K denote the active discriminator set, which is stage-dependent as described above. For a discriminator Dk ∈ K , the generator adversarial loss and feature matching loss are 
+
+LAdv = X 
+
+> Dk∈K
+
+E[−Dk(ˆ x)] , (34) 
+
+LFM = X 
+
+> Dk∈K
+
+X
+
+> l
+
+1
+
+Nl
+
+D(l) 
+
+> k
+
+(x) − D(l) 
+
+> k
+
+(ˆ x) 1
+
+, (35) where D(l) 
+
+> k
+
+is the feature map of the l-th discriminator layer and Nl is the number of elements in that feature map. Feature matching stabilizes adversarial training and encourages recon-structed speech to match the intermediate perceptual statistics of real speech.                                         
+
+> TABLE II KEY HYPERPARAMETERS AND CONSTANTS .
+> Block Category Setting
+> Transform multi-scale codec stages N4
+> module linear-atten layers (per stage) {2,4,6,8}
+> Embedding dim (per stage) {1024 ,512 ,256 ,128 }
+> Primary latent channels Cy320
+> Entropy Hyper-latent channels Cz192
+> module channel slices S5
+> Channels per slice 64
+> Training λmel , λ adv , λ fm 1,1/9,100 /9
+> objective Stage-1 λrd 10
+> Stage-2 λrd target-dependent Multi-scale spectral set A{5,6, . . . , 11 }
+> STFT/Mel window for scale i2i
+> STFT/Mel hop for scale i2i/4
+
+VI. E XPERIMENT 
+
+A. Experimental Setup 1) Dataset: We train ECC on LibriTTS [13]. For the main objective comparison, we evaluate all codecs on LibriTTS test-all, which is the union of test-clean and test-other, and on the VCTK [14] test set. LibriTTS test-all serves as the in-domain evaluation set, while VCTK provides an English out-of-domain evaluation with different speakers and recording conditions. We further use AISHELL-3 [84] as a Mandarin Chinese test set to examine cross-lingual generalization be-yond the English training corpus. 
+
+2) Training Details: ECC is trained with the two-stage objective in Section V-E: a high-rate perceptual model is first trained and then fine-tuned from high to low RD operating points. The main comparison uses τσ = 0 .12 unless otherwise specified. Table II summarizes the key settings; no VQ, codebook, or commitment loss is used. 
+
+3) Baselines: We compare ECC with conventional codecs, OPUS [4], EVS [5], and AMR [6], and with neural codecs listed below. Table I provides the broader taxonomy across transform domains, quantizers, and model families. Baseline results use open-source implementations and re-leased weights when available. The neural baselines include SoundStream [8] 1, EnCodec [9] 2, DAC [10] 3, SNAC [21] 4,FunCodec [11] 5, SpeechTokenizer [22] 6, Mimi [12] 7, Big-Codec [25] 8, SemantiCodec [27] 9, and TAAE [30] 10 . For neural baselines, we use publicly released implementations and pretrained checkpoints whenever available, and follow the official configurations to generate operating points. All decoded waveforms use the same preprocessing and metric pipeline. Since codecs differ in operating range and training 
+
+> 1https://github.com/google/lyra
+> 2https://github.com/facebookresearch/encodec
+> 3https://github.com/descriptinc/descript-audio-codec
+> 4https://github.com/hubertsiuzdak/snac
+> 5https://github.com/modelscope/FunCodec
+> 6https://github.com/ZhangXInFD/SpeechTokenizer
+> 7https://github.com/kyutai-labs/moshi
+> 8https://github.com/Aria-K-Alethia/BigCodec
+> 9https://github.com/haoheliu/SemantiCodec-inference
+> 10 https://github.com/Stability-AI/stable-codec
+
+JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 90 2000 4000 6000 8000 10000 12000 14000 16000 
+
+Bits per second (bps) 
+
+3.00 
+
+3.25 
+
+3.50 
+
+3.75 
+
+4.00 
+
+4.25 
+
+4.50 
+
+4.75 
+
+> ViSQOL
+
+0 2000 4000 6000 8000 10000 12000 14000 16000 
+
+Bits per second (bps) 
+
+1.0 
+
+1.5 
+
+2.0 
+
+2.5 
+
+3.0 
+
+3.5 
+
+4.0 
+
+> PESQ (WB)
+
+0 2000 4000 6000 8000 10000 12000 14000 16000 
+
+Bits per second (bps) 
+
+0.800 
+
+0.825 
+
+0.850 
+
+0.875 
+
+0.900 
+
+0.925 
+
+0.950 
+
+0.975 
+
+> STOI
+
+0 2000 4000 6000 8000 10000 12000 14000 16000 
+
+Bits per second (bps) 
+
+0.60 
+
+0.65 
+
+0.70 
+
+0.75 
+
+0.80 
+
+0.85 
+
+0.90 
+
+0.95 
+
+> ESTOI
+
+0 2000 4000 6000 8000 10000 12000 14000 16000 
+
+Bits per second (bps) 
+
+0.05 
+
+0.10 
+
+0.15 
+
+0.20 
+
+0.25 
+
+0.30 
+
+0.35 
+
+> WER
+
+0 2000 4000 6000 8000 10000 12000 14000 16000 
+
+Bits per second (bps) 
+
+0.84 
+
+0.86 
+
+0.88 
+
+0.90 
+
+0.92 
+
+0.94 
+
+0.96 
+
+> SPK SIM
+
+Performance on LibriTTS 
+
+ECC_proposed 
+
+EVS 
+
+Opus 
+
+AMR-WB 
+
+Lyra 
+
+EnCodec 
+
+DAC 
+
+SNAC 
+
+FunCodec 
+
+SpeechTokenizer 
+
+Mimi 
+
+BigCodec 
+
+SemanticCodec 
+
+TAAE 
+
+Fig. 6. RD performance on LibriTTS across the objective metric set. ECC shows a strong low-bitrate RD trade-off. TABLE III BD COMPARISON RELATIVE TO FUN CODEC ON LIBRI TTS TEST -ALL .
+
+Group Method BD-rate ↓ BD-metric ViSQOL PESQ STOI ESTOI WER SPK-SIM ViSQOL ↑ PESQ ↑ STOI ↑ ESTOI ↑ WER ↓ SPK-SIM ↑
+
+Classic 
+
+EVS [5] 435.39% -18.70% 118.91% 55.21% 49.30% 35.12% -0.404 -0.018 -0.0146 -0.0149 0.0014 0.0004 Opus [4] 644.32% 253.10% 1195.10% 738.67% 152.35% 279.95% -0.669 -0.718 -0.0954 -0.1290 0.0132 -0.0180 AMR-WB [6] 254.53% 50.94% 900.67% 561.82% -19.13% 74.83% -0.244 -0.154 -0.0721 -0.0959 -0.0010 -0.0021 
+
+Neural 
+
+FunCodec [11] 0% 0% 0% 0% 0% 0% 0 0 0 0 0 0SoundStream [8] 143.09% 135.22% 158.19% 131.29% 81.14% 101.15% -0.271 -0.513 -0.0286 -0.0460 0.0073 -0.0084 EnCodec [9] 199.17% 186.84% 141.01% 110.71% 74.84% 88.64% -0.407 -0.676 -0.0302 -0.0453 0.0169 -0.0115 DAC [10] 289.34% 77.19% 586.87% 332.64% 180.31% 241.24% -0.724 -0.850 -0.1030 -0.1445 0.1360 -0.0607 SpeechTokenizer [22] 293.86% 214.85% 615.59% 403.86% 11.35% 132.93% -0.729 -0.776 -0.0961 -0.1429 -0.0139 -0.0423 Mimi [12] 51.77% -2.94% -9.75% -7.39% -15.10% -41.76% -0.210 0.019 0.0054 0.0070 -0.0196 0.0149 SemantiCodec [27] -22.46% 6.10% 24.77% 8.48% -33.76% -45.47% 0.127 -0.077 -0.0147 -0.0123 -0.0781 0.0312 TAAE [30] 49.15% -5.37% -1.37% -6.22% -30.94% -32.41% -0.273 0.035 0.0011 0.0078 -0.1198 0.0343 
+
+ECC -44.19% -69.38% -58.35% -55.67% -32.06% -80.36% 0.268 0.597 0.0386 0.0625 -0.0594 0.0515 
+
+Note: FunCodec is the BD anchor. Green and red backgrounds indicate better and worse values than FunCodec according to each column direction. Bold and underline denote the best and second-best values in each column. BD values are reported only for methods with more than two valid operating points within the common RD range. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 10 0 2000 4000 6000 8000 10000 12000 14000 16000 
+
+Bits per second (bps) 
+
+3.4 
+
+3.6 
+
+3.8 
+
+4.0 
+
+4.2 
+
+4.4 
+
+4.6 
+
+> ViSQOL
+
+0 2000 4000 6000 8000 10000 12000 14000 16000 
+
+Bits per second (bps) 
+
+1.5 
+
+2.0 
+
+2.5 
+
+3.0 
+
+3.5 
+
+4.0 
+
+> PESQ (WB)
+
+0 2000 4000 6000 8000 10000 12000 14000 16000 
+
+Bits per second (bps) 
+
+0.70 
+
+0.75 
+
+0.80 
+
+0.85 
+
+0.90 
+
+0.95 
+
+> STOI
+
+0 2000 4000 6000 8000 10000 12000 14000 16000 
+
+Bits per second (bps) 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+> ESTOI
+
+0 2000 4000 6000 8000 10000 12000 14000 16000 
+
+Bits per second (bps) 
+
+0.05 
+
+0.10 
+
+0.15 
+
+0.20 
+
+0.25 
+
+> WER
+
+0 2000 4000 6000 8000 10000 12000 14000 16000 
+
+Bits per second (bps) 
+
+0.800 
+
+0.825 
+
+0.850 
+
+0.875 
+
+0.900 
+
+0.925 
+
+0.950 
+
+0.975 
+
+> SPK SIM
+
+Performance on VCTK 
+
+ECC_proposed 
+
+EVS 
+
+Opus 
+
+AMR-WB 
+
+Lyra 
+
+EnCodec 
+
+DAC 
+
+SNAC 
+
+FunCodec 
+
+SpeechTokenizer 
+
+Mimi 
+
+BigCodec 
+
+SemanticCodec 
+
+TAAE 
+
+Fig. 7. Rate–distortion performance on VCTK across the objective metric set. ECC preserves a favorable RD trade-off on the out-of-domain evaluation set. TABLE IV BD COMPARISON RELATIVE TO FUN CODEC ON VCTK. 
+
+Group Method BD-rate ↓ BD-metric ViSQOL PESQ STOI ESTOI WER SPK-SIM ViSQOL ↑ PESQ ↑ STOI ↑ ESTOI ↑ WER ↓ SPK-SIM ↑
+
+Classic 
+
+EVS [5] 290.77% -95.65% 72.39% -18.35% -12.74% -33.58% -0.300 0.443 -0.0177 0.0003 -0.0006 0.0026 Opus [4] 319.75% -63.11% 1517.27% 583.76% 96.63% 208.75% -0.374 0.075 -0.1003 -0.1232 0.0076 -0.0343 AMR-WB [6] 239.79% -74.01% 1090.88% 382.65% -28.77% 1.38% -0.233 0.256 -0.0780 -0.0865 -0.0007 -0.0006 
+
+Neural 
+
+FunCodec [11] 0% 0% 0% 0% 0% 0% 0 0 0 0 0 0SoundStream [8] 183.60% 62.77% 243.87% 165.70% 47.72% 95.90% -0.285 -0.216 -0.0390 -0.0629 0.0042 -0.0167 EnCodec [9] 252.04% 85.44% 414.87% 192.97% 101.87% 144.39% -0.399 -0.336 -0.0604 -0.0741 0.0222 -0.0368 DAC [10] 609.27% -36.76% 391.35% 109.69% 279.59% 98.23% -0.701 -0.550 -0.0737 -0.0900 0.1298 -0.0671 SpeechTokenizer [22] 509.20% 142.64% 566.39% 346.48% 3.55% 118.97% -0.718 -0.514 -0.0888 -0.1345 -0.0201 -0.0754 Mimi [12] 97.28% -12.80% 91.51% 34.85% -16.90% -11.19% -0.278 0.071 -0.0273 -0.0239 -0.0172 0.0096 SemantiCodec [27] -8.06% -13.34% 38.87% 15.54% 0.77% -28.13% 0.034 0.042 -0.0156 -0.0135 -0.0082 0.0310 TAAE [30] 17.58% -63.65% 4.99% -36.57% -53.72% -56.72% -0.082 0.540 -0.0026 0.0442 -0.1466 0.0933 ECC -35.65% -83.25% -8.44% -43.60% -11.14% -69.99% 0.186 0.693 0.0096 0.0507 -0.0418 0.0892 
+
+Note: FunCodec is the BD anchor. Green and red backgrounds indicate better and worse values than FunCodec according to each column direction. Bold and underline denote the best and second-best values in each column. BD values are reported only for methods with more than two valid operating points within the common RD range. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 11 400 486 560 700 772 980 1040                  
+
+> Bits per second (bps)
+> 40
+> 60
+> 80
+> 100
+> MUSHRA (LibriTTS Clean)
+> 400 514 560 700 831 980 1040
+> Bits per second (bps)
+> 40
+> 60
+> 80
+> 100
+> MUSHRA (LibriTTS Other)
+> 400 560 577 700 865 980 1040
+> Bits per second (bps)
+> 40
+> 60
+> 80
+> 100
+> MUSHRA (VCTK)
+> TAAE ECC Mimi SNAC BigCodec Ref
+
+Fig. 8. MUSHRA subjective results in the low-bitrate regime. Bars and error bars denote mean listener scores and standard deviations; ECC achieves strong perceived quality at lower bitrates. 1000 2000 3000 4000 5000     
+
+> Bits per second (bps)
+> 3.8
+> 4.0
+> 4.2
+> 4.4
+> 4.6
+> 4.8
+> ViSQOL
+> 1000 2000 3000 4000 5000
+> Bits per second (bps)
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> 4.0
+> PESQ (WB)
+> ECC_CRM_CWl4
+> CRM_CWl0
+> CRM_HPl4
+> CRM_HPl0
+> Conv_CWl4
+> Conv_CWl0
+> Conv_HPl4
+> Conv_HPl0
+> FunCodec ECC
+> CRM_CWl0
+> CRM_HPl4
+> CRM_HPl0
+> Conv_CWl4
+> Conv_CWl0
+> Conv_HPl4
+> Conv_HPl0
+> 0
+> 25
+> 50
+> 75
+> 100
+> 125
+> Parameters (M)
+
+Model Complexity by Variant 
+
+> Encoder
+> Entropy model
+> Decoder
+> Params bar (left axis)
+> Compute bar (right axis)
+> 0
+> 5
+> 10
+> 15
+> Compute (GMACs/s)
+
+Fig. 9. Ablation and complexity results. Left: ablation study on LibriTTS test-all using ViSQOL and PESQ, comparing backbone design, entropy structure, and entropy attention depth. Right: complexity comparison among variants. 
+
+corpus, this comparison evaluates publicly available codec systems rather than a controlled architecture-only setting. 
+
+4) Evaluation Metrics: We report ViSQOL [85], wideband PESQ [86], STOI [87], ESTOI [88], WER, speaker similarity, and actual bitrate. For ECC, the reported bitrate is computed from the actual entropy-coded bitstream, including both hyper-latent and primary-latent streams. For neural RVQ baselines, rates follow the official operating points or the generated coded representations provided by the released systems. For metric computation, all reference waveforms are resam-pled to 16 kHz, and reconstructed waveforms are evaluated against the corresponding 16 kHz references. No loudness normalization, amplitude normalization, or additional time-domain alignment is applied. WER is computed with aHuBERT-based ASR backend [58] by comparing the recog-nized text with the ground-truth transcript of each dataset. Speaker similarity is computed with a WavLM-based speaker verification backend [59]. All methods are evaluated with the same preprocessing and metric backends. For codecs with sparse released operating points, intermediate RD samples are interpolated for curve-level comparison, while BD-rate and BD-metric values are reported only for methods with more than two valid points in the common quality range. 
+
+B. Rate-Distortion Performance 1) Objective RD Curves: Figs. 6 and 7 report objective RD curves on LibriTTS test-all and VCTK, respectively. Across perceptual quality, intelligibility, recognition, and speaker-preservation metrics, ECC consistently occupies a favorable 
+
+TABLE V BD ABLATION RESULTS OF THE VARIANTS .
+
+Variant BD-ViSQOL ↑ BD-rate ↓
+
+(ViSQOL) BD-PESQ ↑ BD-rate ↓
+
+(PESQ) 
+
+ECC CRM CWl4 0.195 -45.86% 0.737 -65.60% 
+
+CRM CWl0 0.189 -44.98% 0.673 -64.18% CRM HPl4 0.167 -40.30% 0.597 -60.64% CRM HPl0 0.184 -43.26% 0.580 -58.75% Conv CWl4 0.124 -31.98% 0.248 -31.09% Conv CWl0 0.065 -18.04% 0.210 -27.48% Conv HPl4 0.141 -36.46% 0.444 -49.34% Conv HPl0 0.130 -34.21% 0.328 -40.55%  
+
+> Note: CRM/Conv denote the CRM and purely convolutional encoder–decoder backbones. CW/HP compare channel-wise context modeling with LRP against hyperprior-only entropy modeling. l0/l4 denote zero or four attention layers in the entropy model.
+
+low-bitrate region compared with both conventional codecs and recent neural baselines. On LibriTTS, ECC achieves comparable or better quality at lower actual bitrates, showing the effectiveness of entropy-constrained scalar-latent coding on the in-domain test set. On VCTK, ECC preserves a similar trend under speaker and recording-condition shifts, indicating that the learned representation and entropy model generalize beyond the training corpus. Tables III and IV further summarize curve-level perfor-mance using FunCodec as the anchor. ECC achieves the best or near-best BD-rate and BD-metric results for most reported metrics on both datasets, with particularly consistent gains in perceptual quality and speaker similarity. The recognition metric is more competitive across methods, but ECC remains among the leading approaches while maintaining strong per-JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 12 0 1000 2000 3000 4000 5000                                       
+
+> Bits per second (bps)
+> 3.4
+> 3.6
+> 3.8
+> 4.0
+> 4.2
+> 4.4
+> 4.6
+> 4.8
+> ViSQOL
+> 01000 2000 3000 4000 5000
+> Bits per second (bps)
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> 4.0
+> PESQ (WB)
+> 124816 32
+> Number of RVQ layers
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Compressed ratio (%)
+> ECC proposed Sample freq. + AC Dataset freq. + AC LLM 50M + AC LLM 100M + AC
+> Fig. 10. Post-hoc entropy-coding diagnostics. Left: comparison between ECC and post-hoc entropy coding baselines; FunCodec variants re-encode fixed RVQ indices, so quality is unchanged and only bitrate shifts. Right: per-RVQ-stage compression ratio on FunCodec indices; higher values indicate stronger lossless compression. 1000 2000 3000 4000 5000
+> Bits per second (bps)
+> 3.8
+> 4.0
+> 4.2
+> 4.4
+> 4.6
+> 4.8
+> ViSQOL
+> 1000 2000 3000 4000 5000
+> Bits per second (bps)
+> 2.5
+> 3.0
+> 3.5
+> 4.0
+> PESQ (WB)
+> 0k5 0k8 1k3 2k 3k5 4k8
+> Bitrate point
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Skip ratio
+> = 0 = 0.06 = 0.06 oracle = 0.12 = 0.12 oracle = 0.3 = 0.3 oracle
+> Fig. 11. Entropy skip threshold analysis. Left: rate–distortion comparison of entropy skip thresholds; larger thresholds skip more residual symbols, and
+> τσ= 0 .12 is used in the main comparison. Right: skip ratio statistics for the normal scale-threshold rule and the oracle diagnostic rule.
+
+ceptual and speaker-preservation performance. Overall, the objective results show that ECC improves the low-bitrate RD trade-off under both in-domain and out-of-domain evaluations. 
+
+2) Subjective Test: We further assess low-bitrate perceptual quality with a MUSHRA listening test. The test includes reference and low-quality anchor samples, and compares ECC with representative low-bitrate neural codec baselines. As shown in Fig. 8, ECC obtains high subjective scores on both LibriTTS test-clean/test-other and VCTK utterances. It remains close to the strongest competing neural codec while operating at a lower bitrate, and outperforms several baselines in the same low-bitrate range. These subjective results are consistent with the objective RD curves and confirm that the entropy-constrained representation improves perceived speech quality at very low bitrates. 
+
+C. Ablation Studies 
+
+We analyze the main design choices of ECC, including the transform backbone, channel-wise entropy modeling, entropy-side temporal modeling, post-hoc coding of fixed RVQ indices, and entropy skip. 
+
+1) Architecture Ablation: Table V and Fig. 9 compare three architectural factors: CRM versus purely convolutional backbones, channel-wise context with LRP versus hyperprior-only entropy modeling, and four versus zero RWKV layers in the entropy model. Across the tested RD range, CRM variants consistently outperform their convolutional counterparts under comparable entropy settings, showing the benefit of hybrid local and long-range spectro-temporal modeling. Under the CRM backbone, channel-wise context modeling with LRP further improves the RD trade-off over the hyperprior-only setting, indicating that decoded channel context captures de-pendencies not fully explained by the hyperprior. Adding entropy-side temporal modeling generally improves the PESQ-oriented trade-off, while the l0 variants show that much of the gain already comes from the transform backbone and channel-wise entropy structure. Overall, the best configuration combines the CRM transform, channel-wise context with LRP, and lightweight temporal modeling in the entropy model. 
+
+2) Post-Hoc Coding Versus Learned Latents: To compare post-hoc index coding with joint entropy-constrained learning, we re-encode fixed FunCodec RVQ indices using dataset-level marginal, sample-level marginal, and autoregressive Trans-former coders. These baselines only change the lossless coding of an already generated index stream, so waveform quality and objective distortion metrics remain unchanged. As shown in Fig. 10, post-hoc coding can reduce bitrate, but the gain depends strongly on the coding model and the RVQ stage. Early RVQ stages contain stronger temporal regularities and are more compressible, whereas later residual stages become harder to predict. Thus, post-hoc coding can reduce the cost of a fixed representation, but it cannot reshape the latents, codebook usage, or reconstruction behavior. ECC instead learns scalar-quantized latents jointly with their probability JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 13 2000 4000       
+
+> Bits per second (bps)
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> 4.0
+> = 0.06
+> = 0.06 oracle
+> 2000 4000
+> Bits per second (bps)
+> = 0.12
+> = 0.12 oracle
+> 2000 4000
+> Bits per second (bps)
+> = 0.3
+> = 0.3 oracle
+> PESQ(WB) 05000 10000 15000 20000
+> Training step (valid every 10000 steps)
+> 0.2
+> 0.3
+> 0.4
+> Rate loss
+> = 0_T
+> = 0_V
+> = 0.06_T
+> = 0.06_V
+> = 0.12_T
+> = 0.12_V
+> = 0.3_T
+> = 0.3_V
+
+Fig. 12. Entropy skip diagnostics. Left: diagnostic PESQ comparison between normal skip and oracle skip for τσ = 0 .06 , 0.12 , and 0.3. Right: training and validation latent rate loss under different skip thresholds; larger thresholds reduce the train–validation gap. 0 5000 10000 15000    
+
+> Bits per second (bps)
+> 3.5
+> 4.0
+> 4.5
+> ViSQOL
+> 05000 10000 15000
+> Bits per second (bps)
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> PESQ (WB)
+
+Performance on AISHELL-3       
+
+> ECC_proposed
+> EVS
+> Opus
+> AMR-WB
+> Lyra
+> EnCodec
+> DAC
+> SNAC
+> FunCodec
+> Mimi
+> BigCodec
+> TAAE
+> SemanticCodec
+> SpeechTokenizer 400 508 560 700 824 980 1040
+> Bits per second (bps)
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> MUSHRA (AISHELL-3)
+> TAAE
+> ECC
+> Mimi
+> SNAC
+> BigCodec
+> Ref
+
+Fig. 13. Generalization performance on AISHELL-3. ECC maintains a favorable low-bitrate RD trade-off on Mandarin Chinese speech, suggesting cross-lingual generalization beyond the LibriTTS training corpus. TABLE VI COMPLEXITY COMPARISON WITH NEURAL CODEC BASELINES .
+
+Metric EnCodec [9] DAC [10] SNAC [21] FunCodec [11] SpeechTokenizer [22] Mimi [12] BigCodec [25] SemanticCodec [27] TAAE [30] ECC GMACs/s 5.56 55.65 7.278 2.143 17.045 11.214 61.092 1077.779 37.568 16.930 
+
+Params(M) 14.85 74.06 19.84 4.5 103.676 79.292 159.323 507 953.09 150.68 
+
+model, yielding a stronger low-bitrate RD trade-off. 
+
+3) Entropy Skip Thresholds and Coding Consistency: We evaluate entropy skip thresholds τσ ∈ {0, 0.06 , 0.12 , 0.3},where τσ = 0 denotes the no-skip baseline and τσ = 0 .12 
+
+is used in the main comparison. As shown in Fig. 11, skip-enabled models improve over the no-skip baseline, with larger thresholds producing higher skip ratios and stronger RD gains. The threshold τσ = 0 .12 achieves most of the gain without using the most aggressive skip ratio, and is therefore adopted as a conservative main setting. The normal skip rule is deployable because it depends only on decoder-available scale estimates, while oracle skip is used only as a diagnostic because it depends on the actual rounded residual. Fig. 12 compares normal skip with oracle skip and reports the training–validation rate behavior. The oracle skip ratio in-dicates how many skipped positions are truly zero after round-ing, while the gap between normal and oracle ratios shows that the scale-threshold rule can also suppress some nonzero residuals. Although oracle skip restores these nonzero rounded residuals, it does not necessarily improve RD performance because later context prediction and LRP are trained under the scale-threshold skip trajectory. Recovering these residuals can therefore introduce a mismatch in the decoded latent trajectory. The rate-loss curves further show that entropy skip reduces the gap between noise-relaxed training rates and rounded-symbol validation rates, especially at larger thresholds. These results indicate that entropy skip improves coding efficiency by omitting highly predictable residual symbols and by making the training rate term more consistent with actual coding. 
+
+D. Complexity 
+
+Table VI reports the computational complexity and param-eter counts of ECC and representative neural codec baselines. The reported GMACs/s and parameters measure the neural-network components of each codec, including the analysis transform, synthesis transform, and entropy-model networks when applicable. They provide an architecture-level compar-ison rather than a hardware-specific runtime measurement, since practical latency also depends on implementation details, arithmetic coding, and sequential entropy-decoding steps. Compared with compact codecs such as FunCodec [11], EnCodec [9], SNAC [21], and Mimi [12], ECC requires more parameters and computation due to its stronger trans-form backbone and explicit entropy model. Nevertheless, its GMACs/s remains comparable to SpeechTokenizer [22] and lower than heavier systems such as DAC [10], BigCodec [25], SemanticCodec [27], and TAAE [30], reflecting a complexity– RD trade-off. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 14 
+
+The complexity comparison also shows where future op-timization is needed. Channel-wise entropy modeling and slice-wise decoding improve coding efficiency, but they may introduce extra sequential operations during deployment. Lightweight entropy models, faster context prediction, and streaming-oriented implementations are therefore important directions for practical low-delay speech coding. 
+
+E. Generalization 
+
+We evaluate the proposed ECC, trained on the English LibriTTS speech dataset, using the AISHELL-3 dataset to examine its cross-lingual generalization to Mandarin Chinese speech. Since ECC is trained as a waveform reconstruction codec rather than a language model, this experiment mainly tests whether the learned acoustic representation and entropy model transfer beyond the English training corpus. As shown in Fig. 13, ECC maintains a favorable low-bitrate RD trade-off on both ViSQOL and PESQ. Its curves rise quickly in the low-to-mid bitrate range, indicating that the entropy-constrained representation remains effective under language and recording-condition shifts. Some baselines approach competitive quality only at substantially higher bitrates, whereas ECC achieves strong perceptual quality with fewer transmitted bits. These results suggest that ECC does not simply overfit to the LibriTTS test distribution. Instead, the learned scalar latents and probability model retain useful acoustic compression behavior on a cross-lingual test set. Broader multilingual and general-audio evaluations remain important future work. VII. C ONCLUSION 
+
+In this work, we benchmarked neural speech compres-sion from a rate–distortion perspective and studied entropy-constrained coding as a way to improve low-bitrate effi-ciency. We formulated a unified learning-based speech coding pipeline, reviewed recent neural speech codecs, and iden-tified the mismatch between preset-rate discrete represen-tations and learned probability modeling. To address this issue, we proposed ECC, an Entropy-Constrained Codec that combines scalar quantization, hyperprior-based side informa-tion, channel-wise context modeling, lightweight temporal modeling, latent residual prediction, and entropy skip within an end-to-end rate–distortion optimization framework. Exten-sive experiments show that ECC achieves a favorable low-bitrate RD trade-off under objective and subjective evaluations, with 44.2%/35.7% ViSQOL and 69.4%/83.3% PESQ BD-rate reductions over FunCodec on LibriTTS/VCTK datasets. Ablation and diagnostic results further validate the effec-tiveness of entropy modeling, context prediction, post-hoc coding analysis, and skip-aware rate optimization. Future work includes practical rate-control mechanisms for constant-or adaptive-bitrate deployment, lightweight and low-latency entropy modeling, and broader evaluations on multilingual, noisy-speech, and general-audio scenarios. REFERENCES [1] 3GPP, “Non-Terrestrial Networks (NTN),” https://www.3gpp.org/ technologies/ntn-overview, 2024, accessed: 2026-06-09. [2] ——, “Study on Ultra Low Bit Rate Speech Codecs,” 3rd Generation Partnership Project (3GPP), Technical Report TR 26.940, 2025, release 20, draft specification. [3] K. Brandenburg, “Mp3 and aac explained,” in Audio Engineering Society Conference: 17th International Conference: High-Quality Audio Coding .Audio Engineering Society, 1999. [4] J.-M. Valin, K. Vos, and T. Terriberry, “Definition of the opus audio codec,” Tech. Rep., 2012. [5] M. Dietz, M. Multrus, V. Eksler, V. Malenovsky, E. Norvell, H. Pobloth, L. Miao, Z. Wang, L. Laaksonen, A. Vasilache et al. , “Overview of the evs codec architecture,” in 2015 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2015, pp. 5698–5702. [6] B. Bessette, R. Salami, R. Lefebvre, M. Jelinek, J. Rotola-Pukkila, J. Vainio, H. Mikkola, and K. Jarvinen, “The adaptive multirate wide-band speech codec (amr-wb),” IEEE transactions on speech and audio processing , vol. 10, no. 8, pp. 620–636, 2003. [7] V. Goyal, “Theoretical foundations of transform coding,” IEEE Signal Processing Magazine , vol. 18, no. 5, pp. 9–21, 2001. [8] N. Zeghidour, A. Luebs, A. Omran, J. Skoglund, and M. Tagliasacchi, “Soundstream: An end-to-end neural audio codec,” IEEE/ACM Transac-tions on Audio, Speech, and Language Processing , vol. 30, pp. 495–507, 2021. [9] A. D´ efossez, J. Copet, G. Synnaeve, and Y. Adi, “High fidelity neural audio compression,” Transactions on Machine Learning Research , 2023. [10] R. Kumar, P. Seetharaman, A. Luebs, I. Kumar, and K. Kumar, “High-fidelity audio compression with improved rvqgan,” in Proceedings of the 37th International Conference on Neural Information Processing Systems , 2023, pp. 27 980–27 993. [11] Z. Du, S. Zhang, K. Hu, and S. Zheng, “Funcodec: A fundamental, reproducible and integrable open-source toolkit for neural speech codec,” in ICASSP 2024-2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2024, pp. 591–595. [12] A. D´ efossez, L. Mazar´ e, M. Orsini, A. Royer, P. P´ erez, H. J´ egou, E. Grave, and N. Zeghidour, “Moshi: a speech-text foundation model for real-time dialogue,” arXiv preprint arXiv:2410.00037 , 2024. [13] H. Zen, V. Dang, R. Clark, Y. Zhang, R. J. Weiss, Y. Jia, Z. Chen, and Y. Wu, “Libritts: A corpus derived from librispeech for text-to-speech,” 
+
+arXiv preprint arXiv:1904.02882 , 2019. [14] J. Yamagishi, C. Veaux, and K. MacDonald, “Cstr vctk corpus: English multi-speaker corpus for cstr voice cloning toolkit (version 0.92),” 
+
+The Rainbow Passage which the speakers read out can be found in the International Dialects of English Archive:(http://web. ku. edu/˜ idea/readings/rainbow. htm). , 2019. [15] J. Xu, Z. Cheng, G. Chi, Y. Liu, Y. Hu, and L. Song, “Rate-aware learned speech compression,” in 2025 IEEE International Symposium on Circuits and Systems (ISCAS) . IEEE, 2025, pp. 1–5. [16] D. Yang, S. Liu, R. Huang, J. Tian, C. Weng, and Y. Zou, “Hifi-codec: Group-residual vector quantization for high fidelity audio codec,” arXiv preprint arXiv:2305.02765 , 2023. [17] Y.-C. Wu, I. D. G. Chen, G. Guo, H. Zhang, E. Cheung, P. Smaragdis, and Y. Wang, “Audiodec: An open-source streaming high-fidelity neural audio codec,” in ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2023, pp. 1–5. [18] Y. Gu and E. Diao, “Esc: Efficient speech coding with cross-scale resid-ual vector quantized transformers,” arXiv preprint arXiv:2404.19441 ,2024. [19] H. Siuzdak, “Vocos: Closing the gap between time-domain and fourier-based neural vocoders for high-quality audio synthesis,” in International Conference on Learning Representations , 2024. [20] Z. Niu, S. Chen, L. Zhou, Z. Ma, X. Chen, and S. Liu, “Ndvq: Robust neural audio codec with normal distribution-based vector quantization,” in 2024 IEEE Spoken Language Technology Workshop (SLT) . IEEE, 2024, pp. 705–710. [21] H. Siuzdak, F. Gr¨ otschla, and L. A. Lanzend¨ orfer, “Snac: Multi-scale neural audio codec,” in NeurIPS 2024 Workshop on AI-Driven Speech, Music, and Sound Generation , 2024. [22] X. Zhang, D. Zhang, S. Li, Y. Zhou, and X. Qiu, “Speechtokenizer: Uni-fied speech tokenizer for speech large language models,” in International Conference on Learning Representations , 2024. [23] Y. Ai, X.-H. Jiang, Y.-X. Lu, H.-P. Du, and Z.-H. Ling, “Apcodec: A neural audio codec with parallel amplitude and phase spectrum encoding and decoding,” IEEE/ACM Transactions on Audio, Speech, and Language Processing , vol. 32, pp. 3256–3269, 2024. [24] X.-H. Jiang, Y. Ai, R.-C. Zheng, H.-P. Du, Y.-X. Lu, and Z.-H. Ling, “Mdctcodec: A lightweight mdct-based neural audio codec towards high JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 15 
+
+sampling rate and low bitrate scenarios,” in 2024 IEEE Spoken Language Technology Workshop (SLT) . IEEE, 2024, pp. 540–547. [25] D. Xin, X. Tan, S. Takamichi, and H. Saruwatari, “Bigcodec: Push-ing the limits of low-bitrate neural speech codec,” arXiv preprint arXiv:2409.05377 , 2024. [26] R. Langman, A. Juki´ c, K. Dhawan, N. R. Koluguri, and B. Ginsburg, “Spectral codecs: Spectrogram-based audio codecs for high quality speech synthesis,” arXiv preprint arXiv:2406.05298 , 2024. [27] H. Liu, X. Xu, Y. Yuan, M. Wu, W. Wang, and M. D. Plumbley, “Semanticodec: An ultra low bitrate semantic audio codec for general sound,” IEEE Journal of Selected Topics in Signal Processing , 2024. [28] D. Yang, R. Huang, Y. Wang, H. Guo, D. Chong, S. Liu, X. Wu, and H. Meng, “Simplespeech 2: Towards simple and efficient text-to-speech with flow-based scalar latent transformer diffusion models,” IEEE Transactions on Audio, Speech and Language Processing , 2025. [29] X.-H. Jiang, Y. Ai, R.-C. Zheng, and Z.-H. Ling, “A streamable neural audio codec with residual scalar-vector quantization for real-time communication,” IEEE Signal Processing Letters , pp. 1–5, 2025. [30] J. D. Parker, A. Smirnov, J. Pons, C. Carr, Z. Zukowski, Z. Evans, and X. Liu, “Scaling transformers for low-bitrate high-quality speech coding,” in International Conference on Learning Representations , 2025. [31] H. Wu, N. Kanda, S. E. Eskimez, and J. Li, “Ts3-codec: Transformer-based simple streaming single codec,” in Interspeech 2025 , 2025, pp. 604–608. [32] S. Ji, Z. Jiang, W. Wang, Y. Chen, M. Fang, J. Zuo, Q. Yang, X. Cheng, Z. Wang, R. Li et al. , “Wavtokenizer: an efficient acoustic discrete codec tokenizer for audio language modeling,” in International Conference on Learning Representations , 2025. [33] L. Della Libera, F. Paissan, C. Subakan, and M. Ravanelli, “Focalcodec: Low-bitrate speech coding via focal modulation networks,” in Advances in Neural Information Processing Systems , 2025. [34] Z. Wan, G. Zhang, Y. He, and J. Wei, “Spectokenizer: A lightweight streaming codec in the compressed spectrum domain,” in Interspeech 2025 , 2025, pp. 599–603. [35] F. Mentzer, D. Minnen, E. Agustsson, and M. Tschannen, “Finite scalar quantization: Vq-vae made simple,” arXiv preprint arXiv:2309.15505 ,2023. [36] J. Ball´ e, V. Laparra, and E. P. Simoncelli, “End-to-end optimized image compression,” arXiv preprint arXiv:1611.01704 , 2016. [37] M. Li, W. Zuo, S. Gu, J. You, and D. Zhang, “Learning content-weighted deep image compression,” IEEE transactions on pattern analysis and machine intelligence , vol. 43, no. 10, pp. 3446–3461, 2020. [38] F. Mentzer, E. Agustsson, M. Tschannen, R. Timofte, and L. Van Gool, “Conditional probability models for deep image compression,” in Pro-ceedings of the IEEE conference on computer vision and pattern recognition , 2018, pp. 4394–4402. [39] J. Ball´ e, D. Minnen, S. Singh, S. J. Hwang, and N. Johnston, “Vari-ational image compression with a scale hyperprior,” arXiv preprint arXiv:1802.01436 , 2018. [40] D. Minnen, J. Ball´ e, and G. D. Toderici, “Joint autoregressive and hierarchical priors for learned image compression,” Advances in neural information processing systems , vol. 31, 2018. [41] Z. Cheng, H. Sun, M. Takeuchi, and J. Katto, “Learned image com-pression with discretized gaussian mixture likelihoods and attention modules,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2020, pp. 7939–7948. [42] B. Bross, Y.-K. Wang, Y. Ye, S. Liu, J. Chen, G. J. Sullivan, and J.-R. Ohm, “Overview of the versatile video coding (vvc) standard and its applications,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 31, no. 10, pp. 3736–3764, 2021. [43] T. Salimans, A. Karpathy, X. Chen, and D. P. Kingma, “Pixelcnn++: Improving the pixelcnn with discretized logistic mixture likelihood and other modifications,” arXiv preprint arXiv:1701.05517 , 2017. [44] D. He, Y. Zheng, B. Sun, Y. Wang, and H. Qin, “Checkerboard context model for efficient learned image compression,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2021, pp. 14 771–14 780. [45] D. Minnen and S. Singh, “Channel-wise autoregressive entropy models for learned image compression,” in 2020 IEEE International Conference on Image Processing (ICIP) . IEEE, 2020, pp. 3339–3343. [46] D. He, Z. Yang, W. Peng, R. Ma, H. Qin, and Y. Wang, “Elic: Efficient learned image compression with unevenly grouped space-channel contextual adaptive coding,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2022, pp. 5718– 5727. [47] F. Mentzer, E. Agustson, and M. Tschannen, “M2t: Masking trans-formers twice for faster decoding,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 5340–5349. [48] H. Chang, H. Zhang, L. Jiang, C. Liu, and W. T. Freeman, “Maskgit: Masked generative image transformer,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2022, pp. 11 315–11 325. [49] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai, T. Unterthiner, M. Dehghani, M. Minderer, G. Heigold, S. Gelly et al. ,“An image is worth 16x16 words: Transformers for image recognition at scale,” arXiv preprint arXiv:2010.11929 , 2020. [50] Y. Qian, M. Lin, X. Sun, Z. Tan, and R. Jin, “Entroformer: Atransformer-based entropy model for learned image compression,” arXiv preprint arXiv:2202.05492 , 2022. [51] A. B. Koyuncu, H. Gao, A. Boev, G. Gaikov, E. Alshina, and E. Stein-bach, “Contextformer: A transformer with spatio-channel attention for context modeling in learned image compression,” in European confer-ence on computer vision . Springer, 2022, pp. 447–463. [52] W. Jiang, J. Yang, Y. Zhai, F. Gao, and R. Wang, “Mlic++: Linear com-plexity multi-reference entropy modeling for learned image compres-sion,” ACM Transactions on Multimedia Computing, Communications and Applications , vol. 21, no. 5, pp. 1–25, 2025. [53] D. Li, Y. Bai, K. Wang, J. Jiang, X. Liu, and W. Gao, “Groupedmixer: An entropy model with group-wise token-mixers for learned image compression,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 34, no. 10, pp. 9606–9619, 2024. [54] Y. Hu, W. Yang, Z. Ma, and J. Liu, “Learning end-to-end lossy image compression: A benchmark,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 44, no. 8, pp. 4194–4211, 2021. [55] Z. Duan, M. Lu, J. Ma, Y. Huang, Z. Ma, and F. Zhu, “Qarv: Quantization-aware resnet vae for lossy image compression,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 46, no. 1, pp. 436–450, 2023. [56] J. Lu, L. Zhang, X. Zhou, M. Li, W. Li, and S. Gu, “Learned image compression with dictionary-based entropy model,” in Proceedings of the Computer Vision and Pattern Recognition Conference , 2025, pp. 12 850–12 859. [57] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, “Bert: Pre-training of deep bidirectional transformers for language understanding,” in Pro-ceedings of the 2019 conference of the North American chapter of the association for computational linguistics: human language technologies, volume 1 (long and short papers) , 2019, pp. 4171–4186. [58] W.-N. Hsu, B. Bolte, Y.-H. H. Tsai, K. Lakhotia, R. Salakhutdinov, and A. Mohamed, “Hubert: Self-supervised speech representation learning by masked prediction of hidden units,” IEEE/ACM transactions on audio, speech, and language processing , vol. 29, pp. 3451–3460, 2021. [59] S. Chen, C. Wang, Z. Chen, Y. Wu, S. Liu, Z. Chen, J. Li, N. Kanda, T. Yoshioka, X. Xiao et al. , “Wavlm: Large-scale self-supervised pre-training for full stack speech processing,” IEEE Journal of Selected Topics in Signal Processing , vol. 16, no. 6, pp. 1505–1518, 2022. [60] K. Lakhotia, E. Kharitonov, W.-N. Hsu, Y. Adi, A. Polyak, B. Bolte, T.-A. Nguyen, J. Copet, A. Baevski, A. Mohamed et al. , “On gener-ative spoken language modeling from raw audio,” Transactions of the Association for Computational Linguistics , vol. 9, pp. 1336–1354, 2021. [61] P. Mousavi, J. Duret, S. Zaiem, L. Della Libera, A. Ploujnikov, C. Sub-akan, and M. Ravanelli, “How should we extract discrete audio tokens from self-supervised models?” 2024. [62] H. Yang, K. Zhen, S. Beack, and M. Kim, “Source-aware neural speech coding for noisy speech compression,” in ICASSP 2021-2021 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2021, pp. 706–710. [63] A. Omran, N. Zeghidour, Z. Borsos, F. de Chaumont Quitry, M. Slaney, and M. Tagliasacchi, “Disentangling speech from surroundings with neu-ral embeddings,” in ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2023, pp. 1–5. [64] A. Polyak, Y. Adi, J. Copet, E. Kharitonov, K. Lakhotia, W.-N. Hsu, A. Mohamed, and E. Dupoux, “Speech resynthesis from discrete disen-tangled self-supervised representations,” 2021. [65] X. Jiang, X. Peng, Y. Zhang, and Y. Lu, “Disentangled feature learn-ing for real-time neural speech coding,” in ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2023, pp. 1–5. [66] Y. Ren, T. Wang, J. Yi, L. Xu, J. Tao, C. Y. Zhang, and J. Zhou, “Fewer-token neural speech codec with time-invariant codes,” in ICASSP 2024-2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2024, pp. 12 737–12 741. JOURNAL OF L ATEX CLASS FILES, VOL. 14, NO. 8, AUGUST 2021 16 
+
+[67] Z. Ju, Y. Wang, K. Shen, X. Tan, D. Xin, D. Yang, Y. Liu, Y. Leng, K. Song, S. Tang et al. , “Naturalspeech 3: Zero-shot speech synthesis with factorized codec and diffusion models,” 2024. [68] Y. Guo, Z. Li, C. Du, H. Wang, X. Chen, and K. Yu, “Lscodec: Low-bitrate and speaker-decoupled discrete speech codec,” 2024. [69] H. Guo, F. Xie, K. Xie, D. Yang, D. Guo, X. Wu, and H. Meng, “Socodec: A semantic-ordered multi-stream speech codec for efficient language model based text-to-speech synthesis,” in 2024 IEEE Spoken Language Technology Workshop (SLT) . IEEE, 2024, pp. 645–651. [70] B. Desplanques, J. Thienpondt, and K. Demuynck, “Ecapa-tdnn: Em-phasized channel attention, propagation and aggregation in tdnn based speaker verification,” 2020. [71] X. Bie, X. Liu, and G. Richard, “Learning source disentanglement in neural audio codec,” pp. 1–5, 2025. [72] Z. Ye, P. Sun, J. Lei, H. Lin, X. Tan, Z. Dai, Q. Kong, J. Chen, J. Pan, Q. Liu et al. , “Codec does matter: Exploring the semantic shortcoming of codec for audio language model,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 39, no. 24, 2025, pp. 25 697–25 705. [73] D. Yang, H. Guo, Y. Wang, R. Huang, X. Li, X. Tan, X. Wu, and H. Meng, “Uniaudio 1.5: Large language model-driven audio codec is a few-shot audio task learner,” vol. 37, 2024, pp. 56 802–56 827. [74] H. Touvron, L. Martin, K. Stone, P. Albert, A. Almahairi, Y. Babaei, N. Bashlykov, S. Batra, P. Bhargava, S. Bhosale et al. , “Llama 2: open foundation and fine-tuned chat models. arxiv,” arXiv preprint arXiv:2307.09288 , vol. 10, 2023. [75] Z. Du, Q. Chen, S. Zhang, K. Hu, H. Lu, Y. Yang, H. Hu, S. Zheng, Y. Gu, Z. Ma et al. , “Cosyvoice: A scalable multilingual zero-shot text-to-speech synthesizer based on supervised semantic tokens,” arXiv preprint arXiv:2407.05407 , 2024. [76] Z. Du, Y. Wang, Q. Chen, X. Shi, X. Lv, T. Zhao, Z. Gao, Y. Yang, C. Gao, H. Wang et al. , “Cosyvoice 2: Scalable streaming speech synthesis with large language models,” arXiv preprint arXiv:2412.10117 ,2024. [77] N. Har-Tuv, O. Tal, and Y. Adi, “Past: Phonetic-acoustic speech tok-enizer,” arXiv preprint arXiv:2505.14470 , 2025. [78] A. Tong, K. Fatras, N. Malkin, G. Huguet, Y. Zhang, J. Rector-Brooks, G. Wolf, and Y. Bengio, “Improving and generalizing flow-based generative models with minibatch optimal transport,” arXiv preprint arXiv:2302.00482 , 2023. [79] A. Zeng, Z. Du, M. Liu, K. Wang, S. Jiang, L. Zhao, Y. Dong, and J. Tang, “Glm-4-voice: Towards intelligent and human-like end-to-end spoken chatbot,” arXiv preprint arXiv:2412.02612 , 2024. [80] M. Tagliasacchi, Y. Li, K. Misiunas, and D. Roblek, “Seanet: A multi-modal speech enhancement network,” arXiv preprint arXiv:2009.02095 ,2020. [81] B. Peng, E. Alcaide, Q. Anthony, A. Albalak, S. Arcadinho, S. Bider-man, H. Cao, X. Cheng, M. Chung, M. Grella et al. , “Rwkv: Reinventing rnns for the transformer era,” arXiv preprint arXiv:2305.13048 , 2023. [82] B. Peng, D. Goldstein, Q. Anthony, A. Albalak, E. Alcaide, S. Biderman, E. Cheah, T. Ferdinan, H. Hou, P. Kazienko et al. , “Eagle and finch: Rwkv with matrix-valued states and dynamic recurrence,” arXiv preprint arXiv:2404.05892 , 2024. [83] Y. Shi, Y. Ge, J. Wang, and J. Mao, “Alphavc: High-performance and efficient learned video compression,” in European Conference on Computer Vision . Springer, 2022, pp. 616–631. [84] Y. Shi, H. Bu, X. Xu, S. Zhang, and M. Li, “Aishell-3: A multi-speaker mandarin tts corpus and the baselines,” arXiv preprint arXiv:2010.11567 ,2020. [85] A. Hines, J. Skoglund, A. C. Kokaram, and N. Harte, “Visqol: an objective speech quality model,” EURASIP Journal on Audio, Speech, and Music Processing , vol. 2015, pp. 1–18, 2015. [86] A. W. Rix, J. G. Beerends, M. P. Hollier, and A. P. Hekstra, “Per-ceptual evaluation of speech quality (pesq)-a new method for speech quality assessment of telephone networks and codecs,” in 2001 IEEE international conference on acoustics, speech, and signal processing. Proceedings (Cat. No. 01CH37221) , vol. 2. IEEE, 2001, pp. 749–752. [87] C. H. Taal, R. C. Hendriks, R. Heusdens, and J. Jensen, “An algorithm for intelligibility prediction of time–frequency weighted noisy speech,” 
+
+IEEE Transactions on Audio, Speech, and Language Processing , vol. 19, no. 7, pp. 2125–2136, 2011. [88] J. Jensen and C. H. Taal, “An algorithm for predicting the intelligibility of speech masked by modulated noise maskers,” IEEE/ACM Transac-tions on Audio, Speech, and Language Processing , vol. 24, no. 11, pp. 2009–2022, 2016. 
+
+Jun Xu receives the B.E. degree from Shanghai Jiao Tong University, Shanghai, China in 2020. He is currently pursuing the Ph.D degree with the Depart-ment of Electronic Engineering, Shanghai Jiao Tong University, Shanghai, China. His research interests include audio/video compression and multimedia system. 
+
+Zhengxue Cheng (Member, IEEE) receives the B.E. degree from Shanghai Jiao Tong University, Shanghai, China in 2014 and the M.E. degrees from Waseda University, Kitakyushu, Japan and Shanghai Jiao Tong University in 2015 and 2017, respectively through a double-degree program. She receives a PhD.degree at Waseda University, Tokyo, Japan in 2020. Then She worked in Ant Group, Hangzhou, China, as an Algorithm Expert until April 2024. She joined the institute of Image Communication and Network Engineering, Shanghai Jiao Tong Univer-sity as an assistant researcher in May 2024. Her research interests include deep learning-based media compression and quality evaluation. 
+
+Fengxi Zhang received the B.E. degree from Xidian University, Shaanxi, China in 2024. He is currently pursuing the Ph.D. degree with the Department of Electronic Engineering, Shanghai Jiao Tong Univer-sity, Shanghai, China. His research interests include audio compression. 
+
+Yuhan Liu received the B.S. degree from Shanghai Jiao Tong University, Shanghai, China. He is cur-rently pursuing the M.S. degree with SJTU Paris Elite Institute of Technology, Shanghai Jiao Tong University. His research interests include audio com-pression and image compression. 
+
+Li Song (Senior Member, IEEE) received the B.E. and M.S. degrees in engineering in 1997 and 2000, respectively, and the Ph.D. degree in electrical engi-neering from Shanghai Jiao Tong University (SJTU) in 2005. He is currently a full professor with the department of electronic engineering. He was also a visiting professor with Santa Clara University from 2011 to 2012. He has 300 publications, 50 granted patents, and 20 standard technical contributions. His research interests include visual signal processing and artificial intelligent for multimedia. He has been serving as an associate editor for Multidimensional Systems and Signal Pro-cessing from 2012 to 2018 and anassociate editor for the IEEE Transactions on Broadcasting since 2024. 
+
+Wenjun Zhang (Fellow, IEEE) received B.S., M.S., and Ph.D. degrees in electronic engineering from Shanghai Jiao Tong University, Shanghai, China, in 1984, 1987, and 1989, respectively. From 1990 to 1993, he worked as a Postdoctoral Fellow with Philips, Nuremberg, Germany, where he was actively involved in developing the HD-MAC system. He joined the faculty of Shanghai Jiao Tong University in 1993 and became a Full Professor of Electronic Engineering in 1995. He is the Chief Scientist of the Chinese Digital TV Engineering Research Centre, an industry/government consortium in DTV technology research and standardiza-tion. His main research interests include digital video coding and transmission, multimedia semantic processing, and intelligent video surveillance.
