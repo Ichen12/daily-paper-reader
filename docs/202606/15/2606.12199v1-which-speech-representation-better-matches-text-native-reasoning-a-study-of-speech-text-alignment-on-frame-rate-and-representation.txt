@@ -1,0 +1,502 @@
+Title: Which Speech Representation Better Matches Text-Native Reasoning? A Study of Speech-Text Alignment on Frame Rate and Representation
+
+URL Source: https://arxiv.org/pdf/2606.12199v1
+
+Published Time: Thu, 11 Jun 2026 01:12:20 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# Which Speech Representation Better Matches Text-Native Reasoning? A Study of Speech-Text Alignment on Frame Rate and Representation 
+
+# Zhen Ye 1, Xu Tan 2, Yiming Li 1, Guangyan Zhang 7, Chimin Chan 1, Haohe Liu 3, Zhengxi Liu 4,Hongzhan Lin 5, Zheqi Dai 4, Xinshen Zhang 6, Peiwen Sun 4, Qiuqiang Kong 4, Wei Xue 1,∗∗ 
+
+1 Hong Kong University of Science and Technology, Hong Kong SAR 
+
+2 Tencent, China 
+
+3 University of Surrey, United Kingdom 
+
+4 Chinese University of Hong Kong, Hong Kong SAR 
+
+5 Hong Kong Baptist University, Hong Kong SAR 
+
+6 Hong Kong Polytechnic University, Hong Kong SAR 
+
+7 Independent Researcher 
+
+zhenye213@gmail.com, weixue@ust.hk 
+
+# Abstract 
+
+Spoken dialogue models typically start from text LLM back-bones, yet reasoning often degrades when conditioning on speech instead of text. We attribute part of this modality gap to a temporal-granularity mismatch: speech tokens are tempo-rally redundant and far longer than text under matched seman-tics, diluting per-token semantic density and weakening text-native reasoning dynamics. We study speech token design as a representation selection problem and sweep frame rates un-der a frozen LLM backbone with a fixed information rate. To make low frame rates feasible, we introduce factorized FSQ and a lightweight non-autoregressive audio LM head, scaling ca-pacity to nearly 300 bits/frame without sacrificing efficient pre-diction. With the bottleneck removed, we sweep frame rates (50 →2.08 Hz) and alignment depth, and observe a consistent best regime for speech QA at 4.17 Hz with intermediate-layer representation alignment. 
+
+Index Terms : spoken dialogue, speech tokenization, cross-modal alignment, spoken language models 
+
+# 1. Introduction 
+
+End-to-end spoken dialogue models built on text LLM back-bones [1, 2, 3, 4] have demonstrated impressive capabilities, yet a persistent modality gap remains: reasoning quality degrades when the model conditions on speech tokens rather than text to-kens. A common response is to narrow this gap by end-to-end post-training the backbone on speech or speech–text mixtures, allowing the model to adapt its internal dynamics to speech in-puts. However, this approach is costly and, more importantly, entangles two factors: improved speech representations versus changes in the LLM itself. As LLM scale grows, such full-model adaptation makes it increasingly difficult to diagnose why 
+
+speech conditioning degrades reasoning and which representa-tion choices actually matter. In this work, we instead freeze the text LLM and treat speech token design as a representation selection problem under a controlled setup. In the frozen-LLM setting, a key and under-explored con-tributor is a temporal-granularity mismatch . Typical speech tokenizers operate at 12.5–50 Hz, producing sequences an or-der of magnitude longer than text for the same utterance. As 
+
+> **
+
+indicates the corresponding author. 
+
+shown in Fig. 1, the average text token rate on LibriSpeech is only ∼3.32 Hz—meaning a 50 Hz speech tokenizer generates roughly 15 × more tokens than necessary to convey the same semantic content. This temporal redundancy dilutes per-token semantic density, burdens the self-attention mechanism with many low-information positions, and perturbs the text-native reasoning dynamics the LLM was pretrained with. Since text LLMs are pretrained to model a single discrete stream with a single next-token prediction head, a natural starting point is a single-codebook speech stream predicted by a single LM head under the same objective. We take this text-native design as the default baseline, and ask what minimal modifications are needed to reduce frame rate toward the text token rate with-out losing information. Frame rate is therefore a first-class lever: reducing it increases semantic density and shortens the sequence, but pushing it too low forces each token to carry substantially more information and exposes severe bottlenecks under standard single-codebook, single-head designs. We ad-dress this low-rate bottleneck with factorized finite scalar quan-tization (FSQ) and a lightweight non-autoregressive audio LM head, scaling capacity to nearly 300 bits/frame while keeping prediction efficient. In this paper, we investigate what speech tokenization best aligns with text tokens so as to inherit the reasoning capabil-ities of pretrained text LLMs. We do so under a controlled setup where the LLM backbone is kept fixed and the infor-mation rate (bits/second) is held constant, so performance dif-ferences can be attributed to the speech representation itself. We study this from two perspectives. First, from the per-spective of frame rate , we compare against the average text token rate of 3.32 Hz (Fig. 1) and systematically test speech frame rates from 50 Hz down to 2.08 Hz under a fixed informa-tion rate—covering regimes where speech sequences are longer than, comparable to, or shorter than text. Systematically ex-ploring such low-rate tokenizations is challenging because se-vere information bottlenecks naturally emerge under standard single-codebook, single-head designs; to enable this sweep, we propose a new framework that mitigates information loss at very low frame rates and enables efficient parallel prediction. Sec-ond, from the perspective of representation alignment , we in-troduce a contrastive objective that explicitly encourages speech and text embeddings to lie in a shared latent space at intermedi-ate LLM layers, thereby closing the cross-modal semantic gap. 
+
+> arXiv:2606.12199v1 [eess.AS] 10 Jun 2026
+
+Our contributions are threefold: 1. Length alignment and new architecture. We systemati-cally explore speech token frame rates from 50 Hz to 2.08 Hz under a fixed information rate. To overcome the information bottleneck at low frame rates, we propose a scalable architec-ture with factorized FSQ codebooks and a lightweight NAR audio LM head. 2. Representation alignment. We introduce intermediate-layer contrastive alignment via InfoNCE, showing that mid-layer alignment is significantly more effective than embedding-level or late-layer alignment. 3. Empirical insights for speech token design. Our experi-ments show that a frozen text LLM with only ∼100M train-able parameters and 2.5k hours of data achieves competitive speech-to-speech QA. The findings provide practical guid-ance for future speech token design, revealing how frame rate and alignment depth jointly affect cross-modal transfer. 
+
+# 2. Related work 
+
+2.1. Spoken dialogue modeling 
+
+Our work studies which speech representation best preserves text-native reasoning in LLM-based spoken dialogue. We briefly review the two dominant paradigms and the frozen-LLM line most relevant to our study. 
+
+Cascaded systems decompose the problem into ASR, text LLM, and TTS modules. This modularity fully preserves the text LLM’s reasoning capability but incurs high latency from serial processing, suffers from error propagation across stages, and discards paralinguistic cues (e.g., emotion, prosody) during the intermediate text stage. 
+
+End-to-end systems align speech representations directly with LLM hidden spaces. SpeechGPT [5] progressively adapts LLMs to quantized self-supervised speech tokens. LLaMA-Omni [6] employs a streaming decoder with CTC-based si-multaneous generation. Interleaved methods like Spirit-LM [7] and GLM-4-Voice [8] alternate between text and speech tokens within a single sequence. Parallel paradigms such as Mini-Omni [9] and SLAM-Omni [10] model text and speech through dual-head architectures. These systems universally operate at high speech frame rates (12.5–50 Hz), producing sequences far longer than the corresponding text—a temporal-granularity mismatch whose impact on reasoning transfer has not been sys-tematically studied. 
+
+Frozen-LLM approaches. Freezing the text LLM isolates the speech representation as the sole variable, making it ideal for our controlled study. BLSP [11] aligns speech encoders to frozen LLMs via behavior alignment of continuation writ-ing. AudioChatLLaMA [12] extends this to multi-modal di-alogue. However, both focus on speech understanding only. DIVA [13] applies contrastive alignment at the input embed-ding layer. None of these works investigate frame rate as a de-sign variable, nor do they align at intermediate hidden layers or support pure speech-token generation. 
+
+2.2. Speech tokenizer 
+
+Since our study treats speech tokenization as the key representa-tion choice, we review tokenizer designs with attention to their frame rate and quantization structure—the two factors our con-trolled sweep varies. Acoustic tokenizers derived from neural codecs such as EnCodec [14] and DAC [15] reconstruct waveforms with 0 1 2 3 4 5 6 7
+
+> Text tokens per second of speech
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> Density
+> 3.32
+> Distribution of text-token-per-second ratios (measured on LibriSpeech-960h)
+
+Figure 1: Distribution of text-token-per-second ratios on LibriSpeech-960h, tokenized with Qwen3 tokenizer. Blue line: mean (3.32 Hz). 
+
+high fidelity using multi-layer RVQ [16] at high frame rates (e.g., 75 Hz). Semantic tokenizers prioritize linguistic con-tent: SpeechGPT [5] uses HuBERT [17] tokens; SLAM-Omni [10] and GLM-4-Voice [8] quantize Whisper features; Moshi [1] combines RVQ with semantic distillation; Speech-Tokenizer [18] disentangles semantic and acoustic information across RVQ layers. All these designs operate at 25–50 Hz, producing speech sequences substantially longer than text—yet none study how reducing this rate toward the text token rate af-fects LLM reasoning transfer. Regarding codebook design, the concept of grouped or fac-torized quantization originates from VQ-VAE [19] and is ex-tended in NaturalSpeech3’s FACodec [20]. We apply factorized FSQ prediction at extreme low frame rates (down to 2.08 Hz) specifically to study frame-rate alignment with frozen LLMs. For cross-modal alignment, DM-Codec [21] aligns speech and text at selected LLM layers using cosine similarity. We instead use InfoNCE, which provides batch-level contrastive learning with harder negatives. Unlike prior tokenizer studies that fo-cus on reconstruction quality or ASR performance in isolation, we study the joint interaction of frame rate, codebook capacity, and alignment depth across the full understanding-to-generation pipeline. 
+
+# 3. Length alignment 
+
+3.1. Preliminary 
+
+We use discrete speech tokens rather than continuous repre-sentations, as discrete tokens allow speech to be treated iden-tically to text under the same autoregressive next-token predic-tion paradigm, enabling direct reuse of the text LLM’s genera-tion machinery without modifying the architecture. We begin by examining the length ratio between speech and text tokens. Using LibriSpeech-960h [22] ( ∼256k utterance-transcript pairs), we compute the ratio of text token length to speech duration. Transcriptions with preserved capitalization and punctuation are taken from LibriSpeech-PC [23]; text is tokenized with the Qwen3 tokenizer [24]. As shown in Fig. 1, the average ratio is approximately 3.32 tokens/second. This naturally raises a question: does matching the speech token frame rate to the text token rate actually improve align-ment? Unfortunately, prior architectures [8, 5, 7, 25, 26] uni-versally adopt single-VQ + single-LM-head designs. When the frame rate is low, each speech token must encode a large amount of acoustic and linguistic information into a single codebook entry, creating an information bottleneck . We verify this with a controlled ASR experiment: Whisper-Large-v3 features are downsampled at various rates, quantized with FSQ, projected ds1 ds2 ds4 ds8 ds12 ds15 ds16 ds20 ds24     
+
+> Downsampling Rate
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> 120%
+> 140%
+> WER (%)
+> 7.4% 7.9% 10.2%
+> 20.6%
+> 50.3%
+> 111.9% 112.8% 111.2%
+> 136.2%
+> 3.2% 3.6% 5.4%
+> 13.6%
+> 45.4%
+> 110.6% 112.2% 112.1%
+> 136.5%
+> Single VQ: Codebook = 4k
+> Test-Clean
+> Test-Other
+
+Figure 2: ASR WER vs. downsampling rate with a 4k codebook (212 ) on LibriSpeech test-clean/test-other. ds1 ds2 ds4 ds8 ds12 ds15 ds16 ds20 ds24         
+
+> Downsampling Rate
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> WER (%)
+> 6.7% 7.2% 8.0% 11.3%
+> 21.3%
+> 41.9% 46.1%
+> 54.9%
+> 103.8%
+> 2.8% 2.9% 3.5% 5.5%
+> 14.5%
+> 33.8% 37.3%
+> 47.7%
+> 103.8%
+> Single VQ: Codebook = 256k
+> Test-Clean
+> Test-Other
+
+Figure 3: ASR WER vs. downsampling rate with a 256k code-book ( 218 ) on LibriSpeech test-clean/test-other. 
+
+into the frozen LLM embedding space via a learned linear map-ping, and decoded autoregressively as text. As shown in Fig. 2, with a 4k codebook ( 212 ), ASR performance degrades sharply when the downsampling rate exceeds 4 × (i.e., below 12.5 Hz); even scaling the codebook to 262k ( 218 ) fails to maintain ac-ceptable WER below a downsampling rate of 8 × (6.25 Hz), as shown in Fig. 3. This demonstrates that simply reducing the frame rate under standard architectures is insufficient—a fun-damentally different approach to codebook design is needed. 
+
+3.2. Proposed solution 
+
+To overcome the information bottleneck, the most straightfor-ward idea is to increase the codebook size. For speech input ,this is unproblematic: we only quantize features and project them into the text embedding space. However, for speech pre-diction , increasing vocabulary size directly increases the LM head parameters and softmax computation, which becomes pro-hibitive at the codebook sizes required for low frame rates. We instead exploit the factorized structure of FSQ [27]. In FSQ, each dimension of a d-dimensional feature vector is in-dependently quantized to L discrete levels, yielding an implicit codebook of size Ld without requiring explicit codebook vec-tors or commitment losses. Rather than predicting from this exponentially large space in a single softmax, we partition the d
+
+dimensions into n groups, each covering d/n dimensions with 
+
+Ld/n possible combinations. Each group is predicted in par-allel, factorizing the intractable Ld-way classification into n
+
+manageable Ld/n -way predictions. To condition each group’s prediction on the same LLM output, we add a learnable slot em-bedding (unique per group) to the LLM hidden state, allowing a 
+
+shared classification layer to serve all groups while maintaining group-specific context. Formally, let zt ∈ Rd be the downsampled speech feature at frame t, split into n groups z(g) 
+
+> t
+
+∈ Rdg where d = nd g . FSQ quantizes each scalar independently: 
+
+qt,g,k = Q
+
+
+
+z(g)
+
+> t,k
+
+
+
+∈ { 0, 1, . . . , L −1}, k = 1 , . . . , d g . (1) Each group’s discrete token is encoded as a mixed-radix (base-L) index over its dg scalar codes, which factorizes an oth-erwise exponential Ldg vocabulary into dg small L-ary compo-nents for efficient prediction and lookup. 
+
+yt,g =
+
+> dg
+
+X
+
+> k=1
+
+qt,g,k Lk−1 ∈ { 0, 1, . . . , K −1}, K = Ldg .
+
+(2) Thus each frame is represented by yt = ( yt, 1, . . . , y t,n ) with per-frame capacity n log 2 K bits (implicit codebook size Kn =
+
+Ld). At inference, the predicted group token byt,g is determin-istically dequantized back to the quantized continuous vector used by the speech decoder by first expanding it into scalar codes 
+
+bqt,g,k =
+
+jbyt,g /L k−1k
+
+mod L, (3) then mapping each scalar code to its quantized level value via the FSQ inverse mapping bz(g) 
+
+> t,k
+
+= Q−1(bqt,g,k ), and finally con-catenating all groups bzt = concat g (bz(g) 
+
+> t
+
+). This avoids learn-ing an explicit embedding table over the exponentially large Ld
+
+codebook. To further increase the expressive capacity, we replace the standard linear classification head with a lightweight NAR transformer. Our NAR audio head consists of 2 transformer lay-ers with hidden size matching the LLM backbone. The trans-former processes all n slot-augmented hidden vectors simulta-neously through self-attention, allowing inter-group dependen-cies to be captured before the final shared classification layer. Specifically, let ht ∈ RH denote the (frozen) LLM hidden state at the speech frame position. We construct group-specific queries by adding a slot embedding sg ∈ RH :
+
+ut,g = ht + sg , g = 1 , . . . , n. (4) The NAR audio head fθ attends over the n group queries in parallel and outputs vt,g = fθ (ut, 1: n)g . A shared classifier then predicts each group’s token: 
+
+ℓt,g = W v t,g + b, p(yt+1 ,g = k | ht) = softmax( ℓt,g )k , (5) where k ∈ { 0, . . . , K −1}. We train the audio head with causal next-token prediction (teacher forcing): the hidden state at po-sition t predicts the group tokens at position t+1 .
+
+Laudio = − 
+
+> T−1
+
+X
+
+> t=1
+> n
+
+X
+
+> g=1
+
+log p(y⋆t+1 ,g | ht). (6) Finally, we choose the number of groups n as a function of the frame rate r to maintain a constant information throughput 
+
+R = r n log 2 K. (7) In practice, we fix K (per-group vocabulary) and vary n accord-ingly. The overall architecture is illustrated in Fig. 4. 
+
+# 4. Representation alignment 
+
+After sequence length alignment, speech and text tokens may still reside in distinct latent subspaces of the LLM. To address this, we introduce a representation alignment objective that ex-plicitly encourages semantically corresponding speech and text embeddings to lie closer in the same hidden space. A key design choice is that we operate on intermediate hid-den states of the frozen LLM, rather than only on the embed-ding space. This layer-wise alignment allows semantic corre-spondence to be injected throughout the LLM hierarchy while keeping the backbone parameters fixed. In practice, for each speech–text pair, we extract hidden states from both modalities at a selected LLM layer ℓ, average over the temporal dimen-sion, and obtain L2-normalized vectors bhs, bht ∈ Rd. Since speech and text sequences generally differ in length (even after frame-rate alignment), we compute utterance-level representa-tions via temporal average pooling over each modality’s hid-den states independently, which yields fixed-dimensional vec-tors regardless of input length. This assumes that the alignment between speech and text is roughly monotonic at the utterance level, which is a reasonable approximation for the paired data in our setup. We then optimize a contrastive objective of the InfoNCE form: 
+
+Lalign = −
+
+> B
+
+X
+
+> i=1
+
+log exp  ⟨bhs,i , bht,i ⟩/τ PBj=1 exp  ⟨bhs,i , bht,j ⟩/τ  (8) where B is the batch size, τ =0 .07 is a temperature hyperpa-rameter, and ⟨· , ·⟩ denotes the inner product (cosine similarity after normalization). The overall training loss combines task supervision and alignment: 
+
+L = LCE + λalign Lalign (9) where LCE is the standard next-token cross-entropy loss of the LLM, and λalign =0 .1 balances the contribution of the alignment term. Gradients from Lalign flow only through the speech path-way (input projector and audio head); the frozen LLM backbone receives no gradient updates. 
+
+# 5. Experiments 
+
+We use Qwen3-4B [24] as the frozen text LLM backbone and use Whisper-Large-v3 encoder as a frozen speech feature ex-tractor, producing 50 Hz representations. All backbone param-eters are kept frozen; only the input projector and NAR audio LM head are trained. All configurations fix the information rate at 600 bits/s. We test downsampling factors of 1 × (50 Hz), 2× (25 Hz), 4 × (12.5 Hz), 8 × (6.25 Hz), 12 × (4.17 Hz), 16 ×
+
+(3.13 Hz), 20 × (2.5 Hz), and 24 × (2.08 Hz). This adds ∼100M trainable parameters for the 4B backbone and ∼150M for the 8B backbone (projector + audio head), while the text LLM re-mains entirely frozen. We adopt three stages (S2T, T2S, and S2S QA) because they probe complementary aspects of align-ment: speech-as-input understanding, speech-token generation, and the end-to-end combination required by spoken QA, en-abling us to isolate the effect of frame rate and representation alignment under a frozen backbone. 
+
+5.1. Training pipeline 
+
+Our training follows a three-stage progressive pipeline. 
+
+Stage 1: Speech-to-text (ASR). The Whisper-Large-v3 en-coder extracts 50 Hz features from raw audio. These features are downsampled by a strided convolutional layer to the target frame rate, then quantized using FSQ. The quantized features are projected into the LLM embedding space via a learnable linear layer (the input projector ). The frozen LLM autoregres-sively generates text tokens from these projected speech em-beddings. Only the downsampling layer, FSQ parameters, and input projector are trained. 
+
+Stage 2: Text-to-speech (TTS). The input projector is ini-tialized from Stage 1, and the speech tokens established in Stage 1 are kept fixed as tokenizer. The frozen LLM receives text tokens as input and generates speech tokens via the NAR audio head. Only the input projector and NAR audio head are trained. 
+
+Stage 3: Speech-to-speech QA. Both the input projector and NAR audio head are initialized from their Stage 2 weights. The model is trained on speech QA data with a multi-task objec-tive: speech-to-speech QA (primary), speech-to-text QA (aux-iliary, weight 5), and text-to-speech QA (auxiliary, weight 1). The contrastive representation alignment loss is applied at all three stages. 
+
+5.2. Speech-to-text 
+
+All models are trained on LibriSpeech 960h [22] for 5 epochs (lr 
+
+3×10 −4, AdamW optimizer with linear warmup over the first 3% of steps). The speech encoder is Whisper-Large-v3, whose output features at 50 Hz are downsampled by a strided convo-lutional layer and quantized with FSQ. The quantized features are projected into the LLM embedding space via a trained lin-ear layer. We use LibriSpeech-PC [23] transcripts preserving case and punctuation, rather than normalized text, as our experi-ments indicate that text normalization degrades the transferabil-ity of text knowledge in downstream speech-to-speech QA— it removes capitalization and punctuation patterns that the text LLM has learned to model. WER is computed on test-clean and test-other using the Whisper normalizer. Our experiments start from 50 Hz with a per-frame code-book of 212 =4096 , corresponding to 12 ×50=600 bits/s. We fix this bitrate across all downsampling factors: at 2× (25 Hz) we use 224 (24 bits/frame); at 24 × (2.08 Hz) each frame carries 288 bits ( 2288 implicit codebook). The number of FSQ groups 
+
+n is adjusted to keep each group’s prediction at 212 categories. Results (Fig. 5) show ASR WER remains in a narrow range (test-other: 5.97–8.16, test-clean: 2.39–3.90), validating that our factorized FSQ approach resolves the information bottle-neck at low frame rates. Compared to the fixed-codebook base-lines (Figs. 2–3), where WER degrades catastrophically below 6.25 Hz, this confirms the effectiveness of our scalable code-book. We observe a U-shaped pattern: when the sequence is ex-cessively long (high frame rate), performance deteriorates as the frozen LLM struggles with redundant temporal resolution— the self-attention mechanism must process many tokens without proportional increase in semantic content, diluting per-position semantic density. Conversely, when the sequence becomes shorter than text (low frame rate), WER increases due to lossy compression at high per-frame information density. The most favorable region emerges at intermediate frame rates (12.5, 6.25, and 4.17 Hz). This U-shaped trend is consistent across both test sets, suggesting that, under a fixed information rate, there is an optimal range of sequence lengths for a frozen text LLM to understand speech tokens. NAR audio head 
+
+Speech token 
+
+Speech token 
+
+User: 
+
+Assistant: 
+
+50 → 25 → 12.5 → 6.25 → 4.17 → 3.13 → 2.5 → 2.08 Hz 
+
+Stage 1: Speech -to -text 
+
+Stage 2: Text -to -speech 
+
+Stage 3: Directly Speech -
+
+to -speech QA Figure 4: Architecture of our pure speech-token dialogue model. A frozen Whisper-Large-v3 encoder extracts 50 Hz speech features, which are downsampled and quantized with (factorized) FSQ into grouped speech tokens, then projected into a frozen text LLM. For speech generation, a lightweight non-autoregressive audio head predicts the next-step speech tokens in parallel. ds1-2 12         
+
+> ds2-2 24
+> ds4-2 48
+> ds8-2 96
+> ds12-2 144
+> ds15-2 180
+> ds16-2 192
+> ds20-2 240
+> ds24-2 288
+> Downsampling Rate
+> 3.0%
+> 4.0%
+> 5.0%
+> 6.0%
+> 7.0%
+> 8.0%
+> WER (%)
+> 3.23%
+> 2.65% 2.39% 2.48% 2.55%
+> 3.18% 3.24%
+> 3.66% 3.90%
+> 7.41%
+> 6.25% 6.05% 5.97% 6.21%
+> 6.93%
+> 7.41%
+> 7.77%
+> 8.16%
+> ASR WER vs Downsampling Rate under the same information bottleneck
+> Test-Clean WER
+> Test-Other WER
+
+Figure 5: ASR WER at different downsampling rates under fixed information rate. 
+
+Tokenizer reconstruction. Beyond ASR, we evaluate speech reconstruction from tokens on SeedTTS test-en using a token-to-waveform reconstruction model ( TOKEN 2WAV ). Fol-lowing prior work [28], we assess intelligibility (WER), speaker similarity (SIM), and speech quality (UTMOS). SIM is com-puted as the cosine similarity between WavLM-TDNN embed-dings of the reference and reconstructed speech [29]. WER is measured using Whisper-large-v3 [30]. Speech quality is evaluated using the official UTMOS checkpoint [31]. For the CosyVoice2 tokenizer baseline, TOKEN 2WAV maps discrete tokens to continuous conditioning sequences via embedding lookup, and upsamples them to 50 Hz before feeding them as conditional inputs to the flow-matching based acoustic model. Table 1: Tokenizer reconstruction on SeedTTS test-en. The CosyVoice2 tokenizer baseline follows CosyVoice-style super-vised semantic tokens [28]. 
+
+Tokenizer WER ↓ SIM ↑ UTMOS ↑
+
+CosyVoice2 (25 Hz) 4.10 0.68 3.65 Ours (25 Hz) 3.04 0.67 3.71 Ours (4.17 Hz) 3.37 0.65 3.79 For our FSQ tokenizer, we instead deterministically dequan-tize tokens back to continuous quantized features via the FSQ inverse mapping, and similarly upsample to 50 Hz for flow-matching conditioning. We train TOKEN 2WAV on Emilia-en using the same architecture and data structure as the CosyVoice baseline. Overall, our tokenizer remains readily reconstructable: at 25 Hz it improves WER and UTMOS over CosyVoice2, and even at 4.17 Hz it preserves strong speaker similarity and speech quality, indicating that lowering the frame rate does not create a reconstruction bottleneck. At 25 Hz, the lower WER of our tokenizer is expected: compared to CosyVoice2’s 6561 code-book of semantic token, our grouped FSQ representation can allocate substantially more discrete capacity per frame (e.g., im-plicit codebook size 248 ), yielding more precise content tokens for reconstruction. 
+
+5.3. Text-to-speech 
+
+We next train the mapping from text tokens to speech tokens. We reuse the speech tokens from the ASR stage (freezing the ds1-2 12         
+
+> ds2-2 24
+> ds4-2 48
+> ds8-2 96
+> ds12-2 144
+> ds15-2 180
+> ds16-2 192
+> ds20-2 240
+> ds24-2 288
+> Downsampling Rate
+> 1.0%
+> 2.0%
+> 3.0%
+> 4.0%
+> 5.0%
+> 6.0%
+> 7.0%
+> WER (%)
+> 1.66% 1.36% 1.23%
+> 1.59% 1.90%
+> 4.90%
+> 5.44%
+> 5.86%
+> 7.21%
+> 1.32% 1.29% 1.23%
+> 1.59% 1.83%
+> 4.09% 4.31% 4.33%
+> 5.05%
+> TTS WER vs Downsampling Rate under the same information bottleneck
+> WER
+> Relative WER
+
+Figure 6: TTS WER at different downsampling rates under fixed information rate. 
+
+Table 2: Ablation of the audio prediction head for TTS at 4.17 Hz (ds12), measured by WER. The linear head removes the NAR transformer (inter-group self-attention). 
+
+Head test-clean ↓ test-other ↓
+
+Linear (w/o NAR) 10.17 12.73 NAR (ours) 1.83 1.90 downsampling module and quantizer) and train only the projec-tor and audio LM head with the same hyperparameters. Since the speech token sequences are reused from ASR, their text transcriptions are also recognized by the previous stage’s ASR model. To further normalize differences in ASR quality, we ad-ditionally compute a relative WER , where the best-performing configuration is scaled to 1 and others are adjusted proportion-ally. As shown in Table 2, removing the NAR transformer and using a linear head increases WER from 1.83/1.90 to 10.17/12.73 at 4.17 Hz. This confirms that explicitly modeling inter-group dependencies in the audio head is crucial for high-density speech-token prediction at low frame rates. Results (Fig. 6) show a consistent trend: as downsam-pling increases (lower frame rate), WER monotonically wors-ens. More importantly, once the speech sequence length ap-proaches or becomes shorter than the average text length ( ∼3.32 tokens/second), a sharp degradation occurs. This suggests that when speech tokens become much shorter than text tokens, the information density per token is too high for the frozen text LLM to accurately predict them. Notably, the TTS trend differs from the ASR trend: while ASR shows a U-shaped pattern (degradation at both extremes), TTS degrades monotonically with increasing downsampling. This asymmetry arises because understanding and generation impose different demands on the frozen LLM. For understand-ing (ASR), the LLM can aggregate semantic content from re-dundant tokens; for generation (TTS), the LLM must produce the exact codebook indices at each timestep, which becomes increasingly difficult as each token carries more information. The TTS degradation at low frame rates effectively sets a lower bound on viable frame rates for a full dialogue system. 
+
+5.4. Speech-to-speech QA 
+
+In this stage, we focus on speech QA. The speech tokens are reused from the ASR stage, and the model architecture is the ds1-2 12 
+
+> ds2-2 24
+> ds4-2 48
+> ds8-2 96
+> ds12-2 144
+> ds15-2 180
+> ds16-2 192
+> ds20-2 240
+> ds24-2 288
+> Downsampling Rate
+> 5.0
+> 7.5
+> 10.0
+> 12.5
+> 15.0
+> 17.5
+> 20.0
+> 22.5
+> Score
+> 5.0
+> 7.3
+> 14.3
+> 22.0
+> 23.3
+> 15.3
+> 14.0
+> 11.7
+> 8.3
+> Llama Questions vs Downsampling Rate under the same information bottleneck
+> Speech Q -> Speech A
+
+Figure 7: Speech QA results across different downsampling rates under fixed information rate. 
+
+same as in the TTS stage. The projector and audio head are initialized from the previous stage. For training, we adopt the InstructS2S-200k dataset [32], which contains 1,500 hours of speech QA data. During training, we include not only speech-to-speech QA pairs but also the corresponding speech-to-text QA and text-to-speech QA as auxiliary tasks. The loss weight for speech-to-text QA is set to 5, while all other tasks are weighted as 1. We train for 3 epochs with a learning rate of 
+
+10 −4.We evaluate QA on questions from Web Questions, Llama Questions, and TriviaQA, following prior work [1, 33]. For each item, we decode the model’s speech-token response into a text response using the Stage 1 ASR model, and provide GPT-4o with the ground-truth answer to judge whether the response is correct. As shown in Fig. 7, the QA scores first increase and then decrease, with clear peaks at 4.17 Hz and 6.25 Hz. At 50 Hz, despite good ASR and TTS performance individually, speech QA is poor because the speech sequence is approximately 15 ×
+
+longer than text, making cross-modal reasoning difficult for the frozen LLM. At very low frame rates ( <3.32 Hz), the model cannot reliably generate such high-density tokens. The best performance at 4.17 Hz rather than at 3.32 Hz de-serves explanation. The text token rate of 3.32 Hz is an av-erage : individual utterances vary substantially depending on speaking rate and vocabulary. Operating at exactly 3.32 Hz means that shorter-than-average utterances produce speech se-quences shorter than their text counterparts, which degrades performance sharply as shown by the TTS results. By oper-ating slightly above the mean, the system provides a buffer that keeps even faster-speaking utterances within the LLM’s toler-ance range. Settings at 4.17 Hz and 6.25 Hz both cover this variance effectively. The inverted-U shape across all three tasks paints a coher-ent picture: for understanding (ASR), moderate downsampling compresses redundancy without losing content; for generation (TTS), the frozen LLM struggles with high-density tokens at very low rates; for the combined task (QA), the optimum occurs where both sides perform well, around 4–6 Hz. The ranking of frame rates is consistent across all three QA benchmarks despite different knowledge domains, strengthening the claim that this finding generalizes. 0.5 0.6 0.7 0.8 0.9 1.0 1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 1.9 2.0 2.1 2.2 2.3 2.4 2.5          
+
+> Text Embedding Length Stretch Ratio
+> 30
+> 40
+> 50
+> 60
+> 70
+> MMLU Score
+> 27
+> 33
+> 42
+> 51
+> 57
+> 68
+> 63 64 63 62 61 60 59 58 57 56
+> 53
+> 51
+> 46
+> 31
+> 34
+> Effect of Text Embedding Length Stretching on MMLU Performance
+> MMLU Score
+
+Figure 8: Effect of text embedding length stretching on MMLU performance for the frozen Qwen3-4B backbone. 
+
+Table 3: Effect of speech encoder on Llama Questions (speech QA score). 
+
+Speech encoder Llama Q. Whisper-Large-v3 30.7 HuBERT-Large 25.7 WavLM-Large 27.3 
+
+5.5. Analysis: why slightly above the text rate? 
+
+The finding that 4.17 Hz outperforms 3.32 Hz (which exactly matches the average text rate) warrants further analysis. We conduct an auxiliary experiment to probe the frozen LLM’s tol-erance to input length variation: we stretch Qwen3-4B’s text embeddings by linear interpolation at different scaling factors and evaluate on MMLU [34]. While speech-text alignment is not strictly linear, it is monotonic, making this a reasonable ap-proximation. As shown in Fig. 8, MMLU accuracy remains above 50% for scaling factors between 0.8 × and 2.2 ×, but drops sharply below 0.8 ×.This explains the QA results: the text token rate of 3.32 Hz is an average, masking substantial per-utterance variance. At the 3.13 Hz (ds16) setting, a significant fraction of utterances produce speech sequences shorter than 0.8 × their text length, falling outside the LLM’s tolerance. In contrast, 4.17 Hz and 6.25 Hz keep almost all utterances within the 0.8–2.2 × toler-ance window, explaining their superior performance. This anal-ysis provides a principled criterion for choosing the frame rate: target a rate that keeps the speech-to-text length ratio within the LLM’s verified tolerance range across the entire utterance dis-tribution, rather than simply matching the average. 
+
+5.6. Ablation: speech encoder 
+
+We ablate the frozen speech feature extractor while keeping the rest of the setup fixed (4.17 Hz and middle-layer represen-tation alignment). As shown in Table 3, multiple speech en-coders work in this framework, while stronger encoders yield higher QA performance. Whisper’s advantage likely stems from its ASR-supervised features being inherently closer to text semantics, which facilitates cross-modal alignment; nonethe-less, the framework remains effective with self-supervised en-coders (HuBERT, WavLM). Table 4: Effect of alignment layer on Llama Questions (speech QA score). Middle layer ( L/ 2) yields the best result. 
+
+None Emb L/4 L/2 3L /4
+
+Llama Q. 23.3 21.7 25.0 30.7 27.7 Table 5: Speech QA results (S2S only) on Web Questions, Llama Questions, and Trivia QA. We compare pure speech-token re-sponse systems.                                      
+
+> Model Train Params Data Web Q. Llama Q. Trivia QA
+> Moshi [1] 7B 7B 7M hrs 9.2 21.0 7.3
+> Scaling Interleave [33] 9B 9B 600B tok 15.9 50.7 26.5 9B 9B 200B tok 13.3 44.0 18.7 9B 9B 100B tok 9.3 37.0 11.7
+> Ours
+> 4B ∼100M 2.5k hrs 7.9 30.7 11.9 8B ∼150M 2.5k hrs 12.2 39.3 17.6
+
+5.7. Representation alignment experiments 
+
+We incorporate the contrastive alignment loss at all stages of training (ASR, TTS, and speech QA). For each speech clip, we extract the hidden representation of its corresponding transcrip-tion through the frozen text LLM. We select a probe layer ℓ
+
+and average the hidden states over the temporal axis to obtain vectors bhs, bht ∈ Rd (L2-normalized). We then optimize the InfoNCE objective with temperature τ =0 .07 .We investigate which LLM layer provides the most effec-tive alignment signal by sweeping over four options: the text input embedding (E MB ), an early layer ( ⌊L/ 4⌋), a middle layer (⌊L/ 2⌋), and a late layer ( ⌊3L/ 4⌋), using the 4.17 Hz frame rate setting. As shown in Table 4, alignment at the middle layer ( L/ 2)provides the largest improvement (+7.4 points over no align-ment), consistent with findings that intermediate LLM lay-ers encode the most transferable semantic representations [21, 35]. Embedding-level alignment slightly degrades performance (−1.6 points), suggesting the modality gap primarily lies in deeper representations rather than the input embedding space— the input projector already maps speech tokens into the embed-ding space, so the more meaningful gap exists in representations after several attention layers. Late-layer alignment ( 3L/ 4) im-proves over the baseline (+4.4 points) but is less effective than mid-layer, possibly because later layers are more specialized for text-specific generation patterns. The early layer ( L/ 4) pro-vides a moderate improvement (+1.7 points). 
+
+5.8. Comparison with other methods 
+
+We further train a model based on Qwen3-8B with the same settings as the 4B version: 4.17 Hz frame rate and middle-layer alignment. The 8B model uses a larger hidden dimension (3584 vs. 2560), resulting in ∼150M trainable parameters for the pro-jector and audio head. As shown in Table 5, our 4B model—trained on only 2.5k hours with ∼100M trainable parameters—outperforms Moshi [1] (7B backbone, 7M hours, full-parameter training) across all three QA benchmarks. Our 8B model achieves re-sults comparable to systems requiring 100B–200B interleaved tokens and full 9B parameter training [33], despite using only 2.5k hours and updating ∼150M parameters. The consistent scaling from 4B to 8B (+4.3 on Web Q., +8.6 on Llama Q., +5.7 on Trivia QA) suggests our alignment approach effectively leverages stronger backbones, and allows immediate upgrade by simply swapping the frozen backbone. We emphasize that Table 5 reports the pure speech-to-speech setting (S2S only), where the model must generate speech tokens without produc-ing an intermediate text response. We therefore do not directly compare against thinker–talker style systems that first generate a text answer and then condition speech synthesis on that text, since such text guidance changes the task definition and can mask the difficulty of directly speech-token generation. 
+
+5.9. Discussion 
+
+Our experiments, conducted under a frozen text LLM backbone with a fixed information budget, isolate how speech-token tem-poral structure and representation alignment affect cross-modal transfer. 
+
+Frame rate as a first-class design variable. Prior work has largely treated the speech tokenizer’s frame rate as a fixed hyperparameter. Our sweep from 50 Hz to 2.08 Hz shows that frame rate is one of the most impactful choices, with speech QA scores differing by up to 4× across frame rates under the same information budget. The optimal rate ( ∼4.17 Hz) closely tracks the text token rate. 
+
+Information rate vs. frame rate. Controlling the in-formation throughput is necessary but not sufficient. Even with matched bits/second, performance varies dramatically with frame rate, confirming that the temporal granularity of the to-ken sequence itself matters for frozen-LLM compatibility. 
+
+Synergy between length and representation alignment. 
+
+Length alignment alone at 4.17 Hz yields 23.3 on Llama Ques-tions; adding mid-layer representation alignment improves it to 30.7 ( +32% relative). Since the backbone is frozen, this gain reflects improved representation compatibility rather than LLM adaptation. The two dimensions are complementary: length alignment ensures structural compatibility, while representation alignment closes the semantic gap. 
+
+Practical guidelines for speech token design. Our find-ings suggest: (1) target moderate frame rates slightly above the mean text token rate (4.17–6.25 Hz in our sweep) to ac-commodate utterance-level variability; (2) mitigate temporal-granularity mismatch by compressing redundant frames: long redundant streams tend to spread attention mass and weaken de-cision signals, while overly aggressive compression increases bits/frame and risks losing semantic content; and (3) align at intermediate LLM layers via contrastive learning. We expect these trends to transfer to other backbones, though the exact op-timum may shift with model and data. 
+
+# 6. Limitations 
+
+Our study has several limitations. First, the comparison in Ta-ble 5 involves different LLM backbones across methods; since neither the training data nor the training code of the baselines is publicly available, reproducing them on the same backbone is not feasible. The comparison therefore primarily reflects data efficiency rather than a controlled method-to-method evalua-tion. Second, the frozen LLM may impose a performance ceil-ing; fine-tuning the backbone could narrow the gap to fully-trained systems. Third, our experiments use only English read speech (LibriSpeech) and InstructS2S-200k; generalization to noisy, conversational, or multilingual speech remains to be val-idated. Fourth, all findings are based on the Qwen3 family (4B and 8B); whether the optimal frame rate and alignment layer transfer to other LLM architectures requires further verification. Finally, the reliance on Whisper-Large-v3 as the speech encoder and the lack of acoustic modeling are important directions for future work. 
+
+# 7. Conclusion 
+
+We presented a controlled study of which speech representa-tion best matches text-native reasoning in a frozen LLM, inves-tigating frame rate and representation alignment as two key de-sign variables under a fixed information throughput. For frame rate, the best regime for speech QA occurs at 4.17–6.25 Hz, en-abled by our scalable FSQ with factorized group prediction and a NAR transformer head that scales per-frame capacity to ∼300 bits while adding only ∼100–150M trainable parameters. For representation alignment, InfoNCE at the middle LLM layer yields the strongest gain (+7.4 points), and the two alignment dimensions are complementary (+32% relative improvement when combined). The resulting frozen-LLM system achieves competitive speech QA with 2.5k hours of data, outperforming systems trained on orders of magnitude more data. These find-ings provide practical guidelines for speech token design: use factorized codebooks, model inter-group dependencies in the audio head, and align at intermediate layers. We further show that the framework generalizes across speech encoders (Whis-per, HuBERT, WavLM) and that our tokenizer maintains strong reconstruction quality even at 4.17 Hz. 
+
+# 8. References                                   
+
+> [1] A. D´ efossez, L. Mazar´ e, M. Orsini et al. , “Moshi: A speech-text foundation model for real-time dialogue,” arXiv preprint arXiv:2410.00037 , 2024. [2] J. Xu, Z. Guo, J. He et al. , “Qwen2.5-Omni technical report,”
+> arXiv preprint arXiv:2503.20215 , 2025. [3] D. Ding, Z. Ju, Y. Leng et al. , “Kimi-Audio technical report,”
+> arXiv preprint arXiv:2504.18425 , 2025. [4] A. Huang, B. Wu, B. Wang et al. , “Step-Audio: Unified under-standing and generation in intelligent speech interaction,” arXiv preprint arXiv:2502.11946 , 2025. [5] D. Zhang, S. Li, X. Zhang, J. Zhan, P. Wang, Y. Zhou, and X. Qiu, “SpeechGPT: Empowering large language models with intrinsic cross-modal conversational abilities,” arXiv preprint arXiv:2305.11000 , 2023. [6] Q. Fang, S. Guo, Y. Zhou, Z. Ma, S. Zhang, and Y. Feng, “LLaMA-Omni: Seamless speech interaction with large language models,” arXiv preprint arXiv:2409.06666 , 2024. [7] T. A. Nguyen, B. Muller, B. Yu et al. , “Spirit-LM: Interleaved spoken and written language model,” Trans. Assoc. Comput. Lin-guistics , vol. 13, pp. 30–52, 2025. [8] A. Zeng, Z. Du, M. Liu, K. Wang, S. Jiang, L. Zhao, Y. Dong, and J. Tang, “GLM-4-Voice: Towards intelligent and human-like end-to-end spoken chatbot,” arXiv preprint arXiv:2412.02612 , 2024. [9] Z. Xie and C. Wu, “Mini-Omni: Language models can hear, talk while thinking in streaming,” arXiv preprint arXiv:2408.16725 ,2024. [10] W. Chen, Z. Ma, R. Yan et al. ,“SLAM-Omni: Timbre-controllable voice interaction system with single-stage training,”
+> arXiv preprint arXiv:2412.15649 , 2024. [11] C. Wang, M. Liao, Z. Huang, J. Lu, J. Wu, Y. Liu, C. Zong, and J. Zhang, “Blsp: Bootstrapping language-speech pre-training via behavior alignment of continuation writing,” arXiv preprint arXiv:2309.00916 , 2023.
+
+[12] Y. Fathullah, C. Wu, E. Lakomkin, K. Li, J. Jia, Y. Shangguan, J. Mahadeokar, O. Kalinli, C. Fuegen, and M. Seltzer, “Au-diochatllama: Towards general-purpose speech abilities for llms,” in Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Hu-man Language Technologies (Volume 1: Long Papers) , 2024, pp. 5522–5532. [13] W. Held, Y. Zhang, M. Li, W. Shi, M. J. Ryan, and D. Yang, “Dis-tilling an end-to-end voice assistant without instruction training data,” in Proceedings of the 63rd Annual Meeting of the Asso-ciation for Computational Linguistics (Volume 1: Long Papers) ,2025, pp. 7876–7891. [14] A. D´ efossez, J. Copet, G. Synnaeve, and Y. Adi, “High fidelity neural audio compression,” arXiv preprint arXiv:2210.13438 ,2022. [15] R. Kumar, P. Seetharaman, A. Luebs, I. Kumar, and K. Kumar, “High-fidelity audio compression with improved RVQGAN,” Ad-vances in Neural Information Processing Systems , vol. 36, pp. 27 980–27 993, 2023. [16] D. Lee, C. Kim, S. Kim, M. Cho, and W.-S. Han, “Autore-gressive image generation using residual quantization,” in Proc. IEEE/CVF CVPR , 2022, pp. 11 523–11 532. [17] W.-N. Hsu, B. Bolte, Y.-H. H. Tsai, K. Lakhotia, R. Salakhut-dinov, and A. Mohamed, “HuBERT: Self-supervised speech representation learning by masked prediction of hidden units,” 
+
+IEEE/ACM Trans. Audio, Speech, Lang. Process. , vol. 29, pp. 3451–3460, 2021. [18] X. Zhang, D. Zhang, S. Li et al. , “SpeechTokenizer: Uni-fied speech tokenizer for speech large language models,” arXiv preprint arXiv:2308.16692 , 2023. [19] A. van den Oord, O. Vinyals, and K. Kavukcuoglu, “Neural dis-crete representation learning,” in Advances in Neural Information Processing Systems , vol. 30, 2017. [20] Z. Ju, Y. Wang, K. Shen et al. , “NaturalSpeech 3: Zero-shot speech synthesis with factorized codec and diffusion models,” 
+
+arXiv preprint arXiv:2403.03100 , 2024. [21] M. M. Ahasan, M. Fahim, T. Mohiuddin, A. Rahman, A. Chadha, T. Iqbal, M. A. Amin, M. M. Islam, and A. A. Ali, “Dm-codec: Distilling multimodal representations for speech tokenization,” 
+
+arXiv preprint arXiv:2410.15017 , 2024. [22] V. Panayotov, G. Chen, D. Povey, and S. Khudanpur, “Lib-riSpeech: An ASR corpus based on public domain audio books,” in Proc. IEEE ICASSP , 2015, pp. 5206–5210. [23] A. Meister, M. Novikov, N. Karpov, E. Bakhturina, V. Lavrukhin, and B. Ginsburg, “LibriSpeech-PC: Benchmark for evaluation of punctuation and capitalization capabilities of end-to-end ASR models,” in Proc. IEEE ASRU , 2023, pp. 1–7. [24] A. Yang, A. Li, B. Yang et al. , “Qwen3 technical report,” arXiv preprint arXiv:2505.09388 , 2025. [25] M. Hassid, T. Remez, T. A. Nguyen, I. Gat, A. Conneau, F. Kreuk, J. Copet, A. Defossez, G. Synnaeve, E. Dupoux et al. , “Textually pretrained speech language models,” Advances in Neural Infor-mation Processing Systems , vol. 36, pp. 63 483–63 501, 2023. [26] K. Lakhotia, E. Kharitonov, W.-N. Hsu et al. , “On generative spo-ken language modeling from raw audio,” Trans. Assoc. Comput. Linguistics , vol. 9, pp. 1336–1354, 2021. [27] F. Mentzer, D. Minnen, E. Agustsson, and M. Tschannen, “Finite scalar quantization: VQ-VAE made simple,” 2023. [28] Z. Du, Q. Chen, S. Zhang et al. , “CosyVoice: A scalable multi-lingual zero-shot text-to-speech synthesizer based on supervised semantic tokens,” arXiv preprint arXiv:2407.05407 , 2024. [29] S. Chen, C. Wang, Z. Chen et al. , “WavLM: Large-scale self-supervised pre-training for full stack speech processing,” IEEE J. Sel. Topics Signal Process. , vol. 16, no. 6, pp. 1505–1518, 2022. [30] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak su-pervision,” in Proc. ICML , 2023, pp. 28 492–28 518. [31] T. Saeki, D. Xin, W. Nakata, T. Koriyama, S. Takamichi, and H. Saruwatari, “UTMOS: Utokyo-sarulab system for voicemos challenge 2022,” in Proc. Interspeech , 2022, pp. 4521–4525. [32] Q. Fang, S. Guo, Y. Zhou, Z. Ma, S. Zhang, and Y. Feng, “LLaMA-Omni: Seamless speech interaction with large language models,” in Proc. ICLR , 2025. [33] A. Zeng, Z. Du, M. Liu, L. Zhang, S. Jiang, Y. Dong, and J. Tang, “Scaling speech-text pre-training with synthetic interleaved data,” in Proc. ICLR , 2025. [34] D. Hendrycks, C. Burns, S. Basart, A. Zou, M. Mazeika, D. Song, and J. Steinhardt, “Measuring massive multitask language under-standing,” Proceedings of the International Conference on Learn-ing Representations (ICLR) , 2021. [35] Y. Lei et al. , “CKDST: Comprehensively and effectively distill knowledge from machine translation to end-to-end speech trans-lation,” in Findings of ACL , 2023. [36] X. Wang, Y. Zhu, H. Yu et al. , “Freeze-Omni: A smart and low la-tency speech-to-speech dialogue model with frozen LLM,” arXiv preprint arXiv:2411.00774 , 2024. [37] C. Tang, W. Yu, G. Sun et al. , “SALMONN: Towards generic hearing abilities for large language models,” in Proc. ICLR , 2024. [38] S. Hu, L. Zhou, S. Liu et al. , “WavLLM: Towards robust and adaptive speech large language model,” arXiv preprint arXiv:2404.00656 , 2024. [39] E. Nachmani, A. Levkovitch, R. Hirsch et al. , “Spoken question answering and speech continuation using spectrogram-powered LLM,” arXiv preprint arXiv:2305.15255 , 2023. [40] P. K. Rubenstein, C. Asawaroengchai, D. D. Nguyen et al. , “Au-dioPaLM: A large language model that can speak and listen,” 
+
+arXiv preprint arXiv:2306.12925 , 2023. [41] Z. Zhang, S. Chen, L. Zhou et al. , “SpeechLM: Enhanced speech pre-training with unpaired textual data,” IEEE/ACM Trans. Audio, Speech, Lang. Process. , vol. 32, pp. 1602–1616, 2024. [42] A. Baevski, Y. Zhou, A. Mohamed, and M. Auli, “wav2vec 2.0: A framework for self-supervised learning of speech repre-sentations,” Advances in Neural Information Processing Systems ,vol. 33, pp. 12 449–12 460, 2020. [43] Z. Borsos, R. Marinier, D. Vincent et al. , “AudioLM: A language modeling approach to audio generation,” IEEE/ACM Trans. Au-dio, Speech, Lang. Process. , vol. 31, pp. 2523–2533, 2023. [44] E. Kharitonov, D. Vincent, Z. Borsos et al. , “Speak, read and prompt: High-fidelity text-to-speech with minimal supervision,” 
+
+Trans. Assoc. Comput. Linguistics , vol. 11, pp. 1703–1718, 2023. [45] S. Maiti, Y. Peng, S. Choi, J.-w. Jung, X. Chang, and S. Watan-abe, “Voxtlm: Unified decoder-only models for consolidating speech recognition, synthesis and speech, text continuation tasks,” in ICASSP 2024-2024 IEEE International Conference on Acous-tics, Speech and Signal Processing (ICASSP) . IEEE, 2024, pp. 13 326–13 330. [46] H. Wu, B. Yan, Y. Shi, and S. Watanabe, “Decoder-only archi-tecture for speech recognition with CTC prompts and text-only training,” arXiv preprint arXiv:2309.08876 , 2023. [47] D. Lyth and S. King, “Natural language guidance for controllable TTS,” arXiv preprint arXiv:2402.01912 , 2024. [48] A. van den Oord, Y. Li, and O. Vinyals, “Representation learning with contrastive predictive coding,” arXiv preprint arXiv:1807.03748 , 2018. 
+
+# 9. Generative AI Use Disclosure 
+
+A large language model was employed solely for language re-finement, including grammar, spelling, clarity, and tone, on text originally crafted by the authors. The LLM did not introduce substantive changes to claims, data interpretation, or conclu-sions.

@@ -1,0 +1,1002 @@
+Title: Listening with Attention: Entropy-Guided Explainability for Transformer-Based Audio Models
+
+URL Source: https://arxiv.org/pdf/2606.14647v1
+
+Published Time: Mon, 15 Jun 2026 01:14:36 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Listening with Attention: Entropy-Guided Explainability for Transformer-Based Audio Models 
+
+# Ravi Ranjan *
+
+# Florida International University Miami, USA 
+
+rkuma031@fiu.edu 
+
+# Utkarsh Grover University of South Florida Tampa, USA 
+
+utkarshgrover@usf.edu 
+
+# Xiaomin Lin University of South Florida Tampa, USA 
+
+xlin2@usf.edu 
+
+# Agoritsa Polyzou Florida International University Miami, USA 
+
+apolyzou@fiu.edu 
+
+# Abstract 
+
+Transformer-based automatic speech recognition (ASR) models such as Whisper are highly accurate, but their predictions remain difficult to interpret. Existing explain-able AI (XAI) methods often lack faithfulness and precise temporal grounding. We propose Listening with Entropy-guided Attention for Faithful e Xplainability ( LEAF-X ), a model-intrinsic XAI framework for transformer-based ASR. LEAF-X combines entropy-guided attention weight-ing, multi-layer attention rollout, and optional causal ab-lations to identify low-entropy, high-impact heads and lay-ers, producing sparse token-to-frame attributions. Un-like perturbation-based explainers or raw attention maps, LEAF-X exploits the internal structure of encoder-decoder and speech-augmented decoder-only models to generate ex-planations that better reflect model computation. Results show 32% improved faithfulness, 35-39% stronger local-ity/sparsity, and the most stable attributions, supporting more transparent and auditable ASR. 
+
+# 1. Introduction 
+
+Transformer-based automatic speech recognition (ASR) has reached a new level of accuracy with large-scale models such as OpenAI Whisper [26] and NVIDIA Canary [40], achieving near human-level word error rates on standard benchmarks [17]. Yet, despite these gains, modern ASR     
+
+> *Corresponding author. Accepted to INTERSPEECH 2026 . To appear in Proceedings of the An-nual Conference of the International Speech Communication Association. This version includes additional supplementary materials. Code available at https : / / github . com / raviranjan - ai / LEAFX-interspeech-2026 .
+
+Figure 1. LEAF-X provides token-level attribution over the au-dio evidence, revealing which acoustic regions support each tran-scribed phrase. 
+
+systems remain largely opaque [10]; it is often unclear 
+
+which parts of the audio support a particular decoded word or phoneme, and why the model chose one hypothesis over another [4]. This lack of transparency undermines trust and complicates deployment in safety-critical settings (e.g., medical dictation, emergency response), where operators need to audit model behavior and detect failure modes [34]. Regulatory pressure further elevates this need, with explain-ability increasingly required for high-risk AI-supported de-cision making [47]. These considerations motivate faith-ful, temporally grounded explainable AI (XAI) methods tai-lored to transformer ASR. Existing post-hoc machine learning explainers, including LIME [36], SHAP [20], and Integrated Gradients [42], pro-vide feature-attribution style explanations but are not well matched to the sequential and time-dependent nature of speech. In practice, they can be computationally expensive, yield coarse or unintuitive time localization, and may not faithfully reflect the model’s internal computation, produc-
+
+> arXiv:2606.14647v1 [cs.SD] 12 Jun 2026
+
+ing attributions that correlate with outputs rather than cap-ture causal evidence [5, 43, 49]. As a result, they often fail to deliver the fine-grained, word-aligned rationales needed to validate transformer ASR decisions [15, 22]. We propose LEAF-X (Listening with Entropy-guided 
+
+Attention for Faithful e Xplainability ), a model-intrinsic ex-planation framework that traces ASR outputs to their sup-porting acoustic evidence by leveraging internal attention dynamics. LEAF-X combines: (i) entropy-guided atten-tion weighting to emphasize confident, focused attention patterns; (ii) attention rollout to aggregate influence across transformer layers [1]; and (iii) causal reweighting to test whether highlighted segments affect token likelihood under controlled ablation. Together, these components produce explanations that are both temporally grounded (aligning tokens to specific time-frequency regions) and faithful to the model’s reasoning. The frame- and token-level attribu-tions quantify, for each decoded token, which specific au-dio frames (time segments) contributed most to its predic-tion. Figure 1 illustrates how LEAF-X yields word-level alignments that enable transparent verification of spoken evidence, supporting more transparent and auditable ASR analysis in high-stakes settings. 
+
+# 2. Background: Explainability in Audio 
+
+Explainability for speech recognition has begun to mature by adapting ideas from vision and NLP. However, ASR introduces unique challenges: explanations must be tem-porally grounded , free from hallucinations, and faithful under strong sequential dependence [41, 44, 48]. Early work largely applies post-hoc methods to speech. Wu et al. [47] adapt LIME to phoneme recognition by perturb-ing time segments and fitting a local surrogate; their time-constrained variant improves reliability on the read speech corpus TIMIT, but requires manual segmentation and many perturbations [16, 48]. In parallel, gradient-based saliency has been used to highlight acoustic cues. Fucci et al. [9] an-alyze spectrogram saliency to reveal linguistically plausible evidence (e.g., formants and burst regions), but such maps are often diffused and difficult to interpret at the word level in end-to-end ASR [3, 14, 39, 44]. A central concern across these approaches is faithfulness .Model-agnostic perturbation methods (e.g., LIME/SHAP) and gradient-based methods (including IG) can produce ex-planations that merely correlate with outputs without cap-turing causal evidence, and may be unstable under small input changes [49]. A common quantitative formulation of fidelity is to measure how the model score changes when removing the top-ranked features: 
+
+Fid( k) = f (x) − f (x ⊙ m¬S k ) , (1) where f (·) is the predicted score (e.g., token log-probability), ⊙ denotes element-wise product, Sk denotes the top-k salient time-frequency regions, and m¬S k masks those regions; larger drops indicate more faithful attribu-tions [50]. However, in speech, naive masking can break temporal continuity and does not guarantee that identified regions align with the model’s internal alignment between acoustics and decoded tokens [13, 19]. Recent transformer interpretability work motivates more model-intrinsic explanations [35]. Abnar and Zuidema [1] propose attention rollout to trace information flow across layers, and Chefer et al. [6] combine attention with gradient-based relevance propagation to obtain more faith-ful transformer attributions than raw attention alone. These methods suggest a natural baseline suite for ASR explain-ability: black-box perturbation (LIME/SHAP), gradient at-tribution (IG), and transformer-specific attention propaga-tion (rollout/relevance). Nevertheless, ASR still lacks a widely adopted framework that produces token-aligned, temporally precise explanations while remaining faithful to the sequence model’s computation, motivating LEAF-X. 
+
+# 3. Methodology 
+
+We propose LEAF-X (Listening with Entropy-guided 
+
+Attention for Faithful e Xplainability ), a model-intrinsic ex-plainer for transformer ASR systems such as Whisper and Canary-Qwen-2.5B. LEAF-X uses Entropy-Weighted At-tention by producing token-to-time explanations: for each decoded token, it returns a normalized importance distribu-tion over input audio frames. The key idea is to (i) em-phasize confident (low-entropy) attention patterns, (ii) ag-gregate evidence across layers via attention rollout [7], and (iii) optionally reweight layers using light causal checks to improve faithfulness. Algorithm specifications and implementation details are provided in Appendix A. 
+
+3.1. Setup and Goal 
+
+Let X ∈ RT ×d denote the acoustic feature sequence (e.g., log-Mel frames), T the frames (time steps), and d the num-ber of features (spectrogram dimension per frame). Atransformer ASR model outputs a token sequence y =(y1, . . . , y N ) and per-step distributions pθ (yi | y<i , X).LEAF-X aims to compute, for each token yi, a frame-level attribution vector si ∈ ∆T −1 such that PTt=1 si,t = 1 ,where si,t quantifies how much frame t contributes to pre-dicting yi. For encoder-decoder models (e.g., Whisper), si
+
+is derived from decoder cross-attention to encoder frames; for speech-augmented decoder-only models, the same pro-cedure is applied to the attention mass directed to audio pseudo-tokens . To visualize attributions in real time, each model-frame index is mapped back to the original wave-form using the front-end hop size and encoder downsam-pling stride, then linearly interpolated to the audio timeline. Figure 2. Overview of the LEAF-X pipeline. 
+
+3.2. Entropy-Guided Attention Weighting 
+
+Consider a decoder with L layers and H heads per layer. For token i, layer l, head h, let a(l,h ) 
+
+> i
+
+∈ ∆T −1 denote the attention distribution over acoustic frames. We compute the head entropy 
+
+H(l,h )(i) = −
+
+> T
+
+X
+
+> t=1
+
+a(l,h ) 
+
+> i,t
+
+log a(l,h ) 
+
+> i,t
+
+, (2) and convert it into a confidence weight (lower entropy im-plies higher weight): 
+
+wl,h (i) = 
+
+
+
+1 − H(l,h )(i)log T
+
+1/τ 
+
+, τ > 0. (3) We then form the layer-wise entropy-weighted attention 
+
+¯a(l) 
+
+> i
+
+=
+
+PHh=1 wl,h (i) a(l,h )
+
+> i
+
+PHh=1 wl,h (i) + ε . (4) Intuitively, Eq. (3) filters diffuse heads that often reflect broad context rather than token-specific acoustic evidence, yielding sharper, more interpretable alignments. Here ε is a small numerical stability constant, added to avoid division by zero. 
+
+3.3. Multi-Layer Rollout for Token-to-Time Attri-bution 
+
+To capture compositional evidence across depth, we aggre-gate layer-wise entropy weighted attention using rollout-style propagation [7]. Let R(l) 
+
+> i
+
+∈ RT denote the accumu-lated attribution after layer l, defined recursively as 
+
+R(1)  
+
+> i
+
+= ¯ a(1)  
+
+> i
+
+, R(l) 
+
+> i
+
+= Π (l) R(l−1)  
+
+> i
+
+, (5) where Π(l) denotes an effective propagation operator de-rived from the model’s layer-l attention flow. 1 si is the token-to-frame attribution vector, a normalized importance distribution over audio frames. The final rolled-out map 
+
+R(L) 
+
+> i
+
+is normalized to obtain the explanation: 
+
+si = R(L)
+
+> i
+
+PTt=1 R(L) 
+
+> i,t
+
++ ε . (6) 
+
+Gradient modulation. To increase fidelity, we modu-late attention by output sensitivity, that affects the token probability, similar to gradient-weighted transformer attri-bution [7]: 
+
+a(l,h ) 
+
+> i
+
+← a(l,h ) 
+
+> i
+
+⊙ ∂ log pθ (yi | y<i , X)
+
+∂a(l,h )
+
+> i
+
+, (7) followed by renormalization (Eq. (3)). This suppresses at-tention that has limited influence on the token probability, addressing known concerns about attention-only explana-tions in sequential models [48]. Further formal task definitions for Token-to-Time ASR Ex-planation are deferred to Appendix B. 
+
+3.4. Causal Reweighting (Lightweight) 
+
+LEAF-X incorporates a lightweight causal check by esti-mating layer importance via ablation. Let ℓ(i) be the neg-ative log-likelihood loss for token i. For each layer l, we compute 
+
+∆ℓl(i) = ℓ(l)abl (i) − ℓ(i), (8)   
+
+> 1In practice, Π(l)can be implemented as attention rollout with residual connections or any equivalent attention-flow approximation [7].
+
+where ℓ(l)abl ablates the layer-l audio-to-text attention contri-bution (i.e., bypassing cross-attention). We convert these into normalized layer weights 
+
+γl(i) = max {∆ℓl(i), 0}
+
+PLk=1 max {∆ℓk(i), 0} + ε , (9) and form a layer-weighted explanation by combining inter-mediate rollouts: 
+
+si ←
+
+> L
+
+X
+
+> l=1
+
+γl(i) s(l) 
+
+> i
+
+, (10) where s(l) 
+
+> i
+
+is the normalized attribution after layer l. This step improves faithfulness when a small set of layers dom-inates the acoustic evidence for specific tokens. Figure 2 shows that audio is transformed into spectrogram features and passed through a Transformer-based ASR model to col-lect attention weights. Entropy-guided weighting and cross-layer rollout generate token-to-time attributions, producing the final LEAF-X explanation map. 
+
+Output. For each token yi, LEAF-X outputs si ∈ ∆T −1 (⊂
+
+RT ), which can be visualized as a time (or time-frequency) heatmap aligned to the transcript, providing an interpretable mapping from decoded tokens to the acoustic frames that most influenced them. 
+
+# 4. Experiments 
+
+4.1. Experimental Setup 
+
+Models. Whisper-large-v3 is a 1.55B-parameter encoder-decoder model that maps log-Mel audio features to text via cross-attentive decoding, providing strong robustness for transcription and translation [27]. Canary-Qwen-2.5B is a speech-augmented decoder-only hybrid that couples a Fast-conformer speech encoder with a pretrained Qwen LLM de-coder [23]. 
+
+Datasets. LibriSpeech [24] is a 1000-hour cor-pus of read English audiobooks. For reproducibil-ity, we follow standard practice and train/evaluate on the train-clean-100 split, reporting results on 
+
+test-clean and test-other . TED-LIUM Release 3 [12] contains ∼450+ hours of TED talk recordings with spontaneous lecture-style speech and mild background noise. We use the official train-70% / val-10% / test-20% splits and keep audio at 16 kHz to match Whisper/Ca-nary front-ends. 
+
+Explanation Metrics. We evaluate LEAF-X using five widely adopted criteria that jointly measure faithfulness, grounding, and reliability. Deletion Area Over the Per-turbation Curve (D-AOPC ↓) quantifies faithfulness by progressively masking the top-ranked time-frequency re-gions (or frames) and computing the area over the per-turbation curve ; lower values indicate that removing high-lighted evidence causes a faster confidence drop, hence more faithful explanations [25, 38, 45]. Temporal Localiza-tion (TLoc ↑) measures whether the top-attributed segments overlap annotated evidence (e.g., phoneme/word-aligned time spans when available), reflecting how well explana-tions are grounded in the true acoustic cause of a predic-tion [48]. TLoc is computed against word-level time spans obtained from forced alignment of the dataset transcripts. 
+
+Sparsity (SPR ↑) encourages concise rationales by prefer-ring explanations that concentrate mass on a small fraction of frames/bins without sacrificing predictive relevance. We report sparsity as the normalized top-k mass, i.e., the frac-tion of total attribution probability concentrated in the top-k
+
+most salient frames [2]. Stability (STAB ↑) assesses ro-bustness by measuring similarity between explanations un-der small, label-preserving perturbations (e.g., mild noise, time-shifts), where higher agreement implies more reliable interpretability [2]. Finally, Infidelity (INF ↓) captures the expected mismatch between attribution scores and output changes under random perturbations, with lower values in-dicating explanations that better track the model’s func-tional behavior [50]. Comprehensive details regarding the benchmark protocol and metric definitions are provided in Appendix C and Ap-pendix D, respectively. 
+
+Comparing Approaches. LIME: A model-agnostic ex-plainer that perturbs the input and fits a sparse local surro-gate to approximate the decision boundary [37]. SHAP: AShapley-value framework that assigns each feature a prin-cipled contribution to the output with consistency guar-antees [21]. Integrated Gradients (IG): Computes at-tributions by integrating gradients from a baseline input to the observed input [42]. Occlusion/SpecMask: An audio-native perturbation baseline that masks contiguous time regions and measures the induced confidence/WER change [25]. Raw Attention Alignment (RAA): Asimple attention-as-explanation baseline using last-layer (or averaged) cross-attention to encoder frames follow-ing Abnar et al. [1]. SaCo: Salience-guided, gradient-weighted attention rollouts designed to improve faithful-ness in Transformer explanations [46]. Transformer Attri-bution (TA): Back-propagates relevance through attention layers to yield token-level explanations tailored to Trans-former models [8]. Reproducibility hyper-parameters. 
+
+LEAF-X is controlled mainly by the entropy temperature 
+
+τ > 0 in Eq. (3) (typical sweep τ ∈ [0 .5, 2] ), a small numer-ical stabilizer ϵ ≈ 10 −8 in Eqs. (4),(6),(9), the rollout depth 
+
+L, and optional switches for gradient modulation (Eq. (7)) and lightweight causal reweighting (Eqs. (8)–(10)). These metrics are proxy measures of faithfulness, grounding, and reliability; they do not prove human trust or full causal suffi-ciency. We therefore interpret LEAF-X as an audit-support tool rather than a guarantee of trustworthy ASR behavior. The causal reweighting step adds up to L ablation forward Table 1. Whisper-large-v3 (LibriSpeech) - Explainability Met-rics (Normalized [0,1]). Estimated run-to-run std. dev. across utterances/seeds: σ ≈ 0.01 –0.03 (STAB), σ ≈ 0.02 –0.05 (TLoc and SPR), σ ≈ 0.03 –0.07 (D-AOPC and INF). 
+
+Method D-AOPC ↓ TLoc ↑ SPR ↑ STAB ↑ INF ↓
+
+LIME 0.72 0.55 0.48 0.60 0.65 SHAP 0.68 0.58 0.50 0.62 0.63 IG 0.65 0.60 0.52 0.63 0.60 SpecMask 0.60 0.62 0.55 0.65 0.58 RAA 0.58 0.63 0.57 0.66 0.56 SaCo 0.51 0.73 0.68 0.72 0.50 TA 0.53 0.66 0.62 0.69 0.52 
+
+LEAF-X (Ours) 0.45 0.72 0.70 0.78 0.45 
+
+passes per analyzed token, so it can be disabled when re-quired. 
+
+4.2. Evaluation Results 
+
+All metrics are reported after applying the same fixed min-max normalization per metric and dataset across all com-pared methods. Table 1 shows that LEAF-X achieves the strongest overall explainability trade-off on Whisper-large-v3, delivering the lowest D-AOPC and INF (0.45 and 0.45, respectively) while simultaneously improving sparsity and reliability (0.70 and 0.78) over all baselines. While SaCo attains a marginally higher TLoc (0.73 vs. 0.72), LEAF-X matches this localization while providing more faithful and stable explanations, indicating better causal grounding un-der small run-to-run variability. Table 2 shows that LEAF-X also delivers very good overall performance on Canary-Qwen-2.5B on dataset TED-LIUM 3, achieving the lowest D-AOPC and INF (0.48 and 0.47) while also providing the highest sparsity and stability (0.68 and 0.76) compared to all baselines. Since sparsity is partly aligned with the entropy-weighted design, we do not rely on SPR alone; the main evidence comes from INF, D-AOPC, STAB, insertion/dele-tion trends, and ablation consistency. In particular, LEAF-X matches the best temporal localization (0.70, tied with SaCo) but is substantially more faithful and reliable, indi-cating stronger proxy-based faithfulness and stability. 
+
+4.3. Ablation Study 
+
+Table 3 shows that each LEAF-X component contributes measurably: removing entropy weighting or rollout yields the largest drops in localization and sparsity (TLoc and SPR) and weaker faithfulness (higher D-AOPC and INF), while removing gradient modulation or causal reweighting primarily degrades faithfulness (D-AOPC and INF) with smaller but consistent losses in grounding and stability. Full LEAF-X achieves the best overall trade-off (lowest D-AOPC & INF and highest TLoc, SPR, & STAB), indicat-ing that entropy-guided head selection, multi-layer evidence 
+
+Table 2. Canary-Qwen-2.5B (TED-LIUM Release 3) Explain-ability Metrics (Normalized [0,1]). Estimated run-to-run std. dev. across utterances/seeds: σ ≈ 0.01 –0.03 (STAB), σ ≈ 0.02 –
+
+0.05 (TLoc and SPR), σ ≈ 0.03 –0.08 (D-AOPC and INF). 
+
+Method D-AOPC ↓ TLoc ↑ SPR ↑ STAB ↑ INF ↓
+
+LIME 0.75 0.52 0.45 0.58 0.68 SHAP 0.70 0.55 0.47 0.60 0.65 IG 0.68 0.57 0.49 0.62 0.63 SpecMask 0.63 0.60 0.52 0.64 0.60 RAA 0.61 0.62 0.54 0.65 0.58 SaCo 0.52 0.70 0.67 0.68 0.51 TA 0.55 0.65 0.58 0.67 0.54 
+
+LEAF-X (Ours) 0.48 0.70 0.68 0.76 0.47 
+
+Table 3. LEAF-X Ablation on Whisper-large-v3 (Lib-riSpeech). Lower is better for D-AOPC/INF; higher is better for TLoc/SPR/STAB. 
+
+Variant D-AOPC ↓ TLoc ↑ SPR ↑ STAB ↑ INF ↓
+
+w/o Entropy weighting 0.57 0.62 0.56 0.73 0.56 w/o Rollout (1-layer attn) 0.54 0.63 0.60 0.74 0.54 w/o Gradient modulation 0.50 0.68 0.64 0.76 0.50 w/o Causal reweighting 0.48 0.69 0.66 0.77 0.48 
+
+LEAF-X (Full) 0.45 0.72 0.70 0.78 0.45 0 10 20 30 40 50 
+
+> % frames manipulated (ranked by attribution)
+
+0.0 
+
+0.5 
+
+1.0   
+
+> Normalized faithfulness (  ) Faithfulness Curves: Insertion vs. Deletion
+> LEAF-X
+> SaCo
+> TA
+> RAA
+> IG
+> SpecMask
+> SHAP
+> LIME
+> Insertion (Acc )
+> Deletion (WER )
+
+Figure 3. Faithfulness curves (single plot). Normalized inser-tion (solid; token accuracy gain when progressively adding top-attributed frames) and deletion (dashed; WER increase when pro-gressively removing top-attributed frames) as a function of the fraction of audio frames manipulated. 
+
+aggregation, and lightweight causal checks are complemen-tary and jointly necessary for the most faithful, time-aligned explanations. We provide the detailed component and hyperparameter ab-lations in Appendix E. 4.4. Discussion 
+
+Figure 3 reports insertion and deletion faithfulness tests. Insertion starts from a masked audio input and progressively 
+
+adds the highest-attribution frames; a faithful explainer re-stores ASR accuracy quickly, giving a steep solid curve. Deletion starts from the full signal and progressively re-moves those same top-ranked frames; a faithful explainer causes a rapid drop in quality, giving a steep dashed curve. These curves provide complementary proxy evidence. We therefore interpret Fig. 3 as supporting improved faithful-ness behavior, not as proof of full causal sufficiency. We provide qualitative Token-to-Time explanation exam-ples in Appendix F and practical auditing scenarios in Ap-pendix G. Key limitations are backbone/dataset/language coverage, sensitivity to attention/entropy calibrations, noise/domain shift, and lack of user-study validation (human interpretabil-ity). Comprehensive details regarding responsible use and detailed limitations are provided in Appendix H. 
+
+# 5. Conclusion 
+
+We introduce LEAF-X , a model-intrinsic explainabil-ity framework that delivers token-to-time attributions for transformer-based ASR by combining entropy-guided head weighting, multi-layer attention rollout, and optional lightweight causal reweighting. Across Whisper-large-v3 (LibriSpeech) and Canary-Qwen-2.5B (TED-LIUM 3), LEAF-X yields more faithful and temporally grounded ex-planations than strong post-hoc and transformer-specific baselines, improving reliability while producing sparse, sta-ble rationales. These results suggest that leveraging inter-nal attention structure with uncertainty-aware weighting is a practical path toward trustworthy, auditable ASR in safety and mission-critical deployments. 
+
+# References 
+
+[1] Samira Abnar and Willem Zuidema. Quantifying atten-tion flow in transformers. In Proceedings of the 58th an-nual meeting of the association for computational linguis-tics , pages 4190–4197, 2020. 2, 4 [2] David Alvarez-Melis and Tommi S Jaakkola. On the robustness of interpretability methods. arXiv preprint arXiv:1806.08049 , 2018. 4, 13 [3] Imen Ben Amor. Deep modeling based on voice attributes for explainable speaker recognition: application in the forensic domain . PhD thesis, Universit´ e d’Avignon, 2024. 2[4] Sneha Basak, Himanshi Agrawal, Shreya Jena, Shilpa Gite, Mrinal Bachute, Biswajeet Pradhan, and Mazen Assiri. Challenges and limitations in speech recognition technology: A critical review of speech signal processing algorithms, tools and systems. CMES-Computer Modeling in Engineer-ing and Sciences , 2023. 1 [5] Sebastian Bordt, Mich` ele Finck, Eric Raidl, and Ulrike Von Luxburg. Post-hoc explanations fail to achieve their purpose in adversarial contexts. In Proceedings of the 2022 ACM Conference on Fairness, Accountability, and Trans-parency , pages 891–905, 2022. 2 [6] Hila Chefer, Shir Gur, and Lior Wolf. Transformer inter-pretability beyond attention visualization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 782–791, 2021. 2 [7] Hila Chefer, Shir Gur, and Lior Wolf. Generic attention-model explainability for interpreting bi-modal and encoder-decoder transformers. In Proceedings of the IEEE/CVF in-ternational conference on computer vision , pages 397–406, 2021. 2, 3 [8] Hila Chefer, Shir Gur, and Lior Wolf. Transformer inter-pretability beyond attention visualization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 782–791, 2021. 4 [9] Dennis Fucci, Marco Gaido, Matteo Negri, Mauro Cettolo, and Luisa Bentivogli. Unveiling relevant acoustic cues for ASR via feature attribution. In Proceedings of Interspeech 2025 , 2025. 2 [10] Kallirroi Georgila, Anton Leuski, Volodymyr Yanov, and David Traum. Evaluation of off-the-shelf speech recog-nizers across diverse dialogue domains. In Proceedings of the Twelfth Language Resources and Evaluation Conference ,pages 6469–6476, 2020. 1 [11] Utkarsh Grover, Ravi Ranjan, Mingyang Mao, Trung Tien Dong, Satvik Praveen, Zhenqi Wu, J Morris Chang, Tinoosh Mohsenin, Yi Sheng, Agoritsa Polyzou, et al. Embod-ied foundation models at the edge: A survey of deploy-ment constraints and mitigation strategies. arXiv preprint arXiv:2603.16952 , 2026. 16 [12] F´ elix Hernandez, Vincent Nguyen, Sahar Ghannay, Natalia Tomashenko, and Yannick Est` eve. Ted-lium 3: Twice as much data and corpus repartition for experiments on speaker adaptation. In Speech and Computer: 20th International Conference, SPECOM 2018 , pages 198–208. Springer, 2018. 4[13] Yosuke Higuchi, Tetsuji Ogawa, Tetsunori Kobayashi, and Shinji Watanabe. End-to-end speech recognition with pre-trained masked language model. arXiv preprint arXiv:2410.00528 , 2024. 2 [14] Hiruni Maleesa Jayasinghe, Kok Wai Wong, and Anupiya Nugaliyadde. A systematic review of interpretability and ex-plainability for speech emotion features in automatic speech emotion recognition. Pattern recognition , page 112122, 2025. 2 [15] Pin Ji, Yang Feng, Jia Liu, Zhihong Zhao, and Zhenyu Chen. Asrtest: automated testing for deep-neural-network-driven speech recognition systems. In Proceedings of the 31st ACM SIGSOFT international symposium on software testing and analysis , pages 189–201, 2022. 2 [16] Seonmin Koo, Chanjun Park, Jinsung Kim, Jaehyung Seo, Sugyeong Eo, Hyeonseok Moon, and Heuiseok Lim. Toward practical automatic speech recognition and post-processing: a call for explainable error benchmark guideline. arXiv preprint arXiv:2401.14625 , 2024. 2 [17] Korbinian Kuhn, Verena Kersken, Benedikt Reuter, Niklas Egger, and Gottfried Zimmermann. Measuring the accuracy of automatic speech recognition solutions. ACM Transac-tions on Accessible Computing , 16(4):1–23, 2024. 1 [18] Ravi R Kumar, Vishal Pramanik, Utkarsh Grover, and Venkata Ramesh Ganapam. Trustworthiness of llms in med-ical domain. Researchgate preprint , 2024. 16 [19] Kai Li, Guo Chen, Wendi Sang, Yi Luo, Zhuo Chen, Shuai Wang, Shulin He, Zhong-Qiu Wang, Andong Li, Zhiyong Wu, et al. Advances in speech separation: Techniques, chal-lenges, and future trends. arXiv preprint arXiv:2508.10830 ,2025. 2 [20] Scott M. Lundberg and Su-In Lee. A unified approach to interpreting model predictions. In Advances in Neural Infor-mation Processing Systems (NeurIPS) , 2017. 1 [21] Scott M Lundberg and Su-In Lee. A unified approach to interpreting model predictions. In Advances in Neural Infor-mation Processing Systems , 2017. 4 [22] Dena Mujtaba, Nihar Mahapatra, Megan Arney, J Yaruss, Hope Gerlach-Houck, Caryn Herring, and Jia Bin. Lost in transcription: Identifying and quantifying the accuracy bi-ases of automatic speech recognition systems against disflu-ent speech. In Proceedings of the 2024 Conference of the North American Chapter of the Association for Computa-tional Linguistics: Human Language Technologies (Volume 1: Long Papers) , pages 4795–4809, 2024. 2 [23] NVIDIA and Qwen Team. Canary-qwen-2.5b: A speech-augmented decoder-only model, 2024. Technical release note. 4 [24] Vassil Panayotov, Guoguo Chen, Daniel Povey, and Sanjeev Khudanpur. Librispeech: An asr corpus based on public do-main audio books. In 2015 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 5206–5210. IEEE, 2015. 4 [25] Vitali Petsiuk, Abir Das, and Kate Saenko. Rise: Random-ized input sampling for explanation of black-box models. In Proceedings of the British Machine Vision Conference (BMVC) , 2018. 4, 12 [26] Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision. In Interna-tional conference on machine learning , pages 28492–28518. PMLR, 2023. 1 [27] Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision. In Proceedings of the 40th International Conference on Machine Learning (ICML) , pages 28492–28518. PMLR, 2023. 4 [28] Ravi Ranjan and Agoritsa Polyzou. Vla-forget: Vision-language-action unlearning for embodied foundation mod-els. arXiv preprint arXiv:2604.03956 , 2026. 15 [29] Ravi Ranjan, Utkarsh Grover, Mayur Akewar, Xiaomin Lin, and Agoritsa Polyzou. Catrag: Functor-guided structural debiasing with retrieval augmentation for fair llms. arXiv preprint arXiv:2603.21524 , 2026. 15 [30] Ravi Ranjan, Utkarsh Grover, Xiaomin Lin, and Agoritsa Polyzou. G-drift mia: Membership inference via gradient-induced feature drift in llms. arXiv preprint arXiv:2604.00419 , 2026. 15 [31] Ravi Ranjan, Utkarsh Grover, Xiaomin Lin, and Agoritsa Polyzou. Persa: Reinforcement learning for professor-style personalized feedback with llms. arXiv preprint arXiv:2605.01123 , 2026. 15 [32] Ravi Ranjan, Utkarsh Grover, Xiaomin Lin, and Agoritsa Polyzou. Razor: Ratio-aware layer editing for targeted un-learning in vision transformers and diffusion models. arXiv preprint arXiv:2603.14819 , 2026. 15 [33] Ravi Ranjan, Utkarsh Grover, and Agorista Polyzou. Posi-tion: Llms must use functor-based and rag-driven bias miti-gation for fairness. arXiv preprint arXiv:2603.07368 , 2026. 15 [34] Thomas Reitmaier, Electra Wallington, Dani Kalarikalayil Raju, Ondrej Klejch, Jennifer Pearson, Matt Jones, Peter Bell, and Simon Robinson. Opportunities and challenges of automatic speech recognition systems for low-resource language speakers. In Proceedings of the 2022 CHI conference on human factors in computing systems ,pages 1–17, 2022. 1 [35] Lucas Resck, Isabelle Augenstein, and Anna Korhonen. Ex-plainability and interpretability of multilingual large lan-guage models: A survey. In Proceedings of the 2025 Confer-ence on Empirical Methods in Natural Language Processing ,pages 20465–20497, 2025. 2 [36] Marco Tulio Ribeiro, Sameer Singh, and Carlos Guestrin. “Why Should I Trust You?” explaining the predictions of any classifier. In Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD) , pages 1135–1144, 2016. 1 [37] Marco Tulio Ribeiro, Sameer Singh, and Carlos Guestrin. ”why should i trust you?”: Explaining the predictions of any classifier. In Proceedings of the 22nd ACM SIGKDD In-ternational Conference on Knowledge Discovery and Data Mining , pages 1135–1144, 2016. 4 [38] Wojciech Samek, Alexander Binder, Gr´ egoire Montavon, Sebastian Lapuschkin, and Klaus-Robert M¨ uller. Evaluating the visualization of what a deep neural network has learned. 
+
+IEEE transactions on neural networks and learning systems ,28(11):2660–2673, 2016. 4, 12 [39] Mohammad Hossein Sameti, Sepehr Harfi Moridani, Ali Zarean, and Hossein Sameti. Accent-invariant automatic speech recognition via saliency-driven spectrogram mask-ing. arXiv preprint arXiv:2510.09528 , 2025. 2 [40] Monica Sekoyan, Nithin Rao Koluguri, Nune Tade-vosyan, Piotr Zelasko, Travis Bartley, Nikolay Karpov, Jagadeesh Balam, Boris Ginsburg, et al. Canary-1B-v2 & Parakeet-TDT-0.6B-v3: Efficient and high-performance models for multilingual ASR and AST. arXiv preprint arXiv:2509.14128 , 2025. 1 [41] Ravi Shankar, Ziyu Goh, Fiona Devi, and Qian Xu. A sys-tematic review of explainable artificial intelligence methods for speech-based cognitive decline detection. npj Digital Medicine , 8(1):724, 2025. 2 [42] Mukund Sundararajan, Ankur Taly, and Qiqi Yan. Axiomatic attribution for deep networks. In International conference on machine learning , pages 3319–3328. PMLR, 2017. 1, 4 [43] Vinitra Swamy, Jibril Frej, and Tanja K¨ aser. The future of human-centric explainable artificial intelligence (xai) is not post-hoc explanations. Journal of Artificial Intelligence Re-search , 84, 2025. 2 [44] Vincenzo Norman Vitale, Francesco Cutugno, Antonio Origlia, and Gianpaolo Coro. Exploring emergent syllables in end-to-end automatic speech recognizers through model explainability technique. Neural Computing and Applica-tions , 36(12):6875–6901, 2024. 2 [45] Junyi Wu, Weitai Kang, Hao Tang, Yuan Hong, and Yan Yan. On the faithfulness of vision transformer explanations. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition (CVPR) , 2024. 4 [46] Junyi Wu, Yinan Yu, Sijia Liu, Shiyu Chang, and Soroush Mohseni. On the faithfulness of vision transformer explana-tions. arXiv preprint arXiv:2401.10379 , 2024. 4 [47] Xiaoliang Wu, Peter Bell, and Ajitha Rajan. Can we trust explainable AI methods on ASR? an evaluation on phoneme recognition. arXiv preprint arXiv:2305.18011 , 2024. 1, 2 [48] Xiaoliang Wu, Peter Bell, and Ajitha Rajan. Can we trust explainable ai methods on asr? an evaluation on phoneme recognition. In ICASSP 2024-2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 10296–10300. IEEE, 2024. 2, 3, 4, 13 [49] Chih-Kuan Yeh, Cheng-Yu Hsieh, Arun Suggala, David I. Inouye, and Pradeep Ravikumar. On the (in)fidelity and sensitivity of explanations. In Advances in Neural Informa-tion Processing Systems 32 (NeurIPS) , pages 10967–10978, 2019. 2 [50] Chih-Kuan Yeh, Cheng-Yu Hsieh, Arun Sai Suggala, David Inouye, and Pradeep Ravikumar. On the (in)fidelity and sen-sitivity of explanations. In Advances in Neural Information Processing Systems (NeurIPS) , 2019. 2, 4, 13 Appendix A. LEAF-X Algorithm and Implementation Details 
+
+This appendix provides implementation-level pseudocode for the three variants of LEAF-X used in our experiments: LEAF-X-B ASE , LEAF-X+G RAD , and LEAF-X+C AUSAL . All variants return token-to-time attribution maps, where each decoded token yi is assigned a normalized frame-level attribution vector si ∈ ∆T −1. The base variant uses entropy-guided attention weighting and multi-layer rollout. The gradient variant additionally modulates attention by token-level output sensitivity. The causal variant further reweights intermediate layer explanations using lightweight attention ablations. 
+
+Notation. Let X ∈ RT ×d denote the acoustic feature sequence with T time frames and feature dimension d. Let y =(y1, . . . , y N ) denote the decoded token sequence. For token yi, layer l ∈ { 1, . . . , L }, and head h ∈ { 1, . . . , H }, let a(l,h ) 
+
+> i
+
+∈
+
+∆T −1 be the attention distribution over acoustic frames or audio pseudo-tokens. We use τ as the entropy temperature and ϵ
+
+as a numerical stability constant. 
+
+Implementation notes. For encoder-decoder ASR models such as Whisper, LEAF-X uses decoder cross-attention to map decoded tokens to encoder acoustic frames. For speech-augmented decoder-only models, the same procedure is applied to the attention mass assigned to audio pseudo-tokens, which are then mapped back to the corresponding acoustic time indices. In practice, the frame index is converted to waveform time using the feature extractor hop size and any encoder downsampling factor. We set ϵ = 10 −8 for all normalization operations and tune τ over a small validation sweep, typically τ ∈ [0 .5, 2.0] .
+
+Computational cost. LEAF-X-B ASE requires one standard forward pass with attention caching and is therefore the cheap-est variant. LEAF-X+G RAD adds one backward pass per analyzed token or token batch to obtain attention sensitivities. LEAF-X+C AUSAL adds up to L ablation forward passes per analyzed token, but can be restricted to a subset of layers or disabled when low-latency auditing is required. This creates a practical trade-off: the base variant is suitable for fast inspec-tion, the gradient variant improves sensitivity to token likelihood, and the causal variant provides the strongest audit signal when additional computation is acceptable. 
+
+# B. Formal Task Definition for Token-to-Time ASR Explanation 
+
+We formalize the explanation problem addressed by LEAF-X as token-to-time attribution for transformer-based ASR. Let 
+
+X ∈ RT ×d denote an acoustic feature sequence, where T is the number of audio frames and d is the feature dimension. Given an ASR model fθ , the model produces a decoded token sequence y = ( y1, . . . , y N ) with token probabilities pθ (yi | y<i , X ).For each decoded token yi, the goal is to produce an attribution vector 
+
+si ∈ ∆T −1,
+
+> T
+
+X
+
+> t=1
+
+si,t = 1 ,
+
+where si,t measures the contribution of acoustic frame t to the prediction of token yi. A complete explanation is therefore a token-to-time attribution map 
+
+S(X, y ) = {si}Ni=1 ∈ RN ×T .
+
+A desirable ASR explanation should satisfy three properties: faithfulness , where high-attribution frames affect the token likelihood when removed or restored; temporal grounding , where attributions align with the spoken evidence for the token; and stability , where explanations remain consistent under small label-preserving audio perturbations. LEAF-X instantiates this task by using entropy-guided attention weighting, multi-layer rollout, and optional causal reweighting to obtain sparse and temporally grounded token-level explanations. 
+
+# C. LEAF-X Benchmark Protocol 
+
+We define LEAF-XB ENCH , a compact evaluation protocol for ASR explainability and token-to-time attribution . Given an audio input X, a transformer ASR model first produces a decoded token sequence y = ( y1, . . . , y N ). Each explanation method then returns a frame-level attribution map S ∈ RN ×T , where si,t measures the acoustic evidence assigned to frame 
+
+t for token yi. This protocol evaluates whether an explanation is faithful, temporally grounded, sparse, stable, and useful for auditable ASR. Algorithm 1: LEAF-X-B ASE : Entropy-Guided Token-to-Time Attribution 
+
+Require: ASR model fθ , acoustic features X, decoded tokens y = ( y1, . . . , y N ), rollout depth L, heads H, entropy temperature τ , stability constant ϵ
+
+Ensure: Token-to-time attribution maps S = {si}Ni=1  
+
+> 1:
+
+Run fθ (X) and cache cross-attention or audio-token attention maps {a(l,h ) 
+
+> i
+
+} for all tokens, layers, and heads.  
+
+> 2:
+
+for each decoded token yi do  
+
+> 3:
+
+for each layer l = 1 to L do  
+
+> 4:
+
+for each head h = 1 to H do  
+
+> 5:
+
+Compute normalized head entropy: 
+
+H(l,h ) 
+
+> i
+
+= −
+
+> T
+
+X
+
+> t=1
+
+a(l,h ) 
+
+> i,t
+
+log( a(l,h ) 
+
+> i,t
+
++ ϵ) 
+
+> 6:
+
+Convert entropy to confidence weight: 
+
+wl,h (i) = 1 − H(l,h )
+
+> i
+
+log T + ϵ
+
+!1/τ  
+
+> 7:
+
+end for  
+
+> 8:
+
+Compute entropy-weighted layer attention: 
+
+¯a(l) 
+
+> i
+
+=
+
+PHh=1 wl,h (i)a(l,h )
+
+> i
+
+PHh=1 wl,h (i) + ϵ 
+
+> 9:
+
+Normalize ¯a(l) 
+
+> i
+
+so that P 
+
+> t
+
+¯a(l) 
+
+> i,t
+
+= 1 . 
+
+> 10:
+
+end for  
+
+> 11:
+
+Initialize rollout attribution: 
+
+R(1)  
+
+> i
+
+= ¯ a(1)  
+
+> i
+> 12:
+
+for each layer l = 2 to L do  
+
+> 13:
+
+Propagate attribution using the effective layer attention operator: 
+
+R(l) 
+
+> i
+
+= Π (l)R(l−1)  
+
+> i
+> 14:
+
+Normalize R(l) 
+
+> i
+
+. 
+
+> 15:
+
+end for  
+
+> 16:
+
+Obtain final token-to-time attribution: 
+
+si = R(L)
+
+> i
+
+PTt=1 R(L) 
+
+> i,t
+
++ ϵ 
+
+> 17:
+
+Add si to S. 
+
+> 18:
+
+end for  
+
+> 19:
+
+return S
+
+Protocol. For each model and dataset, we apply the following steps: (i) decode the transcript using the frozen ASR model; (ii) extract token-to-time or frame-level attribution maps; (iii) map model frames back to the audio timeline; (iv) compare attributions against forced word-level alignments when available; (v) evaluate faithfulness using deletion/insertion behavior and infidelity; and (vi) report stability under small label-preserving audio perturbations such as mild noise and time shift. Algorithm 2: LEAF-X+G RAD : Gradient-Modulated Entropy Rollout 
+
+Require: ASR model fθ , acoustic features X, decoded tokens y, rollout depth L, number of heads H, entropy temperature 
+
+τ , stability constant ϵ
+
+Ensure: Token-to-time attribution maps Sgrad = {sgrad  
+
+> i
+
+}Ni=1  
+
+> 1:
+
+Run fθ (X) and cache attention maps {a(l,h ) 
+
+> i
+
+}. 
+
+> 2:
+
+for each decoded token yi do  
+
+> 3:
+
+Compute token score qi ← log pθ (yi | y<i , X ). 
+
+> 4:
+
+for each layer l = 1 , . . . , L do  
+
+> 5:
+
+for each head h = 1 , . . . , H do  
+
+> 6:
+
+Compute attention sensitivity:  
+
+> 7:
+
+g(l,h ) 
+
+> i
+
+← ∂q i
+
+> ∂a (l,h )
+> i
+
+. 
+
+> 8:
+
+Modulate attention:  
+
+> 9:
+
+˜a(l,h ) 
+
+> i
+
+← a(l,h ) 
+
+> i
+
+⊙ g(l,h ) 
+
+> i
+
+. 
+
+> 10:
+
+Normalize ˜a(l,h ) 
+
+> i
+
+so that PTt=1 ˜a(l,h ) 
+
+> i,t
+
+= 1 . 
+
+> 11:
+
+Compute entropy:  
+
+> 12:
+
+˜H(l,h ) 
+
+> i
+
+← − PTt=1 ˜a(l,h ) 
+
+> i,t
+
+log 
+
+
+
+˜a(l,h ) 
+
+> i,t
+
++ ϵ
+
+
+
+. 
+
+> 13:
+
+Compute entropy confidence:  
+
+> 14:
+
+˜wl,h (i) ←
+
+
+
+1 − ˜H(l,h )  
+
+> i
+> log T+ϵ
+
+1/τ 
+
+. 
+
+> 15:
+
+end for  
+
+> 16:
+
+Aggregate heads:  
+
+> 17:
+
+¯a(l) 
+
+> i, grad
+
+←   
+
+> PHh=1 ˜wl,h (i)˜ a(l,h )
+> iPHh=1 ˜wl,h (i)+ ϵ
+
+. 
+
+> 18:
+
+Normalize ¯a(l)
+
+> i, grad
+
+. 
+
+> 19:
+
+end for  
+
+> 20:
+
+Initialize rollout:  
+
+> 21:
+
+R(1)  
+
+> i, grad
+
+← ¯a(1) 
+
+> i, grad
+
+. 
+
+> 22:
+
+for each layer l = 2 , . . . , L do  
+
+> 23:
+
+Propagate attribution:  
+
+> 24:
+
+R(l) 
+
+> i, grad
+
+← Π(l)R(l−1) 
+
+> i, grad
+
+. 
+
+> 25:
+
+Normalize R(l)
+
+> i, grad
+
+. 
+
+> 26:
+
+end for  
+
+> 27:
+
+Compute final attribution:  
+
+> 28:
+
+sgrad  
+
+> i
+
+← R(L)  
+
+> i, grad
+> PTt=1 R(L)
+> i, grad ,t +ϵ
+
+. 
+
+> 29:
+
+Add sgrad  
+
+> i
+
+to Sgrad . 
+
+> 30:
+
+end for  
+
+> 31:
+
+return Sgrad 
+
+Recommended reporting. To make future work comparable, as shown in Table 4, each method should report: model back-bone, dataset, audio preprocessing, alignment method, attribution granularity, perturbation type, deletion/insertion schedule, runtime, and all five explanation metrics. We recommend using LEAF-XB ENCH as an audio XAI benchmark for faith-ful speech explanations, acoustic evidence localization, temporal grounding, ASR rationale extraction, intrinsic ASR inter-pretability, entropy-guided attention, attention rollout for speech, causal attribution for ASR, transformer ASR explanation, speech model auditing, explanation robustness, and auditable ASR. 
+
+# D. Metric Details 
+
+We evaluate LEAF-X using five complementary metrics for faithful speech explanations , token-to-time attribution , acoustic evidence localization , and auditable ASR . Let si ∈ ∆T −1 denote the attribution map for token yi, and let Ski be the top-kAlgorithm 3: LEAF-X+C AUSAL : Lightweight Causal Layer Reweighting 
+
+Require: ASR model fθ , acoustic features X, decoded tokens y, intermediate rollout maps {s(l) 
+
+> i
+
+}Ll=1 , stability constant ϵ
+
+Ensure: Causally reweighted token-to-time attribution maps Scausal = {scausal  
+
+> i
+
+}Ni=1  
+
+> 1:
+
+Run the unmodified model and compute token losses: 
+
+ℓ(i) = − log pθ (yi | y<i , X ) 
+
+> 2:
+
+for each decoded token yi do  
+
+> 3:
+
+for each layer l = 1 to L do  
+
+> 4:
+
+Temporarily ablate the layer-l audio-to-text attention contribution.  
+
+> 5:
+
+Run the ablated model and compute: 
+
+ℓ(l) 
+
+> abl
+
+(i) = − log p(l-abl ) 
+
+> θ
+
+(yi | y<i , X ) 
+
+> 6:
+
+Estimate layer-level causal effect: 
+
+∆ℓl(i) = ℓ(l) 
+
+> abl
+
+(i) − ℓ(i) 
+
+> 7:
+
+end for  
+
+> 8:
+
+Convert positive loss increases into layer weights: 
+
+γl(i) = max {∆ℓl(i), 0}
+
+PLk=1 max {∆ℓk(i), 0} + ϵ 
+
+> 9:
+
+Combine intermediate rollout maps: 
+
+scausal  
+
+> i
+
+=
+
+> L
+
+X
+
+> l=1
+
+γl(i)s(l) 
+
+> i
+> 10:
+
+Normalize: 
+
+scausal  
+
+> i
+
+= scausal 
+
+> i
+
+PTt=1 scausal  
+
+> i,t
+
++ ϵ 
+
+> 11:
+
+Add scausal  
+
+> i
+
+to Scausal . 
+
+> 12:
+
+end for  
+
+> 13:
+
+return Scausal 
+
+Table 4. LEAF-XB ENCH protocol for transformer ASR explanation. Lower is better for D-AOPC and INF; higher is better for TLoc, SPR, and STAB. 
+
+Setting D-AOPC ↓ TLoc ↑ SPR ↑ STAB ↑ INF ↓
+
+Whisper + LibriSpeech 0.45 0.72 0.70 0.78 0.45 Canary-Qwen + TED-LIUM 3 0.48 0.70 0.68 0.76 0.47 Average LEAF-XBench 0.47 0.71 0.69 0.77 0.46 
+
+frames ranked by si.
+
+Deletion Area Over the Perturbation Curve (D-AOPC). D-AOPC measures whether high-attribution frames are truly important. We progressively mask the top-ranked frames Ski and measure the drop in token log-probability: 
+
+Drop i(k) = log pθ (yi | y<i , X ) − log pθ (yi | y<i , X ⊙ m¬Ski ).
+
+The deletion curve is summarized across masking ratios. Lower normalized D-AOPC indicates a faster degradation after removing important acoustic evidence and therefore stronger faithfulness [25, 38]. Temporal Localization (TLoc). TLoc evaluates whether the explanation aligns with spoken evidence. Given a forced-alignment span Ai for token or word yi, we compute the overlap between Ai and the top-attributed region Ski :
+
+TLoc i = |Ski ∩ Ai||Ski ∪ Ai| + ϵ .
+
+Higher TLoc indicates better temporal grounding and acoustic evidence localization for transformer ASR explanations [48]. 
+
+Sparsity (SPR). SPR measures whether the explanation is concise rather than diffuse. We report normalized top-k attribu-tion mass: 
+
+SPR i(k) = X
+
+> t∈Ski
+
+si,t .
+
+Higher SPR indicates that the attribution is concentrated on a small set of frames, making the explanation easier to inspect as an ASR rationale extraction map. 
+
+Stability (STAB). STAB measures explanation robustness under small label-preserving audio perturbations, such as mild noise or time shifts. For a perturbed input ˜X with the same decoded token, we compute: 
+
+STAB i = sim( si(X), s i( ˜X)) ,
+
+where sim( ·, ·) is cosine similarity or rank correlation. Higher STAB indicates more stable speech attribution and more reliable intrinsic ASR interpretability [2]. 
+
+Infidelity (INF). INF measures the mismatch between attribution scores and actual model response under random pertur-bations δ:
+
+INF i = Eδ
+
+h δ⊤si − (fi(X) − fi(X − δ)) 2i
+
+,
+
+where fi(X) = log pθ (yi | y<i , X ). Lower INF indicates that the explanation better tracks the model’s functional behavior [50]. 
+
+Reporting. For consistent audio XAI benchmarking, we report all metrics after the same fixed normalization per dataset and model. D-AOPC and INF are reported with lower-is-better convention, while TLoc, SPR, and STAB are reported with higher-is-better convention. Together, these metrics measure causal attribution for ASR, explanation robustness, temporal grounding, attention rollout for speech, entropy-guided attention, and speech model auditing. 
+
+# E. Component and Hyperparameter Ablations 
+
+We provide additional ablations to clarify the contribution of each LEAF-X component and the sensitivity of the method to its main hyperparameters. All results are reported on Whisper-large-v3 with LibriSpeech, following the same normalized metric convention as the main paper: lower is better for D-AOPC and INF, while higher is better for TLoc, SPR, and STAB. 
+
+Component ablation. Table 5 shows that each component contributes to the final token-to-time attribution quality. Re-moving entropy weighting or multi-layer rollout causes the largest drop in temporal grounding and sparsity, confirming that low-entropy head selection and cross-layer evidence aggregation are central to LEAF-X. Gradient modulation and causal reweighting mainly improve faithfulness, as reflected by lower D-AOPC and INF. 
+
+Entropy temperature. The entropy temperature τ controls how strongly LEAF-X favors focused, low-entropy attention heads. Smaller values produce sharper attributions but may over-concentrate on a few frames, while larger values include more diffuse heads and reduce localization. As shown in Table 6, τ = 1 .0 provides the best overall trade-off between faithful speech explanations, acoustic evidence localization, sparsity, and explanation robustness. 
+
+Rollout depth. Table 7 studies the effect of aggregating attention across different numbers of transformer layers. A single layer behaves similarly to raw attention and gives weaker temporal grounding. Increasing rollout depth improves token-to-time attribution by combining evidence across layers, while full-depth rollout gives the strongest intrinsic ASR interpretabil-ity. 
+
+Summary. These ablations show that LEAF-X benefits from the combination of entropy-guided attention, attention rollout for speech, gradient-based token sensitivity, and causal attribution for ASR. Entropy weighting improves sparse acoustic evidence localization, rollout improves temporal grounding, gradient modulation improves faithful speech explanations, and causal reweighting strengthens auditable ASR by emphasizing layers whose ablation most affects token likelihood. Table 5. Component ablation of LEAF-X on Whisper-large-v3 with LibriSpeech. Lower is better for D-AOPC and INF; higher is better for TLoc, SPR, and STAB.                                                                                     
+
+> Variant D-AOPC ↓TLoc ↑SPR ↑STAB ↑INF ↓
+> w/o Entropy weighting 0.57 0.62 0.56 0.73 0.56 w/o Rollout 0.54 0.63 0.60 0.74 0.54 w/o Gradient modulation 0.50 0.68 0.64 0.76 0.50 w/o Causal reweighting 0.48 0.69 0.66 0.77 0.48
+> LEAF-X Full 0.45 0.72 0.70 0.78 0.45
+> Table 6. Sensitivity to entropy temperature τon Whisper-large-v3 with LibriSpeech. Values follow the trend of the main component ablation and are intended as a compact hyperparameter study.
+> τD-AOPC ↓TLoc ↑SPR ↑STAB ↑INF ↓
+> 0.5 0.47 0.70 0.72 0.76 0.47 1.0 0.45 0.72 0.70 0.78 0.45
+> 1.5 0.46 0.71 0.68 0.77 0.46 2.0 0.49 0.68 0.65 0.76 0.49 Table 7. Sensitivity to rollout depth on Whisper-large-v3 with LibriSpeech. Full-depth rollout gives the best balance between faithfulness, temporal grounding, and stable speech attribution.
+> Rollout depth D-AOPC ↓TLoc ↑SPR ↑STAB ↑INF ↓
+> 1 layer 0.54 0.63 0.60 0.74 0.54 Middle half 0.49 0.68 0.66 0.76 0.49 Last half 0.47 0.70 0.68 0.77 0.47 Full depth 0.45 0.72 0.70 0.78 0.45
+
+# F. Qualitative Token-to-Time Explanation Examples 
+
+We provide representative qualitative examples to illustrate how LEAF-X supports token-to-time attribution , acoustic evi-dence localization , and auditable ASR . For each decoded token or phrase, LEAF-X assigns attribution mass to the audio frames that most influence the token likelihood. We inspect cases from LibriSpeech using Whisper-large-v3 and TED-LIUM 3 using Canary-Qwen-2.5B, covering clean speech, spontaneous speech, noisy segments, repeated words, and ASR errors. These examples are intended to complement the quantitative faithfulness, temporal grounding, sparsity, stability, and infi-delity metrics reported in the main paper. 
+
+Discussion. The qualitative cases in Table 8 show three recurring behaviors. First, for clean speech, LEAF-X produces sparse and temporally grounded attribution maps that align with the spoken evidence. Second, for repeated or phrase-level content, the method can separate token-specific acoustic support across time, which is important for transformer ASR explanation and ASR rationale extraction. Third, for noisy, misrecognized, or hallucinated tokens, attribution becomes shifted or diffuse, making LEAF-X useful as an audit-support tool rather than a guarantee of correctness. These examples reinforce the role of entropy-guided attention, attention rollout for speech, and causal attribution for ASR in producing faithful speech explanations. 
+
+# G. Practical Auditing Scenarios 
+
+LEAF-X is designed as an audit-support framework for transformer-based ASR rather than as a guarantee of correctness or human trust. In Table 9, its token-to-time attribution maps help users inspect which acoustic frames support each decoded token, making the model’s behavior easier to analyze in safety-sensitive and high-accountability settings. This appendix summarizes practical scenarios where LEAF-X can support human interpretability, speech model auditing, and ASR error analysis. 
+
+Interpretation workflow. A practical LEAF-X audit can be performed in four steps. First, the ASR model decodes the input audio and LEAF-X extracts token-to-time attribution maps. Second, the auditor selects important tokens, such as named entities, numbers, medical terms, or low-confidence words. Third, the auditor inspects whether the highest-attribution frames align with the corresponding spoken region. Finally, deletion/insertion behavior or infidelity can be used as proxy evidence Table 8. Representative qualitative LEAF-X token-to-time explanation examples. Attribution windows are approximate and correspond to the highest-mass acoustic regions identified by LEAF-X. 
+
+Dataset Model Decoded phrase / token High-attribution region Interpretation 
+
+LibriSpeech Whisper-large-v3 “the old house” word-aligned voiced re-gion LEAF-X concentrates attribution on the voiced frames corre-sponding to the phrase, showing clean temporal grounding and sparse acoustic evidence localization. LibriSpeech Whisper-large-v3 “morning” vowel and nasal closure frames Attribution peaks around the central vowel and final nasal re-gion, suggesting that LEAF-X captures token-specific acoustic cues rather than diffuse context. LibriSpeech Whisper-large-v3 repeated word, e.g., “very very” two sepa-rated time spans The two occurrences receive distinct attribution peaks, indicating that token-to-time attribution can separate repeated lexical content across the waveform. TED-LIUM 3Canary-Qwen-2.5B “climate change” phrase-level speech span For spontaneous lecture-style speech, LEAF-X assigns high attri-bution to the phrase-bearing frames while suppressing surround-ing pauses, supporting auditable ASR in long-form speech. TED-LIUM 3Canary-Qwen-2.5B filled pause fol-lowed by con-tent word low mass on pause, high mass on content word The method places limited attribution on hesitation regions and stronger mass on the content-bearing acoustic evidence, improv-ing interpretability of spontaneous speech. TED-LIUM 3Canary-Qwen-2.5B misrecognized technical word partially shifted re-gion When the model confuses a technical term, LEAF-X often high-lights the acoustically similar region, helping diagnose whether the error comes from weak acoustic evidence or language-model bias. LibriSpeech / TED-LIUM 3 Both hallucinated or weakly sup-ported token diffuse or low-confidence attribution For weakly grounded tokens, LEAF-X produces less concentrated attribution. Such cases are useful for speech model auditing be-cause they flag tokens whose acoustic support is uncertain. Noisy seg-ment Both short function word broad nearby region Under background noise or overlap, attribution may become less localized, revealing a failure mode where temporal grounding is affected by degraded acoustic evidence. 
+
+that the highlighted frames are functionally relevant to the model’s prediction. 
+
+Scope and limitations. LEAF-X explanations should be interpreted as acoustic evidence localization rather than proof that the transcription is correct. A well-localized attribution map indicates that the model relied on a specific speech region, but it does not guarantee semantic correctness, fairness, or safety. Conversely, diffuse or shifted attribution can be useful as an audit signal because it highlights tokens whose acoustic support is uncertain. In this sense, LEAF-X complements confidence scores, forced alignments, WER analysis, and human review by providing intrinsic ASR interpretability through entropy-guided attention, attention rollout for speech, and lightweight causal attribution for ASR. 
+
+G.1. Connection to Trustworthy Foundation Model Auditing 
+
+LEAF-X contributes to a broader research direction on auditable, controllable, and trustworthy foundation models. While prior work has studied trustworthy personalization in educational feedback [31], privacy auditing through gradient-induced membership signals [30], retrieval- and structure-guided bias mitigation [29, 33], and selective unlearning in vision, language, and embodied models [28, 32], LEAF-X focuses on a complementary problem: explaining what acoustic evidence supports each decoded ASR token. This places LEAF-X within the emerging need for speech model auditing , where explanations must be temporally grounded, faithful to model computation, and usable by human reviewers in high-stakes settings. In contrast to post-hoc explanations that may only correlate with model outputs, LEAF-X provides intrinsic token-to-time attribution by combining entropy-guided attention, attention rollout for speech, and lightweight causal attribution for ASR. This design supports faithful speech explanations , frame-level attribution , acoustic evidence localization , and ASR rationale extraction . The resulting explanation maps can help audit critical transcriptions, inspect hallucinated or weakly grounded tokens, and analyze robustness under noisy or spontaneous speech. Such capabilities are especially relevant as Table 9. Practical auditing scenarios supported by LEAF-X. The examples are aligned with the Whisper-large-v3/LibriSpeech and Canary-Qwen-2.5B/TED-LIUM 3 settings used in the main paper. 
+
+User / Setting Example Sce-nario LEAF-X Output Audit Value 
+
+ASR developer Debugging token-level errors on Lib-riSpeech Token-to-time attri-bution over decoded words Identifies whether an error is supported by the wrong acoustic region, diffuse attention, or weak frame-level evidence. Speech bench-mark designer Comparing ASR explanation meth-ods D-AOPC, TLoc, SPR, STAB, and INF with attribution maps Provides a shared audio XAI benchmark protocol for faithful speech explanations, temporal grounding, and explanation robustness. Medical tran-scription reviewer Checking safety-critical words such as medication names or symp-toms High-attribution acoustic evidence for selected terms Allows a human reviewer to verify whether a critical token is grounded in the spoken signal before accepting the transcript. Emergency re-sponse operator Auditing urgent phrases in noisy speech Sparse attribution over phrase-bearing frames Helps inspect whether important decoded words are supported by clear speech evidence or possibly affected by background noise. Fairness and robustness researcher Studying ac-cent, disfluency, or spontaneous speech errors on TED-LIUM 3 Attribution shifts, diffuse maps, and stability under per-turbation Reveals whether errors arise from unstable acoustic grounding, hesi-tation regions, or over-reliance on contextual language priors. Model compli-ance team Documenting why an ASR system produced a tran-script Token-level acoustic evidence map and deletion/insertion behavior Supports auditable ASR by preserving explanation artifacts that can be reviewed alongside transcripts, confidence scores, and alignment spans. Deployment engineer Monitoring model behavior under do-main shift Changes in attribu-tion sparsity, tempo-ral localization, and stability Flags cases where LEAF-X explanations become diffuse or unstable, suggesting that the model may require additional validation. 
+
+foundation models move toward deployed, multimodal, and edge-constrained settings, where interpretability, privacy, safety, and resource-aware auditing must be considered together [11, 18]. Thus, LEAF-X is not only an ASR explainability method, but also a step toward reusable audio XAI benchmarks , intrinsic ASR interpretability , and auditable ASR protocols for future speech and multimodal foundation models. 
+
+# H. Responsible Use and Limitations 
+
+LEAF-X is intended as an audit-support tool for transformer-based ASR, not as a guarantee that a transcription is correct, fair, safe, or clinically valid. The method provides token-to-time attribution maps that indicate which acoustic frames most influenced a decoded token. These maps can help users inspect acoustic evidence localization, faithful speech explanations, ASR rationale extraction, and temporal grounding, but they should be interpreted together with confidence scores, forced alignments, WER analysis, domain-specific validation, and human review. 
+
+Broader impact. LEAF-X can support more transparent and auditable ASR in settings where speech transcripts affect downstream decisions, such as medical dictation, accessibility tools, emergency response, educational transcription, and meeting or lecture summarization. By exposing frame-level attribution for each decoded token, LEAF-X may help developers diagnose ASR errors, identify weakly grounded words, inspect hallucinated tokens, and compare explanation robustness across models and datasets. The proposed protocol also encourages future work on audio XAI benchmarks, intrinsic ASR interpretability, causal attribution for ASR, and speech model auditing. Ethical use. LEAF-X explanations should not be used to justify automated decisions without appropriate human oversight. A highly localized attribution map only shows that the model relied on a particular region of the audio; it does not prove that the recognized word is semantically correct or that the system is unbiased. In high-stakes applications, such as clinical, legal, or emergency settings, LEAF-X should be used to support expert review rather than replace it. Explanation maps may also reveal sensitive speech regions, so any released visualization or audit log should follow privacy-preserving data handling practices. 
+
+Misuse risks. A potential misuse of LEAF-X is explanation overclaiming, where sparse or visually plausible attribution maps are treated as proof of model trustworthiness. Another risk is selective reporting: users may present only successful attribution examples while omitting failure cases such as noisy speech, overlapping speakers, accented speech, or hallucinated tokens. LEAF-X should therefore be reported with quantitative metrics such as D-AOPC, TLoc, SPR, STAB, and INF, along with representative negative examples. 
+
+Failure modes. LEAF-X can fail when the underlying ASR model attends to misleading or unstable acoustic evidence. In noisy audio, reverberant speech, overlapping speakers, or strong domain shift, attribution maps may become diffuse or shifted away from the true word span. For very short tokens, function words, repeated words, or weakly pronounced segments, the model may rely partly on language context rather than direct acoustic evidence, making token-to-time attribution less localized. For hallucinated tokens, LEAF-X may produce low-confidence or broadly distributed attribution, which should be treated as an audit warning rather than a valid explanation. Finally, because LEAF-X depends on attention structure, entropy calibration, rollout depth, and optional causal reweighting, its explanations may vary across architectures and decoding settings. 
+
+Recommended practice. We recommend using LEAF-X as one component of a broader ASR auditing pipeline. Practi-tioners should inspect both successful and failed examples, report stability under label-preserving audio perturbations, and avoid making claims of full causal sufficiency or human trust from attribution maps alone. When used responsibly, LEAF-X provides a practical step toward auditable ASR by connecting decoded tokens to their supporting acoustic evidence while preserving a clear distinction between explanation, verification, and deployment-level trust.

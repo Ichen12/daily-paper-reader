@@ -1,0 +1,616 @@
+Title: Ontology Memory-Augmented ASR Correction for Long Text-Speech Interleaved Conversations
+
+URL Source: https://arxiv.org/pdf/2606.13464v2
+
+Published Time: Mon, 15 Jun 2026 00:28:16 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+## Ontology Memory-Augmented ASR Correction for Long Text-Speech Interleaved Conversations 
+
+Xinxin Li 1,2,∗, Huiyao Chen 1,2,*, Meishan Zhang 1,2†, Yunxin Li 1,2,Zulong Chen, Zhibo Ren, Xiaoqing Dong, Baotian Hu 1,2, Min Zhang 1,21Institute of Computing and Intelligence, Harbin Institute of Technology (Shenzhen), China 
+
+2Shenzhen Loop Area Institute (SLAI), China 
+
+lixinx0714@gmail.com, chenhy1018@gmail.com mason.zms@gmail.com, zhangmin2021@hit.edu.cn 
+
+Abstract 
+
+Automatic speech recognition (ASR) correc-tion has traditionally focused on isolated utter-ances or short local contexts. However, as text and speech become increasingly interleaved in long interactions, ASR correction requires conversation-level contextual evidence. Exist-ing ASR correction methods often rely on the current hypothesis or concatenate raw dialogue history. In such contexts, sparse correction ev-idence can be difficult to locate amid redun-dancy and noise. Addressing these challenges, we propose an ontology memory-augmented ASR correction framework for long text-speech interleaved conversations. The framework or-ganizes preceding interaction history into a dy-namically updatable ontology memory, where entities, terminology, surface variants, poten-tial ASR confusions, and semantic relations are stored as retrievable nodes for context-grounded correction. To evaluate this setting, we construct RAMC-Corr, a dataset derived from MAGIC-RAMC for long-range ASR cor-rection with grounded context. Experiments on RAMC-Corr show that our method improves over direct correction in 9 out of 10 paired backbone-setting combinations and encourages more selective and evidence-grounded correc-tions for context-dependent ASR errors. 
+
+1 Introduction 
+
+Automatic speech recognition (ASR) serves as a fundamental component in a wide range of real-world applications, including voice assistants, meeting transcription, medical consultation, in-stant messaging, and intelligent office systems (Kim et al., 2025; Billings and McDonnell, 2025; HangChen et al., 2025). With the rapid develop-ment of speech interaction, large language mod-els, and multimodal assistants, ASR outputs are no longer used merely as isolated transcriptions of  
+
+> *
+
+Authors contributed equally.  
+
+> †
+
+Corresponding author. Grounded                                            
+
+> Context
+> •...
+> •step 20 :哦哎三体 还是不错的 (Oh, The Three-Body Problem is really good)
+> •step 26 :然后 那里面不是有一个叫 云天明 ，然后很喜欢 程心 嘛(Then, isn't there a character named
+> Yun Tianming in it, who really likes Cheng Xin)
+> •step 30 :执剑人 一直是 罗辑 的话 (If Luo Ji had remained the Swordholder )
+> •...
+> ASR: 陈欣 并不适合做一个 指针人
+> Chen Xin is not suitable to be a pointer person
+> 本来当时 面壁人 计划 是真的很成功
+> step 42
+> step 73
+> step 97
+> step 75
+> step 78
+> REF: 程心 并不适合做一个 执剑人
+> Cheng Xin is not suitable to be a Swordholder
+> At that time, the Wallfacer plan was indeed very successful.
+> ASR: 就而且因为他拿了 指针人
+> And because he became a pointer person ...
+> REF: 就而且因为他拿了 执剑人
+> And because he became the Swordholder ...
+> ASR: 罗辑 当时是，他得到这个 面壁计划 的
+> 时候
+> Luo Ji , at that time, when he received the wall-
+> facing plan ...
+> REF: 罗辑 当时是 他得到这个 面壁人计划
+> 的时候
+> Luo Ji , at that time, when he received the
+> Wallfacer plan ...
+> ASR: 但诚心 把一切都毁了
+> But sincerity ruined everything
+> REF: 但程心 把一切都毁了
+> But Cheng Xin ruined everything
+
+Figure 1: An example of context-grounded ASR cor-rection in a long-range Chinese text-speech interleaved conversation. The original Chinese utterances are shown with English translations for readability. Earlier con-text in the same conversation provides evidence for cor-recting later ASR errors involving entities and domain-specific terms. 
+
+short voice commands. Instead, they are increas-ingly embedded in continuous human-computer interaction, where text and speech appear alter-nately and jointly constitute the evolving interac-tion state of the current conversation (Zhang et al., 2023a; Rubenstein et al., 2023). Before a new speech segment arrives, the system may have al-ready accumulated substantial preceding context, such as user-typed messages, confirmed dialogue history, meeting agendas, medical descriptions, or task instructions. Such contextual information can provide valuable evidence for recognizing domain-specific entities, long-tail terminology, and seman-tically dependent expressions in subsequent speech segments, but how to effectively exploit it for ASR correction remains underexplored. Figure 1 shows a representative context-grounded ASR correction case from our Chinese dataset. The grounded context introduces dialogue-specific entities and terms, including “ 三体”, “ 云
+
+天明”, “ 程心”, “ 罗辑”, and “ 执剑人”, which later serve as evidence for correcting spoken ASR hy-potheses. For example, the ASR system misrec-1
+
+> arXiv:2606.13464v2 [cs.CL] 12 Jun 2026
+
+ognizes the domain-specific term “ 执剑人” as the phonetically plausible but contextually incorrect “指针人”. This error is difficult to resolve from the local hypothesis alone, but can be corrected by grounding the correction in earlier conversational context. These observations highlight the need for ASR correction methods that can exploit contextual evi-dence accumulated during an ongoing interaction. Existing ASR correction methods typically take the current ASR hypothesis as input and use language models to rewrite erroneous transcriptions (Yang et al., 2023; Chen et al., 2023). Some studies fur-ther incorporate external vocabularies, entity lists, candidate phrases, or domain knowledge to im-prove the correction of named entities and rare words (Ghosh et al., 2025; Im et al., 2025). How-ever, these resources are usually static, whereas useful correction evidence in long text-speech in-terleaved conversations is often introduced dynam-ically by the interaction itself. Simply concate-nating historical context with the current ASR hy-pothesis is also insufficient, since relevant evidence becomes sparse and difficult to locate as the inter-action grows longer. Redundant turns, irrelevant information, and noisy ASR outputs can further obscure the contextual cues needed for correction. These limitations motivate a structured memory mechanism that transforms preceding interaction context into reusable correction evidence. In this work, we study context-grounded ASR correction for long-range text-speech interleaved conversations. The task requires the system to cor-rect subsequent ASR transcriptions using causally accessible interaction history. Different from utterance-level correction, the key challenge lies in how to organize, retrieve, and reuse previously established contextual knowledge, such as entities, aliases, domain concepts, and semantic constraints. To address this challenge, we propose an on-tology memory-augmented ASR correction frame-work. The framework extracts correction-relevant knowledge from preceding interaction history and organizes it into a conversation-level ontology memory. When a new ASR hypothesis arrives, the correction model retrieves relevant evidence from the ontology memory for context-grounded correction. The memory is also dynamically up-dated as the interaction proceeds, enabling newly introduced concepts and terminology to support subsequent correction. To evaluate this setting, we construct RAMC-Corr, a context-grounded ASR correction dataset based on the MagicData-RAMC speech chat cor-pus (Yang et al., 2022). RAMC-Corr evaluates whether a system can use causally accessible grounded context to correct later ASR hypotheses in long-range interactive scenarios. Experiments on RAMC-Corr show that our method improves over direct correction in 9 out of 10 paired settings, demonstrating the effectiveness of explicit memory for context-grounded ASR correction. In summary, our main contributions are as fol-lows: • We study context-grounded ASR correction for long-range text-speech interleaved conver-sations. • We propose an ontology memory-augmented correction framework that organizes conversation-level contextual knowledge into a retrievable and dynamically updatable structured memory. • We construct RAMC-Corr, a MagicData-RAMC-based dataset for evaluating long-range context-grounded ASR correction in text-speech interleaved conversations. • Experiments across multiple LLM backbones show consistent gains over direct correction. The code and dataset are publicly available at github/fangfang123gh/ontology-asr-correction. 
+
+2 RAMC-Corr Dataset Construction 
+
+We build RAMC-Corr, a new context-grounded ASR correction benchmark derived from MagicData-RAMC (Yang et al., 2022). It is designed to simulate long-range text-speech interleaved dialogue scenarios, where subsequent ASR hypotheses are corrected using causally acces-sible reliable textual history. MagicData-RAMC is a Chinese multi-turn conversational speech corpus collected from real interaction scenarios, containing long temporally ordered conversations with speech segments and corresponding human transcriptions. This structure makes it suitable for constructing long-range context-grounded ASR correction examples. For each dialogue, we automatically select a boundary based on the human transcriptions. The contiguous transcription segments from the begin-ning of the dialogue to the boundary are used as the grounded context, which serves as causally acces-sible textual evidence for subsequent ASR correc-tion. The segments after the boundary form the on-2Current Segment              
+
+> (𝐀 𝐀 ,𝐀 ,𝐀 𝐀 ,𝐀 )Modality?
+> Ontology
+> Retrieval
+> 𝐀 𝐀 ,𝐀 =𝐀𨀀𝐀𝐀𝐀 ℎTranscription
+> Evidence
+> 𝐀 𝐀 ,𝐀
+> Causal context
+> 𝐀 𝐀 ,𝐀
+> 𝐀 𝐀 ,𝐀 =𝐀𝐀𝐀𝐀 ,𝐀 𝐀 ,𝐀 =𝐀 𝐀 ,𝐀
+> Output 𝐀 𝐀 ,𝐀
+> Grounded
+> Context
+> hypernym
+> Correction
+> Model
+> Fusion
+> Candidate
+> Entries
+> Retained
+> Entries
+> Correction at Step t
+> Initialization
+> Entity
+> Concept
+> synonym Concept
+> Ontology
+> Extraction
+> Match
+> existing
+> node?
+> Add as New Node &
+> Relation
+> name or alias
+> matched
+> no match
+> Update
+> Memory
+> name
+> alias
+> noise
+> syn
+> hyp
+> tag
+> meta
+> canonical form
+> valid aliases
+> potential ASR confusion
+> synonym concepts
+> hypernym concepts
+> contextual hint
+> source,confidence
+> Fusion Filter
+> Legend
+> Candidate Ontology Entries
+> Lightweight Fusion Strategy
+> name
+> alias
+> noise
+> syn
+> hyp
+> tag
+> meta
+> Incoming Candidate Entry
+> Merge Attribute &
+> Update Relations/meta
+> Merge Noise Attribute &
+> New Node & Relation
+> noise
+> matched
+> Filter
+> hypernym
+> Transcription
+> Ontology
+> Extraction
+> Large
+> Language
+> Model
+> ASR Model
+> Ontology-based Memory
+> Retriever
+> Model
+> Text
+> Retrieve
+> Entry Schema
+
+Figure 2: Overall architecture of the proposed ontology memory-augmented context-grounded ASR correction framework.                     
+
+> Split #Conv. #Samples Boundary Ratio Context Sim.
+> Train 268 268 0.076 0.654 Dev 17 17 0.071 0.638 Test 43 43 0.117 0.635 All 328 328 0.081 0.650
+
+Table 1: Statistics of the RAMC-Corr dataset across training, development, and test splits. #Conv is the number of conversations, #Samples is the number of correction conversations, and Context Sim. is the con-textual similarity used for boundary selection. 
+
+line target region, where text segments are directly observed and speech segments are represented by ASR hypotheses to be corrected. The correspond-ing human transcriptions of these speech segments are used as references for evaluation. To ensure that the grounded context provides in-formative guidance for later correction, we require semantic continuity across the selected boundary. Specifically, we select candidate boundaries ac-cording to the contextual similarity between the grounded context and the initial part of the online target region, and filter out dialogues with weak cross-boundary semantic relatedness. For each valid dialogue, we generate at most one sample to avoid scattered or highly overlapping correc-tion instances from the same conversation. The dataset statistics are summarized in Table 1, and the detailed construction procedure is presented in Appendix A.1. 
+
+3 Method 
+
+A direct strategy is to feed the ASR hypothesis together with accessible dialogue history into a correction model. However, this requires the model to locate useful entities, terminology, and semantic cues from an increasingly long and noisy context. To address this issue, we propose an ontology memory-augmented context-grounded ASR cor-rection framework , as illustrated in Fig. 2. In-stead of relying solely on raw dialogue history, the framework maintains a conversation-level ontology memory that incrementally organizes reusable en-tities, terminology, domain concepts, surface vari-ants, and semantic relations. The memory is first initialized from the grounded context and is then updated online after each processed segment. During online processing, text segments are treated as reliable inputs and directly forwarded as outputs, while also being used to enrich the on-tology memory. For each speech segment, the base ASR hypothesis is corrected by a correction model conditioned on the causal context and relevant on-tology evidence retrieved from the current memory. After the output is produced, candidate ontology entries are extracted, filtered, and incorporated into the memory through a lightweight fusion strategy. 
+
+3.1 Task Definition 
+
+Given the c-th conversation sample, we consider a grounded context Gc followed by a temporally or-3dered processing sequence Xc. The grounded con-text contains information available before online processing begins, while the processing sequence consists of text and speech segments: 
+
+Xc = {(mc, 1, z c, 1), . . . , (mc,T c , z c,T c )}, (1) where mc,t ∈ { text , speech } denotes the modal-ity of the t-th segment and zc,t denotes its con-tent. Text segments are regarded as reliable inputs, whereas speech segments are transcribed by a base ASR system into hypotheses ac,t and serve as the targets of correction. Under the streaming setting, when processing step t, the system can only access the grounded context and previous outputs: 
+
+Cc,t = ( Gc, {ˆyc,i | 1 ≤ i < t }) . (2) This causal constraint prevents the system from using future segments. The output at each step is defined as: 
+
+ˆyc,t =
+
+
+
+zc,t , mc,t = text ,F (ac,t , C c,t ), mc,t = speech , (3) where F (·) denotes a correction function that re-fines the ASR hypothesis using only causally ac-cessible information. 
+
+3.2 Ontology Working Memory 
+
+We maintain a conversation-level ontology work-ing memory to transform long-range interaction history into reusable correction evidence. Rather than a predefined static knowledge base, it is dy-namically constructed within each conversation to store reusable entities, terminology, surface vari-ants, and semantic relations. We denote the memory before time step t in con-versation c as Mc,t , which consists of an ontology node set Vc,t and a semantic relation set Ec,t . Each node represents a reusable entity, item, or domain concept, together with its aliases, potential ASR noise forms, contextual tags, and metadata. Rela-tions encode semantic associations between con-cepts, such as synonym and hypernym relations. 
+
+3.2.1 Candidate Ontology Entries 
+
+Given causally accessible textual content, includ-ing the grounded context, reliable text segments, and corrected speech outputs, the ontology extrac-tor produces a set of candidate ontology entries. Each entry follows a lightweight schema with seven fields: name , alias , noise , syn , hyp , tag ,and meta . As shown in Figure 2, the schema records the canonical concept, aliases, potential ASR noise forms, synonym and hypernym links, contextual tags, and auxiliary metadata. Candidate entries serve as the basic unit for memory writ-ing. During this process, the central concept and its variants are converted into ontology node attributes, while semantic associations such as synonymy and hypernymy are written into the relation set. 
+
+3.2.2 Initialization and Lightweight Fusion 
+
+Before online correction begins, we initialize the ontology working memory from the grounded con-text. We view the grounded context Gc as an ordered sequence of context segments {gc,ℓ }Lc
+
+> ℓ=1
+
+.Starting from an empty memory, the system pro-cesses these segments in order, extracts candidate ontology entries from each segment, and writes them into memory using the same update operation introduced above. The resulting memory is used as the initial online memory Mc, 1.Incoming entries are compared with existing nodes using the name , alias , and noise fields. Matches on name or alias are treated as concept-level matches and are merged into the correspond-ing nodes. Matches supported only by the noise 
+
+field are used to expand ASR-confusion evidence, but do not by themselves prevent the incoming en-try from being added as a new node. For matched entries, node attributes and associated metadata are updated, while synonym and hypernym associa-tions are incorporated into the relation set. Entries without concept-level matches are added as new nodes. When duplicated relations are observed, the system updates their metadata, such as occurrence count and confidence, instead of inserting redun-dant edges. The same fusion strategy is reused during online processing. 
+
+3.3 Ontology Evidence Retrieval 
+
+Directly conditioning ASR correction on the en-tire interaction history is inefficient and prone to entity ambiguity. We therefore retrieve structured ontology evidence from the current working mem-ory, allowing the correction model to access local-ized contextual cues without searching through raw long-range history. Because only speech segments require correc-tion, ontology retrieval is performed only when the current segment is speech. Given the ASR hypoth-esis ac,t , causal context Cc,t , and current ontology memory Mc,t , the retriever obtains relevant ontol-4ogy evidence: 
+
+Rc,t = Retrieve η(ac,t , C c,t , Mc,t ),mc,t = speech . (4) The retrieved evidence Rc,t consists of matched ontology nodes together with their stored attributes and associated relations, such as aliases, poten-tial ASR confusion forms, contextual tags, and synonym or hypernym associations. The retriever 
+
+Retrieve η is implementation-agnostic and can be instantiated with lexical matching, semantic re-trieval, vector retrieval, or hybrid strategies. 
+
+3.4 Ontology-Augmented ASR Correction and Memory Update ASR Correction. For a speech segment, the cor-rection model generates the final transcription con-ditioned on the ASR hypothesis, causal context, and retrieved ontology evidence. We instantiate the correction function F in Eq. (3) as a parameterized model fθ:
+
+ˆyc,t = fθ (ac,t , C c,t , R c,t ) , mc,t = speech . (5) The retrieved ontology evidence provides localized concept constraints and semantic cues that help resolve entity ambiguity and ASR confusions. For text segments, no correction is applied, and the reliable text is directly used as the output: 
+
+ˆyc,t = zc,t , mc,t = text . (6) 
+
+Memory Update. After the output ˆyc,t is deter-mined, both corrected speech and reliable text are used as sources for memory enrichment. The on-tology extractor obtains candidate entries from the current output: 
+
+Bc,t = Eϕ (ˆ yc,t ) . (7) Unsupported, unstable, or non-reusable entries are filtered out, yielding the retained subset B+
+
+> c,t
+
+. The retained entries are then incorporated into the ontol-ogy memory using the lightweight fusion strategy described above: 
+
+Mc,t +1 = Update  Mc,t , B+
+
+> c,t
+
+ . (8) If no valid entry is retained, the memory remains unchanged. 
+
+4 Experiments 
+
+4.1 Settings Evaluation Metrics. We report character error rate (CER) in two forms: corpus CER (C-CER) and macro CER (M-CER), along with relative CER reduction (RelCER). C-CER aggregates edit dis-tances over the whole set, while M-CER averages CER over individual correction instances. CER is computed with jiwer 1 after NFKC normalization, lowercasing, and removing punctuation and whites-pace. RelCER is computed against the original ASR hypotheses: 
+
+RelCER = C-CER Raw − C-CER Corrected 
+
+C-CER Raw 
+
+×100 .
+
+Lower C-CER/M-CER and higher RelCER indi-cate better correction quality. All values are per-centages. 
+
+Model Details. We use inf-retriever-v1 
+
+to retrieve ontology entries from working memory. The ontology extractor and correction model use the same backbone LLM unless otherwise specified. For correction, we evaluate Qwen2.5-7B/14B/72B-Instruct and Qwen3.5-4B/9B. We also evaluate Gemma-4-26B-128K as a Full-History baseline, where the complete available history is directly provided without explicit working memory con-struction. Fro asr model, we use Qwen2-Audio-7B-Instruct. For readability, we omit the “Instruct” suffix in tables. All LLM backbones are evaluated in a training-free inference-only setting. We use vLLM (Kwon et al., 2023) for efficient model infer-ence, and report all results from a single run unless otherwise specified. 
+
+Computational Setup. All experiments are inference-only and do not involve model training. Experiments were conducted on NVIDIA H100 SXM5 80GB GPUs. 
+
+Hyperparameters. Unless otherwise specified, we use 5 previous utterances as local context and re-trieve the top 10 ontology entries from the working memory. For model inference, we set the temper-ature to 0.0, top-p to 1.0, and the maximum num-ber of generated tokens to 2048. In the few-shot setting, both ontology information extraction and correction use 3-shot demonstrations as the default prompting hyperparameter. The demonstrations are manually selected from the development set and fixed across test examples within the same ex-perimental setting. By default, all segments after the boundary are provided as speech inputs, with no text inputs given for the target region. In the ablation studies, we randomly replace a specified proportion of target-region speech inputs with their 
+
+> 1https://github.com/jitsi/jiwer
+
+5Model Setting Method C-CER ↓ M-CER ↓ RelCER ↑                                                                                         
+
+> Raw ASR ––27.94 55.44 0.00 Gemma-4-26B ZS Full-History 27.94 55.44 +0.50 FS Full-History 27.96 55.44 0.00 Qwen2.5-7B ZS Direct 36.40 73.01 -30.27 Ours 31.76 (+12.7) 58.33 (+20.1) -13.67 FS Direct 35.50 67.59 -27.05 Ours 33.00 (+7.0) 59.34 (+12.2) -18.10 Qwen2.5-14B ZS Direct 35.66 84.57 -27.64 Ours 29.04 (+18.6) 55.35 (+34.6) -3.95 FS Direct 34.60 77.40 -23.85 Ours 32.43 (+6.3) 66.30 (+14.3) -16.09 Qwen2.5-72B ZS Direct 29.82 57.19 -6.73 Ours 29.16 (+2.2) 55.62 (+2.7) -4.36 FS Direct 30.38 58.31 -8.73 Ours 30.06 (+1.1) 57.85 (+0.8) -7.58 Qwen3.5-4B ZS Direct 27.61 55.17 +1.19 Ours 27.36 (+0.9) 54.94 (+0.4) +2.08 FS Direct 29.16 57.60 -4.36 Ours 27.32 (+6.3) 54.97 (+4.6) +2.20 Qwen3.5-9B ZS Direct 27.47 55.29 +1.68 Ours 27.26 (+0.8) 55.17 (+0.2) +2.42 FS Direct 28.02 55.85 -0.30 Ours 28.89 (-3.1) 58.05 (-3.9) -3.41
+
+Table 2: Main results on the RAMC-Corr dataset. All values are percentages, and ZS/FS denote zero-shot/few-shot prompting. Values in parentheses indicate the rela-tive reduction over Direct for C-CER and M-CER under the same backbone and prompting setting. Bold num-bers indicate the lower C-CER between Direct and Ours. 
+
+transcript form according to the predefined text-input ratio. We further analyze the effect of the number of in-context examples in Appendix A.2, and provide the prompt templates in Appendix B. 
+
+4.2 Main Results 
+
+Table 2 reports the main correction results on the RAMC-Corr dataset. We compare Direct correc-tion, which feeds ASR hypotheses and recent cor-rected conversational context directly to the back-bone model, with our memory-augmented correc-tion method, which uses an explicit working mem-ory constructed from dialogue history. We also include a Full-History baseline using Gemma-4-26B-128K, where the complete available conver-sation history is provided to the model without explicit memory construction. Overall, our method improves C-CER over Direct in 9 out of 10 paired backbone-setting combinations, indicating that ex-plicit working memory provides useful correction evidence beyond local prompting. Direct correction is often unstable for ASR cor-rection. In several settings, it produces higher CER than the original ASR hypotheses, suggesting that unconstrained LLM rewriting can introduce harmful edits. Our method mitigates this issue by grounding corrections in retrieved memory and structured dialogue evidence. For example, under zero-shot prompting, our method reduces C-CER Edit Improve ( ↑) Worsen ( ↓)          
+
+> 0.00
+> 20 .00
+> 40 .00
+> 60 .00
+> 80 .00 76 .6
+> 9.4
+> 66 .8
+> 39 .9
+> 14 .7
+> 64 .9
+> Percentage (%)
+> (a) Qwen2.5-14B, ZS
+> Direct Ours
+> Edit Improve ( ↑)Worsen ( ↓)
+> 0.00
+> 20 .00
+> 40 .00
+> 60 .00
+> 80 .00 75 .5
+> 8.9
+> 64 .766 .5
+> 8.5
+> 68 .6
+> Percentage (%)
+> (b) Qwen2.5-14B, FS
+> Edit Improve ( ↑)Worsen ( ↓)
+> 0.00
+> 20 .00
+> 40 .00
+> 60 .00
+> 80 .00
+> 14 .5
+> 28 .0
+> 51 .5
+> 6.3
+> 39 .043 .5
+> Percentage (%)
+> (c) Qwen3.5-4B, ZS
+> Edit Improve ( ↑)Worsen ( ↓)
+> 0.00
+> 20 .00
+> 40 .00
+> 60 .00
+> 80 .00
+> 25 .8
+> 17 .6
+> 54 .7
+> 7.7
+> 35 .3
+> 46 .4
+> Percentage (%)
+> (d) Qwen3.5-4B, FS
+
+Figure 3: Edit behavior comparison under zero-shot and few-shot settings. Edit, Improve, and Worsen denote Edit Rate, Improve@Edit, and Worsen@Edit, respec-tively. ZS/FS denote zero-shot/few-shot prompting. 
+
+from 36.40 to 31.76 with Qwen2.5-7B and from 35.66 to 29.04 with Qwen2.5-14B, corresponding to 12.7% and 18.6% relative reductions, respec-tively. For Qwen2.5-14B under zero-shot prompt-ing, our method reduces C-CER from 35.66 to 29.04 and M-CER from 84.57 to 55.35, correspond-ing to relative reductions of 18.6% and 34.6%, re-spectively. Our method also improves cases where Direct is already competitive, such as the Qwen3.5-4B few-shot setting, where RelCER changes from -4.36% to 2.20%. The Full-History baseline shows that simply ex-posing a long-context model to more historical text does not necessarily improve correction, as Gemma-4-26B-128K remains close to Raw ASR in both prompting settings. The gains are not uni-form across all settings. Our method underper-forms Direct in the Qwen3.5-9B few-shot setting, despite improving over Direct for the same back-bone under zero-shot prompting. This indicates that few-shot demonstrations may interact with memory guidance and sometimes encourage un-necessary modifications under an inference-only setting. We therefore analyze correction behavior below to distinguish targeted improvements from harmful edits. 
+
+4.3 Analysis Correction behavior analysis. CER measures final quality but hides how a model edits ASR hypotheses. We therefore use Edit Rate, Improve@Edit, and Worsen@Edit to measure whether edits occur, reduce CER, or increase CER. Figure 3 compares two representative backbones. Qwen2.5-14B illustrates a high over-editing case, 60.0 0.2 0.4 0.6 0.8      
+
+> −4.00
+> −2.00
+> 0.00
+> 2.00
+> 4.00
+> Text Ratio
+> RelCER  ↑ (%)
+> (a) RelCER
+> Direct Ours
+> 0.0 0.2 0.4 0.6 0.8
+> 26 .00
+> 27 .00
+> 28 .00
+> 29 .00
+> 30 .00
+> 31 .00
+> 32 .00
+> Text Ratio
+> C-CER  ↓ (%)
+> (b) C-CER
+
+Figure 4: Impact of the text-input ratio on ASR correc-tion performance. 
+
+while Qwen3.5-4B represents a competitive setting where memory improves edit quality. For Qwen2.5-14B, ontology memory mainly re-duces excessive rewriting, although Worsen@Edit remains high after the model chooses to edit. For Qwen3.5-4B, ontology memory shows a more con-sistent pattern by reducing Edit Rate, increasing Im-prove@Edit, and decreasing Worsen@Edit in both prompting settings. These results suggest that on-tology memory mainly serves as an edit-selection mechanism, while its effect on edit precision de-pends on how effectively the correction model uses the retrieved evidence. Appendix A.3 further ana-lyzes how retrieval availability is associated with edit outcomes. 
+
+Impact of text-speech interleaving ratio. We study whether RAMC-Corr remains effective when subsequent utterances are provided in different modalities. Specifically, we vary the proportion of subsequent utterances represented as text transcrip-tions from 0.0 to 0.8, where 0.0 denotes the speech-only setting. Experiments are conducted with Qwen3.5-4B under the zero-shot setting. As shown in Figure 4, our method consistently achieves better RelCER and C-CER than Direct across all text ra-tios. The improvement becomes more pronounced after text transcriptions are introduced, especially at moderate ratios of 0.4 and 0.6. Direct, however, becomes less reliable under mixed text-speech in-puts, leading to degraded RelCER. When the ratio increases to 0.8, the gain becomes smaller, indi-cating that more text context is not always more useful unless it provides correction-relevant cues. These results demonstrate the robustness of ontol-ogy memory under text-speech interleaved inputs. 
+
+Online latency in continuous speech interaction. 
+
+We analyze latency in a continuous speech-input scenario, where backend computation for the previ-ous chunk can overlap with the following speech segment and its ASR processing. Since this over-                         
+
+> Metric Direct Ours Top-k=5 Top-k=10 Top-k=15
+> Subseq. Speech Window 4.59 s 4.59 s 4.59 s 4.59 s User Wait Mean / P95 0.01 / 0.00 s 0.92 / 3.67 s 0.97 / 3.76 s 0.99 / 3.85 s Visible Corr. Mean / P95 0.53 / 0.90 s 2.31 / 4.39 s 2.35 / 4.51 s 2.38 / 4.51 s Backend Mean 0.53 s 2.98 s 3.04 s 3.08 s RelCER ↑1.19 1.37 2.08 2.05
+
+Table 3: Online latency analysis under the Qwen3.5-4B zero-shot setting with continuous speech input.Ours is evaluated with different ontology retrieval sizes. 
+
+lap can hide part of the computation from the user, we report user wait at the chunk level, together with backend latency and visible correction latency. Backend latency measures the end-to-end compu-tation time for correction and memory operations, while visible correction latency measures the delay from ASR decoding to the corrected output. Direct denotes correction without working memory, while Ours denotes correction with memory retrieval and ontology update. As shown in Table 3, Ours increases backend latency from 0.53 s to 2.98–3.08 s. However, the average user wait remains below 1 s across all Top-k settings because part of the computation is hidden by the 4.59 s speech-input window. Increasing Top-k from 5 to 15 only slightly increases average user wait from 0.92 s to 0.99 s, suggesting that larger retrieval sizes have limited impact on user-perceived latency in this setting. 
+
+Case study. Table 4 illustrates how ontology memory improves context-grounded ASR correc-tion through retrieved evidence. Without such memory, the model tends to rely on linguistic plau-sibility, resulting in incomplete entity recovery or unsupported substitutions. For example, the Di-recct fails to recover “ 院学生会” (graduate student union) from “ 院线汇” (cinema line association), and incorrectly rewrites the correct title “ 十宗罪”(The Ten Deadly Sins) as “ 失踪者” (The Miss-ing). In contrast, our method grounds corrections in retrieved dialogue-relevant evidence, including organization context for “ 院学生会”, movie-title context for “ 悲伤逆流成河” (The Disillusioned Youth), and prior noise-form evidence for preserv-ing “ 十宗罪”. These examples show that ontology memory supports more selective and contextually grounded edits rather than broader rewriting. 
+
+5 Related Work 
+
+Post-ASR correction improves transcription qual-ity without modifying the underlying ASR system. Early methods relied on language model rescoring, 7Num Outputs Memory Evidence 1 Before 真的你在院线汇不管你是院线汇还是西                                        
+
+> Really you are in the cinema line association
+> whether you are in the cinema line association or west
+> A retrieved memory about Xiong Liang (熊
+> 亮) mentions the graduate student union ( 院学生会), supporting the organization-name correction.
+> After Direct 真的你在院线汇不管你是院线汇还是西
+> Really you are in the cinema line association
+> whether you are in the cinema line association or west
+> After Ours 真的你在院学生会不管你是院学生会还是西
+> Really you are in the graduate student union
+> whether you are in the graduate student union or west
+> Reference 真的你在院学生会不管你是在院学生会还是
+> Really you are in the graduate student union
+> whether you are in the graduate student union or
+> 2Before 就是这个悲伤有成河吗
+> Is it this sadness becomes a river
+> A retrieved memory about Yi Yao (易遥) links the dialogue context to the movie title The Disillusioned Youth (悲伤
+> 逆流成河).
+> After Direct 就是这个悲伤有长河吗
+> Is it this sadness has a long river
+> After Ours 就是这个悲伤逆流成河吗
+> Is it this The Disillusioned Youth
+> Reference 就是这个悲伤逆流成河吗
+> Is it this The Disillusioned Youth
+> 3Before 你看了是十宗罪呀
+> What you watched was The Ten Deadly Sins
+> The retrieved memory for
+> The Ten Deadly Sins (十
+> 宗罪) records prior ASR noise forms such as “missing crime” ( 失踪罪)and “Shi Zhongyu” ( 石中
+> 玉).
+> After Direct 你看了是失踪者呀
+> What you watched was The Missing
+> After Ours 你看了是十宗罪呀
+> What you watched was The Ten Deadly Sins
+> Reference 你看的是十宗罪啊
+> What you watched was The Ten Deadly Sins
+
+Table 4: Qualitative examples of ontology-memory-augmented ASR correction. Before shows the origi-nal ASR transcription. After Direct shows correction without ontology memory. After Ours shows correc-tion with ontology memory. Memory Evidence shows the retrieved memory evidence provided as contextual support. Bold text highlights the key corrected or over-corrected expressions. 
+
+confusion modeling, and n-best hypothesis selec-tion (Rubenstein et al., 2023; Rúnarsdóttir et al., 2019). With the development of large language models, recent studies have increasingly formu-lated ASR correction as a conditional generation task, where the model regenerates more accurate and fluent text conditioned on noisy ASR outputs (Yang et al., 2023; Chen et al., 2023). Similar evidence has also been observed in structured lan-guage understanding, where self-correction help LLMs produce more consistent structured out-puts (Li et al., 2025b,a). Despite their strong perfor-mance, most generative ASR correction methods still focus on the current utterance or local segment, with limited modeling of contextual knowledge ac-cumulated from prior interactions. To improve the correction of named entities, rare words, and domain-specific terminology, another line of research introduces contextual biasing or retrieval-augmented mechanisms that incorporate external vocabularies, entity databases, candidate phrases, or domain knowledge as auxiliary evi-dence for ASR correction (Zhang et al., 2023b; Ghosh et al., 2024). Ghosh et al. (2025) and Im et al. (2025) further combine semantic and pho-netic similarity to alleviate generalization issues caused by open-vocabulary settings and acoustic confusion. These studies demonstrate the impor-tance of external contextual evidence for ASR cor-rection. However, most existing approaches still rely on static knowledge sources or independently retrieve candidate items for each utterance. In con-trast, correction evidence in long-form interleaved text-speech conversations often naturally originates from prior interactions themselves. As interaction duration increases, these limita-tions become more pronounced. Long-form conver-sational ASR must handle extended speech inputs, topic shifts, context truncation, cross-segment error propagation, and concept consistency, since ASR-induced errors may further propagate to down-stream semantic analysis and degrade task perfor-mance (Chen et al., 2024; Kang et al., 2025). Re-cent studies have explored long-context speech un-derstanding via benchmarks, speech compression, multimodal modeling, and long-context modeling (Yang et al., 2026; Ahn et al., 2026; AI, 2025; Wei et al., 2024). While these studies improve long-audio modeling, cross-segment continuity, and mul-timodal understanding, they pay relatively little at-tention to how textual and situational information established during prior interactions can be orga-nized into reusable evidence for subsequent ASR correction. Meanwhile, memory-augmented language mod-els have been widely studied in tasks such as per-sonalized dialogue, long-context question answer-ing, and information compression (Ke et al., 2025; Chen et al., 2025). However, memory mechanisms have rarely been explored for post-ASR correction, especially in interleaved text-speech conversations where interaction context must be continuously ac-cumulated, structurally organized, and dynamically retrieved for future correction. 
+
+6 Conclusion 
+
+We studied ASR correction in text-speech inter-leaved conversations, where long-range interaction history can provide valuable but noisy correction evidence. To exploit such context, we proposed an ontology-memory-augmented framework that orga-nizes reliable dialogue history into a dynamically updatable working memory and retrieves structured evidence for subsequent ASR correction. We con-structed RAMC-Corr from MagicData-RAMC to evaluate long-range context-grounded correction. Experiments across multiple LLM backbones show 8that our method improves over direct correction in 9 out of 10 paired settings. Further analyses indicate that these gains mainly come from more selective and evidence-grounded edits rather than indiscriminate rewriting, showing the potential of ontology memory for interactive ASR correction. 
+
+Limitations 
+
+Our work has four major limitations. First, RAMC-Corr is currently constructed from Chinese text-speech interleaved conversations. Although this setting provides a useful testbed for studying long-range context-grounded ASR correction, it does not fully cover multilingual, cross-lingual, or domain-diverse scenarios. In the future, we plan to extend the benchmark to more languages and real-world application domains. Second, our experiments mainly focus on a training-free LLM setting with lightweight few-shot prompting. This design allows us to evalu-ate the plug-and-play capability of ontology mem-ory across different LLM backbones. However, the potential benefits of supervised fine-tuning, in-struction tuning, parameter-efficient adaptation, or more advanced prompting strategies remain under-explored. We leave a systematic investigation of these model adaptation strategies to future work. Third, the retrieval component in our framework is not specifically optimized for ASR correction. The current retrieval strategy may not fully cap-ture correction-specific cues such as phonetic simi-larity, entity recurrence, acoustic confusions, and discourse dependencies. Future work can develop task-aware retrievers that jointly consider seman-tic, phonetic, and conversational signals for more accurate context selection. Finally, our evaluation is conducted on a bench-mark derived from existing text-speech interleaved data. Although RAMC-Corr supports controlled evaluation of long-range context use, real-world interactive speech applications may involve more diverse speakers, background noise, spontaneous speech, and changing dialogue states. We plan to further validate the framework in more realistic and open-ended interaction scenarios. 
+
+Ethical Statement 
+
+We construct RAMC-Corr based on MagicData-RAMC for long-range context-grounded ASR correction in text-speech interleaved conversa-tions. RAMC-Corr is derived from the existing MagicData-RAMC dataset and inherits its origi-nal speech data and reference transcripts. We do not collect new speech recordings, textual content, personal information, or private user data during dataset construction. The dataset is used only for research purposes, following the license and usage conditions of the original data source. RAMC-Corr defines the evaluation split and cor-rection targets for context-grounded ASR correc-tion. The ASR hypotheses used in our experiments are generated by ASR systems during the experi-mental pipeline and are not newly collected human data. No personally identifiable information is in-troduced, and no additional sensitive or harmful content is added. The dataset is intended for evalu-ating context-grounded ASR correction rather than identifying or profiling individual speakers. We acknowledge that automatic ASR correction may produce incorrect or unsupported modifica-tions. Therefore, corrected transcripts should be used with caution in high-stakes scenarios, and hu-man verification is recommended when they are used for consequential decisions. Overall, the construction and use of RAMC-Corr are compliant with research ethics. 
+
+References                     
+
+> Hoseong Ahn, Jeongyun Chae, Yoonji Park, and Kyuhong Shim. 2026. Whisper-cd: Accurate long-form speech recognition using multi-negative con-trastive decoding. CoRR , abs/2603.06193. Mistral AI. 2025. Voxtral. CoRR , abs/2507.13264. Blaine Billings and Bradley McDonnell. 2025. Con-necting automated speech recognition to transcrip-tion practices. In Proceedings of the Eight Workshop on the Use of Computational Methods in the Study of Endangered Languages , pages 128–132, Honolulu, Hawaii, USA. Association for Computational Lin-guistics. Chen Chen, Yuchen Hu, Chao-Han Huck Yang, Sabato Marco Siniscalchi, Pin-Yu Chen, and Chng Eng Siong. 2023. Hyporadise: An open base-line for generative speech recognition with large lan-guage models. In Advances in Neural Information Processing Systems 36: Annual Conference on Neu-ral Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 .Huiyao Chen, Xinxin Li, Meishan Zhang, and Min Zhang. 2024. Semantic role labeling from Chinese speech via end-to-end learning. In Findings of the As-sociation for Computational Linguistics: ACL 2024 ,
+
+9pages 8898–8911, Bangkok, Thailand. Association for Computational Linguistics. Nuo Chen, Hongguang Li, Jianhui Chang, Juhua Huang, Baoyuan Wang, and Jia Li. 2025. Compress to impress: Unleashing the potential of compressive memory in real-world long-term conversations. In 
+
+Proceedings of the 31st International Conference on Computational Linguistics , pages 755–773, Abu Dhabi, UAE. Association for Computational Linguis-tics. Sreyan Ghosh, Mohammad Sadegh Rasooli, Michael Levit, Peidong Wang, Jian Xue, Dinesh Manocha, and Jinyu Li. 2024. Failing forward: Improving gen-erative error correction for ASR with synthetic data and retrieval augmentation. CoRR , abs/2410.13198. Sreyan Ghosh, Mohammad Sadegh Rasooli, Michael Levit, Peidong Wang, Jian Xue, Dinesh Manocha, and Jinyu Li. 2025. Failing forward: Improving gen-erative error correction for ASR with synthetic data and retrieval augmentation. In Findings of the As-sociation for Computational Linguistics: ACL 2025 ,pages 2466–2482, Vienna, Austria. Association for Computational Linguistics. HangChen HangChen, Chao-Han Huck Yang, Jia-Chen Gu, Sabato Marco Siniscalchi, and Jun Du. 2025. MISP-meeting: A real-world dataset with multi-modal cues for long-form meeting transcription and summarization. In Proceedings of the 63rd Annual Meeting of the Association for Computational Lin-guistics (Volume 1: Long Papers) , pages 15479– 15492, Vienna, Austria. Association for Computa-tional Linguistics. Solee Im, Wonjun Lee, JinMyeong An, Yunsu Kim, Jungseul Ok, and Gary Lee. 2025. DeRAGEC: De-noising named entity candidates with synthetic ratio-nale for ASR error correction. In Findings of the As-sociation for Computational Linguistics: ACL 2025 ,pages 15181–15193, Vienna, Austria. Association for Computational Linguistics. Boyi Kang, Xinfa Zhu, Zihan Zhang, Zhen Ye, Ming-shuai Liu, Ziqian Wang, Yike Zhu, Guobin Ma, Jun Chen, Longshuai Xiao, Chao Weng, Wei Xue, and Lei Xie. 2025. LLaSE-g1: Incentivizing generaliza-tion capability for LLaMA-based speech enhance-ment. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Vol-ume 1: Long Papers) , pages 13292–13305, Vienna, Austria. Association for Computational Linguistics. Cai Ke, Yiming Du, Bin Liang, Yifan Xiang, Lin Gui, Zhongyang Li, Baojun Wang, Yue Yu, Hui Wang, Kam-Fai Wong, and Ruifeng Xu. 2025. Flexibly utilize memory for long-term conversation via a fragment-then-compose framework. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 21119–21136, Suzhou, China. Association for Computational Lin-guistics. Heeseung Kim, Che Hyun Lee, Sangkwon Park, Jiheum Yeom, Nohil Park, Sangwon Yu, and Sungroh Yoon. 2025. Does your voice assistant remember? analyz-ing conversational context recall and utilization in voice interaction models. In Findings of the Asso-ciation for Computational Linguistics: ACL 2025 ,pages 8984–9014, Vienna, Austria. Association for Computational Linguistics. Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph Gonza-lez, Hao Zhang, and Ion Stoica. 2023. Efficient mem-ory management for large language model serving with pagedattention. In Proceedings of the 29th Sym-posium on Operating Systems Principles, SOSP 2023, Koblenz, Germany, October 23-26, 2023 , pages 611– 626. ACM. Sha Li, Ayush Sadekar, Nathan Self, Yiqi Su, Lars An-dersland, Mira Chaplin, Annabel Zhang, Hyoju Yang, James B. Henderson, Krista Wigginton, Linsey Marr, T. M. Murali, and Naren Ramakrishnan. 2025a. Ex-ploring llms for scientific information extraction us-ing the sciex framework. CoRR , abs/2512.10004. Xinxin Li, Huiyao Chen, Chengjun Liu, Jing Li, Meis-han Zhang, Jun Yu, and Min Zhang. 2025b. LLMs can also do well! breaking barriers in semantic role labeling via large language models. In Findings of the Association for Computational Linguistics: ACL 2025 , pages 23162–23180, Vienna, Austria. Associa-tion for Computational Linguistics. Paul K. Rubenstein, Chulayuth Asawaroengchai, Duc Dung Nguyen, Ankur Bapna, Zalán Borsos, Félix de Chaumont Quitry, Peter Chen, Dalia El Badawy, Wei Han, Eugene Kharitonov, Hannah Muckenhirn, Dirk Padfield, James Qin, Danny Rozenberg, Tara N. Sainath, Johan Schalkwyk, Matthew Sharifi, Michelle Tadmor Ramanovich, Marco Tagliasacchi, Alexandru Tudor, Mihajlo Ve-limirovic, Damien Vincent, Jiahui Yu, Yongqiang Wang, Vicky Zayats, Neil Zeghidour, Yu Zhang, Zhishuai Zhang, Lukas Zilka, and Christian Havnø Frank. 2023. Audiopalm: A large language model that can speak and listen. CoRR , abs/2306.12925. Anna V. Rúnarsdóttir, Inga Rún Helgadóttir, and Jón Guðnason. 2019. Lattice re-scoring during man-ual editing for automatic error correction of ASR transcripts. In 20th Annual Conference of the Inter-national Speech Communication Association, Inter-speech 2019, Graz, Austria, September 15-19, 2019 ,pages 3810–3814. ISCA. Kun Wei, Bei Li, Hang Lv, Quan Lu, Ning Jiang, and Lei Xie. 2024. Conversational speech recognition by learning audio-textual cross-modal contextual rep-resentation. IEEE ACM Trans. Audio Speech Lang. Process. , 32:2432–2444. Chao-Han Huck Yang, Yile Gu, Yi-Chieh Liu, Shalini Ghosh, Ivan Bulyko, and Andreas Stolcke. 2023. Generative speech recognition error correction with 
+
+10 large language models and task-activating prompt-ing. In IEEE Automatic Speech Recognition and Un-derstanding Workshop, ASRU 2023, Taipei, Taiwan, December 16-20, 2023 , pages 1–8. IEEE. Fei Yang, Xuanfan Ni, Renyi Yang, Jiahui Geng, Qing Li, Chenyang Lyu, Yichao Du, Longyue Wang, Wei-hua Luo, and Kaifu Zhang. 2026. Longspeech: A scalable benchmark for transcription, transla-tion and understanding in long speech. CoRR ,abs/2601.13539. Zehui Yang, Yifan Chen, Lei Luo, Runyan Yang, Lingx-uan Ye, Gaofeng Cheng, Ji Xu, Yaohui Jin, Qingqing Zhang, Pengyuan Zhang, Lei Xie, and Yonghong Yan. 2022. Open source magicdata-ramc: A rich annotated mandarin conversational(ramc) speech dataset. In 23rd Annual Conference of the Inter-national Speech Communication Association, Inter-speech 2022, Incheon, Korea, September 18-22, 2022 ,pages 1736–1740. ISCA. Dong Zhang, Shimin Li, Xin Zhang, Jun Zhan, Pengyu Wang, Yaqian Zhou, and Xipeng Qiu. 2023a. SpeechGPT: Empowering large language models with intrinsic cross-modal conversational abilities. In Findings of the Association for Computational Linguistics: EMNLP 2023 , pages 15757–15773, Sin-gapore. Association for Computational Linguistics. Min Zhang, Xiaosong Qiao, Yanqing Zhao, Chang Su, Yinglu Li, Yuang Li, Ming Zhu, Mengyao Piao, Song Peng, Shimin Tao, Hao Yang, and Yanfei Jiang. 2023b. Knowledge prompt for whisper: An ASR entity correction approach with knowledge base. In 
+
+> IEEE International Conference on Big Data, Big-Data 2023, Sorrento, Italy, December 15-18, 2023 ,pages 2975–2979. IEEE.
+
+A Appendix 
+
+A.1 RAMC-Corr Dataset Construction Details 
+
+This section provides additional details on the sam-ple construction process of RAMC-Corr. Given an original conversation from MagicData-RAMC, we select a split boundary from its temporally ordered speech segments and manual transcriptions. The manual transcriptions before the boundary are used as the trusted prefix context, while the speech seg-ments after the boundary form the target region to be corrected. The boundary selection process is based only on manual transcription texts, ensuring that the split does not depend on ASR outputs from the target region. For a conversation containing n segments, we denote its manual transcription sequence as: 
+
+Y = {yi}ni=1 ,
+
+where yi denotes the manual reference transcrip-tion of the i-th segment. A candidate boundary b
+
+divides the sequence into: 
+
+Gb = {yi}b−1 
+
+> i=1
+
+,Rb = {yi}ni=b.
+
+Here, Gb denotes the trusted prefix context be-fore the boundary, and Rb denotes the reference transcriptions corresponding to the target region after the boundary. The trusted prefix always starts from the beginning of the conversation and contin-uously extends to the segment immediately before the boundary. For each valid conversation, we re-tain only one final boundary, so that each conver-sation produces at most one RAMC-Corr sample. This avoids generating multiple overlapping sam-ples from the same conversation. 
+
+A.1.1 Candidate Boundary Generation 
+
+We first enumerate candidate boundaries over the segment sequence of each conversation and apply preliminary filtering based on length and position constraints. Specifically, the trusted prefix before the boundary is required to contain a sufficient num-ber of valid semantic segments and valid characters, so that it can provide usable historical context. At the same time, the trusted prefix must not exceed a predefined upper bound, in order to control the input size and reduce redundant history. The target region after the boundary is also required to satisfy minimum constraints on the number of segments and text length, ensuring that each sample contains a multi-segment correction target. In addition, we constrain the relative position of the candidate boundary within the full conversation. This prevents the boundary from being placed too early, which would result in insufficient context, or too late, which would make the target region too short. Candidate boundaries that satisfy these constraints are then passed to the context continuity evaluation stage. 
+
+A.1.2 Text Validity Filtering 
+
+When computing length statistics and similarity scores, we only consider text segments with clear semantic content. Specifically, we filter out empty texts, noise markers, symbol-only segments, seg-ments with an excessively high punctuation ratio, and short backchannel expressions commonly ob-served in real conversations. 11 This filtering is used only for statistics and sim-ilarity computation during boundary selection. It does not modify the original segment sequence in the final sample. The final samples still preserve the original conversation order, together with the corresponding speaker and timestamp information. 
+
+A.1.3 Context Continuity Constraint 
+
+To ensure that the trusted prefix and the target re-gion remain semantically coherent, we compute a context continuity score for each candidate bound-ary. Specifically, we concatenate the valid texts in Gb as the prefix text, and concatenate the valid texts from the first K segments after the boundary as the target-head text Hb. We then compute the similarity between these two texts. We use a weighted fusion of character n-gram similarity and semantic embedding similarity: 
+
+sb = αs ngram (Gb, H b) + (1 − α)semb (Gb, H b),
+
+where sngram measures entity, keyword, and lo-cal lexical overlap, while semb measures topic-level semantic relatedness. The coefficient α is the fu-sion weight. We retain only candidate boundaries whose sb reaches the predefined threshold, and use this score as an important criterion for final bound-ary selection. 
+
+A.1.4 Final Boundary Selection 
+
+After filtering by length, position, and context continuity constraints, each conversation may re-tain multiple candidate boundaries. We further select one final boundary from these candidates to construct the corresponding RAMC-Corr sample. The selection process prioritizes context continuity across the boundary, while also preferring a trusted prefix with appropriate length and a reasonable boundary position. This ensures that each sample contains sufficient historical context while preserv-ing enough subsequent content for correction. For the candidate boundary b of the c-th conver-sation, we define its selection score as: 
+
+Sc(b) = wssc(b) − wldc(b) − wrrc(b).
+
+Here, sc(b) denotes the context continuity score across the boundary; dc(b) denotes the deviation between the trusted prefix length and the expected prefix length; rc(b) denotes the boundary position penalty, which is used to avoid boundaries that are too early or too late; and ws, wl, and wr are the corresponding weights. This scoring function                                       
+
+> Parameter Value Description
+> embedding model Qwen3-Embedding-8B Embedding model min prefix segments 5Min. valid prefix segments min prefix chars 80 Min. valid prefix chars max prefix segments 50 Max. valid prefix segments max prefix chars 1200 Max. valid prefix chars min target segments 10 Min. valid target segments min target chars 150 Min. valid target chars target head K8Target-head segments min similarity 0.25 Min. continuity score min boundary ratio 0.05 Min. boundary position max boundary ratio 0.30 Max. boundary position target prefix segments 20 Expected prefix length min boundary chars 4Min. chars at boundary start fusion weight α0.4 n-gram fusion weight
+> ws0.70 Continuity weight
+> wl0.20 Length penalty weight
+> wr0.10 Position penalty weight
+
+Table 5: Parameters used in the construction of RAMC-Corr. Min. and Max. denote minimum and maximum, respectively; chars denotes characters. 
+
+favors split points with stronger context continuity, a moderately sized trusted prefix, and a reasonable boundary position. The final boundary is defined as: 
+
+b∗ 
+
+> c
+
+= arg max 
+
+> b∈B c
+
+Sc(b),
+
+where Bc denotes the set of candidate boundaries for the c-th conversation after length, position, and context continuity filtering. For each valid conver-sation, we retain only the boundary with the high-est score. Therefore, each conversation produces at most one RAMC-Corr sample. If no candidate boundary satisfies the constraints, the conversation is excluded from the construction of RAMC-Corr. The specific values of each parameter are shown in the table 5. 
+
+A.2 Effect of in-context examples. 
+
+We further study the effect of adding in-context ex-amples to the correction prompt. To construct the example pool, we first sampled 10 conversations from the training set and then sampled 200 utter-ances from these conversations. From this pool, we manually selected and annotated 10 representative ASR errors as candidate in-context examples. As shown in Figure 5, simply increasing the number of examples does not consistently improve correction quality. While using a small number of examples yields positive relative CER reduction, adding more examples makes the model edit more aggressively. In particular, when the number of examples increases from 3 to 5, the edit rate rises substantially, but the proportion of worsened edits also increases, leading to a sharp drop in relative CER reduction. This suggests that naively adding more static examples can induce over-correction, 12 0 3 5 8 10         
+
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> 60
+> # In-context Examples
+> Percentage (%)  (a) Editing behavior
+> Edit Rate Improve ↑Worsen ↓
+> 035810
+> −8
+> −6
+> −4
+> −2
+> 0
+> 2
+> # In-context Examples
+> RelCER  ↑ (%)  (b) Correction quality
+
+Figure 5: Effect of the number of in-context examples on editing behavior and correction quality.                            
+
+> Setting Retrieval Count Edit Improve ↑Worsen ↓
+> Zero-shot With 13,304 6.16 39.19 42.98 Zero-shot Without 402 9.20 35.14 54.05 Few-shot With 13,106 7.55 35.89 45.60 Few-shot Without 600 10.17 26.23 59.02
+
+Table 6: Edit outcomes grouped by retrieval availability for Qwen3.5-4B. Edit denotes Edit Rate, while Improve and Worsen denote Improve@Edit and Worsen@Edit. All rates are percentages. 
+
+where the model edits more often but introduces more harmful changes. These results indicate that the construction of in-context examples remains an important design fac-tor. More effective example selection, retrieval, and ordering strategies may be needed to ensure that demonstrations provide useful correction guidance rather than biasing the model toward unnecessary edits. 
+
+A.3 Evidence Utilization Analysis 
+
+We compute all statistics at the correction-record level. Retrieval availability indicates whether at least one ontology entry is retrieved and provided to the correction model. A record is counted as edited if the corrected output differs from the ASR hypothesis. Improve@Edit and Worsen@Edit are computed among edited records, measuring the proportions of edits that decrease or increase CER, respectively. Memory updates are detected when the ontology working memory is modified after processing the current record. Table 6 analyzes edit outcomes by retrieval avail-ability for Qwen3.5-4B. Retrieved ontology ev-idence is available for 97.07% and 95.62% of records under zero-shot and few-shot prompting, re-spectively, with memory updates detected in 6.48% and 6.68% of records. Across both settings, records with retrieved evidence show lower Edit Rate and Worsen@Edit than those without retrieval, suggest-ing more conservative and less harmful editing. 
+
+B Prompt Templates 
+
+This section provides the prompt templates used in our experiments. Table 7 shows the correction prompt without ontology working memory, Table 8 shows the memory-augmented correction prompt, and Table 9 shows the prompt for extracting candi-date ontology entries. 13 ASR Correction without Ontology Memory User : You are an ASR text correction expert. Your task is to identify words in the current transcription that need correction based on the current ASR text and recent dialogue context, and output the corrected text. 
+
+Task priorities: 
+
+1. Prioritize ASR correction and make the cor-rected text as accurate as possible. 2. Only correct ASR recognition errors. Do not polish, summarize, expand, or rewrite the style. 3. If there is no clear error, keep the corrected text identical to the current transcription. 
+
+Correction principles: 
+
+- First inspect the current sentence, then refer to the historical context. - Focus on keywords, named entities, terms, numbers, collocations, and contextually incon-sistent words. - Do not change the topic based on a single abrupt word unless the context clearly indicates a topic shift. - If the context does not provide enough evi-dence, keep the original word. - Preserve the original word order, spoken style, and amount of information as much as possible. 
+
+Forbidden behaviors: 
+
+- Do not turn correction into polishing, summa-rization, or rewriting. - Do not add information that is not expressed in the current sentence. - Do not delete semantically meaningful spoken components. - Do not output explanatory completion text. 
+
+Recent dialogue context: 
+
+{recent_corrected_context} 
+
+Current ASR transcription: 
+
+{current_asr_text} Please output only the corrected text. 
+
+LLM : {corrected_text} 
+
+Table 7: Prompt template for ASR correction without ontology memory. 
+
+> ASR Correction with Ontology Memory User : You are an ASR text correction expert. Correct the current transcription using recent dialogue context, active entities, and retrieved ontology working memory (WM).
+> Task priorities:
+> . . .
+> Correction principles:
+> . . . - Inspect the current sentence first, then recent context, and finally WM. - If a word conflicts with recent topic, active entities, or WM, correct it only after confirming it is ASR-suspicious. - If neither context nor WM provides enough evidence, keep the original word. - Recent contextual evidence has priority over distant WM.
+> WM usage rules:
+> - WM is auxiliary evidence, not a forced replacement basis. - Retrieved knowledge may contain noise. - Do not replace text with a WM entity solely because it appears in WM. - Use WM only when the ASR text is suspicious or contex-tually inconsistent. - If WM conflicts with the current sentence and no clear ASR error exists, trust the current sentence.
+> Forbidden behaviors:
+> . . . - Do not force the sentence to match WM or change the topic for WM. - Do not change ordinary words into WM entities or terms without evidence.
+> Inputs:
+> Retrieved WM: {retrieved_knowledge} Active entities: {active_mentions} Recent context: {recent_corrected_context} Current ASR: {current_asr_text}
+> LLM : {corrected_text}
+
+Table 8: Prompt template for ASR post-correction with retrieved ontology memory and recent active enti-ties. Shared instructions inherited from the no-memory prompt are omitted for brevity, while WM-specific con-straints are shown. 
+
+14 Ontology Instruction Role Definition 
+
+The model acts as a working-memory update expert for an ASR correction system. Its task is to extract stable nodes that can be safely written into working memory (WM) based on the orig-inal ASR transcript transcript_text and the corrected text corrected_text . These nodes should be clearly useful for subsequent ASR correction. The output must be strictly valid JSON. 
+
+Core Objective 
+
+This task is not intended to build a complete knowledge graph, nor to summarize the text content. It should only record anchors that ex-plicitly appear in corrected_text , are sta-ble and reusable, and are clearly helpful for future ASR correction. 
+
+A valid node must satisfy: 
+
+1. The canonical_name must come from a phrase explicitly appearing in 
+
+corrected_text .2. It must be a stable and reusable entity, term, special identifier, special version, code, abbrevi-ation, proprietary expression, work title, orga-nization name, role name, group name, product name, domain term, core concept, or key nu-merical value. 3. If it is misrecognized, incorrectly segmented, omitted, inserted, or mistranscribed by ASR in the future, it should significantly affect the semantics or character error rate (CER). 4. If there is a corresponding erroneous frag-ment in transcript_text , it should be recorded as an asr_noise_form .5. It must not be an ordinary word, ordinary phrase, sentence-level rewrite, semantic sum-mary, polishing completion, or temporary de-scription. 
+
+Recent context: {history/context} 
+
+Original ASR transcription: {transcript_text} 
+
+Corrected text: {corrected_text} 
+
+Output format: 
+
+Please output only valid JSON with the field 
+
+ontology_nodes . If no valid node exists, output an empty list. 
+
+> Table 9: Prompt template for ontology extraction.
+
+15

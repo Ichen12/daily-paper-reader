@@ -1,0 +1,295 @@
+Title: Mask, Sample, Revise: A Revisable CTMC Inference Stack for Guided Discrete Flow Matching Text-to-Speech
+
+URL Source: https://arxiv.org/pdf/2606.13989v1
+
+Published Time: Mon, 15 Jun 2026 00:20:30 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+# Mask, Sample, Revise: A Revisable CTMC Inference Stack for Guided Discrete Flow Matching Text-to-Speech 
+
+Alef Iury Ferreira 
+
+AKCI, Federal University of Goi´ as 
+
+Goiˆ ania, Goi´ as, Brazil alef iury c.c@discente.ufg.br 
+
+Lucas Rafael Gris 
+
+AKCIT, Federal University of Goi´ as 
+
+Goiˆ ania, Goi´ as, Brazil lucas.gris@discente.ufg.br 
+
+Luiz Fernando de Ara´ ujo Vidal 
+
+AKCIT, Federal University of Goias 
+
+Goiˆ ania, Goi´ as, Brazil vidalfernando@egresso.ufg.br 
+
+Frederico Oliveira 
+
+AKCIT, Federal University of Goi´ as 
+
+Bras´ ılia, Brazil frederico.oliveira@ufmt.br 
+
+Christopher Dane Shulby 
+
+Elsa Speak 
+
+S˜ ao Paulo, S˜ ao Paulo, Brazil christopher@elsanow.io 
+
+Anderson Soares 
+
+AKCIT, Federal University of Goi´ as 
+
+Goiˆ ania, Goi´ as, Brazil andersonsoares@ufg.br 
+
+Arlindo Galv˜ ao Filho 
+
+AKCIT, Federal University of Goi´ as 
+
+Goiˆ ania, Goi´ as, Brazil arlindo@inf.ufg.br 
+
+Abstract —Recent alignment-free non-autoregressive (NAR) text-to-speech (TTS) models formulate synthesis as a conditional infilling task, bypassing explicit duration predictors and external aligners. When speech is represented with neural codec tokens, the infilling problem becomes discrete, making Discrete Flow Matching (DFM), a Continuous-Time Markov Chain (CTMC) framework for discrete generation, a natural fit. However, inference-time control for stable low-step conditional infilling remains underexplored. We propose Mask, Sample, Revise, an inference-time CTMC stack for alignment-free DFM-TTS. The stack combines predictor-free guidance to strengthen text conditioning, prompt-matched conditional coupling to align the probability path with the acoustic prompt, and SC-ReMask, a schedule-constrained remasking mechanism that introduces token-to-mask transitions so early de-masking decisions can be revised. These components require no post-hoc fine-tuning and operate in a single tau-leaping sampler. Controlled ablations show that this stack improves intelligibility and robustness in the low-NFE prompted setting, outperforming unguided and guidance-only samplers with substantially more steps. 
+
+Index Terms —text-to-speech, discrete flow matching, infilling, predictor free guidance, remasking 
+
+I. Introduction 
+
+Modern text-to-speech (TTS) systems can be broadly di-vided into two paradigms: autoregressive (AR) and non-autoregressive (NAR). AR models like VALL-E [1] offer strong temporal modeling but suffer from slow inference, while NAR models enable parallel generation at the cost of often requiring external aligners and duration predictors that can constrain prosody and increase complexity [2]. A promising NAR direction is alignment-free infilling, where synthesis is cast as a conditional infilling problem over acoustic representa-tions. For example, E2-TTS [3] uses a “text-filler” strategy that pads the text representation to match the target acoustic length and trains the model to infill masked regions, removing the need for explicit duration modules. However, alignment-free infilling can be brittle at inference time: conditional control may weaken at low sampling budgets, and early mistakes can persist as deletions, substitutions, or speaker drift [2]. Concurrently, Discrete Flow Matching (DFM) [4] has emerged as a principled framework for discrete generation, formulated as a Continuous-Time Markov Chain (CTMC) where a learned transition-rate field transports a simple source distribution, often a fully masked sequence, toward the data distribution. This is naturally suited to neural codec-based TTS, where speech is represented as a discrete sequence. Recent systems such as DiFlow-TTS [5], H-DFM [6], and GibbsTTS [7] demonstrate the promise of DFM for codec-token TTS, emphasizing factorized representations, Residual Vector Quantization (RVQ) aware modeling, or probability-path scheduling. Yet, it remains unclear which inference-time controls are necessary for stable conditional sampling in alignment-free mask-source infilling settings. In parallel, Discrete Guidance [8] derives principled guidance rules for CTMCs, showing that inference-time rate control can substan-tially strengthen conditional generation. In this work, we study the inference procedure itself: how alignment-free codec-token TTS can benefit from combining sampling-time mechanisms within a DFM formulation. We propose a unified inference control stack comprising: (1) predictor-free guidance (PFG), which blends CTMC transition rates to strengthen conditioning; (2) conditional coupling, which constructs conditional probability paths under prompt-ing; and (3) a remasking mechanism that injects token-to-
+
+> arXiv:2606.13989v1 [cs.SD] 12 Jun 2026
+
+mask transitions during sampling to correct early errors, which we call SC-ReMask: Schedule-Constrained CTMC Remask-ing. These components require no post-hoc fine-tuning. An important advantage of the discrete CTMC/DFM setting is that generation can be made revisable through explicit token-to-mask transitions during sampling. In contrast, systems such as E2-TTS [3] and F5-TTS [2] operate in a continuous acoustic-feature setting, where this form of discrete remasking is not directly available. To the best of our knowledge, this is the first work to apply CTMC discrete guidance to TTS, introduce revisable remasking for alignment-free TTS, and combine PFG, prompt-matched conditional coupling, and token-to-mask remasking within a single alignment-free codec-token DFM framework. We refer to the resulting system as G-DFlow-TTS, whose central component is the Mask, Sample, Revise inference stack. We evaluate with objective metrics and human listening tests including paired statistical testing, and provide a demo page 1.
+
+Contributions. Our main contributions are:  
+
+> •
+
+We propose SC-ReMask, a remasking mechanism adapted from masked discrete diffusion to DFM by implementing token-to-mask moves as explicit CTMC transitions. Mak-ing discrete infilling revisable during generation.  
+
+> •
+
+We introduce a revisable CTMC inference stack for DFM-TTS, combining predictor-free guidance, prompt-matched conditional coupling, and schedule-constrained remasking within a single tau-leaping sampler.  
+
+> •
+
+We provide controlled ablations showing that inference-time control, rather than merely increasing the number of sampling steps, is the main factor behind improved intelligibility in the prompted low-NFE setting. 
+
+II. Related Work 
+
+NAR TTS has increasingly adopted powerful generative frameworks such as diffusion [9] and flow matching [10]. State-of-the-art (SOTA) systems, including NaturalSpeech 3 [11], VoiceBox [12], and Matcha-TTS [13], demonstrate high-quality synthesis and efficient sampling, but many NAR pipelines still rely on explicit duration supervision or alignment modules to stabilize text-to-speech correspondence. While effective for intelligibility, such components can increase engineering complexity and may constrain prosodic variability [14]. To improve flexibility, recent work has explored alignment-free strategies that reduce or eliminate explicit duration mod-eling. One line predicts coarse length information rather than phoneme-level durations. For example, DiTTo-TTS [15] uses a Diffusion Transformer (DiT) [16] conditioned on a predicted total sequence length to learn implicit alignment through cross-attention. Another strategy casts synthesis as an infilling task. E2-TTS [3] popularized the “text-filler” approach, padding the text sequence with filler tokens to match the target acoustic length and training the model to infill masked regions. Subse-quent works refine this paradigm with improved architectures and objectives, including F5-TTS [2] (continuous acoustic 
+
+> 1https://gdflowtts.github.io/G-DFlowTTS-Demo
+
+features) and MaskGCT [17] (discrete token infilling). Although alignment-free infilling simplifies the pipeline, its robustness can depend heavily on the inference procedure, especially under small sampling budgets where early errors may persist [2]. The move from continuous acoustic features to discrete speech tokens also connects TTS to broader discrete generative modeling for speech. Recent work by Ku et al. [18] has explored this direction beyond TTS, studying discrete diffusion models (DDMs) for text-aligned speech token reconstruction by replacing an autoregressive decoder with a DDM-based decoder and analyzing sampler choices, inference steps, and remasking strategies. This work shows that inference-time sampling design is relevant for speech-token generation more broadly. However, the role of guided and revisable CTMC inference remains underexplored for alignment-free codec-token TTS, which is the setting addressed in this work. Discrete Flow Matching (DFM) [4] provides a principled for-mulation of discrete generation via CTMC, learning transition-rate fields along probability paths between a source distribution, such as masked tokens, and the target data distribution. DFM has only recently been explored for TTS. DiFlow-TTS [5] studies compact and low-latency zero-shot TTS with factorized codec-token representations and dedicated prediction heads for different speech attributes. H-DFM [6] addresses the multi-codebook RVQ setting by aligning DFM training and inference with the codec hierarchy through coarse/fine modeling and a coarse-biased sampling schedule. GibbsTTS [7] studies metric-induced DFM, focusing on kinetic-optimal scheduling [19] and finite-step moment correction for CTMC sampling. These works show that codec-token DFM is a promising direction, but they primarily emphasize representation design, codec hierarchy, probability paths, or solver correction. These directions leave open the question of how to control the CTMC inference procedure itself in alignment-free DFM-TTS. In contrast to prior work, we focus on sampling-time control for mask-source codec-token generation. We build on discrete guidance for CTMC [8] and incorporate conditional coupling together with SC-ReMask, a schedule-constrained remasking mechanism inspired by ReMDM [20]. ReMDM shows that masked discrete generation can benefit from remasking already decoded tokens, enabling iterative refinement during inference. We adapt this idea to DFM by implementing token-to-mask remasking transitions as explicit CTMC transitions inside tau-leaping. This perspective targets stable conditional infilling through sampling-time rate control and makes discrete codec-token generation revisable during synthesis. 
+
+III. G-DFlow-TTS: DFM and Revisable Inference Stack 
+
+G-DFlow-TTS (Figure 1) denotes the resulting non-autoregressive TTS system built around the Mask, Sample, Re-vise inference stack. It synthesizes speech by infilling sequences of discrete neural audio codec tokens conditioned on text and an acoustic prompt. We use a DiT backbone and an alignment-free text-filler conditioning strategy, bypassing explicit duration predictors and external aligners. Because our goal is to study inference-time control, we keep the DFM-TTS architecture fixed DiT Block Timestep  t   
+
+> t~ U[0,1] Input Embed Modulation Linear Embedded
+> Timestep MLP Input Multi-Head
+> Self-Attention Layer Norm Scale, Shift Scale Pointwise
+> Feedforward Layer Norm Scale, Shift Scale Neural Audio Codec BPE Tokenizer Hello! How are you? <F> <F> <F> <F> T1 T2 T3 T4 CMask Ratio t~ U(0,1) S1 S2 S3 S4 S5 S6 S7 S8 TS<F> CSAddition Concatenation Prefix Token MMMMNeural Audio Codec BPE Tokenizer CNFE Conditional Unconditional
+
+DiT Block Modulation Linear SC-ReMask S1 S2 S3 S8 MS4 S7 S8 MS1 S2 S3 MMMS7 S8 MC3How are you? Hello! <F> <F> T1 T2 T3 T4 T4 <F> <F> <F> <F> <F> <F> <F> <F> <F> <F> <F> S1 S2 S3 MMMMMMText Prompt Target Text Audio Prompt S1 S2 S3 S4 S5 S6 S7 S8 S1 S3 S4 S7 ,,Text Token Text Filler Token Speech Token Mask Token S2 (a) Training Procedure (b) Mask, Sample, Revise Inference Stack PFG 
+
+> (Predictor-Free Guidance) MRemasked Token
+
+Fig. 1. Overview of G-DFlow-TTS. (a) During training, the model learns DFM-based masked infilling over neural codec tokens using text-filler conditioning and prompt-matched conditional coupling. (b) At inference, the Mask, Sample, Revise stack combines predictor-free guidance (PFG), CTMC tau-leaping, and SC-ReMask token-to-mask transitions to revise generated tokens while keeping the acoustic prompt fixed. 
+
+and enhance the CTMC sampler with PFG, prompt-matched conditional coupling, and SC-ReMask. Let V be the codec-token vocabulary, 𝑚 ∈ V the mask token, and x ∈ V 𝐿 a length-𝐿 token sequence with positions indexed by 𝑖 . DFM defines a time-indexed probability path 𝑝 𝑡 over tokens for continuous time 𝑡 ∈ [ 0, 1], using a monotone schedule 𝜅 𝑡 ∈[0, 1] with 𝜅 0 = 0 and 𝜅 1 = 1 (we use a polynomial convex scheduler 𝜅 𝑡 = 𝑡 𝑛 with 𝑛 = 1). With a masked source sequence 
+
+x0 (all 𝑚 ) and a target sequence x1 (ground truth), we use the convex-mixture path from [4]: 
+
+𝑝 𝑡 (𝑥 𝑖 | x0, x1) = (1 − 𝜅 𝑡 ) 𝛿 𝑥 0,𝑖 (𝑥 𝑖 ) + 𝜅 𝑡 𝛿 𝑥 1,𝑖 (𝑥 𝑖 ), (1) where 𝛿 is the Kronecker delta. Training samples 𝑡 ∼
+
+Uniform [0, 1], draws x𝑡 ∼ 𝑝 𝑡 (· | x0, x1), and minimizes cross-entropy to predict x1 from (x𝑡 , 𝑦 ).For conditional coupling, we modify the source sequence 
+
+x0 by copying a random-length prefix from x1 and setting all remaining positions to 𝑚 . The prefix duration is sampled uniformly in [0.25 , 12 .0] seconds, ensuring at least 0 .5 seconds remain to be generated. The convex-mixture path (Eq. 1) then operates over this coupled source. At inference, we discretize into 𝐾 steps with Δ𝑡 = 1/𝐾 and sample via CTMC tau-leaping [4]. In the base sampler, token-generation transitions are applied only to positions currently equal to 𝑚 , yielding parallel unmasking over the suffix while keeping the prompt pinned. PFG is applied as a geometric mixture in rate space [8]: 𝑅 (𝛾 )
+
+𝑖,𝑣 = (𝑅 𝑐,𝑖,𝑣 )𝛾 (𝑅 𝑢,𝑖,𝑣 )1−𝛾 , where 
+
+𝑅 𝑐 and 𝑅 𝑢 are the conditional and unconditional CTMC transition rates, 𝑅 𝑖,𝑣 ≥ 0 is the rate of changing position 𝑖 to token 𝑣 , and 𝛾 controls guidance strength. 
+
+A. SC-ReMask 
+
+SC-ReMask (Schedule-Constrained CTMC Remasking) makes discrete infilling revisable by adding token-to-mask transitions during inference. The method is inspired by ReMDM [20], which introduces remasking for discrete diffusion through a per-step remask probability constrained by the noise schedule. We adapt this idea to DFM by implementing remask-ing as an explicit CTMC transition. As a result, remasking contributes directly to the total hazard and to the jump decisions made by tau-leaping, as summarized in Algorithm 1. At inference step 𝑘 , we first compute a schedule-constrained remask probability 𝜎 (𝑡 𝑘 ). The switch time 𝑡 switch controls when remasking is enabled, allowing the sampler to postpone revision to selected stages of generation. Given consecutive times 𝑡 𝑘 and 
+
+𝑡 𝑘 +1, we define the maximum admissible remasking probability as: 
+
+Algorithm 1 Guided CTMC inference with SC-Remask. Blue lines denote PFG steps, while orange lines indicate SC-Remask steps. 
+
+Require: Text 𝑦 , prompt codes x𝑝 , steps 𝐾 , guidance 𝛾 
+
+1: Initialize x ← [ x𝑝 , [MASK] , . . . , [MASK] , [EOS] ]
+
+2: for 𝑘 = 0, . . . , 𝐾 − 1 do 
+
+3: 𝑡 𝑘 ← 𝑘 /𝐾 , Δ𝑡 ← 1/𝐾 
+
+4: 𝑅 𝑐 ← 𝑅 𝜃 (x, 𝑦, 𝑡 𝑘 ), 𝑅 𝑢 ← 𝑅 𝜃 (x, ∅, 𝑡 𝑘 )
+
+5: 𝑅 ← 𝑅 𝛾 𝑐 𝑅 1−𝛾 𝑢 
+
+6: 𝜎 ← 𝜂 rescale min ( 𝜂 cap , 𝜎 max (𝑡 𝑘 ) ) 
+
+7: 𝜎 ← 0 if 𝑡 𝑘 < 𝑡 switch 
+
+8: 𝑟 rm ← − log (1 − 𝜎 )/ Δ𝑡 
+
+9: Add rate 𝑟 rm for eligible token-to-[MASK] transitions 10: x ← TauLeap (x, 𝑅, Δ𝑡 )
+
+11: end for 
+
+12: return generated suffix of x𝜎 max (𝑡 𝑘 ) = min 
+
+
+
+1, 1 − 𝜅 𝑡 𝑘 +1
+
+𝜅 𝑡 𝑘 
+
+
+
+, (2) with the convention that remasking is skipped when no suffix tokens are currently eligible. We then use the capped and rescaled schedule 
+
+𝜎 (𝑡 𝑘 ) =
+
+(
+
+0, 𝑡 𝑘 < 𝑡 switch ,𝜂 rescale min  𝜂 cap , 𝜎 max (𝑡 𝑘 ) , 𝑡 𝑘 ≥ 𝑡 switch . (3) Finally, we convert the per-step remasking probability into a CTMC rate by matching the tau-leap jump probability: 
+
+𝑟 rm (𝑡 𝑘 ) = − log (1 − 𝜎 (𝑡 𝑘 )) 
+
+Δ𝑡 . (4) The rate 𝑟 rm (𝑡 𝑘 ) is added only to eligible generated suffix positions, excluding the acoustic prompt and positions that are already masked. Thus, SC-ReMask does not alter the pinned prompt, but allows previously generated suffix tokens to return to the mask state and be regenerated in later tau-leaping steps. Unless stated otherwise, all main experiments use 𝑡 switch = 0, 
+
+𝜂 rescale = 0.5, and 𝜂 cap = 0.5. These values are selected on the LibriSpeech [22] dev-clean subset, with the schedule ablation reported in Fig. 4. 
+
+IV. Methods 
+
+We train on the English portion of Emilia-YODAS from the Emilia dataset family [23]. We choose Emilia-YODAS to ease reproducibility and artifact sharing, since it is released under CC BY 4.0, whereas the original Emilia split is CC BY-NC 4.0, which introduces non-commercial restrictions that can complicate redistribution and reuse. We use NeuCodec [24], an FSQ-based neural audio codec derived from XCodec2 [25], as the discrete acoustic represen-tation because it combines low-bitrate speech reconstruction with a single-codebook tokenization scheme. This choice is particularly suitable for our CTMC formulation, since it keeps speech as a single discrete sequence, avoiding the multi-stream prediction problem of RVQ-based codecs, while recent single-stream and low-bitrate tokenizers have shown strong performance in zero-shot TTS and speech generation [26]– [29]. Text is tokenized with a GPT-2 Byte Pair Encoding (BPE) tokenizer [30]. For evaluation, we follow the voice-prompted protocol in [1] on LibriSpeech test-clean [22], using a 2.2-hour subset with utterance durations between 4 and 10 seconds. For each target utterance, we sample a random utterance from the same speaker as the prompt. All systems use the same prompt selection and preprocessing. G-DFlow-TTS totals 232M parameters, with a DiT backbone comprising 12 layers, 12 attention heads, hidden size 768, and Rotary Position Embeddings (RoPE) [31] with 𝜃 = 10000. Training runs for 1M iterations on a single NVIDIA B200 GPU with AdamW [32], learning rate 3 × 10 −4, cosine decay with 5,000 warmup steps, weight decay 1 × 10 −6, effective batch size of 64 (16 per-device with 4 gradient accumulation steps), gradient clipping at 10, and mixed precision. To enable predictor-free guidance (PFG) at inference time [8], we train a single model to produce both conditional and unconditional predictions via text dropout: for 10% of training examples, we replace the text condition with a filler sequence while keeping the acoustic target unchanged. At inference, we obtain the conditional and unconditional CTMC rate predictions from the same checkpoint by respectively providing the text input or the text filler input. Intelligibility is measured by Word Error Rate (WER) and Character Error Rate (CER), computed from transcriptions produced by a CTC-based HuBERT ASR model [33]. Speaker similarity (SIM-o) is the cosine similarity between WavLM-TDCNN [34] embeddings of generated and reference audio. Perceptual quality is assessed with UTMOS [35] as an objective MOS predictor, and a 5-point Likert MOS study with 19 listeners on 20 clips per system (20 distinct speakers, 10 male/10 fe-male), randomly sampled from LibriSpeech test-clean. For per-utterance metrics, we report mean paired differences with 95% bootstrap confidence intervals (10,000 resamples) and 𝑝 -values from paired sign-flip permutation tests (10,000 permutations). For MOS, we bootstrap at the clip level and additionally use paired tests on clip-level means. 
+
+V. Results and Discussion 
+
+PFG is necessary for conditional control at low NFE. We first tune predictor-free guidance (PFG) by sweeping the guidance strength 𝛾 and the sampling budget (NFE). Figure 2 shows that stronger guidance substantially improves intelligibility at low NFEs, but overly large 𝛾 can degrade WER, especially when the sampling budget is small. Across this grid, the best operating point occurs at a moderate guidance strength ( 𝛾 = 1.5), and we use this configuration for the remaining experiments. 0.5 1.0 1.5 2.0 2.5 3.0   
+
+> PFG guidance strength
+> 2
+> 4
+> 8
+> 16
+> 32
+> 64
+> 128
+> NFE
+> 20
+> 40
+> 60
+> 80
+> 100
+> WER % (  )
+> Fig. 2. Grid search over predictor-free guidance strength 𝛾 and sampling budget (NFE) for G-DFlow-TTS with conditional coupling. Colors denote WER on the LibriSpeech test-clean prompted subset (lower is better).
+
+Conditional coupling helps when paired with guided sam-pling. Figure 3 isolates the effect of 𝛾 at NFE = 32 and compares unconditional coupling (U-coupling) to conditional coupling (C-coupling). C-coupling consistently improves intel-ligibility across a wide range of 𝛾 , indicating that exposing the model to prompted infilling during training better matches the conditional generation task at inference. However, C-coupling TABLE I 
+
+Results on LibriSpeech test-clean. We report mean scores with 95% confidence intervals, where the gray ± values denote CI half-widths. External systems are shown using official checkpoints for contextual reference. † indicates a statistically significant improvement over the G-DFlow-TTS baseline at the same NFE (paired sign-flip permutation, 𝑝 < 10 −4; see Table II). Within the G-DFlow-TTS variants, the best result for each metric is highlighted in bold , and the second-best is underlined. 
+
+System Params Data WER (%) ↓ CER (%) ↓ SIM-o ↑ UTMOS ↑ MOS ↑ RTF ↓
+
+External Reference Systems 
+
+Ground Truth – – 2.29 ±0.28 0.65 ±0.09 0.76 ±0.005 4.10 ±0.02 4.08 ±0.26 –MaskGCT [17] 1048M 100K Multi. 4.89 ±0.40 1.90 ±0.17 0.74 ±0.003 3.88 ±0.02 3.68 ±0.27 –CosyVoice2 [21] 500M 166K Multi. 3.86 ±0.33 1.47 ±0.14 0.78 ±0.003 4.35 ±0.01 4.27 ±0.22 –F5-TTS (32 NFE) [2] 336M 100K Multi. 2.97 ±0.32 0.88 ±0.12 0.78 ±0.003 3.90 ±0.02 3.82 ±0.24 –
+
+Controlled G-DFlow-TTS Ablations 
+
+U-Coupling Baseline (32 NFE) 232M 60K EN 75.44 ±1.54 47.25 ±1.07 0.17 ±0.006 2.12 ±0.03 – 0.05 C-coupling only 232M 60K EN 90.12 ±1.47 57.79 ±1.01 0.17 ±0.007 1.80 ±0.02 – 0.05 U-coupling + PFG 232M 60K EN 28.61 † ±1.29 16.66 † ±0.90 0.33 † ±0.006 2.97 † ±0.03 – 0.10 C-coupling + PFG 232M 60K EN 18.38 † ±0.85 8.96 † ±0.46 0.35 † ±0.007 3.17 † ±0.03 – 0.13 C-coupling + PFG + SC-ReMask 232M 60K EN 8.39 † ±0.55 3.56 † ±0.25 0.42 † ±0.006 3.77 † ±0.02 3.46 ±0.34 0.10 TABLE II 
+
+Paired significance at NFE=32 on the same utterances. Δ is the mean paired difference (variant −baseline). For WER/CER (in percentage points), negative is better; for SIM-o/UTMOS, positive is better. 95% CI: paired bootstrap (10k). 𝑝 : paired sign-flip permutation (10k); all entries have 
+
+𝑝 < 10 −4. Takeaway: PFG yields large gains over the baseline, while C-coupling and SC-ReMask provide additional consistent improvements.                                                                                   
+
+> Comparison G-DFlow-TTS (NFE=32) ΔWER (%) ΔCER (%) ΔSIM-o ΔUTMOS (A) Versus U-Coupling Baseline
+> U-Coupling + PFG -46.83 [− 48 .51 ,−45 .24 ]-30.59 [− 31 .72 ,−29 .46 ]+0.16 [+ 0.16 ,+0.17 ]+0.85 [+ 0.82 ,+0.88 ]
+> C-coupling + PFG -57.06 [− 58 .67 ,−55 .48 ]-38.30 [− 39 .39 ,−37 .24 ]+0.18 [+ 0.17 ,+0.19 ]+1.05 [+ 1.02 ,+1.08 ]
+> C-coupling + PFG + SC-ReMask -67.05 [− 68 .58 ,−65 .56 ]-43.70 [− 44 .77 ,−42 .67 ]+0.25 [+ 0.24 ,+0.25 ]+1.65 [+ 1.63 ,+1.68 ]
+> (B) Incremental ablations
+> C-coupling + PFG vs U-Coupling + PFG -10.23 [− 11 .51 ,−8.94 ]-7.71 [− 8.60 ,−6.83 ]+0.02 [+ 0.01 ,+0.02 ]+0.20 [+ 0.17 ,+0.23 ]
+> C-coupling + PFG + SC-ReMask vs U-Coupling + PFG -20.22 [− 21 .45 ,−19 .01 ]-13.11 [− 13 .99 ,−12 .25 ]+0.08 [+ 0.08 ,+0.09 ]+0.80 [+ 0.78 ,+0.83 ]
+> C-coupling + PFG + SC-ReMask vs C-coupling + PFG -9.99 [− 10 .81 ,−9.17 ]-5.40 [− 5.84 ,−4.96 ]+0.07 [+ 0.06 ,+0.07 ]+0.60 [+ 0.58 ,+0.63 ]
+
+alone degrades performance (Table I), showing that prompt-matched probability paths are not sufficient without sampling-time control. This suggests that coupling and guidance play complementary roles: C-coupling makes the training path match the prompted task, while PFG strengthens the conditional CTMC rates during sampling. 0.5 1.0 1.5 2.0 2.5 3.0 
+
+> PFG guidance strength
+> 20
+> 40
+> 60
+> 80
+> 100
+> WER % (  )
+> C-coupling
+> U-coupling
+
+Fig. 3. Effect of predictor-free guidance strength 𝛾 at fixed sampling budget (NFE = 32). Conditional coupling consistently improves intelligibility over U-coupling across 𝛾 . Diamonds indicate the best 𝛾 for each coupling strategy. 
+
+SC-ReMask benefits from always-on schedule-constrained revision. Figure 4 reports the dev-clean ablation used to select the SC-ReMask schedule. We vary the switch time 𝑡 switch ,rescaling factor 𝜂 rescale , cap 𝜂 cap , and sampling budget. Among the tested schedules, always-on remasking with 𝑡 switch = 0 and 
+
+(𝜂 rescale , 𝜂 cap ) = (0.5, 0.5) gives the best low-NFE behavior. This indicates that revisable token-to-mask transitions are most useful when available throughout sampling, while the schedule constraint prevents excessive remasking. We therefore use this configuration in the main experiments. 
+
+SC-ReMask makes generation revisable and improves ro-bustness. Table I includes external reference systems and controlled G-DFlow-TTS ablations. The external systems are reported only for contextual reference using official checkpoints, whereas the main scientific comparison is the controlled ablation within G-DFlow-TTS under a fixed backbone, training setup, prompt protocol, and evaluation pipeline. The unguided G-DFlow-TTS baseline fails in the prompted low-NFE setting (WER 75.44%), and C-coupling alone further degrades WER, confirming the brittleness of unguided conditional infilling. In contrast, PFG is the main source of conditional control: at the same NFE, it reduces WER to 28.61%. Combining C-coupling with PFG further reduces WER to 18.38%, and adding SC-ReMask produces the best overall configuration, with WER 8.39% and CER 3.56%. SC-ReMask also improves SIM-o and UTMOS, suggesting that revising early token decisions improves not only intelligibility but also broader synthesis 8 16 32 64 128                                                      
+
+> NFE
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> CER (%)
+> tswitch = 0.0
+> 816 32 64 128
+> NFE
+> tswitch = 0.5
+> 816 32 64 128
+> NFE
+> tswitch = 0.7
+> (ηr= 0.2, ηc= 0.3)
+> (ηr= 0.2, ηc= 0.5)
+> (ηr= 0.3, ηc= 0.3)
+> (ηr= 0.3, ηc= 0.5)
+> (ηr= 0.5, ηc= 0.3)
+> (ηr= 0.5, ηc= 0.5) best
+> Baseline: C-coupling + PFG Fig. 4. Schedule-constrained remasking ablation on LibriSpeech dev-clean, where 𝜂 𝑟 =𝜂 𝑟𝑒𝑠𝑐𝑎𝑙𝑒 and 𝜂 𝑐 =𝜂 𝑐𝑎 𝑝 . We report CER as a function of the number of function evaluations (NFE) while varying the remasking switch time 𝑡 switch , rescaling factor 𝜂 𝑟 , and cap 𝜂 𝑐 . The no-remasking baseline uses C-coupling with PFG. Always-on remasking ( 𝑡 switch =0) with (𝜂 𝑟 , 𝜂 𝑐 )=(0.5,0.5)gives the best low-NFE behavior among the tested schedules, showing that revisable token-to-[MASK] transitions improve CTMC sampling beyond guided unmasking alone.
+
+robustness. All reported gains over the baseline at NFE = 32 are statistically significant under paired tests, and Table II shows that each component contributes incremental, significant improvements. 
+
+Inference-time control matters more than additional sam-pling steps. Table III examines the quality-speed trade-off. The unguided baseline saturates quickly: increasing NFE from 32 to 128 reduces CER only from 47.25% to 40.39%, suggesting that the main bottleneck is not simply sampling resolution. In contrast, the full Mask, Sample, Revise stack at only 8 NFE already reaches 15.92% CER, outperforming the unguided baseline at 128 NFE. This gives strong evidence that guided and revisable inference might be the primary driver of content accuracy in the prompted low-NFE regime. Increasing NFE further improves the full system, but the largest gains come from the inference-time control stack itself rather than from more CTMC steps alone. 
+
+Limitations. Speaker similarity remains below large external baselines (Table I), likely because our model relies only on an acoustic prefix and does not use an explicit speaker objective. As a result, timbre may drift when early errors propagate. We also note that SIM-o is an embedding-space proxy that may not fully reflect perceived identity [36], and codec artifacts can affect speaker embeddings [37]. Finally, our Emilia-YODAS setup does not apply the transcription-quality or language filters used in systems such as F5-TTS [2], which may partially explain the gap to stronger filtered baselines. 
+
+VI. Conclusion 
+
+We presented G-DFlow-TTS, an alignment-free codec-token TTS system built on Discrete Flow Matching and CTMC sampling. Our results show that stable conditional infilling in DFM-based TTS depends critically on inference-time con-trol. The proposed Mask, Sample, Revise stack combines predictor-free guidance, prompt-matched conditional coupling, and SC-ReMask within a single tau-leaping sampler. Across objective metrics and human listening tests, these components                                                                      
+
+> TABLE III
+> Quality-speed trade-off across sampling budgets for the G-DFlow-TTS Baseline (U-coupling) and our full method (+C-coupling+PFG+SC-ReMask).
+> NFE System CER (%) ↓SIM-o ↑UTMOS ↑RTF ↓
+> 4Baseline 83 .05 0.10 1.45 0.01 4Full 43 .95 0.21 2.14 0.01 8Baseline 68 .30 0.13 1.70 0.01 8Full 15 .92 0.33 3.02 0.03 16 Baseline 55 .18 0.15 1.96 0.03 16 Full 5.69 0.40 3.57 0.05 32 Baseline 47 .25 0.17 2.12 0.05 32 Full 3.56 0.42 3.77 0.10 64 Baseline 43 .17 0.18 2.23 0.10 64 Full 3.22 0.41 3.81 0.21 128 Baseline 40 .39 0.18 2.26 0.20 128 Full 3.00 0.41 3.82 0.41
+
+significantly improve intelligibility and robustness, with SC-ReMask providing the largest gains by allowing early token decisions to be revised. Future work will explore stronger speaker conditioning, better-filtered training data, and improved token representations to reduce the gap to high-resource systems while preserving alignment-free sampling. 
+
+Acknowledgments 
+
+This work has been fully/partially funded by the project Research and Development of Algorithms for Construction of Digital Human Technological Components supported by Ad-vanced Knowledge Center in Immersive Technologies (AKCIT), with financial resources from the PPI IoT/Manufatura 4.0 / PPI HardwareBR of the MCTI grant number 057/2023, signed with EMBRAPII/. References 
+
+[1] S. Chen, C. Wang, Y. Wu, Z. Zhang, L. Zhou, S. Liu, Z. Chen, Y. Liu, H. Wang, J. Li, L. He, S. Zhao, and F. Wei, “Neural codec language models are zero-shot text to speech synthesizers,” IEEE Transactions on Audio, Speech and Language Processing , vol. 33, pp. 705–718, 2025. [2] Y. Chen, Z. Niu, Z. Ma, K. Deng, C. Wang, J. JianZhao, K. Yu, and X. Chen, “F5-TTS: A fairytaler that fakes fluent and faithful speech with flow matching,” in Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,W. Che, J. Nabende, E. Shutova, and M. T. Pilehvar, Eds. Vienna, Austria: Association for Computational Linguistics, Jul. 2025, pp. 6255–6271. [Online]. Available: https://aclanthology.org/2025.acl-long.313/ [3] S. E. Eskimez, X. Wang, M. Thakker, C. Li, C.-H. Tsai, Z. Xiao, H. Yang, Z. Zhu, M. Tang, X. Tan et al. , “E2 tts: Embarrassingly easy fully non-autoregressive zero-shot tts,” in 2024 IEEE Spoken Language Technology Workshop (SLT) . IEEE, 2024, pp. 682–689. [4] I. Gat, T. Remez, N. Shaul, F. Kreuk, R. T. Chen, G. Synnaeve, Y. Adi, and Y. Lipman, “Discrete flow matching,” Advances in Neural Information Processing Systems , vol. 37, pp. 133 345–133 385, 2024. [5] N.-S. Nguyen, T. V. Tran, H.-N. Huynh-Nguyen, T.-S. Hy, and V. Nguyen, “Diflow-tts: Compact and low-latency zero-shot text-to-speech with factorized discrete flow matching,” arXiv preprint arXiv:2509.09631 ,2025. [6] J. Y. Lee, H. Choi, M.-K. Kim, J.-H. Lee, and H.-Y. Cho, “Hierarchical discrete flow matching for multi-codebook codec-based text-to-speech,” in 
+
+ICASSP 2026-2026 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2026, pp. 18 347–18 351. [7] D. Yang, Y. Cai, H. Zhang, Y. Saito, and H. Saruwatari, “Kinetic-optimal scheduling with moment correction for metric-induced discrete flow matching in zero-shot text-to-speech,” arXiv preprint arXiv:2605.09386 ,2026. [8] H. Nisonoff, J. Xiong, S. Allenspach, and J. Listgarten, “Unlocking guidance for discrete state-space diffusion and flow models,” in The Thirteenth International Conference on Learning Representations , 2025. [Online]. Available: https://openreview.net/forum?id=XsgHl54yO7 [9] J. Ho, A. Jain, and P. Abbeel, “Denoising diffusion probabilistic models,” 
+
+Advances in neural information processing systems , vol. 33, pp. 6840– 6851, 2020. [10] Y. Lipman, R. T. Chen, H. Ben-Hamu, M. Nickel, and M. Le, “Flow matching for generative modeling,” in 11th International Conference on Learning Representations, ICLR 2023 , 2023. [11] Z. Ju, Y. Wang, K. Shen, X. Tan, D. Xin, D. Yang, Y. Liu, Y. Leng, K. Song, S. Tang et al. , “Naturalspeech 3: Zero-shot speech synthesis with factorized codec and diffusion models,” arXiv preprint arXiv:2403.03100 ,2024. [12] M. Le, A. Vyas, B. Shi, B. Karrer, L. Sari, R. Moritz, M. Williamson, V. Manohar, Y. Adi, J. Mahadeokar et al. , “Voicebox: Text-guided multilingual universal speech generation at scale,” Advances in neural information processing systems , vol. 36, pp. 14 005–14 034, 2023. [13] S. Mehta, R. Tu, J. Beskow, ´ E. Sz´ ekely, and G. E. Henter, “Matcha-tts: A fast tts architecture with conditional flow matching,” in ICASSP 2024-2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2024, pp. 11 341–11 345. [14] P. Mayer, F. Lux, A. P.-G. de Martos, A. Elizarova, L. Vanderlyn, D. V¨ ath, and N. T. Vu, “Investigating Stochastic Methods for Prosody Modeling in Speech Synthesis,” in Interspeech 2025 , 2025, pp. 439–443. [15] K. Lee, D. W. Kim, J. Kim, S. Chung, and J. Cho, “DiTTo-TTS: Diffusion transformers for scalable text-to-speech without domain-specific factors,” in The Thirteenth International Conference on Learning Representations , 2025. [Online]. Available: https: //openreview.net/forum?id=hQvX9MBowC [16] W. Peebles and S. Xie, “Scalable diffusion models with transformers,” in 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , October 2023, pp. 4195–4205. [17] Y. Wang, H. Zhan, L. Liu, R. Zeng, H. Guo, J. Zheng, Q. Zhang, X. Zhang, S. Zhang, and Z. Wu, “Maskgct: Zero-shot text-to-speech with masked generative codec transformer,” in International Conference on Learning Representations , vol. 2025, 2025, pp. 47 127–47 150. [18] P.-J. Ku, H. Huang, J.-M. Lemercier, S. S. Sahoo, Z. Chen, and A. Juki´ c, “Discrete diffusion for generative modeling of text-aligned speech tokens,” in ICASSP 2026 - 2026 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2026, pp. 17 022–17 026. [19] N. Shaul, I. Gat, M. Havasi, D. Severo, A. Sriram, P. Holderrieth, B. Karrer, Y. Lipman, and R. T. Chen, “Flow matching with general discrete paths: A kinetic-optimal perspective,” in International Conference on Learning Representations , vol. 2025, 2025, pp. 16 397–16 429. [20] G. Wang, Y. Schiff, S. S. Sahoo, and V. Kuleshov, “Remasking discrete diffusion models with inference-time scaling,” in The Thirty-ninth Annual Conference on Neural Information Processing Systems , 2025. [Online]. Available: https://openreview.net/forum?id=IJryQAOy0p [21] Z. Du, Y. Wang, Q. Chen, X. Shi, X. Lv, T. Zhao, Z. Gao, Y. Yang, C. Gao, H. Wang et al. , “Cosyvoice 2: Scalable streaming speech synthesis with large language models,” arXiv preprint arXiv:2412.10117 , 2024. [22] V. Panayotov, G. Chen, D. Povey, and S. Khudanpur, “Librispeech: An asr corpus based on public domain audio books,” in 2015 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2015, pp. 5206–5210. [23] H. He, Z. Shang, C. Wang, X. Li, Y. Gu, H. Hua, L. Liu, C. Yang, J. Li, P. Shi et al. , “Emilia: An extensive, multilingual, and diverse speech dataset for large-scale speech generation,” in 2024 IEEE Spoken Language Technology Workshop (SLT) . IEEE, 2024, pp. 885–890. [24] H. Julian, R. Beeson, L. Konathala, J. Ulin, and J. Gao, “Finite scalar quantization enables redundant and transmission-robust neural audio compression at low bit-rates,” arXiv preprint arXiv:2509.09550 , 2025. [25] Z. Ye, X. Zhu, C.-M. Chan, X. Wang, X. Tan, J. Lei, Y. Peng, H. Liu, Y. Jin, Z. Dai et al. , “Llasa: Scaling train-time and inference-time compute for llama-based speech synthesis,” arXiv preprint arXiv:2502.04128 , 2025. [26] Y. Guo, Z. Li, H. Wang, B. Li, C. Shao, H. Zhang, C. Du, X. Chen, S. Liu, and K. Yu, “Recent advances in discrete speech tokens: A review,” IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. [27] X. Wang, M. Jiang, Z. Ma, Z. Zhang, S. Liu, L. Li, Z. Liang, Q. Zheng, R. Wang, X. Feng et al. , “Spark-tts: An efficient llm-based text-to-speech model with single-stream decoupled speech tokens,” arXiv preprint arXiv:2503.01710 , 2025. [28] K. Xie, F. Shen, J. Li, F. Xie, X. Tang, and Y. Hu, “Fireredtts-2: Towards long conversational speech generation for podcast and chatbot,” arXiv preprint arXiv:2509.02020 , 2025. [29] Y. Wang, D. Chen, X. Zhang, J. Zhang, J. Li, and Z. Wu, “Tadicodec: Text-aware diffusion speech tokenizer for speech language modeling,” Advances in Neural Information Processing Systems , vol. 38, pp. 147 494–147 523, 2026. [30] A. Radford, J. Wu, R. Child, D. Luan, D. Amodei, I. Sutskever et al. ,“Language models are unsupervised multitask learners,” OpenAI blog ,vol. 1, no. 8, p. 9, 2019. [31] J. Su, M. Ahmed, Y. Lu, S. Pan, W. Bo, and Y. Liu, “Roformer: Enhanced transformer with rotary position embedding,” Neurocomputing , vol. 568, p. 127063, 2024. [32] I. Loshchilov and F. Hutter, “Decoupled weight decay regularization,” in 
+
+International Conference on Learning Representations , 2019. [Online]. Available: https://openreview.net/forum?id=Bkg6RiCqY7 [33] W.-N. Hsu, B. Bolte, Y.-H. H. Tsai, K. Lakhotia, R. Salakhutdinov, and A. Mohamed, “Hubert: Self-supervised speech representation learning by masked prediction of hidden units,” IEEE/ACM Transactions on Audio, Speech, and Language Processing , vol. 29, pp. 3451–3460, 2021. [34] S. Chen, C. Wang, Z. Chen, Y. Wu, S. Liu, Z. Chen, J. Li, N. Kanda, T. Yoshioka, X. Xiao et al. , “Wavlm: Large-scale self-supervised pre-training for full stack speech processing,” IEEE Journal of Selected Topics in Signal Processing , vol. 16, no. 6, pp. 1505–1518, 2022. [35] Takaaki Saeki and Detai Xin and Wataru Nakata and Tomoki Koriyama and Shinnosuke Takamichi and Hiroshi Saruwatari, “UTMOS: UTokyo-SaruLab System for VoiceMOS Challenge 2022,” in Interspeech 2022 ,2022, pp. 4521–4525. [36] J. Ahn, Y. Kim, Y. Choi, D. Kwak, J.-H. Kim, S. Mun, and J. S. Chung, “VoxSim: A perceptual voice similarity dataset,” in Interspeech 2024 ,2024, pp. 2580–2584. [37] A. Ferro Filho, D. Fernandes Costa Silva, P. E. Engelberg Silva Borges, and A. R. Galv˜ ao Filho, “Evaluating Deep Speaker Embedding Robustness to Domain, Sampling Rate, and Codec Variations,” in Interspeech 2025 ,2025, pp. 1113–1117.
