@@ -1,0 +1,249 @@
+Title: MambAdapter: Lightweight Mamba-Based Adapters for Parameter-Efficient Transfer Learning in Speech and Audio
+
+URL Source: https://arxiv.org/pdf/2606.15638v1
+
+Published Time: Tue, 16 Jun 2026 01:03:13 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# MambAdapter: Lightweight Mamba-Based Adapters for Parameter-Efficient Transfer Learning in Speech and Audio 
+
+# Salman Hussain Ali 1,4, Umberto Cappellazzo ID 2, Mirco Ravanelli 3,41Universit´ e de Montr´ eal, Canada 2Imperial College London, UK 3Concordia University, Canada 4Mila – Quebec AI Institute, Canada 
+
+salman.sami.hussain.ali@umontreal.ca, mirco.ravanelli@concordia.ca 
+
+# Abstract 
+
+Fine-tuning Transformer-based foundation models has become the dominant strategy for domain adaptation in audio and speech processing. To reduce the computational and mem-ory costs of this process, parameter-efficient transfer learn-ing (PETL) methods have been widely explored. Meanwhile, 
+
+Mamba , a recent state-space model, has emerged as a promis-ing alternative to Transformers for sequence modeling. In this work, we present MambAdapter , a parameter-efficient transfer learning approach that integrates Mamba into low-rank bottle-neck adapters. Our design combines parameter sharing across adapters with the injection of a lightweight Mamba module, en-abling more effective modeling of audio features. We demon-strate that MambAdapter matches or outperforms strong PETL baselines on four audio classification tasks and five speech recognition languages, even when operating under reduced pa-rameter budgets. 
+
+Index Terms : Transfer Learning, Speech Recognition, Audio Classification, Mamba, State-Space Models 
+
+# 1. Introduction 
+
+Recent advances in speech and audio processing have been largely driven by the emergence of large-scale foundation mod-els. These models, such as Whisper [1], are pre-trained on mas-sive multilingual datasets and demonstrate strong zero-shot and few-shot capabilities across a variety of downstream tasks. Di-rectly fine-tuning these models on downstream tasks is a highly expensive and cumbersome process. So, parameter-efficient transfer learning (PETL) techniques emerged as the primary ap-proach to adapting these models with lower cost and higher effi-ciency [2–4]. These techniques have been applied in the context of speech and audio processing as well [5–9], and strong empir-ical results support their use. In parallel, prominent developments in the field of sequence modeling include Mamba [10], a selective state space model, as an alternative to the Transformer [11] for signal process-ing, boasting linear-time sequence modeling while maintain-ing competitive performance with Transformers. Mamba has shown strong performance in various applications in the speech domain, from speech separation [12], self-supervised learning [13], and speech recognition [14, 15]. It is particularly effective for speech because its linear-time selective state-space design efficiently models both short- and long-range patterns, with the added benefit of lower latency than Transformers. However, its use in the context of parameter-efficient transfer learning has not yet been explored. Utilizing Mamba as a PETL technique in speech would enable the model to efficiently capture patterns in the long-context inherent in speech at a relatively low com-putational cost, while taking advantage of Mamba’s strength in Down Linear   
+
+> Up Linear
+> Multi-Head Attention
+> Add & Norm
+> Add & Norm
+> Feed Forward
+> Adapter
+> Adapter
+> Shared across
+> all layers
+> Shared across
+> all layers
+> MambAdapter
+> Conv
+> SSM
+> Linear Mamba
+> Linear Linear
+
+Figure 1: Left: A Transformer block with inserted adapter mod-ules (dashed boxes). Right: The internal structure of Mam-bAdapter, our proposed adapter. 
+
+modeling long-context sequences. As such, we investigate the following question: 
+
+(Q) Can Mamba be leveraged as a parameter-efficient transfer learning technique for audio and speech? 
+
+To address this question, we explore an approach to PETL that involves using Mamba within lightweight bottle-neck adapters [2]. We introduce MambAdapter , a highly parameter-efficient transfer learning technique that uses shared linear projections and low-rank Mamba blocks [10]. This ap-proach enables us to leverage Mamba’s strong sequential mod-eling capabilities together with the frozen Transformer back-bone, preserving its strengths while enabling efficient adapta-tion. We use MambAdapter to adapt the Audio Spectrogram Transformer (AST) [16] on four audio and speech classifica-tion datasets, and Whisper [1] on five different languages for multilingual speech recognition. Our results show that Mam-bAdapter matches or outperforms existing PETL methods while using significantly fewer trainable parameters. We also analyze how MambAdapter scales with parameter budget and conduct ablation studies to assess the contribution of each architectural component. Additionally, we demonstrate the effectiveness of parameter sharing in adapters and analyze the performance-efficiency trade-off. To the best of our knowledge, this is the first work to incorporate Mamba as a parameter-efficient trans-fer learning technique into transformers. 
+
+> arXiv:2606.15638v1 [eess.AS] 14 Jun 2026
+
+# 2. Related Work 
+
+2.1. Overview of the Main PETL Methods Bottleneck adapters [2, 3] enable parameter-efficient transfer learning by inserting small task-specific modules with a bot-tleneck architecture into each Transformer layer, while keeping the original model’s parameters frozen. Conformer adapters [5] extend bottleneck adapters for speech tasks. They leverage the convolutional module of the Conformer model [17] and in-troduce a lightweight convolutional block, where the input is processed using a sequence of depthwise and pointwise con-volutions. Two main adapter insertion strategies exist: in the 
+
+Pfeiffer [3] configuration, adapters are placed solely after the feed-forward network (FFN), whereas in the Houlsby [2, 18] configuration they are inserted after both the attention and the FFN. 
+
+LoRA [4] performs parameter-efficient transfer learning by decomposing task-specific updates for pretrained weight ma-trices into low-rank factors. In practice, LoRA modules are commonly applied to the query and value projection matrices of each multi-head self-attention layer. 
+
+2.2. Mamba Mamba [10] is a linear-time state-space model (SSM) that re-places self-attention with a selective state-space recurrence. It is derived from a continuous-time linear state-space system: 
+
+h′(t) = Ah (t) + Bx (t), y(t) = Ch (t) + Dx (t), (1) where A ∈ RN ×N defines the state transition dynamics, B ∈
+
+RN ×1 controls how the input drives the latent state, C ∈ R1×N
+
+represents the output projection, and D is the skip connection. The state dimension N ( also denoted dstate ) determines the ca-pacity of the latent dynamical system. For discrete sequences, the system is discretized with step size ∆, yielding 
+
+ht = ¯Ah t−1 + ¯Bx t, yt = Ch t + Dx t. (2) Although expressed recurrently, this formulation is equivalent to a structured convolution with a kernel derived from the state-space parameters. In practice, Mamba augments this SSM core with a learnable local convolution of kernel size k, which cap-tures short-range interactions before the state update. Mamba further introduces selectivity, making the state tran-sition parameters input-dependent via lightweight gating mech-anisms. An expansion factor ( expand ) controls the width of in-termediate representations surrounding the SSM block, thereby scaling the model’s expressive capacity while preserving linear-time O(N d state ) complexity. 
+
+# 3. MambAdapter 
+
+Figure 1 presents the architecture of MambAdapter, our pro-posed adapter module designed for speech and audio tasks. MambAdapter aims to achieve both high parameter efficiency and strong performance on temporally complex inputs. It does so by combining a shared-projection bottleneck design with Mamba blocks, enabling the model to capture long-range tem-poral patterns within the low-rank latent space. To improve the performance of standard bottleneck adapters, we introduce a Mamba block and a learnable scal-ing factor α in each adapter layer. The Mamba block models the structured, long-range dependencies typical of audio and speech. Its implicit recurrence and large convolutional kernel make it particularly well-suited for processing continuous sig-nals spanning long contexts. Also, by operating within the low-rank latent space, the Mamba block captures temporal dynamics with minimal overhead. It can be formulated as such: 
+
+Xout = α · M amba ( ˆXW down )Wup + F ( ˆX) (3) where α is the learnable scaling factor (initialized to 0.1), ˆX
+
+is the input, Wdown ∈ Rd×r and Wup ∈ Rr×d are the shared down- and up-projections with bottleneck rank r ≪ d, and F is the underlying Transformer module (FFN or Attention). While inserting Mamba blocks improves the representa-tional capacity of each adapter, it also increases the number of trainable parameters. Specifically, each Mamba block con-tributes roughly 3·expand ·r2 parameters. To offset this, Mam-bAdapter shares parameters across adapters: a single pair of projection matrices (Wdown , W up ) is reused in all layers. This reduces the parameter cost of the linear projections from 2drl to 
+
+2dr , where l is the number of injected adapters. Although this sharing reduces the expressivity of individual layers, the inclu-sion of Mamba blocks compensates by providing layer-specific modeling capacity. The pairing of Mamba with bottleneck adapters is theo-retically grounded in the compressibility of state-space mod-els. Fundamentally, SSMs compress temporal information into compact hidden-states ht ∈ RN where N ≪ d. When placed within a bottleneck of dimension r ≪ d, Mamba operates on a task-specific low-dimensional subspace: the adapter reduces the feature dimension while the SSM further compresses temporal information through its recurrent state updates. Recent work on in-training compression for SSMs demonstrates that their state representations can be substantially reduced with minimal performance degradation, indicating robustness to dimensional constraints [19]. Together, these properties suggest that Mamba is architecturally well-matched to low-rank bottleneck adapters, making it particularly suitable for parameter-efficient transfer learning in speech and audio tasks. 
+
+# 4. Experiments 
+
+We evaluate the performance and efficiency of our method, MambAdapter, as a PETL technique in both audio/speech clas-sification and multilingual speech recognition settings. In this work, all adapter experiments adopt parallel adapter insertion [6,20–22], which we found to yield better performance than sequential insertion [2, 18] in our internal ablation studies. This finding is consistent with prior works [5,22]. For all of our experiments, the complete list of hyperparameters is available with the code 1.
+
+4.1. Audio & Speech Classification 
+
+4.1.1. Experimental Setup 
+
+We adopt the experimental setup from [5] to ensure direct com-parability with prior PETL methods. Specifically, we evaluate MambAdapter on four standard datasets spanning three tasks, using the AST model as the base architecture: 1. Audio Classification : ESC-50 (ESC) [23], UrbanSound8K (US8K) [24]. 2. Keyword Spotting : Speech Commands V2 (GSC) [25].    
+
+> 1Code available at: https://github.com/salman-ha/ MambAdapter
+
+Table 1: Accuracies on audio and speech classification tasks. Methods marked with ∗ are taken from [5]. Higher is better. 
+
+Method Par (M) ESC US8K GSC FSC Avg 
+
+FFT ∗ 85 87.48 84.31 97.31 93.29 90.07 BitFit ∗ [29] 0.12 86.05 82.17 85.51 63.85 79.40 DPT ∗ [30] 0.27 86.52 83.67 89.18 68.60 81.99 Pref-T ∗ [31] 0.26 82.93 81.39 83.46 55.75 75.88 LoRA 0.26 86.45 81.89 93.61 76.00 84.49 
+
+Pfeiffer Adapters 
+
+Bottleneck 0.25 86.31 80.69 90.66 72.58 82.56 Conformer 0.27 87.28 82.04 94.47 96.49 90.07 
+
+MambAdapter 0.06 87.28 82.51 94.12 94.98 89.72 
+
+Houlsby Adapters 
+
+Bottleneck 0.49 87.15 80.58 91.30 76.67 83.92 Conformer 0.54 84.98 82.41 94.91 96.46 89.69 
+
+MambAdapter 0.11 87.55 81.71 94.27 95.85 89.85 
+
+3. Intent Classification : Fluent Speech Commands (FSC) [26]. 
+
+Audio Spectrogram Transformer (AST) [16]. AST is an encoder-only Transformer architecture for audio classifica-tion based on the Vision Transformer [27]. It splits the log-mel spectrogram into patches, and processes them with stan-dard Transformer layers. For our experiments, we use the AST model pretrained on AudioSet [28]. 
+
+Baselines. We compare MambAdapter against several PETL baselines as introduced in [5]. We follow their adapter rank settings, using a rank of 16 for both MambAdapter and Bottleneck adapters, and 12 for Conformer. 
+
+4.1.2. Audio & Speech Classification Results 
+
+Table 1 reports audio classification results, averaged over 5 random seeds for Bottleneck, Conformer, MambAdapter, and LoRA. In the Pfeiffer adapter configuration, the Conformer adapter achieves the highest average accuracy of 90.07%, while the Bot-tleneck adapter lags behind by 8%. Notably, MambAdapter per-forms only 0.35% worse than Conformer, while using less than 25% of its trainable parameters. Additionally, MambAdapter outperforms Conformer on the US8K dataset by ∼ 0.5%. Under the Houlsby configuration, MambAdapter achieves the highest average accuracy of 89.85%, surpassing all base-lines. Despite using less than 20% of the parameters of Con-former, MambAdapter delivers competitive or superior perfor-mance across most datasets. Its largest improvement is on ESC, where it achieves the highest accuracy overall, even exceeding that of full fine-tuning (FFT). 
+
+4.2. Automatic Speech Recognition 
+
+4.2.1. Experimental Setup 
+
+To evaluate the performance of MambAdapter on automatic speech recognition (ASR), we fine-tune Whisper on five lan-guages from Common Voice 13 [32]. Our experiments are im-plemented using SpeechBrain [33, 34]. 
+
+Datasets. The selected target languages are Abkhaz (AB), Central Kurdish (CKB), Esperanto (EO), Kabyle (KAB), and Kinyarwanda (RW), representing low- to medium-resource lan-guages where Whisper’s zero-shot performance is relatively Table 2: Word Error Rates (WER%) for speech recognition tasks. Lower is better. 
+
+Method Par (M) AB CKB EO KAB RW Avg 
+
+FFT 241 46.8 46.2 18.2 53.0 61.7 45.18 LoRA 1.2 62.4 57.0 27.0 67.8 72.3 57.3 Bottleneck 1.2 54.5 50.5 22.2 60.4 65.8 50.7 Conformer 1.4 59.7 55.6 25.1 67.3 71.0 55.7 
+
+MambAdapter 1.1 53.2 50.2 22.3 58.8 64.9 49.9 
+
+weak. Each language’s training set contains 600 minutes of transcribed audio, except for Central Kurdish, which includes 484 minutes. All validation and test sets are 60 minutes long. 
+
+Whisper [1]. Whisper is an encoder–decoder Transformer that serves as a foundation model for speech-related tasks. It was pretrained on ∼680,000 hours of multilingual, multitask web-scraped audio, and exhibits strong performance for mul-tilingual automatic speech recognition. It processes log-mel spectrogram features with a convolutional front end, and gener-ates text tokens auto-regressively, guided by task and language-prefix tokens. 
+
+Baselines. We compare MambAdapter to LoRA, Bottle-neck, Conformer, and full fine-tuning. Due to the observed degradation of performance with lower-rank adapters in ASR, we increase the bottleneck dimension: setting the rank to 32 for LoRA, 64 for Bottleneck, 48 for Conformer, and 104 for Mam-bAdapter in order to match the number of parameters present in the other methods. All adapters use the Pfeiffer configuration and are inserted only in Whisper’s encoder, with the decoder remaining frozen. 
+
+4.2.2. Automatic Speech Recognition Results 
+
+Table 2 reports the word error rate (WER) averaged over 5 seeds. Among the PETL approaches, MambAdapter achieves the best average performance most of the time while maintain-ing a comparable parameter budget. On average, it reduces WER by 0.8% compared to Bottleneck adapters and by a more substantial 5.8% and 7.4% compared to Conformer and LoRA respectively. Although full fine-tuning remains the strongest overall, adapters can narrow the performance gap to just 4% WER despite training only 0.45% of Whisper’s parameters. This highlights the effectiveness of PETL for low- and medium-resource ASR tasks. 
+
+4.3. Scaling the number of parameters 
+
+To analyze how performance scales with parameter count, we vary the bottleneck dimension r and evaluate each method on the GSC dataset using the Pfeiffer configuration. As shown in Figure 2, three key observations emerge. First, Bottleneck adapters consistently underperform compared to both MambAdapter and Conformer, and exhibit minimal per-formance gains even as their parameter count approaches one million. Second, under constrained parameter budgets (fewer than 500 k), MambAdapter outperforms both baselines by 0.5– 4%, highlighting its strength in low-resource settings. Third, beyond 600 k parameters, Conformer surpasses MambAdapter and achieves the highest accuracy, peaking at approximately 95.5%. However, both MambAdapter and Conformer exhibit diminishing returns beyond this point, suggesting that the ma-jority of performance gains are realized under 500 k parameters. 50k 100k 200k 300k 500k 1M 
+
+> # of Trainable Parameters (log scale)
+> 90
+> 91
+> 92
+> 93
+> 94
+> 95
+> Accuracy
+> GSC
+> Bottleneck
+> Conformer
+> MambAdapter
+
+Figure 2: Scaling trend for adapter PETL methods on GSC. 
+
+Table 3: Ablation study for the design of MambAdapter. 
+
+Method Par (M) ESC GSC FSC Avg MambAdapter 0.06 87.28 94.12 94.98 92.12 No Mamba 0.04 84.32 90.40 65.38 80.03 Not Scaled 0.06 85.45 94.02 94.71 91.39 Not Shared 0.28 85.65 94.67 96.47 92.26 4.4. Architecture Ablation Study 
+
+We evaluate the impact of key architectural components in MambAdapter by conducting ablation studies across three au-dio and speech classification datasets: ESC, GSC, and FSC. Specifically, we examine the contribution of (1) the Mamba block, (2) the per-layer scaling factor α, and (3) the shared lin-ear projections. The results are summarized in Table 3. 
+
+Removing Mamba. When the Mamba block is removed, leaving only the shared bottleneck and the per-layer scaling fac-tor α, accuracy drops by 3–4% on ESC and GSC, and by about 30% on FSC. Notably, this configuration performs comparably to standard bottleneck adapters on GSC but underperforms them by ∼4% on ESC and ∼7% on FSC. These results highlight the significant capacity contributed by the Mamba blocks, particu-larly for more complex tasks like intent classification in FSC. 
+
+Removing the scaling factor α. Eliminating α while re-taining the Mamba block allows us to assess its contribution as the sole source of per-layer variation. This results in a modest performance drop of less than 2% across all tasks. Although small, this decrease is consistent, indicating that α provides beneficial per-layer flexibility at negligible cost. 
+
+Disabling parameter sharing. We replace the shared down- and up-projection matrices with independently learned projections for each adapter layer. This leads to a slight per-formance improvement on GSC and FSC (1–2%), but a small decrease on ESC ( ∼2%). This suggests that removing projec-tion sharing on ESC may introduce mild over-parameterization, whereas sharing the projections provides a regularizing effect. Compared to MambAdapter, this variant yields an average ac-curacy gain of less than 1%, but requires more than four times the number of trainable parameters. This highlights the trade-off between increased capacity and parameter efficiency. 
+
+4.5. Mamba Hyperparameter Ablation Study 
+
+We investigate the impact of Mamba’s hyperparame-ters— kernel size , dstate , and expand —on ASR performance by evaluating 75 hyperparameter combinations on CKB and EO, then averaging their WER. The results are summarized in 10       
+
+> 20
+> 30
+> kernel_size
+> 20
+> 40
+> 60
+> dstate
+> 39
+> 40
+> 41
+> Average WER
+> A
+> 10
+> 20
+> 30
+> kernel_size
+> 2
+> 3
+> 4
+> expand
+> 38
+> 39
+> 40
+> 41
+> Average WER
+> B
+> 38.5 39.0 39.5 40.0 40.5 41.0 41.5
+> Average Test WER
+
+Figure 3: WER ↓ averaged over expand (left) and dstate (right). 
+
+Table 4: Latency (ms) and peak GPU memory (MB). 
+
+Streaming Mid Batch ms MB ms MB ms MB 
+
+Whisper 13.03 874 28.58 2199 100.66 7240 w. Bottleneck 14.04 880 29.82 2206 104.44 7249 w. Conformer 16.15 884 32.07 2210 111.72 7253 w. MambAdapter 17.66 881 31.62 2207 110.21 7248 Figure 3, which shows the word error rate (WER) averaged across expand (left) and dstate (right). We can observe a few noticeable trends. (1) Increasing the kernel size causes a marginal yet consistent decrease in perfor-mance. This can be seen by the steady increase of WER with kernel size on both plots. (2) Increasing dstate does not guaran-tee a performance gain; instead, an intermediate range ( 20 –40 )yields the best trade-off. This suggests that excessively enlarg-ing the recurrent memory capacity introduces redundancy, mak-ing it wasteful for ASR. (3) With every increase in expand , we observe a performance gain of roughly 1% WER. This shows that larger expand improves performance by widening the in-termediate representations for the state update. 
+
+4.6. Latency & Memory Usage 
+
+We measure inference latency and peak GPU memory when in-tegrating each adapter into Whisper. Measurements are aver-aged over 30 forward passes on an NVIDIA H100 across three scenarios varying in batch size and audio length: Streaming 
+
+(batch size 1, 5s), Mid (8, 10s), and Batch (32, 30s), represent-ing real-time, moderate-scale, and offline processing. As shown in Table 4, all adapters exhibit comparable memory usage with a marginal increase relative to Whisper. MambAdapter’s la-tency overhead is largest in Streaming , where the fixed costs of the selective scan dominate for short, unbatched inputs, but are amortized with sequence length and batch size. This positions it more for offline and long-form processing than for streaming. 
+
+# 5. Conclusion 
+
+In this work, we introduced MambAdapter, a lightweight adapter design that integrates Mamba blocks with shared pro-jections for parameter-efficient transfer learning. Its consis-tent strong performance across audio classification and speech recognition makes it a promising option for adapting speech and audio foundation models even under limited budgets. 6. Acknowledgments 
+
+We gratefully acknowledge the support of NSERC, the Dig-ital Research Alliance of Canada (alliancecan.ca), Translated (Imminent Program), and Apple (Seed Grant) through research funding, computing resources, and donations. 
+
+# 7. Generative AI Use Disclosure 
+
+Generative AI tools were used during the preparation of this pa-per to improve clarity and grammar, as well as to assist with coding tasks such as refactoring and debugging. No AI tools were used to generate the scientific ideas, experimental design, results, or analysis presented in this work. All content has been reviewed and verified by the authors, who assume full respon-sibility for the accuracy and integrity of the paper. 
+
+# 8. References 
+
+[1] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak su-pervision,” in Proceedings of ICML , 2023. [2] N. Houlsby, A. Giurgiu, S. Jastrzebski, B. Morrone, Q. de Larous-silhe, A. Gesmundo, M. Attariyan, and S. Gelly, “Parameter-efficient transfer learning for nlp,” in Proceedings of ICML , 2019. [3] J. Pfeiffer, A. Kamath, A. R¨ uckl´ e, K. Cho, and I. Gurevych, “AdapterFusion: Non-destructive task composition for transfer learning,” in Proceedings of EACL , 2021. [4] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, and W. Chen, “Lora: Low-rank adaptation of large lan-guage models.” in In Proc of ICLR , 2022. [5] U. Cappellazzo, D. Falavigna, A. Brutti, and M. Ravanelli, “Parameter-efficient transfer learning of audio spectrogram trans-formers,” in Proceedings of IEEE MLSP , 2024. [6] U. Cappellazzo, D. Falavigna, and A. Brutti, “Efficient fine-tuning of audio spectrogram transformers via soft mixture of adapters,” in Proceedings of Interspeech , 2024. [7] S. Otake, R. Kawakami, and N. Inoue, “Parameter efficient trans-fer learning for various speech processing tasks,” in Proceedings of ICASSP . IEEE, 2023. [8] B. Thomas, S. Kessler, and S. Karout, “Efficient adapter transfer of self-supervised speech models for automatic speech recogni-tion,” in ICASSP . IEEE, 2022. [9] S. Kessler, B. Thomas, and S. Karout, “An adapter based pre-training for efficient and scalable self-supervised speech represen-tation learning,” in ICASSP . IEEE, 2022. [10] A. Gu and T. Dao, “Mamba: Linear-time sequence modeling with selective state spaces,” arXiv preprint arXiv:2312.00752 , 2023. [11] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, L. Kaiser, and I. Polosukhin, “Attention is all you need,” 
+
+Proceedings of NeurIPS , 2017. [12] X. Jiang, C. Han, and N. Mesgarani, “Dual-path mamba: Short and long-term bidirectional selective structured state space mod-els for speech separation,” in Proceedings of ICASSP . IEEE, 2025. [13] S. Yadav and Z.-H. Tan, “Audio mamba: Selective state spaces for self-supervised audio representations,” in Proceedings of In-terspeech , 2024. [14] Y. Fang and X. Li, “Mamba for streaming asr combined with uni-modal aggregation,” arXiv preprint arXiv:2410.00070 , 2024. [15] X. Zhang, Q. Zhang, H. Liu, T. Xiao, X. Qian, B. Ahmed, E. Am-bikairajah, H. Li, and J. Epps, “Mamba in speech: Towards an al-ternative to self-attention,” IEEE Transactions on Audio, Speech and Language Processing , vol. 33, pp. 1933–1948, 2025. [16] Y. Gong, Y.-A. Chung, and J. Glass, “AST: Audio spectrogram transformer,” in Proceedings of Interspeech , 2021. [17] A. Gulati, J. Qin, C.-C. Chiu, N. Parmar, Y. Zhang, J. Yu, W. Han, S. Wang, Z. Zhang, Y. Wu, and R. Pang, “Conformer: Convolution-augmented transformer for speech recognition,” in 
+
+Proceedings of Interspeech , 2020. [18] R. K. Mahabadi, S. Ruder, M. Dehghani, and J. Henderson, “Parameter-efficient multi-task fine-tuning for transformers via shared hypernetworks,” in Proceedings of ACL , 2021. [19] M. Chahine, P. Nazari, D. Rus, and T. K. Rusch, “The curious case of in-training compression of state space models,” in Proceedings of ICLR , 2026. [20] S. Jie and Z.-H. Deng, “Convolutional bypasses are better vision transformer adapters,” in Proceedings of ECAI 2024 , 2024. [21] S. Chen, C. Ge, Z. Tong, J. Wang, Y. Song, J. Wang, and P. Luo, “Adaptformer: Adapting vision transformers for scalable visual recognition,” Proceedings of NeurIPS , 2022. [22] J. He, C. Zhou, X. Ma, T. Berg-Kirkpatrick, and G. Neubig, “To-wards a unified view of parameter-efficient transfer learning,” in 
+
+Proceedings of ICLR , 2022. [23] K. J. Piczak, “Esc: Dataset for environmental sound classifica-tion,” in Proceedings of ACM Multimedia , 2015. [24] J. Salamon, C. Jacoby, and J. P. Bello, “A dataset and taxonomy for urban sound research,” in Proceedings of ACM Multimedia ,2014. [25] P. Warden, “A dataset for limited-vocabulary speech recognition,” 
+
+arXiv preprint arXiv:1804.03209 , 2018. [26] L. Lugosch, M. Ravanelli, P. Ignoto, V. S. Tomar, and Y. Ben-gio, “Speech model pre-training for end-to-end spoken language understanding,” Proceedings of Interspeech , 2019. [27] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai, T. Unterthiner, M. Dehghani, M. Minderer, G. Heigold, S. Gelly et al. , “An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale,” in Proceedings of ICLR , 2021. [28] J. F. Gemmeke, D. P. W. Ellis, D. Freedman, A. Jansen, W. Lawrence, R. C. Moore, M. Plakal, and M. Ritter, “Audio set: An ontology and human-labeled dataset for audio events,” in Pro-ceedings of ICASSP . IEEE, 2017. [29] E. Ben Zaken, Y. Goldberg, and S. Ravfogel, “BitFit: Sim-ple parameter-efficient fine-tuning for transformer-based masked language-models,” in Proceedings of ACL , 2022. [30] B. Lester, R. Al-Rfou, and N. Constant, “The power of scale for parameter-efficient prompt tuning,” in Proceedings of EMNLP ,2021. [31] X. L. Li and P. Liang, “Prefix-tuning: Optimizing continuous prompts for generation,” in Proceedings of ACL , 2021. [32] R. Ardila, M. Branson, K. Davis, M. Kohler, J. Meyer, M. Hen-retty, R. Morais, L. Saunders, F. Tyers, and G. Weber, “Common voice: A massively-multilingual speech corpus,” in Proceedings of LREC-Coling , 2020. [33] M. Ravanelli, T. Parcollet, A. Moumen, S. de Langen, C. Subakan, P. Plantinga, Y. Wang, P. Mousavi, L. D. Libera, A. Ploujnikov, F. Paissan, D. Borra, S. Zaiem, Z. Zhao, S. Zhang, G. Karakasidis, S.-L. Yeh, P. Champion, A. Rouhe, R. Braun, F. Mai, J. Zuluaga-Gomez, S. M. Mousavi, A. Nautsch, H. Nguyen, X. Liu, S. Sagar, J. Duret, S. Mdhaffar, G. Laperri` ere, M. Rouvier, R. D. Mori, and Y. Est` eve, “Open-source conversational ai with speechbrain 1.0,” 
+
+Journal of Machine Learning Research , vol. 25, no. 333, 2024. [34] L. D. Libera, P. Mousavi, S. Zaiem, C. Subakan, and M. Ravanelli, “Cl-masr: A continual learning benchmark for multilingual asr,” 
+
+IEEE/ACM Transactions on Audio, Speech, and Language Pro-cessing , vol. 32, pp. 4931–4944, 2024.

@@ -1,0 +1,1034 @@
+Title: AUDEDIT: Inversion-Free Text-Guided Editing with Pretrained Audio Flow Models
+
+URL Source: https://arxiv.org/pdf/2606.15149v1
+
+Published Time: Tue, 16 Jun 2026 00:35:53 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# AUD EDIT : I NVERSION -F REE TEXT -G UIDED EDITING WITH 
+
+# PRETRAINED AUDIO FLOW MODELS 
+
+A P REPRINT 
+
+Zhongyuan Fu 
+
+College of Computer Science Nankai University 
+
+2213015@mail.nankai.edu.cn 
+
+June 16, 2026 
+
+## ABSTRACT 
+
+We introduce AudEdit, an inversion-free method for text-guided editing of real audio with a pretrained rectified-flow audio generator. Text-to-audio systems such as Stable Audio 3 already expose audio-to-audio editing by noising an input recording and denoising it under a new prompt, but this inversion-style route must trade prompt adherence against preservation of rhythm, transients, timbre, and long-range musical structure. Motivated by recent inversion-free flow editing in computer vision, we develop an audio-specific direct source-to-target ordinary differential equation for one-dimensional Stable Audio 3 latents: at each flow step, we compare the target- and source-conditioned velocity fields under a shared stochastic source marginal, and update the edited latent by their difference. The resulting editor requires no training, no paired edit data, no optimization, and no access to internal attention maps. Across sound-effect and music editing sets built from FSD50K and the Song Describer Dataset, AudEdit improves CLAP text alignment and audio preservation over SDEdit, ODE inversion, and FireFlow; for example, on sound effects it raises target-text CLAP similarity from 0.42 to 0.52 over the strongest baseline while reducing FAD from 65.70 to 50.37. 
+
+Keywords Audio editing · text-to-audio generation · rectified flow · inversion-free editing · Stable Audio 
+
+## 1 Introduction 
+
+Text-conditioned audio generators have made it possible to synthesize music, sound effects, and ambient recordings from natural language prompts. Recent systems such as AudioLDM, AudioLDM 2, Tango, AudioGen, MusicGen, and Stable Audio demonstrate that large pretrained generative models can learn useful correspondences between language and audio structure Liu et al. [2023, 2024], Ghosal et al. [2023], Kreuk et al. [2023], Copet et al. [2023], Evans et al. [2026]. For creative workflows, however, generation from scratch is only one part of the problem. Musicians, sound designers, and media producers more often need to revise an existing recording: turn a drum loop into a heavier kit, change a piano phrase into a guitar phrase, transform a field recording into a designed sound effect, or restyle a music excerpt while keeping its timing and identity. This editing setting is harder than generation because two objectives conflict. The output should satisfy the target prompt, but it should also retain the source attributes that the prompt did not ask to change. In audio, these preserved attributes include sample-level phase, attack transients, downbeat placement, rhythmic microtiming, melodic contour, and long-range form. Small deviations that look tolerable in a spectrogram can be immediately audible as smearing, flanging, tempo drift, or loss of musical intent. This makes audio editing an especially strict test of generative-model controllability. If a drum transient moves by a few milliseconds or a pitched note acquires unstable phase, the output is perceptually different even when semantic metrics remain high. Many research systems for text-guided audio editing rely on inversion, noising, or test-time optimization Wang et al. [2023], Han et al. [2024], Manor and Michaeli [2024], Zhang et al. [2024], Novack et al. [2024]. These approaches can be effective, yet the detour through a high-noise latent state creates a brittle edit-strength trade-off: weak noising 
+
+> arXiv:2606.15149v1 [cs.SD] 13 Jun 2026
+
+arXiv Template A P REPRINT 
+
+preserves the recording but under-edits, while strong noising improves prompt adherence at the cost of source detail. Improving the inversion solver does not remove this detour. To date, zero-shot editing with the state-of-the-art audio generation model Stable Audio 3 has only used the simple SDEdit method introduced by Meng et al., which noises an input recording and denoises it under a new prompt Meng et al. [2022], Evans et al. [2026]. In the image domain, a recent line of rectified-flow editing methods has begun to move beyond such source-to-noise-to-target pipelines Kulikov et al. [2025]. This non-inversion principle offers a way to preserve source structure while avoiding the high-noise bottleneck that underlies conventional SDEdit and inversion routes. Motivated by this development, we introduce AudEdit, a training-free and inversion-free framework for text-guided audio editing with pretrained audio flow models. AudEdit formulates text-to-audio rectified-flow editing as a direct source-to-target ordinary differential equation, where the edit direction is obtained from differences between source-and target-conditioned velocity fields. Specifically, the framework designs this direct flow construction for Stable Audio 3 latents. At each step, it compares source- and target-conditioned velocity fields at matched stochastic source marginals, then integrates their difference directly in the latent space. AudEdit does not invert the source into noise, does not optimize any latent code, and does not require architecture-specific feature injection. Our contributions are: • We formulate AudEdit, a training-free and inversion-free text-guided audio editor for pretrained rectified-flow audio models. • We introduce a direct source-to-target editing path for Stable Audio 3 latents by integrating target-minus-source velocity differences at matched stochastic audio marginals. • We evaluate against three strong audio baselines built on the same Stable Audio 3 backbone, SDEdit, ODE inversion, and FireFlow. • We show consistent gains on sound effects and music in both target alignment and source preservation. 
+
+## 2 Related Work 
+
+2.1 Text-to-Audio Generation 
+
+Modern audio editing research first benefited from progress in text-conditioned audio generation. Autoregressive systems such as AudioGen and MusicGen model discrete audio tokens and provide strong temporal priors for sound effects and music Kreuk et al. [2023], Copet et al. [2023]. Latent diffusion systems then made prompt-conditioned waveform synthesis more practical: AudioLDM and AudioLDM 2 generate audio through language-audio representations in a compressed latent space, and Tango improves prompt conditioning with instruction-tuned language representations Liu et al. [2023, 2024], Ghosal et al. [2023]. These models established the generative prior that later editors reuse, but generation alone does not specify which source details should remain fixed. For editing, the model must satisfy a new text condition while preserving event timing, rhythm, timbre, phase coherence, and background acoustics from the original recording. 
+
+2.2 Instruction-trained editing models 
+
+A first line of dedicated editors learns edit behavior from instruction-style data. AUDIT trains a latent diffusion model to follow add, remove, and replace instructions for general audio, while InstructME extends instruction-based editing to music remixing Wang et al. [2023], Han et al. [2024]. More recent systems broaden the supervision format: SAO-Instruct studies free-form natural-language audio edits, and audio-language-model editors use a multimodal model to plan or execute multiple edit types Ungersböck et al. [2026], Lan et al. [2025], Tao et al. [2025]. This supervised trajectory improves edit semantics and interface flexibility, but it requires curated edit data, task-specific training, or an editing taxonomy. AudEdit instead uses a pretrained audio generator at inference time and does not require paired source-target edit examples. 
+
+2.3 Zero-shot editing with pretrained diffusion models 
+
+A second line avoids supervised edit data by reusing a pretrained generator at test time. SDEdit perturbs the source toward noise and denoises it under the target prompt; AudioLDM-style and Stable Audio audio-to-audio interfaces inherit this noising-and-denoising strategy Meng et al. [2022], Liu et al. [2023], Evans et al. [2026]. DDPM-inversion-based audio editing reconstructs a source trajectory before changing the text condition, and MusicMagus applies a related inversion route to text-to-music editing Manor and Michaeli [2024], Zhang et al. [2024]. Other zero-shot methods 2arXiv Template A P REPRINT 
+
+optimize prompts, latents, or inference-time variables to better preserve the source or satisfy musical constraints Paissan et al. [2024], Novack et al. [2024]. These methods reduce the need for edit-specific training, but they still pass through a noisy state or solve a test-time optimization problem. Consequently, they inherit an edit-strength trade-off: shallow noising preserves the source but weakens the semantic change, whereas deeper noising improves prompt adherence while damaging transient and rhythmic detail. 
+
+2.4 Localized and attention-controlled editing 
+
+Another branch studies how to make edits spatially or temporally more precise. Prompt-guided precise audio editing uses diffusion attention maps to localize the region implied by the prompt, and EditGen adapts cross-attention control to instruction-based autoregressive audio editing Xu et al. [2024], Sioros et al. [2025]. These methods target a practical limitation of global audio-to-audio generation: a text edit should often affect only one event, material, instrument, or temporal segment. However, attention-control methods depend on access to architecture-specific internal maps and can be difficult to transfer across audio generators. Our method uses only velocity evaluations from the pretrained model, so it does not require attention injection, masks, or model-specific feature surgery. 
+
+2.5 Rectified-flow audio editing 
+
+The newest generation backbones increasingly use flow or rectified-flow formulations rather than a conventional denoising chain. Stable Audio 3 combines a rectified-flow diffusion transformer with SAME, a semantically aligned audio autoencoder, for long-form waveform generation in a continuous latent space Evans et al. [2026], Parker et al. [2026]. RFM-Editing recently studies rectified flow matching for text-guided audio editing, reflecting a broader shift from denoising trajectories to learned velocity fields Gao et al. [2026]. In the image domain, inversion-free flow editing suggests that source-to-noise-to-target pipelines can be replaced by direct source-to-target transport Kulikov et al. [2025]. AudEdit takes this idea as motivation, defining the edit update within the Stable Audio 3 latent space as the velocity difference of source-minus-target evaluated at matched stochastic source marginals. This design keeps the training-free setting of zero-shot editors while avoiding the high-noise bottleneck of inversion-based audio editing. 
+
+## 3 Background 
+
+3.1 Rectified Flow 
+
+Rectified flow models are naturally described as transport in a latent space. Let x0 denote a clean audio latent and let x1 ∼ N (0 , I ) denote a Gaussian latent. A text-conditioned flow model specifies a time-dependent velocity field 
+
+Vθ (zt, t, c ) through the ordinary differential equation 
+
+dzt = Vθ (zt, t, c ) dt (1) for t ∈ [0 , 1] . When this ODE is initialized at the Gaussian endpoint and integrated backward in time, its trajectory reaches the data endpoint associated with the text condition c.Rectified flow gives this transport a particularly simple geometry by tying the intermediate state to a linear path between the two endpoints Liu et al. [2022]. The canonical interpolation is 
+
+zt = (1 − t)x0 + tx1, t ∈ [0 , 1] , (2) whose derivative is the constant direction x1 − x0. The learned field therefore represents a straightened velocity rather than a denoising score. Sampling uses a numerical solver for (1) . With an increasing grid 0 = t0 < t 1 < · · · < t T = 1 , a first-order reverse-time step has the form 
+
+zti−1 = zti + ( ti−1 − ti)Vθ (zti , t i, c ). (3) The opposite index order moves a clean latent toward the Gaussian endpoint. For audio generation, rectified-flow models commonly operate in learned latent spaces rather than directly on raw waveforms, which reduces the dimensionality of the ODE while leaving the transport formulation unchanged Evans et al. [2026], Parker et al. [2026]. Text adherence is commonly adjusted by classifier-free guidance Ho and Salimans [2021]. Writing Vθ (z, t, c ) for the conditional velocity and Vθ (z, t, ∅) for the unconditional velocity, the guided field is 
+
+V wθ (z, t, c ) = Vθ (z, t, ∅) + w [Vθ (z, t, c ) − Vθ (z, t, ∅)] . (4) 3arXiv Template A P REPRINT 
+
+3.2 Audio Editing Based on Inversion 
+
+The same latent ODE becomes an editor once two text conditions are introduced. Let csrc describe the source audio and let ctar describe the intended edit. The corresponding guided fields are written as V src (z, t ) = V wsrc  
+
+> θ
+
+(z, t, c src ) and 
+
+V tar (z, t ) = V wtar  
+
+> θ
+
+(z, t, c tar ), with guidance scales wsrc and wtar .Methods relying on inversion first extract a noisy latent associated with the source audio by traversing the forward ODE induced by the source-conditioned field: 
+
+dzsrc 
+
+> t
+
+dt = V src (zsrc  
+
+> t
+
+, t ). (5) The trajectory starts from zsrc 0 = xsrc and reaches a noisier state zsrc  
+
+> tm
+
+at the chosen edit depth tm. The target-conditioned trajectory is then initialized at the same noisy state and integrated in the reverse-time sampling direction: 
+
+dztar 
+
+> t
+
+dt = V tar (ztar  
+
+> t
+
+, t ). (6) Here ztar  
+
+> tm
+
+= zsrc  
+
+> tm
+
+, and the endpoint at t = 0 is decoded as the edited audio. For an increasing schedule 0 = t0 < t 1 <
+
+· · · < t T = 1 , the corresponding source pass is discretized as 
+
+zsrc  
+
+> ti
+
+= zsrc  
+
+> ti−1
+
++ ( ti − ti−1)V src (zsrc  
+
+> ti−1
+
+, t i−1). (7) The target pass uses the reverse-time step 
+
+ztar  
+
+> ti−1
+
+= ztar  
+
+> ti
+
++ ( ti−1 − ti)V tar (ztar  
+
+> ti
+
+, t i). (8) The two signs differ because the source pass moves from low noise to high noise, whereas the target pass moves from high noise back to the clean audio endpoint. SDEdit uses the same target sampler but replaces the source ODE in (5) with direct stochastic interpolation Meng et al. [2022]. For ϵ ∼ N (0 , I ), the noisy edit state is 
+
+˜zsrc  
+
+> tm
+
+= (1 − tm)xsrc + tmϵ. (9) The reverse target-conditioned pass then starts from ztar  
+
+> tm
+
+= ˜ zsrc  
+
+> tm
+
+. ODE inversion and SDEdit therefore differ in how they reach the edit state, but both impose the same source-to-noise-to-target topology. This topology creates the central preservation problem for audio. At large t, the latent carries limited information about onset phase, transient sharpness, vibrato, groove, room texture, and other details that determine whether a recording still sounds like the source. The target-conditioned sampler must reconstruct these details while also satisfying the new prompt. Reducing tm keeps more source information but leaves little room for semantic change; increasing 
+
+tm strengthens the edit but makes the output less tied to the original recording. This trade-off motivates direct source-to-target transport in the method section. 
+
+## 4 Method 
+
+AudEdit edits a real recording by replacing the source-to-noise-to-target route of inversion methods with a direct velocity-difference trajectory in the Stable Audio 3 latent space. The method uses only the pretrained SAME encoder/decoder and the pretrained Stable Audio 3 velocity predictor. It introduces no paired edit data, task-specific losses, latent optimization, or architecture-specific feature injection. Let xsrc wav be the source waveform, csrc a text description of its current content, and ctar the target edit prompt. After SAME encoding, 
+
+xsrc = Enc( xsrc wav ) ∈ R32 ×Tlat . (10) The latent length Tlat scales with the requested duration, so the same update rule applies to short sound effects, 30-second music excerpts, and long clips within the Stable Audio 3 duration range. The edited latent is decoded as 
+
+ˆxtar wav = Dec( xtar ). Audio editing is under-specified by design: changing a prompt from piano to guitar should not arbitrarily rewrite tempo, phrase boundaries, or melodic contour, and changing a door knock to a metal knock should preserve event timing unless the prompt says otherwise. AudEdit therefore treats editing as source-conditioned transport: move the latent toward the target conditional distribution while keeping the source-target displacement small along perceptually important audio directions. 4arXiv Template A P REPRINT 
+
+4.1 From Inversion to Direct Audio Transport 
+
+We begin by reinterpreting inversion editing as a direct path. Let zsrc  
+
+> t
+
+be the source-conditioned trajectory and ztar  
+
+> t
+
+the target-conditioned trajectory defined in Section 3.2. Although inversion reaches the edited sample by passing through a high-noise state, the same pairing can be written as a direct trajectory 
+
+zinv  
+
+> t
+
+= xsrc + ztar  
+
+> t
+
+− zsrc  
+
+> t
+
+. (11) The boundary conditions explain why this path is a legitimate edit trajectory. At the beginning of the reverse-time edit, both source and target inversion paths share the same high-noise state, so 
+
+zinv 1 = xsrc + ztar 1 − zsrc 1 = xsrc . (12) At the end, 
+
+zinv 0 = xsrc + ztar 0 − zsrc 0 = ztar 0 , (13) because zsrc 0 = xsrc . Thus the path begins at the original audio latent and ends at the inversion-edited latent. Differentiating gives a velocity-difference ODE: 
+
+dzinv  
+
+> t
+
+= V ∆ 
+
+> t
+
+(zsrc  
+
+> t
+
+, ztar  
+
+> t
+
+) dt, (14) where 
+
+V ∆ 
+
+> t
+
+(a, b) = V tar (b, t ) − V src (a, t ). (15) Solving (11) for ztar  
+
+> t
+
+and substituting into (14) yields a self-contained ODE for the direct path: 
+
+dzinv  
+
+> t
+
+= V ∆
+
+> t
+
+ zsrc  
+
+> t
+
+, zinv  
+
+> t
+
++ zsrc  
+
+> t
+
+− xsrc  dt. (16) Intuitively, the source and target noisy states share the same noise component, so subtracting their velocity fields cancels common denoising behavior and leaves an edit direction. This observation is especially useful for audio. At high noise levels, the difference field mainly captures global changes such as event class, instrument family, texture, genre, or production style. As t decreases, lower-level information becomes available and the update can correct transient envelopes, high-frequency detail, room color, and rhythmic microstructure. The resulting path has a coarse-to-fine interpretation: semantic movement occurs early, while late steps preserve and refine source-specific acoustic detail. See App. H for more detailed explanations. 
+
+4.2 Stochastic Velocity-Difference Editing 
+
+The direct ODE above explains inversion, but it still inherits inversion’s source-target pairing. That pairing is undesirable when the Gaussian endpoint couples a source clip to an arbitrary target sample. AudEdit changes the pairing by replacing the deterministic inversion trajectory with stochastic source marginals and averaging their velocity-difference directions. At timestep ti, AudEdit samples ϵi ∼ N (0 , I ) and constructs 
+
+ˆzsrc  
+
+> ti
+
+= (1 − ti)xsrc + tiϵi. (17) The matched target-side state is 
+
+ˆztar  
+
+> ti
+
+= zDF  
+
+> ti
+
++ ˆ zsrc  
+
+> ti
+
+− xsrc . (18) The target state uses the current edited latent zDF  
+
+> ti
+
+and the same stochastic offset from the source. For each draw, source and target velocities are evaluated with the same pretrained Stable Audio 3 model but different text conditions. The update direction is the average over navg such draws: 
+
+¯V ∆ 
+
+> ti
+
+= 1
+
+navg 
+
+> navg
+
+X
+
+> k=1
+
+h
+
+V tar (ˆ ztar ,k ti , t i) − V src (ˆ zsrc ,k ti , t i)
+
+i
+
+. (19) The edited latent is integrated directly along this averaged direction: 
+
+zDF  
+
+> ti−1
+
+= zDF  
+
+> ti
+
++ η(ti−1 − ti) ¯V ∆ 
+
+> ti
+
+. (20) Here η is a scalar multiplier on the rectified-flow step. Equation (19) can be written as a difference of conditional expectations, 
+
+E V tar (ˆ ztar  
+
+> t
+
+, t ) xsrc  − E [V src (ˆ zsrc  
+
+> t
+
+, t )|xsrc ] , (21) where the expectation is taken over the stochastic source marginal conditioned on the source latent. In the discrete solver, the source and target terms use the same sampled noise instance. This shared-noise coupling subtracts common stochastic components before averaging and gives a lower-variance estimate when navg is small. Independent source and target noise would estimate the same expectation asymptotically, but would be less stable at the small sample counts needed for practical audio editing. 5arXiv Template A P REPRINT 
+
+Algorithm 1 AudEdit (single forward sampling pass). 
+
+Input : source latent Xsrc ∈ R32 ×Tlat , prompts csrc , c tar , schedule {ti}Ti=0 , nmax , n min , n avg , CFG scales wsrc , w tar ,step coefficient η.
+
+Output : edited latent Xtar .
+
+1: ZDF  
+
+> tnmax
+
+← Xsrc 
+
+2: for i = nmax to nmin +1 do 
+
+3: ¯V ← 0
+
+4: for k = 1 to navg do 
+
+5: Sample Nti ∼ N (0 , I )
+
+6: ˆZsrc  
+
+> ti
+
+← (1 −ti)Xsrc + tiNti
+
+7: ˆZtar  
+
+> ti
+
+← ZDF  
+
+> ti
+
++ ˆZsrc  
+
+> ti
+
+− Xsrc 
+
+8: V ∆ ← Vwtar ( ˆZtar  
+
+> ti
+
+, t i, c tar ) − Vwsrc ( ˆZsrc  
+
+> ti
+
+, t i, c src )
+
+9: ¯V ← ¯V + V ∆/n avg 
+
+10: end for 
+
+11: ZDF  
+
+> ti−1
+
+← ZDF  
+
+> ti
+
++ η (ti−1 − ti) ¯V
+
+12: end for 
+
+13: if nmin > 0 then 
+
+14: Refine ZDF 
+
+> tnmin
+
+→ ZDF 0 via standard SA3 sampling under ctar 
+
+15: end if 
+
+16: return ZDF 0(a) Editing by ODE Inversion     
+
+> Dog →Noise →Cat
+
+𝒩 0, 𝐼 
+
+𝒵 𝑡 
+
+> 𝑠𝑟𝑐
+
+𝒵 1
+
+> 𝑠𝑟𝑐
+
+𝒵 0
+
+> 𝑠𝑟𝑐
+
+𝒵 1
+
+> 𝑡𝑎𝑟
+
+𝒵 0
+
+> 𝑡𝑎𝑟
+
+𝒵 𝑡  
+
+> 𝑡𝑎𝑟
+> ... ...
+
+𝒵 0 
+
+> 𝑠𝑟𝑐
+
+𝒵 1
+
+> 𝑠𝑟𝑐
+
+/𝒵 1 
+
+> 𝑡𝑎𝑟
+
+𝒵 0  
+
+> 𝑡𝑎𝑟
+> Dog →Cat
+
+(b) Noise -Free Editing by Inversion 
+
+𝒩 0, 𝐼 
+
+𝒵 𝑡 
+
+> 𝑡𝑎𝑟
+
+𝒵 𝑡 
+
+> 𝑠𝑟𝑐
+
+𝒵 1 
+
+> 𝑠𝑟𝑐
+
+𝒵 1
+
+> 𝑡𝑎𝑟
+
+𝒱 𝜃 𝒵 𝑡 , 𝒞 𝑡𝑎𝑟 , 𝑡 
+
+Δ𝒱 𝒵 𝑡 , 𝑡 
+
+𝒵 𝑡 
+
+> 𝑖𝑛𝑣
+
+𝒵 1 
+
+> 𝑖𝑛𝑣
+
+𝒵 0
+
+> 𝑖𝑛𝑣
+
+𝒵 0
+
+> 𝑡𝑎𝑟
+
+𝒵 0 
+
+> 𝑠𝑟𝑐
+> ... ...
+
+𝒵 1 
+
+> 𝑖𝑛𝑣
+
+𝒵 𝑡  
+
+> 𝑖𝑛𝑣
+
+𝒵 0   
+
+> 𝑖𝑛𝑣
+> (c) Editing Using AudEdit
+> Dog →Cat
+
+𝒩 0, 𝐼 
+
+መ𝒵 0
+
+> 𝑠𝑟𝑐
+
+መ𝒵 𝑡 
+
+> 𝑡𝑎𝑟
+
+መ𝒵 𝑡 
+
+> 𝑠𝑟𝑐
+
+𝒵 0
+
+> 𝐴𝐸
+
+𝒵 1
+
+> 𝐴𝐸
+
+𝒵 𝑡  
+
+> 𝐴𝐸
+> ... ...
+
+𝒵 1 
+
+> 𝐴𝐸
+
+𝒵 𝑡  
+
+> 𝐴𝐸
+
+𝒵 0
+
+> 𝐴𝐸
+
+𝒱 𝜃 𝒵 𝑡 , 𝒞 𝑠𝑟𝑐 , 𝑡 
+
+Δ𝒱 𝒵 𝑡 , 𝑡 
+
+𝒱 𝜃 𝒵 𝑡 , 𝒞 𝑠𝑟𝑐 , 𝑡  𝒱 𝜃 𝒵 𝑡 , 𝒞 𝑡𝑎𝑟 , 𝑡 
+
+Figure 1: Editing by inversion vs.AudEdit. Inversion and SDEdit detour through noise; AudEdit integrates a direct source-to-target path through the velocity difference. 
+
+4.3 Transport-Cost Diagnostic Against Inversion 
+
+To isolate the geometric effect of the edit path, we include a synthetic transport diagnostic in addition to real-audio evaluation sets. The source clips are generated by Stable Audio 3 from the source prompts, using the same backbone as the editor, so they lie close to the model’s own generative manifold. This removes a major real-audio confound: reconstruction errors from compressed, noisy, or otherwise out-of-distribution recordings. The diagnostic therefore emphasizes the source-target pairing induced by each editor. Sound-effect prompts are generated from controlled acoustic templates, and target prompts replace one concept while preserving timing descriptors. Music prompts are derived from Song Describer Dataset captions and modified by a minimal keyword substitution, such as changing an instrument or genre while leaving the rest of the caption fixed. After editing the generated source clips, we measure preservation with SAME-latent MSE, spectro-cepstral metrics, 6arXiv Template A P REPRINT 
+
+Table 1: Synthetic generated-source diagnostic. Source clips are generated by Stable Audio 3 from source prompts, edited under target prompts, and compared with the source or an independently generated target-prompt set. PANNs denotes CNN14 feature cosine similarity. Best values are bold.                                                                                          
+
+> Domain Method Latent MSE ↓LSD ↓MCD ↓CLAP-T ↑CLAP-A ↑PANNs ↑Structure ↑FAD ↓
+> SFX FireFlow 1.31 23.53 627.72 0.38 0.45 0.71 0.46 46.57 SFX ODE Inv. 0.91 21.56 594.47 0.40 0.50 0.74 0.49 41.11 SFX SDEdit 1.81 24.67 669.62 0.35 0.42 0.70 0.43 57.17 SFX AudEdit 0.35 17.41 494.96 0.47 0.64 0.81 0.55 31.36
+> Music FireFlow 1.42 17.78 536.44 0.53 0.72 0.77 0.86 36.46 Music ODE Inv. 1.24 16.78 521.62 0.54 0.74 0.78 0.90 33.50 Music SDEdit 3.30 19.97 613.33 0.44 0.58 0.67 0.83 70.43 Music AudEdit 0.52 14.40 421.25 0.56 0.79 0.83 0.93 28.57
+
+CLAP-audio similarity, PANNs feature cosine similarity, and the domain-specific structure metric. To verify that small transport does not merely mean under-editing, we also generate an independent target-prompt set and compute FAD between that set and each method’s edited outputs. As shown in Table 1, AudEdit achieves the lowest transport cost on both domains. Compared with the strongest inversion baseline, AudEdit obtains a lower transport cost on sound effects (0.35 vs. 0.91 for latent MSE, 17.41 vs. 21.56 for LSD) and on music (0.52 vs. 1.24 for latent MSE, 14.40 vs. 16.78 for LSD). To assess target-distribution alignment, we compute FAD against the independently generated target set. AudEdit also obtains lower FAD than the strongest inversion baseline on both domains (31.36 vs. 41.11 for sound effects, 28.57 vs. 33.50 for music). These results indicate that the direct velocity-difference path preserves more of the source latent while still producing samples that better match the target-prompt distribution. 
+
+## 5 Experimental Setup 
+
+5.1 Datasets 
+
+To conduct the experiments, we carefully constructed two small but high-quality datasets covering sound effects and music. The sound-effect dataset is derived from FSD50K Fonseca et al. [2022] and contains short environmental sounds, object interactions, percussive events, and instrument-like one-shots. For each FSD50K clip, the source prompt is generated with GPT-5.5 from the dataset annotations and then manually refined. The music dataset is drawn from the Song Describer Dataset Manco et al. [2023], whose description annotations are directly used as source prompts for musical excerpts. Our source-prompt sensitivity results indicate that this conditioning field has little effect on AudEdit and can even be omitted. Target prompts are also generated with GPT-5.5 and manually edited for quality. They cover user-facing editing operations such as insertion, replacement, and deletion, as well as broader editing modes such as style transfer, while preserving the surrounding temporal or musical context when appropriate. Each example contains a source waveform, a source prompt, and a target prompt, making the edit intent explicit: the output should follow the requested semantic change without discarding source timing, rhythm, or musical structure. Overall, the main real-audio benchmark contains 227 sound-effect edits and 209 music edits, and is used to evaluate our and the competing methods. 
+
+5.2 Implementation Details 
+
+All experiments use Stable Audio 3 medium with the SAME latent autoencoder. Waveforms are decoded at 44.1 kHz, and text conditioning follows the Stable Audio 3 T5+CLAP conditioning pipeline. Unless otherwise stated, the default configuration uses 28 solver steps, nmax = 24 , nmin = 0 , navg = 1 , source guidance scale 1.5, target guidance scale 3.5, and step coefficient η = 1 .0. Sound-effect clips use their annotated durations with 4 seconds of padding when needed. Music clips use 30-second excerpts in the main comparison, while the duration-scaling study evaluates 15–120 second clips. The same source waveform, prompts, duration metadata, and random seeds are shared across methods whenever a direct comparison is reported. 
+
+5.3 Baselines 
+
+To validate the effectiveness of our method, we compare against several competing text-based real audio editing methods that use the same Stable Audio 3 rectified-flow backbone. 7arXiv Template A P REPRINT 
+
+SDEdit. SDEdit follows the Stable Audio 3 noising-and-denoising route described above Meng et al. [2022], Evans et al. [2026]. Given an edit strength s ∈ [0 , 1] , we choose an edit index m = round( sT ) and, for ϵ ∼ N (0 , I ), sample 
+
+zsd  
+
+> tm
+
+= (1 − tm)xsrc + tmϵ. (22) The method then performs only target-conditioned denoising: 
+
+zsd  
+
+> ti−1
+
+= zsd  
+
+> ti
+
++ ( ti−1 − ti)V tar (zsd  
+
+> ti
+
+, t i). (23) The strength parameter determines the starting noise level by selecting the corresponding schedule index. No source-conditioned velocity is evaluated, so preservation comes only from the residual clean component in (22). 
+
+SA3 ODE inversion. SA3 ODE inversion replaces direct noising with a source-conditioned inversion process governed by a bidirectional integration scheme. Starting from xsrc , the source-conditioned ODE is integrated forward to the selected edit time tm using (7) ; the resulting latent is then used as the initial state for target-conditioned reverse integration back to t0 in (8). Equivalently, the edited latent is 
+
+ˆxtar ode = Φ tar 
+
+> tm→0
+
+ Φsrc 0→tm (xsrc ) , (24) where Φca→b denotes Euler integration of the guided velocity field conditioned on prompt c from time a to b.
+
+FireFlow. FireFlow keeps the same composition as (24) , but substitutes a second-order midpoint step for each Euler step Deng et al. [2025]. For a generic transition from ta to tb under prompt c, let h = tb − ta. The midpoint state is 
+
+z1/2 = zta + h
+
+2 V c(zta , t a), (25) and the transition is completed by 
+
+ztb = zta + h V c
+
+
+
+z1/2, t a + h
+
+2
+
+
+
+. (26) For consecutive steps with the same prompt, the previous midpoint velocity is reused as the first velocity of the next step; the cache is reset between the source inversion and target denoising passes. This improves local truncation error relative to Euler, but it still edits through the same source-to-noise-to-target route. We restrict the main comparison to methods that can be evaluated with the same pretrained Stable Audio 3 weights, SAME codec, prompts, durations, and random seeds. We therefore do not directly compare to diffusion or autoregressive audio editors such as AudioLDM-style editing, MusicGen, DDPM-inversion audio editing, MusicMagus, DITTO, or prompt-guided attention editing Liu et al. [2023, 2024], Copet et al. [2023], Manor and Michaeli [2024], Zhang et al. [2024], Novack et al. [2024], Xu et al. [2024]. These methods use different generative backbones, discrete-token or diffusion dynamics, task-specific optimization, or architecture-specific attention mechanisms, so a direct comparison would conflate editing algorithms with model and training-data differences. Instruction-trained editors such as AUDIT and InstructME are also excluded because they require supervised editing data or task-specific training rather than the zero-shot, training-free setting studied here Wang et al. [2023], Han et al. [2024]. Full implementation settings and the baseline pseudocode are given in App. A and App. B. 
+
+5.4 Objective Metrics 
+
+The objective evaluation uses complementary metrics for target-prompt transfer, source preservation, and distributional realism. • CLAP Similarity: CLAP maps audio and text into a shared contrastive embedding space Wu et al. [2023]. Target-text CLAP similarity measures whether the edited waveform matches the target prompt, while source-audio CLAP similarity measures whether the edited waveform remains semantically close to the source. • Spectro-Cepstral Distortion: Log-spectral distance (LSD) and mel-cepstral distortion (MCD) quantify low-level acoustic change between the source and edited waveforms. LSD is sensitive to spectral artifacts, transient smearing, and high-frequency drift, whereas MCD emphasizes changes in the mel-cepstral envelope and is therefore informative for timbral preservation. • LPAPS: Following perceptual audio patch similarity metrics Iashin and Rahtu [2021], Paissan et al. [2024], LPAPS measures source consistency in a pretrained audio feature space. In our implementation, CNN14 audio-recognition embeddings Kong et al. [2020] provide the feature representation, and the reported distance form increases when the edited clip departs from the source. Lower LPAPS therefore indicates stronger perceptual preservation. 8arXiv Template A P REPRINT 
+
+Table 2: Subjective evaluation on a 5-point Likert scale.                                       
+
+> Domain Method MOS-T ↑MOS-P ↑Overall MOS ↑
+> SFX FireFlow 3.21 3.32 3.27 SFX ODE Inv. 3.67 3.81 3.74 SFX SDEdit 3.61 4.03 3.82 SFX AudEdit 3.96 4.22 4.09
+> Music FireFlow 3.78 3.85 3.82 Music ODE Inv. 4.02 4.06 4.04 Music SDEdit 3.95 4.18 4.07 Music AudEdit 4.13 4.31 4.22
+
+• Domain-Specific Structural Similarity: The structure metric is selected according to the audio domain. For sound effects, AudioBERTScore compares source and edited clips through similarity of audio embedding sequences, which is suitable for preserving event timing and local acoustic structure Kishi et al. [2026]. For music, MelodySim compares MERT-based segment representations with a Siamese similarity model, emphasizing melodic preservation across longer musical excerpts Roy et al. [2026]. • Fréchet Audio Distance: FAD evaluates set-level distributional realism by comparing Gaussian statistics of pretrained audio embeddings between two audio collections Kilgour et al. [2019]. In the real-audio comparison, FAD measures how closely the edited distribution remains tied to the source distribution. • Latent Transport Cost: In the synthetic diagnostic from Section 4.3, latent MSE in the SAME representation directly measures how far the edited latent moves from the source latent in model space. 
+
+5.5 Subjective Protocol 
+
+Objective metrics cannot fully determine whether an edit sounds natural, prompt-faithful, and musically useful. Following common mean-opinion-score practice for multimedia and audio evaluation ITU-T Recommendation [1999, 1996], we define three subjective scores on a 5-point Likert scale. 
+
+MOS-T measures perceived target-prompt alignment: listeners judge whether the edited audio reflects the requested event, instrument, style, or production change. 
+
+MOS-P measures perceived preservation of the source recording: listeners judge whether timing, rhythm, melody, transient character, and overall structure remain tied to the input. 
+
+Overall MOS measures the listener’s overall judgment of edit quality, including naturalness, absence of artifacts, and usefulness of the edited audio as a coherent output. 
+
+## 6 Results and Discussion 
+
+6.1 Qualitative Evaluation 
+
+Representative edits and qualitative comparisons illustrate the practical difference between direct transport and inversion-style editing. For sound effects, successful edits preserve the onset placement, event envelope, and local acoustic context while changing the requested object, material, or sound identity. For music, the edited clips tend to keep tempo, phrase boundaries, and broad melodic motion, while the audible change appears in instrumentation, genre, or production color. The main baseline failures follow from their editing routes. SDEdit often preserves low-level detail when the noising strength is conservative, but this can leave the requested semantic change incomplete. ODE inversion and FireFlow can produce stronger target-prompt changes, yet the source-to-noise-to-target detour makes transient shape, rhythm, and musical continuity more vulnerable to reconstruction error. Meanwhile, repeated chained edits accumulate source drift while remaining close to each immediately preceding edit, and long-form music remains metrically stable up to 120 seconds but exposes more local artifacts; see App. G and App. I. Table 2 reports the listening study defined in Section 5. The subjective scores are consistent with the qualitative comparisons: AudEdit receives the strongest target-alignment, preservation, and overall edit-quality judgments in both domains. This agreement is important because listeners directly assess whether the edited audio is natural, prompt-faithful, and still connected to the source recording. 9arXiv Template A P REPRINT 
+
+Table 3: Main comparison on sound effects and music. Structure denotes AudioBERTScore for sound effects and MelodySim for music. Best values are bold.                                                                                
+
+> Domain Method CLAP-T ↑CLAP-A ↑LSD ↓MCD ↓LPAPS ↓Structure ↑FAD ↓
+> SFX FireFlow 0.39 0.37 27.87 700.79 0.31 0.47 71.45 SFX ODE Inv. 0.42 0.41 26.26 705.65 0.29 0.49 69.15 SFX SDEdit 0.42 0.44 23.16 625.61 0.27 0.49 65.70 SFX AudEdit 0.52 0.59 20.06 551.08 0.22 0.57 50.37
+> Music FireFlow 0.56 0.62 23.03 633.54 0.27 0.81 56.20 Music ODE Inv. 0.58 0.65 22.13 621.16 0.25 0.85 52.16 Music SDEdit 0.53 0.62 19.31 568.45 0.27 0.87 67.03 Music AudEdit 0.59 0.72 18.90 474.84 0.19 0.91 42.81
+
+6.2 Quantitative Evaluation 
+
+Table 3 reports the main real-audio comparison under the default operating point. The evaluation is organized around the central editing trade-off: a useful editor must increase target-prompt alignment without discarding the source recording’s temporal, spectral, and musical structure. Across both sound effects and music, AudEdit gives the strongest overall result among methods using the same Stable Audio 3 backbone. The important point is not a single metric gain, but the direction of the full metric set: target-text alignment improves together with source-audio similarity, spectro-cepstral preservation, perceptual feature distance, structural similarity, and FAD. This joint movement indicates that the direct path does not simply choose a more aggressive edit point; it shifts the prompt-adherence/source-preservation frontier. The domain comparison further clarifies the result. Sound effects expose preservation errors sharply because a small change in onset timing or material texture can alter the perceived event. Music is more redundant and longer-range, so shallow SDEdit can remain competitive on low-level spectral distance while still under-editing the target concept. AudEdit is the only approach that consistently improves semantic alignment without paying this preservation penalty. The synthetic transport diagnostic in Section 4.3 provides complementary evidence for the same conclusion. Figure 2 evaluates whether the advantage of AudEdit persists across guidance and strength sweeps rather than only at one selected hyperparameter setting. The plots compare target-text CLAP similarity against LPAPS, so the desired region is the upper left. On sound effects, AudEdit consistently occupies a stronger trade-off region: for comparable perceptual departure from the source, it reaches higher target-prompt alignment than the inversion and SDEdit baselines. On music, the same trend appears across the main operating region, although the frontier is narrower because many target prompts intentionally preserve the underlying musical context. The trade-off curves therefore agree with Table 3, direct velocity differencing changes the attainable frontier rather than merely selecting a different operating point on a baseline curve. The same conclusion holds when edits are grouped by operation type: AudEdit is stronger than the best baseline on replacement, addition, and deletion subsets in both domains; see App. E. Additional parameter diagnostics show that nmax is the primary edit-strength control, small positive nmin is useful only for style freedom, η = 1 .0
+
+gives the most stable ODE step, and navg mainly helps when the solver budget is compressed; see App. C and App. D. Source-prompt paraphrases, empty source prompts, and random seeds have smaller effects than the method-level margins in Table 3; see App. F. 
+
+6.3 Text-based Style Editing 
+
+The default configuration is designed for controlled edits, where timing, rhythm, and source identity should remain close to the input. Style editing shifts this objective: prompts that change genre, instrument color, ambience, or production character often require more freedom in the late refinement steps. We therefore use a positive nmin for style-oriented prompts, applying the direct velocity-difference update over the earlier trajectory and then completing the final segment with target-conditioned Stable Audio sampling. This preserves the coarse temporal and musical structure established by the source while allowing the target prompt to modify timbre and production details more strongly. Compared with the conservative default, style editing can produce a clearer target style but may move farther from the source in fine acoustic texture. The nmin sweep and dedicated style-edit study confirm this trade-off: nmin = 4 
+
+slightly improves target alignment, but larger values reduce source similarity and structure, so the main comparison keeps nmin = 0 ; see App. C. 10 arXiv Template A P REPRINT 0.200 0.225 0.250 0.275 0.300 0.325 
+
+←LPAPS 
+
+> 0.35 0.40 0.45 0.50
+
+## SFX    
+
+> FireFlow Ours ODE Inv. SDEdit 0.15 0.20 0.25 0.30
+
+←LPAPS 
+
+> 0.50 0.52 0.54 0.56 0.58
+
+## MUSIC 
+
+> FireFlow Ours ODE Inv. SDEdit
+> CLAP-T →
+
+Figure 2: CLAP-T versus LPAPS under guidance/strength sweeps for sound-effect and music edits. 
+
+## 7 Conclusion 
+
+We presented AudEdit, a zero-shot text-guided audio editor that develops an audio-specific inversion-free direct ODE for pretrained audio rectified flows. Using Stable Audio 3 medium as the backbone, the method directly integrates target-minus-source velocity differences in audio latent space rather than inverting the source through Gaussian noise. Across sound-effect and music evaluation sets, AudEdit consistently improves the trade-off between prompt adherence and source preservation over SDEdit, ODE inversion, and FireFlow. The results suggest that inversion-free flow editing is a practical direction for controllable audio generation, especially when the goal is to revise an existing recording without erasing its timing, structure, or identity. 
+
+## 8 Limitations 
+
+AudEdit is designed for controlled source-preserving edits. This design becomes restrictive when the target prompt asks for a broad semantic rewrite, such as replacing an acoustically incompatible event, changing several musical roles at once, or transforming vocals and arrangement structure. In these cases, the direct path can retain unwanted source identity or introduce artifacts rather than fully regenerating the target concept, as discussed in App. J. AudEdit also inherits the prompt-following, duration, and data-coverage limits of the Stable Audio 3 backbone, and it assumes that the SAME latent of the source lies near the model’s learned audio manifold. Finally, the method does not provide explicit temporal masks, stem-level controls, beat-synchronous constraints, or pitch-contour preservation. 
+
+## References 
+
+Haohe Liu, Zehua Chen, Yi Yuan, Xinhao Mei, Xubo Liu, Danilo Mandic, Wenwu Wang, and Mark D Plumbley. Audioldm: Text-to-audio generation with latent diffusion models. In International Conference on Machine Learning ,pages 21450–21474. PMLR, 2023. Haohe Liu, Yi Yuan, Xubo Liu, Xinhao Mei, Qiuqiang Kong, Qiao Tian, Yuping Wang, Wenwu Wang, Yuxuan Wang, and Mark D Plumbley. Audioldm 2: Learning holistic audio generation with self-supervised pretraining. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 32:2871–2883, 2024. Deepanway Ghosal, Navonil Majumder, Ambuj Mehrish, and Soujanya Poria. Text-to-audio generation using instruction guided latent diffusion model. In Proceedings of the 31st ACM international conference on multimedia , pages 3590–3598, 2023. Felix Kreuk, Gabriel Synnaeve, Adam Polyak, Uriel Singer, Alexandre Défossez, Jade Copet, Devi Parikh, Yaniv Taigman, and Yossi Adi. Audiogen: Textually guided audio generation. In The Eleventh International Conference on Learning Representations , 2023. Jade Copet, Felix Kreuk, Itai Gat, Tal Remez, David Kant, Gabriel Synnaeve, Yossi Adi, and Alexandre Défossez. Simple and controllable music generation. Advances in neural information processing systems , 36:47704–47720, 2023. 11 arXiv Template A P REPRINT 
+
+Zach Evans, Julian D Parker, Matthew Rice, CJ Carr, Zack Zukowski, Josiah Taylor, and Jordi Pons. Stable audio 3. 
+
+arXiv preprint arXiv:2605.17991 , 2026. Yuancheng Wang, Zeqian Ju, Xu Tan, Lei He, Zhizheng Wu, Jiang Bian, et al. Audit: Audio editing by following instructions with latent diffusion models. Advances in Neural Information Processing Systems , 36:71340–71357, 2023. Bing Han, Junyu Dai, Weituo Hao, Xinyan He, Dong Guo, Jitong Chen, Yuxuan Wang, Yanmin Qian, and Xuchen Song. Instructme: an instruction guided music edit framework with latent diffusion models. In Proceedings of the Thirty-Third International Joint Conference on Artificial Intelligence , pages 5835–5843, 2024. Hila Manor and Tomer Michaeli. Zero-shot unsupervised and text-based audio editing using ddpm inversion. In 
+
+International Conference on Machine Learning , pages 34603–34629. PMLR, 2024. Yixiao Zhang, Yukara Ikemiya, Gus Xia, Naoki Murata, Marco A Martínez-Ramírez, Wei-Hsiang Liao, Yuki Mitsufuji, and Simon Dixon. Musicmagus: zero-shot text-to-music editing via diffusion models. In Proceedings of the Thirty-Third International Joint Conference on Artificial Intelligence , pages 7805–7813, 2024. Zachary Novack, Julian Mcauley, Taylor Berg-Kirkpatrick, and Nicholas J Bryan. Ditto: Diffusion inference-time t-optimization for music generation. In International Conference on Machine Learning , pages 38426–38447. PMLR, 2024. Chenlin Meng, Yutong He, Yang Song, Jiaming Song, Jiajun Wu, Jun-Yan Zhu, and Stefano Ermon. SDEdit: Guided image synthesis and editing with stochastic differential equations. In International Conference on Learning Representations , 2022. Vladimir Kulikov, Matan Kleiner, Inbar Huberman-Spiegelglas, and Tomer Michaeli. Flowedit: Inversion-free text-based editing using pre-trained flow models. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 19721–19730, 2025. Michael Ungersböck, Florian Grötschla, Luca Lanzendörfer, June Young Yi, Changho Choi, and Roger Wattenhofer. Sao-instruct: Free-form audio editing using natural language instructions. Advances in Neural Information Processing Systems , 38:83411–83437, 2026. Zitong Lan, Yiduo Hao, and Mingmin Zhao. Guiding audio editing with audio language model, 2025. URL https: //arxiv.org/abs/2509.21625 .Ye Tao, Wen Wu, Chao Zhang, Mengyue Wu, Shuai Wang, and Xuenan Xu. Mmedit: A unified framework for multi-type audio editing via audio language model. arXiv preprint arXiv:2512.20339 , 2025. Francesco Paissan, Luca Della Libera, Zhepei Wang, Paris Smaragdis, Mirco Ravanelli, and Cem Subakan. Audio editing with non-rigid text prompts. In Proceedings of the Annual Conference of the International Speech Communication Association, INTERSPEECH , pages 3290–3294, 2024. Manjie Xu, Chenxing Li, Duzhen Zhang, Dan Su, Wei Liang, and Dong Yu. Prompt-guided precise audio editing with diffusion models. In International Conference on Machine Learning , pages 55126–55143. PMLR, 2024. Vassilis Sioros, Alexandros Potamianos, and Giorgos Paraskevopoulos. Editgen: Harnessing cross-attention control for instruction-based auto-regressive audio editing. ArXiv , abs/2507.11096, 2025. Julian D Parker, Zach Evans, CJ Carr, Zachary Zukowski, Josiah Taylor, Matthew Rice, and Jordi Pons. Same: A semantically-aligned music autoencoder. arXiv preprint arXiv:2605.18613 , 2026. Liting Gao, Yi Yuan, Yaru Chen, Yuelan Cheng, Zhenbo Li, Juan Wen, Shubin Zhang, and Wenwu Wang. Rfm-editing: Rectified flow matching for text-guided audio editing. In ICASSP 2026-2026 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 15467–15471. IEEE, 2026. Xingchao Liu, Chengyue Gong, and qiang liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. In NeurIPS 2022 Workshop on Score-Based Methods , 2022. Jonathan Ho and Tim Salimans. Classifier-free diffusion guidance. In NeurIPS 2021 Workshop on Deep Generative Models and Downstream Applications , 2021. Eduardo Fonseca, Xavier Favory, Jordi Pons, Frederic Font, and Xavier Serra. Fsd50k: An open dataset of human-labeled sound events. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 30:829–852, 2022. Ilaria Manco, Benno Weck, Seungheon Doh, Minz Won, Yixiao Zhang, Dmitry Bogdanov, Yusong Wu, Ke Chen, Philip Tovstogan, Emmanouil Benetos, et al. The song describer dataset: a corpus of audio captions for music-and-language evaluation. In Workshop on Machine Learning for Audio, Neural Information Processing Systems (NeurIPS) . Neural Information Processing Systems, 2023. Yingying Deng, Xiangyu He, Changwang Mei, Peisong Wang, and Fan Tang. Fireflow: Fast inversion of rectified flow for image semantic editing. In International Conference on Machine Learning , pages 13110–13128. PMLR, 2025. 12 arXiv Template A P REPRINT 
+
+Yusong Wu, Ke Chen, Tianyu Zhang, Yuchen Hui, Taylor Berg-Kirkpatrick, and Shlomo Dubnov. Large-scale contrastive language-audio pretraining with feature fusion and keyword-to-caption augmentation. In ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 1–5. IEEE, 2023. Vladimir Iashin and Esa Rahtu. Taming visually guided sound generation. In British Machine Vision Conference .BMVA Press, 2021. Qiuqiang Kong, Yin Cao, Turab Iqbal, Yuxuan Wang, Wenwu Wang, and Mark D Plumbley. Panns: Large-scale pretrained audio neural networks for audio pattern recognition. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 28:2880–2894, 2020. Minoru Kishi, Ryosuke Sakai, Shinnosuke Takamichi, Yusuke Kanamori, and Yuki Okamoto. Audiobertscore: Objective evaluation of environmental sound synthesis based on similarity of audio embedding sequences. In Proceedings of the AAAI 2026 Workshop on Audio-Centric AI: Towards Real-World Multimodal Reasoning and Application Use Cases (Audio-AAAI) , volume 312 of Proceedings of Machine Learning Research , pages 21–37. PMLR, 2026. Abhinaba Roy, Geeta Puri, and Dorien Herremans. Text2midi-inferalign: Improving symbolic music generation with inference-time alignment. In ICASSP 2026-2026 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 14817–14821. IEEE, 2026. Kevin Kilgour, Mauricio Zuluaga, Dominik Roblek, and Matthew Sharifi. Fréchet audio distance: A reference-free metric for evaluating music enhancement algorithms. In Proc. Interspeech 2019 , pages 2350–2354, 2019. ITU-T Recommendation. Subjective video quality assessment methods for multimedia applications. International Telecommunication Union , 1999. ITU-T Recommendation. Methods for subjective determination of transmission quality. International Telecommunica-tion Union , 1996. 13 arXiv Template A P REPRINT 
+
+## A Experimental Details 
+
+Default Configuration 
+
+All experiments use Stable Audio 3 medium with the SAME latent autoencoder. Waveforms are decoded at 44.1 kHz, and the latent tensor has shape (B, 32 , T lat ). Text conditioning follows the Stable Audio 3 T5+CLAP conditioning pipeline. Unless otherwise stated, AudEdit uses 28 solver steps, nmax = 24 , nmin = 0 , navg = 1 , source guidance scale 1.5, target guidance scale 3.5, and η = 1 .0. Sound effects use their annotated durations with 4 seconds of padding when needed. Music examples use 30-second excerpts for the main comparison; the long-duration study evaluates 15–120 second clips. Table 4: Default AudEdit configuration.               
+
+> Parameter Value Backbone Stable Audio 3 medium Autoencoder SAME Audio rate 44.1 kHz Solver steps 28
+> nmax 24
+> nmin 0
+> navg 1Source guidance 1.5 Target guidance 3.5 Step coefficient η1.0 Main music duration 30 s Long music duration 15–120 s
+
+Prompt Construction 
+
+Prompt pairs are constructed to isolate controlled edits. For FSD50K, source prompts are compact descriptions derived from clip metadata, and target prompts alter the salient object, material, event, or acoustic character. For the Song Describer Dataset, source prompts are based on the dataset captions, and target prompts alter instrument, genre, production character, or ensemble description while preserving the surrounding musical context. Style-edit prompts deliberately use larger timbral changes, while the limitation subset includes long clips, structurally complex mixtures, vocal-to-instrumental edits, solo-to-ensemble edits, and extreme genre shifts. 
+
+Baseline Settings 
+
+All baselines use the same Stable Audio 3 medium weights, SAME codec, durations, and prompt pairs. SDEdit varies the init-noise strength. ODE inversion integrates the source prompt forward to the selected noise depth and then integrates backward with the target prompt. FireFlow follows the same two-pass inversion route but uses midpoint velocity evaluation. For Pareto plots, target guidance is swept for AudEdit, ODE inversion, and FireFlow, while init-noise strength is swept for SDEdit. 
+
+## B Baseline Pseudocode 
+
+The following algorithms use the ascending schedule notation 0 = t0 < · · · < t T = 1 . In the code, Stable Audio 3 exposes the same schedule in descending order; the loop order is adjusted but the numerical increments are identical. 
+
+## C Edit-Strength and Style Control 
+
+This section studies two controls over how much freedom the edit trajectory receives. The upper edit index nmax 
+
+determines how much of the direct source-to-target path is traversed, while nmin controls whether the final low-noise steps are handled by AudEdit or by target-conditioned Stable Audio sampling. The question is whether these parameters provide interpretable controls rather than arbitrary latent perturbations. Table 5 shows that nmax behaves as the primary edit-strength parameter. In both domains, target-text CLAP increases as the edit window grows, then saturates around nmax = 20 –24 . The same sweep also increases LPAPS and lowers 14 arXiv Template A P REPRINT 
+
+Algorithm 2 SDEditSA3 Input : source latent Xsrc , target prompt ctar , schedule {ti}Ti=0 , strength s, target CFG scale wtar .
+
+Output : edited latent Xtar .
+
+1: m ← round( sT )
+
+2: Sample E ∼ N (0 , I )
+
+3: Ztm ← (1 − tm)Xsrc + tmE
+
+4: for i = m to 1 do 
+
+5: V ← Vwtar (Zti , t i, c tar )
+
+6: Zti−1 ← Zti + ( ti−1 − ti)V
+
+7: end for 
+
+8: return Zt0
+
+Algorithm 3 ODEInvertEditSA3 Input : source latent Xsrc , prompts csrc , c tar , schedule {ti}Ti=0 , edit depth nmax , CFG scales wsrc , w tar .
+
+Output : edited latent Xtar .
+
+1: Zsrc  
+
+> t0
+
+← Xsrc 
+
+2: for i = 1 to nmax do 
+
+3: V ← Vwsrc (Zsrc  
+
+> ti−1
+
+, t i−1, c src )
+
+4: Zsrc  
+
+> ti
+
+← Zsrc  
+
+> ti−1
+
++ ( ti − ti−1)V
+
+5: end for 
+
+6: Ztar  
+
+> tnmax
+
+← Zsrc 
+
+> tnmax
+
+7: for i = nmax to 1 do 
+
+8: V ← Vwtar (Ztar  
+
+> ti
+
+, t i, c tar )
+
+9: Ztar  
+
+> ti−1
+
+← Ztar  
+
+> ti
+
++ ( ti−1 − ti)V
+
+10: end for 
+
+11: return Ztar 
+
+> t0
+
+source-audio CLAP, so the stronger semantic edit comes with a predictable preservation cost. This is the expected behavior for a source-preserving editor: nmax moves along the edit-strength frontier rather than changing the algorithm’s qualitative behavior. Table 5: Effect of the edit-window upper index nmax .
+
+Domain nmax CLAP-T ↑ CLAP-A ↑ LSD ↓ MCD ↓ LPAPS ↓ Structure ↑
+
+SFX 4 0.44 0.87 10.16 195.40 0.06 0.69 SFX 8 0.46 0.83 10.82 236.10 0.07 0.67 SFX 12 0.49 0.74 13.40 349.01 0.12 0.63 SFX 16 0.52 0.63 17.45 486.02 0.19 0.59 SFX 20 0.52 0.62 19.19 536.84 0.21 0.57 SFX 24 0.52 0.59 20.06 551.01 0.22 0.57 SFX 27 0.52 0.59 20.60 561.16 0.22 0.56 Music 4 0.54 0.85 9.94 165.82 0.03 0.98 Music 8 0.55 0.85 10.10 173.91 0.04 0.98 Music 12 0.56 0.83 11.41 234.39 0.06 0.97 Music 16 0.60 0.75 15.85 400.35 0.15 0.93 Music 20 0.60 0.73 17.98 453.25 0.18 0.91 Music 24 0.59 0.72 18.90 474.88 0.19 0.91 Music 27 0.59 0.71 19.10 478.33 0.19 0.92 
+
+Table 6 evaluates the lower edit index nmin on style-oriented prompts. Small positive values can strengthen target style: 
+
+nmin = 4 raises CLAP-T from 0.52 to 0.53 on sound effects and from 0.59 to 0.60 on music. Larger values give too much of the late trajectory to target-only sampling, which weakens source identity and local structure. At nmin = 16 ,CLAP-A falls to 0.41 on sound effects and 0.56 on music, while the structure scores drop to 0.47 and 0.77. 15 arXiv Template A P REPRINT 
+
+Algorithm 4 FireFlowSA3 Input : source latent Xsrc , prompts csrc , c tar , schedule {ti}Ti=0 , edit depth nmax , CFG scales wsrc , w tar .
+
+Output : edited latent Xtar .
+
+1: function MIDPOINT STEP (Z, t a, t b, c, w, U )
+
+2: h ← tb − ta
+
+3: if U = ∅ then 
+
+4: U ← Vw(Z, t a, c )
+
+5: end if 
+
+6: Z1/2 ← Z + 12 hU 
+
+7: U1/2 ← Vw(Z1/2, t a + 12 h, c )
+
+8: return Z + hU 1/2, U 1/2
+
+9: end function 
+
+10: Z ← Xsrc ; U ← ∅
+
+11: for i = 1 to nmax do 
+
+12: Z, U ← MIDPOINT STEP (Z, t i−1, t i, c src , w src , U )
+
+13: end for 
+
+14: U ← ∅
+
+15: for i = nmax to 1 do 
+
+16: Z, U ← MIDPOINT STEP (Z, t i, t i−1, c tar , w tar , U )
+
+17: end for 
+
+18: return Z
+
+Table 6: Effect of the style-control lower index nmin .
+
+Domain nmin CLAP-T ↑ CLAP-A ↑ LSD ↓ MCD ↓ LPAPS ↓ Structure ↑
+
+SFX 0 0.52 0.59 20.06 550.98 0.22 0.56 SFX 4 0.53 0.58 20.45 575.74 0.22 0.56 SFX 8 0.50 0.52 21.72 618.92 0.26 0.50 SFX 12 0.44 0.43 24.13 654.09 0.30 0.47 SFX 16 0.42 0.41 26.37 694.19 0.30 0.47 Music 0 0.59 0.72 18.90 474.84 0.19 0.91 Music 4 0.60 0.72 19.00 485.41 0.19 0.90 Music 8 0.57 0.67 19.85 529.39 0.23 0.87 Music 12 0.53 0.60 21.80 606.77 0.29 0.81 Music 16 0.51 0.56 23.49 652.88 0.31 0.77 
+
+The dedicated style-edit setting in Table 7 uses this freedom deliberately. It keeps the target-style score high, especially for music, but it also lowers source-audio similarity and structure relative to conservative controlled editing. Thus nmin 
+
+should be treated as a style knob: useful when the prompt asks for broader timbral or production change, but not the default choice when preserving the source recording is the main objective. Table 7: Dedicated style-edit setting. 
+
+Domain CLAP-T ↑ CLAP-A ↑ LSD ↓ LPAPS ↓ Structure ↑
+
+SFX 0.50 0.34 21.77 0.35 0.45 Music 0.60 0.68 20.70 0.21 0.94 
+
+## D Solver Calibration 
+
+This section checks whether the velocity-difference update behaves like a stable numerical solver. We vary the number of stochastic velocity samples navg and the step coefficient η while keeping the same source clips and target prompts. The result is that averaging is most valuable when the solver has only 10 steps, whereas the scheduled step size η = 1 .0
+
+gives the best balance between semantic change and source preservation. Table 8 reports velocity averaging. At 28 steps, navg = 1 is already strong: increasing navg reduces LPAPS slightly but does not materially change CLAP-T. At 10 steps, averaging reduces low-level distortion more clearly. For example, 16 arXiv Template A P REPRINT 
+
+music LPAPS decreases from 0.20 at navg = 1 to 0.14 at navg = 10 , and LSD decreases from 19.09 to 16.96. This indicates that stochastic averaging is a budget-dependent variance reduction tool rather than a required component at the default solver resolution. Table 8: Velocity averaging under 10-step and 28-step solvers.                                                                                                                                               
+
+> Domain Tnavg CLAP-T ↑CLAP-A ↑LSD ↓MCD ↓LPAPS ↓Structure ↑
+> SFX 10 10.51 0.58 20.39 558.77 0.22 0.55 SFX 10 30.51 0.63 18.89 527.22 0.19 0.58 SFX 10 50.51 0.63 18.89 528.52 0.19 0.58 SFX 10 10 0.50 0.62 18.53 521.61 0.18 0.58 SFX 28 10.52 0.59 20.06 550.97 0.22 0.57 SFX 28 30.51 0.60 19.50 550.77 0.20 0.57 SFX 28 50.50 0.61 19.26 541.78 0.20 0.57 SFX 28 10 0.50 0.60 19.22 536.52 0.20 0.57 Music 10 10.58 0.70 19.09 500.66 0.20 0.88 Music 10 30.59 0.74 17.68 432.72 0.16 0.93 Music 10 50.59 0.76 17.26 412.90 0.14 0.96 Music 10 10 0.59 0.75 16.96 404.63 0.14 0.96 Music 28 10.60 0.72 18.91 475.00 0.19 0.91 Music 28 30.60 0.73 17.79 438.63 0.16 0.93 Music 28 50.60 0.73 17.94 437.89 0.17 0.93 Music 28 10 0.60 0.73 17.81 432.65 0.16 0.93
+
+Table 9 reports the step-coefficient sweep. Small values such as η = 0 .4 preserve the source well but under-edit the target prompt. Large values such as η = 1 .6 overshoot the scheduled flow step, increasing LPAPS to 0.28 on sound effects and 0.28 on music while reducing CLAP-T. The default η = 1 .0 is therefore not an arbitrary scale choice: it is the point where semantic alignment is high before source drift and spectral distortion grow sharply. Table 9: Step coefficient η.                                                                                                               
+
+> Domain ηCLAP-T ↑CLAP-A ↑LSD ↓MCD ↓LPAPS ↓Structure ↑
+> SFX 0.4 0.46 0.83 11.48 271.62 0.07 0.67 SFX 0.6 0.49 0.76 13.64 363.64 0.11 0.64 SFX 0.8 0.51 0.67 16.54 458.41 0.17 0.60 SFX 1.0 0.52 0.59 20.06 551.05 0.22 0.57 SFX 1.2 0.51 0.54 23.89 638.14 0.25 0.53 SFX 1.4 0.49 0.50 27.57 695.68 0.27 0.51 SFX 1.6 0.45 0.44 31.10 720.77 0.28 0.49 Music 0.4 0.55 0.85 11.02 193.21 0.04 0.98 Music 0.6 0.57 0.83 12.85 263.84 0.06 0.98 Music 0.8 0.59 0.78 15.59 362.61 0.12 0.96 Music 1.0 0.59 0.72 18.90 474.91 0.19 0.91 Music 1.2 0.58 0.66 22.57 589.46 0.23 0.86 Music 1.4 0.56 0.61 26.05 675.39 0.26 0.83 Music 1.6 0.51 0.57 29.13 716.26 0.28 0.82
+
+## E Operation-Type Breakdown 
+
+Real editing requests are not all the same: replacing one sound, adding a new element, and removing a source attribute stress different parts of the editor. This section groups the evaluation by operation type while keeping the same Stable Audio 3 backbone, prompts, and metrics. The goal is to check whether the main result is caused by a single favorable operation category. Table 10 shows that AudEdit remains strong across replacement, addition, and deletion. For sound effects, AudEdit achieves the highest CLAP-T in all three operation groups and also obtains the lowest LPAPS among the compared methods. For music, AudEdit again has the best or tied-best target alignment and the lowest LPAPS in every group. The operation breakdown therefore supports the same conclusion as the aggregate evaluation: the direct velocity-difference path improves the prompt-preservation trade-off broadly rather than only on one edit type. 17 arXiv Template A P REPRINT 
+
+Table 10: Operation-type breakdown. 
+
+Domain Operation Method CLAP-T ↑ CLAP-A ↑ LPAPS ↓ Structure ↑
+
+SFX replacement FireFlow 0.38 0.33 0.33 0.44 SFX replacement ODE Inv. 0.42 0.36 0.32 0.48 SFX replacement SDEdit 0.41 0.39 0.30 0.48 SFX replacement AudEdit 0.52 0.52 0.24 0.55 
+
+SFX addition FireFlow 0.45 0.45 0.29 0.49 SFX addition ODE Inv. 0.49 0.49 0.27 0.51 SFX addition SDEdit 0.42 0.43 0.28 0.47 SFX addition AudEdit 0.54 0.61 0.21 0.56 
+
+SFX deletion FireFlow 0.33 0.33 0.31 0.46 SFX deletion ODE Inv. 0.35 0.37 0.29 0.47 SFX deletion SDEdit 0.43 0.50 0.23 0.52 SFX deletion AudEdit 0.51 0.64 0.19 0.60 
+
+Music replacement FireFlow 0.56 0.61 0.29 0.80 Music replacement ODE Inv. 0.58 0.64 0.26 0.84 Music replacement SDEdit 0.52 0.61 0.29 0.86 Music replacement AudEdit 0.60 0.70 0.20 0.90 
+
+Music addition FireFlow 0.58 0.65 0.26 0.83 Music addition ODE Inv. 0.58 0.67 0.25 0.85 Music addition SDEdit 0.55 0.63 0.26 0.87 Music addition AudEdit 0.61 0.72 0.19 0.89 
+
+Music deletion FireFlow 0.56 0.62 0.26 0.81 Music deletion ODE Inv. 0.57 0.64 0.24 0.84 Music deletion SDEdit 0.52 0.63 0.26 0.88 Music deletion AudEdit 0.57 0.73 0.17 0.93 
+
+## F Source-Prompt and Seed Robustness 
+
+AudEdit evaluates both a source-conditioned velocity and a target-conditioned velocity, so it is natural to ask whether the method depends on a finely written source caption. We test three source-prompt variants: the metadata-derived prompt, a paraphrase, and an empty source prompt. We also run five random seeds on the full evaluation set and report the standard deviation of the aggregate metrics. Table 11 shows that source-prompt changes have small effects. On sound effects, the three source-prompt variants have CLAP-T in the range 0.51–0.54 and structure in the range 0.56–0.56. On music, CLAP-T stays within 0.58–0.59, and the structure score remains high. The seed standard deviations are also small: 0.00 for SFX CLAP-T and 0.00 for music CLAP-T. The source branch therefore does not require a highly specific caption, and the reported behavior is not dominated by stochastic seed variation. Table 11: Source-prompt and seed robustness. Source-prompt rows are means over the sensitivity subset; seed rows report standard deviation over five seeds. 
+
+Domain Setting CLAP-T ↑ CLAP-A ↑ LSD ↓ MCD ↓ LPAPS ↓ Structure ↑
+
+SFX empty source prompt 0.54 0.60 21.63 589.40 0.22 0.56 SFX metadata prompt 0.51 0.58 19.90 570.07 0.22 0.56 SFX paraphrase prompt 0.51 0.58 19.98 576.38 0.22 0.56 Music empty source prompt 0.59 0.69 19.55 491.20 0.20 0.90 Music metadata prompt 0.59 0.71 18.78 468.64 0.19 0.93 Music paraphrase prompt 0.58 0.71 18.81 474.15 0.19 0.93 SFX seed std. 0.00 0.01 0.11 7.12 0.00 0.00 Music seed std. 0.00 0.00 0.10 1.49 0.00 0.01 
+
+18 arXiv Template A P REPRINT 
+
+## G Chained Editing 
+
+Chained editing repeatedly feeds the previous edited output into the next edit request. This is a difficult setting because preservation can be measured in two ways: whether the chain remains close to the original source, and whether each individual step remains close to the immediately preceding audio. The experiment uses multi-stage chains in both sound effects and music, and reports metrics against both references. Table 12 shows that source drift accumulates, especially for sound effects. At the final sound-effect stage, LPAPS against the original source is 0.34 and structure against the source is 0.47, whereas LPAPS against the previous stage is 0.26 and previous-stage structure is 0.58. Music is more stable: final-stage LPAPS against the original is 0.25, and MelodySim against the original remains 0.92. The takeaway is that AudEdit can support chained creative edits, but repeated editing should be treated as a stress case rather than as the default route for precise one-step source preservation. Table 12: Chained editing. “Src” compares each stage to the original source; “Prev” compares it to the immediately preceding stage.                                                                                    
+
+> Domain Stage CLAP-T ↑CLAP-A Src ↑LPAPS Src ↓LPAPS Prev ↓Structure Src ↑Structure Prev ↑
+> SFX 00.50 0.55 0.20 0.20 0.60 0.60 SFX 10.50 0.46 0.23 0.22 0.53 0.59 SFX 30.46 0.32 0.38 0.32 0.43 0.48 SFX 50.42 0.43 0.28 0.28 0.53 0.59 SFX 70.49 0.34 0.34 0.26 0.47 0.58 Music 00.61 0.78 0.19 0.19 0.94 0.94 Music 10.60 0.73 0.23 0.12 0.93 0.92 Music 30.56 0.67 0.26 0.15 0.92 0.96 Music 50.51 0.60 0.27 0.17 0.90 0.94 Music 70.50 0.67 0.25 0.13 0.92 0.96
+
+## H Velocity-Difference Spectra 
+
+The method relies on decoded velocity-difference fields rather than on direct noise injection. This section visualizes and quantifies their spectral content. If the update were mostly an unconstrained noisy perturbation, the decoded fields would spread energy broadly across frequency bands. Instead, the spectra are low-frequency dominated and structured across flow noise levels. Table 13 summarizes band-averaged power at representative noise levels. For both sound effects and music, the 0–250 Hz band dominates the high-frequency bands by one to two orders of magnitude. The 8–16 kHz band remains small throughout the trajectory, dropping to 0.57 for sound effects and 0.11 for music at the low-noise representative point. The velocity difference therefore behaves like a structured acoustic update, not like broadband corruption of the source latent. Table 13: Band-averaged decoded velocity-difference power at representative noise levels.                                           
+
+> Domain Noise level 0–250 Hz 250–1k Hz 1–4k Hz 4–8k Hz 8–16k Hz SFX 0.99 218.26 49.70 16.84 4.88 1.35 SFX 0.82 331.90 33.37 6.93 2.14 0.74 SFX 0.15 312.88 31.68 6.14 1.76 0.57 Music 0.99 412.80 63.94 11.87 2.44 0.85 Music 0.82 439.15 55.69 6.23 0.70 0.26 Music 0.15 292.91 39.80 4.04 0.31 0.11
+
+## I Duration Scaling 
+
+Stable Audio 3 medium supports long-form generation, so music editing should not be evaluated only on short excerpts. This section tests music clips from 15 to 120 seconds while keeping the edit method and prompts fixed. The 120-second endpoint matches the practical duration limit of the backbone. 19 arXiv Template A P REPRINT 
+
+SFX 0 5000 10000 15000 20000 
+
+> Freq.
+> 10 0
+> 10 1
+> 10 2
+> 10 3
+> PSD
+> early (high t)
+> middle
+> late (low t)
+
+(a) Velocity-difference power spectra. 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9  
+
+> t (sigma)
+> 0
+> 2500
+> 5000
+> 7500
+> 10000
+> 12500
+> 15000
+> 17500
+> 20000
+> Freq.
+
+(b) Power-spectral heatmap over flow noise levels. 
+
+Music 0 5000 10000 15000 20000   
+
+> Freq.
+> 10 2
+> 10 1
+> 10 0
+> 10 1
+> 10 2
+> 10 3
+> PSD
+> early (high t)
+> middle
+> late (low t)
+
+(c) Velocity-difference power spectra. 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9  
+
+> t (sigma)
+> 0
+> 2500
+> 5000
+> 7500
+> 10000
+> 12500
+> 15000
+> 17500
+> 20000
+> Freq.
+
+(d) Power-spectral heatmap over flow noise levels. 
+
+Figure 3: Decoded velocity-difference spectral analysis. The top row shows results on sound effects (SFX), and the bottom row shows results on music. For each domain, the left panel presents the decoded velocity-difference power spectra, while the right panel shows the corresponding power-spectral heatmap over flow noise levels. Table 14 shows no metric collapse at long duration. CLAP-T remains between 0.58 and 0.62 across all lengths, and the 120-second setting obtains CLAP-T of 0.61, LPAPS of 0.19, and MelodySim of 0.91. The results do not imply that every long-form edit is artifact-free; long clips still expose localized vocal instability and incomplete arrangement changes. They do show that the direct flow update remains numerically usable over the full tested duration range. Table 14: Music duration scaling. 
+
+Seconds CLAP-T ↑ CLAP-A ↑ LSD ↓ LPAPS ↓ Structure ↑
+
+15 0.58 0.64 20.28 0.22 0.96 30 0.60 0.73 19.18 0.19 0.96 45 0.60 0.74 17.73 0.20 0.91 60 0.60 0.77 16.50 0.18 0.92 75 0.62 0.77 15.36 0.16 0.95 90 0.61 0.78 14.90 0.18 0.94 105 0.60 0.76 15.23 0.17 0.89 120 0.61 0.76 14.95 0.19 0.91 
+
+20 arXiv Template A P REPRINT 
+
+## J Limitation Subset 
+
+The limitation subset is deliberately harder than the main benchmark. It includes acoustically incompatible sound-effect replacements, structurally complex mixtures, vocal-to-instrumental changes, solo-to-ensemble changes, and extreme genre shifts. These prompts test the boundary between controlled editing and broad regeneration. Table 15 shows that the failure mode is domain-dependent. For sound effects, source-audio CLAP falls to 0.25 and structure falls to 0.32, indicating that preserving event timing while changing the event identity can become under-constrained. For music, the aggregate structure score remains high at 0.94, but this does not rule out localized failures such as source-style leakage, unstable vocals, or incomplete instrument replacement. The limitation subset therefore supports a clear operational boundary: AudEdit is strongest when the requested change modifies an existing recording, and weaker when the prompt effectively asks the model to regenerate a new scene or arrangement. Table 15: Limitation subset for AudEdit.                            
+
+> Domain nCLAP-T ↑CLAP-A ↑LSD ↓MCD ↓LPAPS ↓Structure ↑
+> SFX 12 0.49 0.25 22.56 591.14 0.45 0.32 Music 14 0.61 0.67 16.53 480.16 0.23 0.94
+
+21
