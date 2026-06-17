@@ -1,0 +1,230 @@
+Title: Grounding Spoken LLMs in Multi-Speaker Audio via Diarization Conditioning
+
+URL Source: https://arxiv.org/pdf/2606.18134v1
+
+Published Time: Wed, 17 Jun 2026 01:18:23 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# Grounding Spoken LLMs in Multi-Speaker Audio via Diarization Conditioning 
+
+# Alexander Polok ID 1,2, Samuele Cornell ID 2, Sathvik Udupa ID 1, Jan ˇ Cernock´ y ID 1,Shinji Watanabe ID 2, Luk´ aˇ s Burget ID 11 Speech@FIT, Brno University of Technology, Czechia  
+
+> 2
+
+# Language Technologies Institute, Carnegie Mellon University, USA 
+
+ipoloka@fit.vut.cz 
+
+# Abstract 
+
+We propose diarization-conditioned spoken language models (SLMs), a strategy for extending SLMs to far-field multi-talker audio. Rather than adapting the decoder via Serialized Output Training, which risks catastrophic forgetting, we condition the acoustic encoder on diarization masks to extract target-speaker representations, keeping the decoder frozen. We instantiate this as Dixtral, integrating a Diarization Conditioned Whisper (Di-CoW) encoder into the Voxtral SLM. On AMI, NOTSOFAR-1, LibriSpeechMix, and Mixer6, Dixtral outperforms Gemini 3.0 Flash, VibeVoice, and Voxtral Mini Transcribe V2 on speaker-attributed transcription by 29.0%, 19.8%, and 16.0% absolute cpWER respectively. On a novel long-form multi-speaker QA benchmark, zero-shot Dixtral matches Gemini on far-field con-tent understanding, and when fine-tuned surpasses both Gemini and Voxtral operating on close-talk across all tasks. 
+
+Index Terms : speech recognition, multi-talker ASR, human-computer interaction, computational paralinguistics 
+
+# 1. Introduction 
+
+Spoken Large Language Models (SLMs) are increasingly being more capable of multi-talker speech processing [1–4] with some models now supporting long-form speaker attributed transcrip-tion. While not yet as performant as the modular pipelines [5– 10] that dominate current challenges such as CHiME-6-8 [11– 13] and NOTSOFAR-1 [14,15], they promise architectural sim-plicity and, crucially, zero-shot generalization to downstream tasks such as summarization and question-answering that mod-ular systems cannot address. The majority of these Large Language Models (LLM)-based systems rely on Serialized Output Training (SOT) [16], which concatenates multiple speakers’ transcripts into a sin-gle token stream ordered by speech onset. While SOT and its variants [17–20] are effective for conventional encoder-decoder ASR, extending them to LLM decoders introduces a funda-mental architectural challenge: SOT relies on special speaker-change tokens to manage overlapping speech. Accommodat-ing these tokens requires expanding the LLM’s vocabulary and retraining at least some parameters. This structural hurdle is further worsened by a distributional mismatch, as the inter-leaved, temporally-ordered sequences of SOT diverge signif-icantly from the structured, single-speaker formats expected by instruction-tuned LLMs [21]. Consequently, overcoming this mismatch requires decoder fine-tuning on large amounts of multi-speaker data. This in turn causes catastrophic forget-ting of the model’s reasoning, summarization, and question-answering capabilities [22, 23]—precisely the capabilities that motivate using an LLM rather than a task-specific end-to-end transcription model. We argue that target-speaker (TS) extraction [24–26] offers a more LLM-compatible formulation. Rather than forcing the decoder to manage multiple interleaved speakers, we condition the acoustic encoder to extract target-speaker representations. This ensures the LLM generates a single-speaker transcript, more closely matching the distribution it was pretrained on. Target-speaker extraction requires no special speaker-change or serialization tokens, leaving the LLM’s vocabulary untouched, and, as we show, allowing the decoder to remain completely frozen. Furthermore, while executing inference separately for 
+
+S target speakers may intuitively seem computationally de-manding due to repeated acoustic encoding, it actually provides superior scaling for spoken LLMs. Because the autoregres-sive generation step dominates computation and scales quadrat-ically with sequence length, generating a joint multi-speaker transcript of length SN results in a decoding complexity of 
+
+O(( SN )2). In contrast, extracting each speaker independently requires S separate decoding passes of length N , reducing the complexity to O(S · N 2). As LLM backbones grow in size, this reduction in decoding overhead vastly outweighs the cost of running the smaller acoustic encoder multiple times. Current TS-ASR models generally rely on one of three primary paradigms: (1) integrating auxiliary speaker embed-dings [27–30], (2) directly attending to target-speaker enroll-ment speech [31–33], or (3) leveraging diarization masks to guide the model’s attention [34–36]. Building on the lat-ter approach, we introduce Dixtral, a SLM for target-speaker transcription, summarization, and question-answering in multi-talker environments. Dixtral combines two complementary pre-trained systems. The first is Voxtral [37], a SLM pairing a Whisper-based encoder [38] with a Ministral [39] decoder. The second is DiCoW [40], a complete target-speaker ASR (TS-ASR) system featuring a diarization-conditioned Whisper en-coder that isolates target-speaker acoustic representations prior to passing them to Whisper decoder. We evaluate Dixtral on a benchmark comprising four multi-talker datasets: NOTSOFAR-1 (NSF1) [15], AMI [41], Lib-riSpeechMix [16], and Mixer6 [42]. Transcription performance across these datasets is measured using concatenated minimum-permutation word error rate, or cpWER [43]. Additionally, we evaluate the model on NSF-QA, a purposely made syn-thetic question-answering and summarization benchmark built on NSF1 featuring both content and paralinguistic questions. Dixtral outperforms Gemini 3.0 Flash [44, 45], VibeVoice [1], and Voxtral Mini Transcribe V2 [46] on speaker-attributed transcription, achieving a macro-average cpWER of 15.4% compared to 44.4%, 35.2%, and 31.4% respectively. On a novel long-form multi-speaker QA and 
+
+> arXiv:2606.18134v1 [eess.AS] 16 Jun 2026
+
+summarization benchmark, zero-shot Dixtral is able to match Gemini on far-field content understanding. When fine-tuned, Dixtral operating on far-field mixtures significantly surpasses both Gemini and Voxtral operating on close-talk single-speaker audio across all tasks, including paralinguistic queries on emotion and gender that remain inaccessible to cascaded ASR+LLM pipelines. 
+
+# 2. Dixtral: Architecture 
+
+The overall architecture is illustrated in Figure 1. Dixtral builds upon Voxtral [37], a pretrained SLM comprising a Whisper [38] encoder, a modality adapter, and a Ministral 3 [39] LLM-based decoder. While Voxtral demonstrates strong single-speaker speech understanding, it does not support speaker attribution. Our approach is to replace the encoder with a diarization-conditioned variant while keeping the LLM decoder frozen, a strategy applicable to any SLM. In this work we instantiate it with Voxtral and DiCoW [40] specifically because they share the same Whisper architecture, allowing us to initialize from Di-CoW’s pretrained weights and leverage Voxtral’s existing cross-modal alignment. 
+
+2.1. DiCoW: Diarization-Conditioned Whisper 
+
+DiCoW is a complete end-to-end model trained specifically for TS-ASR. It performs target-speaker extraction by conditioning its acoustic encoder directly on diarization outputs. Because the DiCoW encoder is optimized to deliver target-speaker en-codings to a standard Transformer decoder, these intermediate representations are inherently suitable for integration with the Voxtral pipeline. The conditioning relies on frame-by-frame speaker activity probabilities, d(s, t ), where s ∈ { 1, . . . , S } indexes S speakers and t indexes time. For a given target speaker sk , a Silence 
+
+S, Target T , Non-target N , and Overlap O mask, denoted as 
+
+STNO sk , is derived from the diarization output to capture four frame-level speech probabilities: 
+
+pt 
+
+> S
+
+=
+
+> S
+
+Y
+
+> s=1
+
+(1 − d(s, t )) , pt 
+
+> T
+
+= d(sk , t )
+
+> S
+
+Y
+
+> s=1
+> s̸=sk
+
+(1 − d(s, t )) 
+
+pt 
+
+> N
+
+=  1 − pt
+
+> S
+
+ − d(sk , t ), pt 
+
+> O
+
+= d(sk , t ) − pt 
+
+> T
+
+. (1) Instead of directly masking the input audio X, these 
+
+ST N O probabilities are integrated through Frame-Level Diarization-Dependent Transformations (FDDT), that modulate the internal representations of each Transformer layer in the en-coder. Each layer is augmented with four learnable diagonal affine transformation matrices, (Wli, bli), corresponding to the four ST N O categories i ∈ {S , T , N , O} .The input to the encoder block at layer l and frame t, de-noted as zlt, is transformed as a probabilistic blend weighted by the ST N O probabilities: 
+
+ˆzlt = X  
+
+> i∈{S ,T,N,O}
+
+(Wlizlt + bli)pti . (2) Crucially, the encoder does not simply ingest STNO sk at the input layer. Instead, the trainable parameters of the acoustic encoder, denoted as θenc , interleave standard acoustic encoding with the FDDT mechanism. At each of the L encoder layers, the intermediate representations zl are adapted into ˆzl. After passing through all layers, the encoder yields the final high-level target-speaker acoustic representations Henc :
+
+Henc = Encoder θenc (X, STNO sk ) ∈ RTenc ×denc , (3) where Tenc is the encoded sequence length and denc is the en-coder hidden dimension. 
+
+2.2. Dixtral: Target-Speaker Reasoning Framework 
+
+Dixtral integrates the layer-wise target-speaker extraction of the DiCoW encoder with the LLM reasoning capabilities of Vox-tral. The full reasoning pipeline operates as follows: 
+
+2.2.1. Conditioned Acoustic Processing 
+
+The input audio and corresponding diarization mask are pro-cessed by the DiCoW encoder to produce Henc , as defined above. Crucially, this formulation allows for dynamic task switching. If the goal is to extract a specific speaker, the 
+
+STNO sk probabilities are derived from diarization as defined in Equation (1). If the goal is to reason globally over the entire multi-talker audio (or if the input is a single-speaker audio), we simply set the target probability pt 
+
+> T
+
+= 1 and all other probabil-ities to 0 for all frames t, instructing the encoder to process the global acoustic context. Alternatively, supervision can depend on an external Voice Activity Detection (VAD) system. 
+
+2.2.2. Modality Adapter 
+
+To align the conditioned acoustic representations with the se-mantic space of the LLM, Henc is passed through a modality adapter. This Multi-Layer Perceptron (MLP) adapter consists of two linear projections and a GELU nonlinearity to map the encoder embedding space to match the LLM embedding space: 
+
+EA = MLP (Henc ) ∈ RTenc /4×dllm , where dllm is the embedding dimension of the LLM. 
+
+2.2.3. Prompting and Generation 
+
+A discrete textual prompt Q = (q1, q 2, . . . , q K ) of length 
+
+K (e.g., a specific question about the audio, a summariza-tion request, or a standard transcription instruction) is embed-ded into EQ ∈ RK×dllm . The projected audio embeddings 
+
+EA and the text prompt embeddings EQ are concatenated to form the final prefix sequence U = [ EA; EQ]. The LLM de-coder then autoregressively generates the target text sequence 
+
+Y = (y1, y 2, . . . , y N ) by predicting each subsequent token 
+
+yt = LLM (U, Y <i ). Following this, the Cross-Entropy loss is computed only over the tokens Y that follow the prompt: 
+
+LCE = −
+
+> N
+
+X
+
+> i=1
+
+log p(yi|U, Y <i ; θenc ). (4) 
+
+# 3. Experimental Setup 
+
+3.1. Model Initialization 
+
+To initialize Dixtral, we leverage the shared pretraining dynam-ics of Voxtral and DiCoW. Because Voxtral learned its projec-tor with a frozen Whisper encoder [37] and DiCoW learned its FDDT with a frozen decoder, combining them introduces minimal architectural friction. This compatibility allows for an initialization design where one can either replace the entire acoustic encoder with DiCoW’s pretrained weights, or selec-tively inject only the pretrained FDDT parameters into Voxtral’s encoder. Figure 1: Dixtral architecture with external DiariZen diarization conditioning. The DiCoW encoder conditions on STNO diarization masks via FDDT to extract target-speaker representations, which are projected into the frozen Mistral decoder. Only the encoder (orange) is trained; the diarization model, adapter and LLM (cyan) remain frozen. 
+
+Table 1: QA and summarization dataset statistics on NSF-1.                         
+
+> Content QA Emotion QA Summ. Split Entity Topic Y/N Detail Train 1,111 1,139 1,557 775 1,196 390 Dev 579 593 807 402 579 201 Eval 1,092 1,114 1,515 753 1,145 379
+
+Importantly, during fine-tuning, we freeze both the LLM and the modality adapter , updating only the acoustic encoder layers and the FDDT modules to learn the STNO conditioning. For our experiments, we build upon the Voxtral Mini 3B model (which utilizes a Ministral 3B backbone and Whisper large-v3 acoustic encoder). 
+
+3.2. Tasks and Metrics 
+
+3.2.1. Multi-talker ASR 
+
+We evaluate transcription performance using Concatenated Minimum-Permutation Word Error Rate (cpWER) [43] across four datasets: AMI [41], LibriSpeechMix (LSMix) [16], NOTSOFAR-1 (NSF-1) [15], and Mixer6 (MX6) [42]. Among these, MX6 is not included in training and serves to assess out-of-domain generalization. We employ DiariZen [47] as the di-arization backbone for both DiCoW and Dixtral; it serves as a reliable baseline, and the models’ sensitivity to this specific system has already been studied [40]. 
+
+3.2.2. Audio Question Answering (QA) and Summarization 
+
+To evaluate SLMs’ capabilities beyond transcription, we intro-duce a long-form audio, target-speaker QA and summarization benchmark on NSF-1 (Table 1). The QA benchmark comprises two categories. Content QA 
+
+covers entity, topic, yes/no, and detail questions answerable from text alone (e.g., entity: “Which city did this speaker men-tion as an example of good dog parks?”, topic: “What main concern did this speaker raise about including water features in the park?”, yes/no: “Did this speaker support adding a dog park to the design?”, and detail: “What suggestion did this speaker make regarding elderly people?”). Paralinguistic QA 
+
+includes emotion and speaker gender questions (e.g., “What was the perceived gender of this speaker?”) that require audio understanding. Emotion questions are generated by providing Gemini with the target speaker’s transcript alongside utterance-level emotion labels (9 classes) from emotion2vec [48], ex-tracted from close-talk recordings with ground-truth segmen-tation, enabling questions grounded in specific moments (e.g. “Did this speaker sound enthusiastic when discussing the new playground?”). Speaker gender labels are derived from session metadata. Paralinguistic questions cannot be answered by cas-caded systems that discard the audio signal, making them a test for end-to-end audio understanding. QA predictions are scored by Gemini 2.5 Flash as a binary LLM judge (correct / incorrect) and we report accuracy. We acknowledge that using Gemini for both reference generation and judging introduces potential cir-cularity; if anything, this may favor Gemini-generated outputs in Table 4, making Dixtral’s advantage over Gemini conserva-tive. No question references timestamps or segment boundaries, so each system must locate and reason over relevant information across the entire meeting. For summarization, each system is prompted to produce a concise summary ( <50 words) of what the target speaker said during the meeting. Five reference summaries per speaker are generated from ground-truth transcripts using Gemini 2.5 Flash, and system outputs are evaluated with ROUGE-L [49], taking the maximum across references to accommodate valid variation in phrasing. The full benchmark, generation scripts, and judge prompts are released as open source 1.
+
+3.3. Training Details 
+
+To demonstrate viability for standard academic compute, we train on just eight 24GB A5000 GPUs. Following SE-DiCoW [50], models are trained for 20k steps with a peak learn-ing rate of 6e-5 (5k warmup steps, cosine decay to zero). To process 2-minute utterances within these memory limits, we employ gradient checkpointing, bfloat16 precision, and 4 gra-dient accumulation steps to achieve an effective global batch size of 32. Two settings exceed this budget: for AMI de-coding, we chunk each session into 5-minute segments split at diarization-derived pauses; for QA and summarization fine-tuning, the long-form audio does not fit on the A5000s and is in-stead run on H100 GPUs. All training recipes, inference scripts, and code are open-sourced 2.
+
+# 4. Results 
+
+4.1. Target-Speaker Transcription Performance 
+
+Table 2 evaluates Dixtral against task-specific systems (Di-CoW v3.3 [50], VibeVoice [1], Voxtral MTv2 [46]) and the 
+
+> 1https://hf.co/datasets/popcornell/NSF-QA
+> 2https://github.com/BUTSpeechFIT/Dixtral
+
+Table 2: Concatenated Minimum-Permutation Word Error Rate (cpWER, %) comparison across multi-talker datasets against specialized MT-ASR baselines and general purpose spoken LMs. DiCoW v3.3 and Dixtral results are obtained using di-arization from DiariZen. 
+
+NSF-1 AMI LSMix MX-6 Avg. Small SDM 1 2 3 CH4 
+
+Specialized MT-ASR Models 
+
+Voxtral MTv2 54.4 42.3 2.0 28.2 42.3 19.4 31.4 VibeVoice 35.8 33.7 2.1 50.8 72.8 16.0 35.2 DiCoW v3.3 26.6 18.6 1.8 3.1 21.7 11.9 14.0 
+
+General Purpose Spoken LMs 
+
+Gemini 3.0 Flash 39.1 56.3 4.5 23.3 84.7 58.3 44.4 Dixtral 29.1 19.8 2.1 3.6 23.5 14.4 15.4 Table 3: Ablation study (cpWER %, oracle diarization). Enc. swap : full DiCoW encoder replaces Voxtral’s. FDDT swap :only FDDT parameters are injected. LoRA : low-rank adapta-tion added to the decoder. QA+Summ ft: model further fine-tuned for summarization and question answering. 
+
+NSF-1 AMI LSMix MX6 Small SDM 1 2 3 CH4 Dixtral wo/ swap 26.3 19.8 1.9 2.3 3.6 12.6 w/ enc. swap 26.4 21.0 1.9 2.4 4.6 20.4 w/ FDDT swap 26.3 17.1 1.8 2.2 3.5 16.2 w/ LORA 21.3 16.4 2.0 2.6 4.8 14.5 QA+Summ ft 24.3 19.4 2.2 3.1 5.6 26.1 general-purpose Gemini 3.0 Flash [44, 45]. On NOTSOFAR-1, Dixtral achieves 29.1% cpWER, substantially outperform-ing VibeVoice (35.8%) 3, Gemini (39.1%), and Voxtral MTv2 (54.4%). On AMI, Dixtral reaches 19.8%, narrowing the gap to the dedicated DiCoW acoustic model (18.6%) while simul-taneously supporting zero-shot downstream tasks. This per-formance extends out-of-domain to Mixer6 CH4 (14.4% cp-WER), outperforming all other LLM-based systems (Gemini, Voxtral MTv2 and Vibevoice). Table 3 isolates architectural choices using oracle diariza-tion. Under strict compute budgets, a full encoder swap ( w/ enc. swap ) converges fastest (32.0% NSF-1 cpWER at 2k steps, compared to 37.7% for FDDT-only and 38.8% for random ini-tialization). However, over longer training runs, random ini-tialization ( wo/ swap ) or hot-swapping only FDDT parameters (w/ FDDT swap ) proves superior. Preserving Voxtral’s original encoder weights prevents downstream embedding shifts, main-taining stable cross-modal alignment. Applying Low-Rank Adaptation ( w/ LORA ) to the decoder yields the best overall ASR performance (21.3% NSF-1, 16.4% AMI) by absorbing subtle language characteristic shifts without passing destruc-tively large gradients to the acoustic encoder. Finally, further fine-tuning for downstream reasoning ( QA+Summ ft ) degrades pure transcription, most visibly on Mixer-6 (14.5% → 26.1%), as the encoder adapts to optimize for reasoning at the expense of verbatim accuracy. Joint ASR and QA+summarization training could mitigate this effect but is left for future work.  
+
+> 3We used the official open-sourced checkpoint and code from the Authors: https://github.com/microsoft/VibeVoice
+
+Table 4: QA and summarization results on NSF-QA. Content QA is answerable from text; Emotion and Gender require audio understanding. Baselines are zero-shot; Dixtral (finetuned) is trained on NSF-QA to demonstrate the method’s potential.                              
+
+> QA (Accuracy ↑)Summ. System Content Emotion Gender ROUGE-L ↑
+> Far-field
+> Dixtral (zero-shot) 54.6 25.4 43.2 24.4 Dixtral (+LoRA, zero-shot) 56.9 22.2 73.3 15.4 Dixtral (finetuned) 73.0 47.6 95.5 41.4 Gemini 3.0 Flash 55.1 29.3 74.1 23.7
+> Close-talk
+> Voxtral Mv1 68.3 25.5 49.7 24.1 Gemini 3.0 Flash 68.1 34.1 75.0 26.4
+
+4.2. Question Answering and Summarization 
+
+Table 4 evaluates QA and summarization on NSF-QA. To iso-late the contribution of diarization conditioning we compare Dixtral on far-field mixtures against its “parent model” Vox-tral Mv1 on close-talk per-speaker audio (since it lacks any multi-speaker capability). We additionally report Gemini 3.0 Flash as a reference. This latter, for far-field audio, is prompted with positional speaker descriptions (e.g. “Consider the speaker who starts speaking third from the beginning”) as it lacks direct diarization conditioning. Zero-shot after ASR-only training, Dixtral on far-field mix-tures matches Voxtral on close-talk for Emotion QA (25.4% vs. 25.5%) and summarization (ROUGE-L 24.4 vs. 24.1), confirm-ing that the frozen decoder’s capabilities are preserved. Con-tent QA is lower (54.6% vs. 68.3%) due to the harder far-field multi-speaker condition, though comparable to Gemini on far-field (55.1%). Adding LoRA to the decoder for MT-ASR fine-tuning is a double-edged sword: it surfaces speaker-level at-tributes, pushing Gender QA to 73.3%—on par with Gemini (74.1%) and far above Voxtral’s near-chance 49.7%—but de-grades instruction following, occasionally producing verbatim transcriptions instead of summaries (15.4 ROUGE-L). After explicit fine-tuning on NSF-QA, Dixtral on far-field audio surpasses both Voxtral and Gemini on close-talk across all categories, demonstrating the full potential of diarization con-ditioning when task specific data is also available. 
+
+# 5. Conclusion 
+
+We proposed diarization-conditioned spoken LLMs, a general strategy for grounding spoken LLMs in multi-talker audio by conditioning the encoder while keeping the decoder frozen. In-stantiated as Dixtral, this approach outperforms existing spoken LLMs on speaker-attributed transcription across four datasets. On QA and summarization, zero-shot Dixtral roughly matches Gemini on far-field for content QA (54.6% vs. 55.1%) and Voxtral on close-talk per-speaker oracle signal for summariza-tion and emotion QA, showing that the frozen decoder retains its general-purpose capabilities. When fine-tuned, Dixtral sur-passes both Voxtral and Gemini on close-talk across all tasks, including emotion and gender queries that cascaded pipelines cannot address. These findings suggest that diarization condi-tioning can be a promising path for extending spoken LLMs to far-field multi-speaker understanding. Future work includes end-to-end joint training with diarization, multilingual evalua-tion, and scaling in tasks, model size, and training data. 6. Acknowledgements 
+
+The work was supported by Ministry of Education, Youth and Sports of the Czech Republic (MoE) through the OP JAK project “Linguistics, Artificial Intelligence and Language and Speech Technologies: from Research to Applications” (ID:CZ.02.01.01/00/23 020/0008518), and Brno Ph.D. Talent Scholarship Programme. Computing on IT4I supercomputer was supported by MoE through the e-INFRA CZ (ID:90254). 
+
+# 7. Generative AI Use Disclosure 
+
+Generative AI tools have been used to help revise and refine the manuscript. 
+
+# 8. References 
+
+[1] Z. Peng et al. , “VIBEVOICE-ASR technical report,” 2026. [Online]. Available: https://arxiv.org/abs/2601.18184 [2] M. Huo, Y. Shao, and Y. Zhang, “TagSpeech: End-to-end multi-speaker ASR and diarization with fine-grained temporal grounding,” 2026. [Online]. Available: https://arxiv.org/abs/2601. 06896 [3] L. Meng, S. Hu, J. Kang, Z. Li, Y. Wang, W. Wu, X. Wu, X. Liu, and H. Meng, “Large language model can transcribe speech in multi-talker scenarios with versatile instructions,” in 
+
+ICASSP 2025 - 2025 IEEE International Conference on Acous-tics, Speech and Signal Processing (ICASSP) , 2025, pp. 1–5. [4] D. Yu et al. , “MOSS transcribe diarize: Accurate transcription with speaker diarization,” arXiv preprint arXiv:2601.01554 , 2026. [5] R. Wang et al. , “The USTC-NERCSLIP systems for CHiME-7 challenge,” in Proc. of CHiME , 2023, pp. 13–18. [6] S. Niu et al. , “The USTC-NERCSLIP systems for the CHiME-8 NOTSOFAR-1 challenge,” in 8th International Workshop on Speech Processing in Everyday Environments (CHiME 2024) ,2024, pp. 31–36. [7] L. Ye, H. Lu, G. Cheng, Y. Chen, Z. Shang, and X. Li, “The IACAS-Thinkit system for CHiME-7 challenge,” in Proc. of CHiME , 2023, pp. 23–26. [8] A. Mitrofanov et al. , “STCON System for the CHiME-8 Chal-lenge,” in Proc. of CHiME , 2024, pp. 13–17. [9] N. Kamo et al. , “NTT Multi-Speaker ASR System for the DASR Task of CHiME-8 Challenge,” in Proc. of CHiME , 2024, pp. 69– 74. [10] A. Polok, D. Klement, J. Han, S. Sedl´ aˇ cek, B. Yusuf, M. Ma-ciejewski, M. Wiesner, and L. Burget, “BUT/JHU system de-scription for CHiME-8 NOTSOFAR-1 challenge,” in 8th Interna-tional Workshop on Speech Processing in Everyday Environments (CHiME 2024) , 2024, pp. 18–22. [11] S. Watanabe et al. , “CHiME-6 challenge: Tackling multispeaker speech recognition for unsegmented recordings,” in 6th Interna-tional Workshop on Speech Processing in Everyday Environments (CHiME 2020) , 2020, pp. 1–7. [12] S. Cornell et al. , “Recent trends in distant conversational speech recognition: A review of CHiME-7 and 8 DASR challenges,” Computer Speech & Language , vol. 97, p. 101901, 2026. [Online]. Available: https://www.sciencedirect. com/science/article/pii/S0885230825001263 [13] K. ˇ Zmol´ ıkov´ a et al. , “The CHiME-8 MMCSG Challenge: Multi-modal conversations in smart glasses,” in Proc. of CHiME , 2024, pp. 7–12. [14] I. Abramovski, A. Vinnikov, S. Shaer, N. Kanda, X. Wang, A. Ivry, and E. Krupka, “Summary of the NOTSOFAR-1 chal-lenge: Highlights and learnings,” Computer Speech & Language ,vol. 93, p. 101796, 2025. [15] A. Vinnikov et al. , “NOTSOFAR-1 challenge: New datasets, baseline, and tasks for distant meeting transcription,” in Proc. of Interspeech , 2024, pp. 5003–5007. [16] N. Kanda, Y. Gaur, X. Wang, Z. Meng, and T. Yoshioka, “Seri-alized output training for end-to-end overlapped speech recogni-tion,” in Interspeech 2020 , 2020, pp. 2797–2801. [17] N. Kanda, J. Wu, Y. Wu, X. Xiao, Z. Meng, X. Wang, Y. Gaur, Z. Chen, J. Li, and T. Yoshioka, “Streaming multi-talker ASR with token-level serialized output training,” in Interspeech 2022 , 2022, pp. 3774–3778. [18] Y. Liang, F. Yu, Y. Li, P. Guo, S. Zhang, Q. Chen, and L. Xie, “BA-SOT: Boundary-aware serialized output training for multi-talker ASR,” in Proc. of Interspeech , 2023, pp. 3487–3491. [19] Z. Fan, L. Dong, J. Zhang, L. Lu, and Z. Ma, “SA-SOT: Speaker-aware serialized output training for multi-talker ASR,” in Proc. of ICASSP , 2024, pp. 9986–9990. [20] M. Kocour, M. Karafiat, A. Polok, D. Klement, L. Burget, and J. ˇCernock´ y, “Adapting diarization-conditioned Whisper for end-to-end multi-talker speech recognition,” 2025. [Online]. Available: https://arxiv.org/abs/2510.03723 [21] H. Shi, Y. Fujita, T. Mizumoto, L. Liu, A. Kojima, and Y. Sudo, “Serialized output prompting for large language model-based multi-talker speech recognition,” 2025. [Online]. Available: https://arxiv.org/abs/2509.04488 [22] Y. Luo, Z. Yang, F. Meng, Y. Li, J. Zhou, and Y. Zhang, “An empirical study of catastrophic forgetting in large language mod-els during continual fine-tuning,” IEEE Transactions on Audio, Speech and Language Processing , vol. 33, pp. 3776–3786, 2025. [23] H. Li, L. Ding, M. Fang, and D. Tao, “Revisiting catastrophic forgetting in large language model tuning,” in Findings of the Association for Computational Linguistics: EMNLP 2024 ,Y. Al-Onaizan, M. Bansal, and Y.-N. Chen, Eds. Miami, Florida, USA: Association for Computational Linguistics, Nov. 2024, pp. 4297–4308. [Online]. Available: https://aclanthology. org/2024.findings-emnlp.249/ [24] K. Zmolikova, M. Delcroix, T. Ochiai, K. Kinoshita, J. ˇ Cernock´ y, and D. Yu, “Neural target speech extraction: An overview,” IEEE Signal Processing Magazine , vol. 40, no. 3, pp. 8–29, 2023. [25] Q. Wang et al. , “VoiceFilter-Lite: Streaming targeted voice sep-aration for on-device speech recognition,” in Interspeech 2020 ,2020, pp. 2677–2681. [26] I. Medennikov et al. , “Target-speaker voice activity detection: A novel approach for multi-speaker diarization in a dinner party sce-nario,” in Interspeech 2020 , 2020, pp. 274–278. [27] Z. Huang, D. Raj, P. Garc´ ıa, and S. Khudanpur, “Adapting self-supervised models to multi-talker speech recognition using speaker embeddings,” in Proc. of ICASSP , 2023, pp. 1–5. [28] H. Ma, Z. Peng, M. Shao, J. Li, and J. Liu, “Extending Whisper with prompt tuning to target-speaker ASR,” in 2024 IEEE Inter-national Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2024, pp. 12 516–12 520. [29] T. Moriya, H. Sato, T. Ochiai, M. Delcroix, and T. Shinozaki, “Streaming target-speaker ASR with neural transducer,” in Inter-speech 2022 , 2022, pp. 2673–2677. [30] M. Delcroix, K. Zmolikova, K. Kinoshita, A. Ogawa, and T. Nakatani, “Single channel target speaker extraction and recog-nition with speaker beam,” in 2018 IEEE International Confer-ence on Acoustics, Speech and Signal Processing (ICASSP) , 2018, pp. 5554–5558. [31] L. Meng, J. Kang, Y. Wang, Z. Jin, X. Wu, X. Liu, and H. Meng, “Empowering Whisper as a joint multi-talker and target-talker speech recognition system,” in Interspeech 2024 , 2024, pp. 4653– 4657. [32] P. Guo, X. Chang, H. Lv, S. Watanabe, and L. Xie, “SQ-Whisper: Speaker-querying based Whisper model for target-speaker ASR,” 
+
+arXiv preprint arXiv:2412.05589 , 2024. [33] R. Masumura et al. , “End-to-end joint target and non-target speak-ers ASR,” in Interspeech 2023 , 2023, pp. 2903–2907. [34] J. Wang, W. Wang, K. Dhawan, T. Park, M. Kim, I. Medennikov, H. Huang, N. Koluguri, J. Balam, and B. Ginsburg, “META-CAT: Speaker-informed speech embeddings via meta information con-catenation for multi-talker ASR,” in ICASSP 2025 - 2025 IEEE International Conference on Acoustics, Speech and Signal Pro-cessing (ICASSP) , 2025, pp. 1–5. [35] W. Wang, T. Park, I. Medennikov, J. Wang, K. Dhawan, H. Huang, N. Rao Koluguri, J. Balam, and B. Ginsburg, “Speaker targeting via self-speaker adaptation for multi-talker ASR,” in Proc. of In-terspeech , 2025, pp. 5498–5502. [36] A. Polok, D. Klement, M. Wiesner, S. Khudanpur, J. ˇ Cernock´ y, and L. Burget, “Target speaker ASR with Whisper,” in 2025 IEEE International Conference on Acoustics, Speech and Signal Pro-cessing (ICASSP) , 2025, pp. 1–5. [37] A. H. Liu et al. , “Voxtral,” 2025. [Online]. Available: https://arxiv.org/abs/2507.13264 [38] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak supervision,” in International conference on machine learning .PMLR, 2023, pp. 28 492–28 518. [39] A. H. L. K. Khandelwal et al. , “Ministral 3,” 2026. [Online]. Available: https://arxiv.org/abs/2601.08584 [40] A. Polok, D. Klement, M. Kocour, J. Han, F. Landini, B. Yusuf, M. Wiesner, S. Khudanpur, J. ˇ Cernock´ y, and L. Burget, “DiCoW: Diarization-conditioned Whisper for target speaker automatic speech recognition,” Computer Speech & Language , vol. 95, p. 101841, 2026. [Online]. Available: https://www.sciencedirect. com/science/article/pii/S088523082500066X [41] I. Mccowan et al. , “The AMI meeting corpus,” Int’l. Conf. on Methods and Techniques in Behavioral Research , 01 2005. [42] L. Brandschain, D. Graff, C. Cieri, K. Walker, C. Caruso, and A. Neely, “Mixer 6,” in Proceedings of the Seventh International Conference on Language Resources and Evaluation (LREC’10) ,N. C. C. Chair), K. Choukri, B. Maegaard, J. Mariani, J. Odijk, S. Piperidis, M. Rosner, and D. Tapias, Eds. Valletta, Malta: European Language Resources Association (ELRA), may 2010. [43] T. v. Neumann, C. B. Boeddeker, M. Delcroix, and R. Haeb-Umbach, “MeetEval: A toolkit for computation of word error rates for meeting transcription systems,” in Proceedings of the 7th International Workshop on Speech Processing in Everyday Envi-ronments (CHiME 2023) , 2023, pp. 27–32. [44] Google DeepMind, “Gemini 3 flash model card,” 2025, accessed: 2026-02-25. [Online]. Available: https://storage.googleapis.com/ deepmind-media/Model-Cards/Gemini-3-Flash-Model-Card.pdf [45] G. Comanici et al. , “Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities,” 2025. [Online]. Available: https://arxiv.org/abs/2507.06261 [46] A. H. Liu et al. , “Voxtral realtime,” 2026. [Online]. Available: https://arxiv.org/abs/2602.11298 [47] J. Han, F. Landini, J. Rohdin, A. Silnova, M. Diez, J. ˇ Cernock´ y, and L. Burget, “Fine-tune before structured pruning: Towards compact and accurate self-supervised models for speaker diariza-tion,” in Interspeech 2025 , 2025, pp. 1583–1587. [48] Z. Ma, Z. Zheng, J. Ye, J. Li, Z. Gao, S. Zhang, and X. Chen, “emotion2vec: Self-supervised pre-training for speech emotion representation,” in Findings of the Association for Computational Linguistics: ACL 2024 , L.-W. Ku, A. Martins, and V. Srikumar, Eds. Bangkok, Thailand: Association for Computational Linguistics, Aug. 2024, pp. 15 747–15 760. [Online]. Available: https://aclanthology.org/2024.findings-acl.931/ [49] C.-Y. Lin, “Rouge: A package for automatic evaluation of sum-maries,” in Text summarization branches out , 2004, pp. 74–81. [50] A. Polok, D. Klement, S. Cornell, M. Wiesner, J. ˇCernock´ y, S. Khudanpur, and L. Burget, “SE-DiCoW: Self-enrolled diarization-conditioned Whisper,” in ICASSP 2026 - 2026 IEEE International Conference on Acoustics, Speech and Signal Pro-cessing (ICASSP) , 2026.
