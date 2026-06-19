@@ -1,0 +1,273 @@
+Title: Repurposing a Speech Classifier for Guided Diffusion-Based Speech Generation
+
+URL Source: https://arxiv.org/pdf/2606.20457v1
+
+Published Time: Fri, 19 Jun 2026 01:13:49 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# Repurposing a Speech Classifier for Guided Diffusion-Based Speech Generation 
+
+# Rostislav Makarov ID 1, Timo Gerkmann ID 11 University of Hamburg, Germany 
+
+firstname.lastname@uni-hamburg.de 
+
+# Abstract 
+
+Classifier guidance is a way to control diffusion generation by using a noise-conditioned classifier to steer the sampling pro-cess toward a target class. One drawback of classifier guidance is that it requires two separately trained models: a classifier and a diffusion model. We therefore study a more compact alterna-tive in which a conventionally trained speech classifier is repur-posed as the backbone for diffusion generation. Starting from a frozen noise-conditioned classifier in log-Mel space, we attach a lightweight subnetwork that reuses intermediate classifier rep-resentations and train only this subnetwork under a Denoising Score Matching objective. Our work shows that a pretrained classifier can be repurposed for conditional generation, provid-ing an appealing bridge between discriminative modeling and conditional speech synthesis resulting in high speech quality within a single-backbone model, with reduced memory foot-print and computational cost. 1
+
+Index Terms : diffusion, score matching, speech generation, classifier guidance 
+
+# 1. Introduction 
+
+Score-based diffusion models have become a strong framework for generative modeling by learning the score of progressively perturbed data distributions and reversing a noise process at inference time [1]. In recent work, this framework has also been successfully applied to speech generation [2, 3, 4, 5]. A common approach to conditional generation is Classifier Guid-ance (CG) [6, 7], where a noise-conditioned classifier steers the reverse dynamics toward a target label using input gradients. However, CG is expensive: it requires a separately trained clas-sifier and evaluation of both models at each reverse sampling step. Instead of maintaining separate generative and discrimi-native components, the so-called Joint Energy-based Model (JEM) reveals a hidden generative model inside a classifier by interpreting its logits as an unnormalized joint model p(X, y )
+
+over inputs X and labels y [8]. Under this view, the stan-dard predictive distribution p(y|X) remains unchanged, but the same logits also define an unnormalized marginal model 
+
+p(X) over inputs. Since diffusion sampling only requires a score ∇X log p(X), it can be obtained directly by differenti-ation through the classifier and has been used as an approxima-tion for the true score [9]. However, treating the classifier itself as an energy-based model over X, y requires dealing with an intractable normalizing constant and is known to cause train-ing instabilities [8]. We therefore use the JEM view only to extract score-relevant intermediate signals from a frozen classi-fier, while learning the final score with Denoising Score Match-ing (DSM). 
+
+> 1
+
+The project page: audio samples and code: https://sp-uhh. github.io/classifier-to-diffusion/ .
+
+Motivated by this, we investigate whether a convention-ally trained noise-conditioned classifier already provides suf-ficient information for score-based generation. We keep the classifier parameters fixed and train a lightweight generative adapter on top of its feature maps, following subnetwork and frozen-backbone adaptation strategies [10, 11, 12]. This yields a parameter-efficient alternative to the standard two-model con-ditional generation pipeline. Our main contributions are: (1) we show that a conven-tionally trained noise-conditioned speech classifier can be re-purposed for diffusion generation; (2) we propose a parameter-efficient adaptation strategy that keeps the classifier frozen and trains only a lightweight generative subnetwork on its interme-diate representations; and (3) we validate the method on SC09 benchmark [13, 2], comparing with a standard diffusion U-Net [14] and open-source SC09 models with fewer trainable param-eters and lower compute, including low-data / zero-shot abla-tions against classifier-guided U-Net. 
+
+# 2. Methodology 
+
+2.1. Score-Based Diffusion in Feature Space 
+
+We operate in a feature space of log-Mel filterbank features. Let 
+
+X0 ∈ RF ×N denote a log-Mel spectrogram drawn from the data distribution p0, where F is the number of Mel frequency bins and N is the number of time frames. Following [1], we define forward diffusion by means of the Stochastic Differential Equation (SDE) 
+
+dX t = f (Xt, t ) dt + g(t) dW t, t ∈ [0 , 1] , (1) where f (Xt, t ) is the drift, g(t) is the diffusion coefficient, 
+
+t is the continuous diffusion time, and Wt is standard Brown-ian motion with the same dimensionality as Xt. Starting from 
+
+X0 ∼ p0, the forward SDE gradually adds noise and defines a sequence of time-indexed densities {pt}t∈[0 ,1] for the random variable Xt, such that p1 is close to a simple Gaussian distribu-tion. To generate samples, we draw X1 ∼ p1 and then integrate the dynamics backward in time from t = 1 to t = 0 . It has been shown that there exists a reverse SDE that reproduces the same distribution of Xt for t ∈ [0 , 1] as the forward process [1]: 
+
+dX t =
+
+
+
+f (Xt, t ) − g(t)2∇Xt log pt(Xt)
+
+
+
+dt + g(t) d ¯Wt.
+
+(2) The term ∇Xt log pt(Xt) is called the score function. We approximate it with a time-conditioned network sθ such that: 
+
+sθ (Xt, t ) ≈ ∇ Xt log pt(Xt) (3) We learn sθ via DSM [1], matching it to the perturbation score ∇Xt log q(Xt|X0, t ) available in closed form: 
+
+L(θ) = Et∼U (0 ,1) EX0∼p0 EXt∼q(Xt|X0,t )
+
+∥sθ (Xt, t ) − ∇ Xt log q(Xt|X0, t )∥22
+
+ . (4) 
+
+> arXiv:2606.20457v1 [eess.AS] 18 Jun 2026
+
+Figure 1: Conditional diffusion with classifier guidance. (a) Standard pipeline: a score model (U-Net) predicts the diffusion score, while a separate noise-conditioned classifier provides guidance by backpropagating the class probability pϕ,t (y|Xt) to the input. 
+
+(b) Score Subnet: a frozen classifier backbone provides forward taps h(k) 
+
+> ϕ⋆
+
+, while gradient taps g(k) 
+
+> ϕ⋆
+
+are obtained by backpropagating the JEM-style marginal probability pϕ,t (Xt) to the intermediate taps; the Subnet predicts the diffusion score from these signals. 
+
+In practice, we approximate statistical expectations E by means of empirical averaging. At inference time, we replace the un-known score in the reverse SDE with sθ (X, t ) and solve it nu-merically to generate samples. 
+
+2.2. Classifier Guidance 
+
+For class-conditional generation we condition on y (e.g., a class label or text prompt) and aim to sample X0 ∼ p(X|y).In score-based diffusion this requires the conditional score 
+
+∇Xt log pt(Xt|y). By Bayes’ rule, 
+
+∇Xt log pt(Xt|y) = ∇Xt log pt(Xt) + ∇Xt log pt(y|Xt),
+
+(5) since ∇Xt log pt(y) = 0. As in (3) we approximate the unconditional score ∇Xt log pt(Xt) with a score model 
+
+sθ (Xt, t ). The second term ∇Xt log pt(y|Xt) is obtained by differentiating the log-probability of a noise-conditioned classi-fier pϕ,t (y|Xt) with respect to Xt, where the classifier is trained with cross-entropy on noisy inputs: 
+
+LCE (ϕ) = Et, (X0,y ) EXt∼q(Xt|X0,t ) [− log pϕ,t (y|Xt)] .
+
+(6) We can form a guided score 
+
+˜s(Xt, t, y ) = sθ (Xt, t ) + γ ∇Xt log pϕ,t (y|Xt), (7) where parameter γ ≥ 0 controls the guidance strength. We then sample by plugging ˜s into the reverse SDE (2). 
+
+2.3. Joint Energy-based Model 
+
+One prominent way to connect discriminative classifiers with generative models is to reinterpret classifier logits, fϕ,t (Xt) ∈
+
+RC for C classes, as unnormalized log-probability scores over classes. Following JEM [8] we can define these probabilities over input–label pairs (Xt, y ):
+
+pϕ,t (Xt, y ) = exp( fϕ,t (Xt)[ y]) 
+
+Z(ϕ) . (8) Here fϕ,t (Xt)[ y] denotes the y-th component of the logit vector fϕ,t (Xt). The constant Z(ϕ) normalizes the distribution over (Xt, y ). Marginalizing out y gives us a density model over inputs Xt:
+
+pϕ,t (Xt) = X
+
+> y
+
+pϕ,t (Xt, y ) = 
+
+P 
+
+> y
+
+exp( fϕ,t (Xt)[ y]) 
+
+Z(ϕ) , (9) while dividing the joint distribution (8) by the marginal (9) recovers the same classifier conditional distribution pϕ,t (y|Xt)
+
+used in Section 2.2. In the score-based diffusion framework, sampling requires the true score ∇Xt log pt(Xt). The JEM construction provides an analytic surrogate score by differentiating the classifier-based marginal (9): 
+
+∇Xt log pt(Xt) ≈ ∇ Xt log pϕ,t (Xt)= ∇Xt log 
+
+> C
+
+X
+
+> y=1
+
+exp ( fϕ,t (Xt)[ y]) . (10) where the normalization constant cancels since 
+
+∇Xt log Z(ϕ) = 0. Unlike (3), which learns the score with sθ (Xt, t ), the JEM formulation obtains a classifier-derived score by backpropagating the marginal log-density through the classifier. However, full JEM-style training involves an intractable normalization constant and has been reported to suffer from unstable optimization [8]. We therefore use this construction only at the representation level: forward activations and JEM-style activation gradients from a frozen classifier are used as inputs to a DSM-trained score subnet. The Energy-based Classifier and Generator (EGC) [9] ap-plies this idea in diffusion by training a single time-conditioned classifier with both generative (4) and discriminative (6) objec-tives. However, EGC uses a time-conditioned U-Net classifier. The authors report markedly better generation quality for this architecture than for a standard feedforward ResNet, suggest-ing that strong performance in this framework depends on an encoder-decoder backbone [9]. This makes EGC approach less suitable for our goal of repurposing a classifier backbone, where we aim to retain a conventional classifier model. 3. A Subnetwork for Score Prediction 
+
+To repurpose a pretrained noise-conditioned classifier for dif-fusion generation without modifying its parameters, we attach a lightweight decoder-style adapter Score Subnet to a frozen classifier backbone [10] and train only the subnet with DSM (Eq. (4)), reusing the classifier as a fixed multi-scale feature ex-tractor instead of training a full encoder–decoder score model. Let fϕ⋆,t denote the frozen classifier. We extract intermedi-ate feature maps taps from stages k = 0 , . . . , K , h(k) 
+
+> ϕ⋆
+
+(Xt, t )
+
+(Fig. 1), taken from the same intermediate resolutions where a standard U-Net forms spatial skip connections. In addition, we compute gradient taps by backpropagating the JEM-style marginal log-density from Eq. (9) through the classifier: 
+
+g(k) 
+
+> ϕ⋆
+
+(Xt, t ) = ∂ log pϕ⋆,t (Xt)
+
+∂h (k) 
+
+> ϕ⋆
+
+(Xt, t ) , k = 0 , . . . , K. (11) This choice is motivated by the JEM score surrogate (Sec. 2.3), which suggests that backpropagating classifier logits can reveal an unconditional, score-like signal, and that interme-diate gradient taps along this backpropagation path may pro-vide useful information for the Score Subnet. At each stage, we RMS-normalize the forward tap h(k) 
+
+> ϕ⋆
+
+and the gradient tap g(k) 
+
+> ϕ⋆
+
+,project them to a common channel dimension, and fuse them via a cross-attention module. After forming all fused taps, the decoder starts from the deepest one, applies several ResBlocks [15], upsamples to the next resolution, and then adds the follow-ing fused tap. This coarse-to-fine procedure is repeated until the original log-Mel resolution is reached. We optimize only the subnet parameters ψ under DSM, keeping ϕ⋆ fixed. At inference time, we use sψ in the reverse SDE (Eq. (2)) for unconditional sampling, and combine it with standard classifier guidance (Eq. (5)) for conditional generation. 
+
+# 4. Experimental Setup 
+
+4.1. Benchmark 
+
+For training and evaluation, we use the class-labeled Speech Commands dataset [13], our primary benchmark is SC09 , the spoken-digit subset (“zero”–“nine”) commonly used for speech generation [2, 5, 16]. We follow the official train/validation/test splits. 
+
+4.2. Speech features 
+
+We represent audio as log-Mel filterbanks using FFT size 1024 ,hop length 256 , and 80 Mel bins. We estimate global normal-ization statistics on the training split, subtract the training-set mean, and divide by the maximum absolute deviation to map features to [−1, 1] . After the normalization, the feature standard deviation became below 0.5, which stabilizes diffusion train-ing. Since generation is performed in log-Mel filterbanks, we reconstruct waveforms using HiFi-GAN [17] with a pretrained 16 kHz vocoder 2.
+
+4.3. Architecture Backbone. As a base architecture, we use a standard U-Net [14] with base width 64, three ResBlocks in the encoder, two Res-Blocks in the bottleneck, and six ResBlocks in the decoder, with stride-2 convolutions for downsampling/upsampling. Our clas-sifier is obtained from the U-Net by replacing its up path with a classifier head. The resulting model keeps the input projection, 
+
+> 2huggingface.co/speechbrain/tts-hifigan-libritts-16kHz
+
+Figure 2: Effect of guidance strength γ on SC09 condi-tional generation (FID ↓). We compare U-Net with Classifier Guidance sampling to our Score Subnet across three training regimes: 3% training data, training label set {3, 5, 7}, and single-label training (label 4). The purple curve shows a Score Subnet variant without gradient taps. 
+
+time embedding, down path, and bottleneck, and projects the flattened bottleneck representation to class logits. 
+
+Score Subnet. We attach the decoder-style Score Subnet described in Sec. 3 to the frozen classifier backbone. The sub-net uses the same tap stages as the classifier encoder, starts from the deepest fused tap, and runs from coarse to fine resolu-tion with upsampling–convolution modules and additive stage-wise merging. Each stage contains three ResBlocks with base width 32. A final GroupNorm–SiLU–Conv head maps the finest-resolution feature map to a one-channel score estimate 
+
+sψ (Xt, t ) in log-Mel space. 
+
+4.4. Training procedure 
+
+We train three components with all random seeds fixed: 
+
+(i) U-Net diffusion baseline. We train a U-Net score model end-to-end with DSM (Eq. (4)), directly predicting the score 
+
+sθ (Xt, t ).
+
+(ii) Noise-conditioned classifier. We train the classifier en-coder with cross-entropy on noisy inputs (Eq. (6)) to obtain 
+
+pϕ,t (y|Xt). This classifier is kept frozen during diffusion sam-pling via CG and during subnet training. 
+
+(iii) Score subnet on a frozen classifier. We freeze the trained classifier parameters ϕ⋆ and train only subnet parame-ters ψ with DSM (Eq. (4)), using the intermediate representa-tions taps and gradient taps as inputs (Sec. 3). This yields a single-backbone generator that reuses the frozen classifier for intermediate representations. 
+
+Sampling and guidance. All diffusion models use the variance-preserving (VP) SDE [1] with 100 reverse-time steps and an Euler–Maruyama sampler. During sampling, we clip in-termediate score predictions to [−1, 1] at each reverse step. For Table 1: Main results on SC09 for unconditional and classifier-guided conditional generation. We compare open-source baselines to a conventional U-Net score model and Score Subnet , which predicts the diffusion score using a frozen classifier backbone. We report total and trainable parameters ( Total [Train] ) and sampling-time compute (GMACs per diffusion step). Conditional rows use classifier guidance with γ = 3 .0 and the same guidance classifier across methods, which Score Subnet reuses as part of its backbone. Metrics cover ScoreQ MOS, FAD, and ResNeXt-based fidelity/diversity. Best results within each section are highlighted. 
+
+Model Params (M)  
+
+> Total [Train]
+
+GMACs ScoreQ   
+
+> MOS ↑
+
+FAD ↓ ResNeXt-based FID ↓ IS ↑ mIS ↑ AM ↓
+
+Unconditional generation 
+
+DiffWave [2] 3 24.2 – 2.85 2.59 1.92 5.26 51.21 0.68 SaShiMi [16] 3 23.0 – 2.79 1.84 1.42 5.94 69.17 0.59 EDMSound [5] 45.2 – – – 0.14 7.17 160.2 0.33 U-Net 16.6 [16.6] 14.56 3.06 0.74 0.17 7.51 168.98 0.30 Score Subnet (ours) 12.3 [4.4] 12.07 3.10 0.84 0.17 7.82 195.65 0.26 
+
+no gradient taps 11.9 [4.0] 7.71 3.04 0.90 0.28 7.02 126.95 0.37 
+
+Conditional generation ( γ = 3 .0)
+
+U-Net + Classifier 24.5 [16.6] 22.74 3.25 0.82 0.03 8.36 260.50 0.19 Score Subnet (ours) 12.3 [4.4] 16.44 3.26 1.02 0.03 8.65 287.19 0.15 
+
+no gradient taps 11.9 [4.0] 11.50 3.23 0.94 0.02 8.05 223.98 0.22 conditional generation, we apply classifier guidance (Eq. (5)) using the frozen noise-conditioned classifier and sweep the guidance strength γ.
+
+4.5. Evaluation Metrics 
+
+We use the standard SC09 benchmark metrics based on an aux-iliary ResNeXt classifier, following prior work [2] and the pro-tocol of the Unconditional Audio Generation Benchmark repos-itory 4. These include FID (Fr´ echet distance in ResNeXt em-beddings); Inception Score (IS), which rewards confident and diverse classifier predictions on generated samples; mIS, the same score computed in a class-balanced way; and Activation Maximization (AM), which reflects how well generated sam-ples match the intended class under the auxiliary classifier. Since these scores are tied to a particular pretrained ResNeXt model and use the training split as the reference, we additionally report two audio-specific metrics: Fr´ echet Audio Distance (FAD) 5 computed from VGGish embeddings [18], and SCOREQ, a non-intrusive speech-quality predictor that esti-mates MOS [19]. We generate 2048 samples per model and evaluate FAD against the full SC09 test split (4107 utterances). 
+
+Compute (GMACs). We report GMACs estimated with THOP 6 for a one-second input and one reverse diffusion step. Forward pass MACs computed from thop.profile ;backward MACs (for classifier) are approximated via auto-grad backward hooks on Conv /Linear layers, counting only input-gradient compute ( dL/dx ). We sum the relevant for-ward/backward terms for each inference path. 
+
+# 5. Results 
+
+In Tab. 1 we present the main results on the SC09 bench-mark, including parameter counts and GMACs. For uncondi-tional SC09 generation, we first report three open-source base-lines (DiffWave, SaShiMi, EDMSound) together with parame-ter counts and three metric groups (speech quality, FAD, and ResNeXt-based). A U-Net trained end-to-end already reaches strong performance, outperforming the open-source baselines 
+
+> 3Samples from huggingface.co/krandiash/sashimi-release
+> 4github.com/gzhu06/Unconditional-Audio-Generation-Benchmark
+> 5github.com/gudgud96/frechet-audio-distance
+> 6github.com/Lyken17/pytorch-OpCounter
+
+on perceptual quality and most ResNeXt-based metrics (e.g., ScoreQ 3.06 and FAD 0.74 , with FID 0.17 ), but uses a full 
+
+16 .6M-parameter generator and 14 .56 GMACs per step. Score Subnet matches the U-Net on FID 0.17 and improves ScoreQ and the remaining ResNeXt-based metrics, while training only a 4.4M subnet and reducing compute to 12 .07 GMACs. The 
+
+no gradient taps variant further reduces compute to about half of the U-Net baseline, but is worse than the full Score Subnet on most metrics, indicating that gradient taps are beneficial. For conditional generation ( γ=3 .0), Score Subnet performs on par with the standard classifier-guided U-Net pipeline, but is more compact and cheaper ( 12 .3M total / 4.4M trainable, 
+
+16 .44 GMACs vs. 24 .5M total, 22 .74 GMACs). Since the guidance classifier is part of the Score Subnet backbone, CG reuses its forward pass. The no gradient taps variant is cheaper still, reaching about half the U-Net+Classifier compute, but is slightly worse overall. 
+
+Guidance study in low-data regimes. Fig. 2 reports FID on SC09 as a function of guidance strength γ in low-data and zero-shot regimes. We train the guidance classifier on full SC09, then train the diffusion model or Score Subnet on re-stricted subsets (3% data, labels {3, 5, 7} only, or label 4 only), using the same frozen classifier for guided sampling. Across all settings, increasing γ improves FID, and Score Subnet con-sistently outperforms the classifier-guided U-Net, with gains al-ready visible at γ ≥ 3. This suggests that the proposed method can reuse classifier representations for generation even when the score model sees only limited data or a subset of labels. 
+
+# 6. Conclusions 
+
+In this work, we show that a conventionally trained noise-conditioned speech classifier can be repurposed for diffusion-based speech generation in log-Mel space. By freezing the clas-sifier and training only a lightweight Score Subnet on its in-termediate representations, we obtain a compact generator that reduces both trainable parameters and compute compared to a standard U-Net and the standard two-model classifier-guidance. On the SC09 benchmark, the Score Subnet matches or slightly improves the strong U-Net and open-source baselines at a much lower cost. Furthermore, in low-data and zero-shot guidance regimes it consistently outperforms the classifier-guided U-Net. 7. Acknowledgements 
+
+Funded by the Deutsche Forschungsgemeinschaft (DFG, Ger-man Research Foundation) – 545210893, 498394658. The au-thors gratefully acknowledge the scientific support and HPC re-sources provided by the Erlangen National High Performance Computing Center (NHR@FAU) of the Friedrich-Alexander-Universit¨ at Erlangen-N¨ urnberg (FAU) under the NHR project f102ac. NHR funding is provided by federal and Bavarian state authorities. NHR@FAU hardware is partially funded by the German Research Foundation (DFG) – 440719683. 
+
+# 8. Generative AI Use Disclosure 
+
+Generative AI tools were used only for minor language editing (clarity, grammar, and polishing). All ideas, methods, experi-ments, results, and conclusions were produced and verified by the authors, who take full responsibility for the paper. 
+
+# 9. References 
+
+[1] Y. Song, J. Sohl-Dickstein, D. P. Kingma, A. Kumar, S. Ermon, and B. Poole, “Score-based generative modeling through stochas-tic differential equations,” in Int. Conf. on Learning Representa-tions (ICLR) , Vienna, Austria, 2021. [2] Z. Kong, W. Ping, J. Huang, K. Zhao, and B. Catanzaro, “Dif-fWave: A versatile diffusion model for audio synthesis,” in 
+
+Int. Conf. on Learning Representations (ICLR) , Vienna, Austria, 2021. [3] N. Chen, Y. Zhang, H. Zen, R. J. Weiss, M. Norouzi, and W. Chan, “WaveGrad: Estimating gradients for waveform generation,” in 
+
+Int. Conf. on Learning Representations (ICLR) , Vienna, Austria, 2021. [4] V. Popov, I. Vovk, V. Gogoryan, T. Sadekova, and M. Kudinov, “Grad-TTS: A diffusion probabilistic model for text-to-speech,” in Int. Conf. on Machine Learning (ICML) , Virtual, 2021, p. 8599–8608. [5] G. Zhu, Y. Wen, M.-A. Carbonneau, and Z. Duan, “EDMSound: Spectrogram based diffusion models for efficient and high-quality audio synthesis,” in NeurIPS Workshop on Machine Learning for Audio (ML4Audio) , New Orleans, LA, USA, 2023. [6] P. Dhariwal and A. Nichol, “Diffusion models beat GANs on image synthesis,” in Advances in Neural Inf. Proc. Systems (NeurIPS) , vol. 34, Virtual, 2021, p. 8780–8794. [7] H. Kim, S. Kim, and S. Yoon, “Guided-TTS: A diffusion model for text-to-speech via classifier guidance,” in Int. Conf. on Machine Learning (ICML) , Baltimore, MD, USA, 2022, p. 11119–11133. [8] W. Grathwohl, K.-C. Wang, J.-H. Jacobsen, D. Duvenaud, M. Norouzi, and K. Swersky, “Your classifier is secretly an en-ergy based model and you should treat it like one,” in Int. Conf. on Learning Representations (ICLR) , Addis Ababa, Ethiopia, 2020. [9] Q. Guo, C. Ma, Y. Jiang, Z. Yuan, Y. Yu, and P. Luo, “EGC: Image generation and classification via a diffusion energy-based model,” in IEEE/CVF Int. Conf. on Computer Vision (ICCV) ,Paris, France, 2023, p. 22952–22962. [10] A. Alenin, N. Torgashov, A. Okhotnikov, R. Makarov, and I. Yakovlev, “A subnetwork approach for spoofing aware speaker verification,” in ISCA Interspeech , Incheon, Korea, 2022, p. 2888–2892. [11] L. Zhang, A. Rao, and M. Agrawala, “Adding conditional con-trol to text-to-image diffusion models,” in IEEE/CVF Int. Conf. on Computer Vision (ICCV) , Paris, France, 2023, p. 3836–3847. [12] O.-B. Mercea, A. Gritsenko, C. Schmid, and A. Arnab, “Time-, memory-, and parameter-efficient visual adaptation,” in 
+
+IEEE/CVF Conf. on Computer Vision and Pattern Recognition (CVPR) , Seattle, WA, USA, 2024, p. 5536–5545. [13] P. Warden, “Speech commands: A dataset for limited-vocabulary speech recognition,” CoRR , 2018. [Online]. Available: https://openreview.net/forum?id=ToFokWcYgD [14] J. Ho, A. Jain, and P. Abbeel, “Denoising diffusion probabilis-tic models,” in Advances in Neural Inf. Proc. Systems (NeurIPS) ,vol. 33, Virtual, 2020, p. 6840–6851. [15] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for image recognition,” in IEEE/CVF Conf. on Computer Vision and Pattern Recognition (CVPR) , Las Vegas, NV, USA, 2016, p. 770–778. [16] K. Goel, A. Gu, C. Donahue, and C. R´ e, “It’s raw! audio genera-tion with state-space models,” in Int. Conf. on Machine Learning (ICML) , Baltimore, MD, USA, 2022, p. 7616–7633. [17] J. Kong, J. Kim, and J. Bae, “HiFi-GAN: Generative adversarial networks for efficient and high fidelity speech synthesis,” in Ad-vances in Neural Inf. Proc. Systems (NeurIPS) , vol. 33, Virtual, 2020. [18] K. Kilgour, M. Zuluaga, D. Roblek, and M. Sharifi, “Fr´ echet au-dio distance: A reference-free metric for evaluating music en-hancement algorithms,” in ISCA Interspeech , Graz, Austria, 2019, p. 2350–2354. [19] A. Ragano, J. Skoglund, and A. Hines, “SCOREQ: Speech quality assessment with contrastive regression,” in Advances in Neural Inf. Proc. Systems (NeurIPS) , vol. 37, Vancouver, Canada, 2024, p. 105702–105729.

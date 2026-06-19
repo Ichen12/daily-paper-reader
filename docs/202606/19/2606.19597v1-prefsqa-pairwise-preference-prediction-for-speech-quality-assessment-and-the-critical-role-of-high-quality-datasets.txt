@@ -1,0 +1,177 @@
+Title: PrefSQA: Pairwise Preference Prediction for Speech Quality Assessment and the Critical Role of High Quality Datasets
+
+URL Source: https://arxiv.org/pdf/2606.19597v1
+
+Published Time: Fri, 19 Jun 2026 00:14:09 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# PrefSQA: Pairwise Preference Prediction for Speech Quality Assessment and the Critical Role of High Quality Datasets 
+
+# Junyi Fan ID 1,∗∗ , Donald S. Williamson ID 11 Department of Computer Science and Engineering, The Ohio State University, USA 
+
+fan.1188@osu.edu, williamson.413@osu.edu 
+
+# Abstract 
+
+Mean opinion scores (MOS) are widely used for speech quality assessment, yet scalar labels are sensitive to rater variability and listening test differences. This introduces labeling noise, which limits the reliability of MOS prediction. Preference prediction reduces this variability as listeners compare signals directly, producing cleaner labels. We study MOS-free preference pre-diction and propose PrefSQA, which incorporates uncertainty-aware logits, an impairment attention head, and a module based on non-matching-reference comparisons. We use and refine five datasets, including MOS-derived and low-noise simulated sets with matching and non-matching content, experiment with human preference sets, and test on unseen data. Experiments show small improvements on MOS-derived data, while other sets reveal clear improvement over the baselines, highlighting the value of high-quality preference data and demonstrating the effectiveness of the proposed method. 
+
+Index Terms : speech quality assessment, pairwise ranking 
+
+# 1. Introduction 
+
+Perceptual speech quality assessment (SQA) plays a crucial role in speech enhancement, text-to-speech (TTS), and automatic speech recognition systems [1]. Although subjective listening tests remain the most reliable way to assess speech quality, they are expensive, time-consuming, and impractical to run at large scales required by modern speech systems. Automatic methods are therefore developed to efficiently estimate quality. Modern automatic SQA has long relied on mean opinion scores (MOS) to assign scalar values to utterances. Although widely adopted, MOS-based systems introduce challenges that limit progress in automatic SQA. Discrepancies in listening test protocols, vari-ability among listeners [2], and the use of discrete rating scales [3] all contribute to high labeling noise [4]. The noise creates difficulty for supervised learning and obscures quality differ-ences between signals. These issues motivated a shift toward preference-based assessment, where listeners compare quality levels of two signals rather than assign absolute scores. Pair-wise judgments reduce subjective variability, as relative quality is easier and more consistent for listeners [5, 6]. As a result, the judgments also depend less on listening test protocols and their results translate well across different tests. Deep learning has enabled rapid developments in modern SQA systems. MOSNet [7], NISQA [8], and VoiceMOS Chal-lenges [9], to name a few, demonstrated substantial progress over traditional metrics. However, corpus and domain effect is-sues [4] limit performance for these MOS prediction models. To overcome this, preference-based ideas have been incorporated 
+
+> ** indicates the corresponding author.
+
+in various ways, such as adding pairwise-comparison losses as auxiliary supervision to refine MOS regression [10], introduc-ing preference- or ranking-based objectives to regularize qual-ity representations [11, 12], training no-reference models from pairwise preferences to reduce reliance on noisy absolute labels [13], or incorporating comparative MOS or pairwise objectives as components of a unified training recipe [14]. However, these approaches, along with a related study on predicting pairwise preferences between TTS stimuli [15], remain tied to MOS or other rating-derived supervision, as they are incorporated into the pipelines at one or more stages. This has resulted in a lim-ited number of existing works focusing on MOS-independent preference prediction, with [16] being, to the best of our knowl-edge, the only major work addressing this issue. Meanwhile, public datasets for preference-based SQA are scarce compared to MOS datasets. This forces preference studies to often rely on labels derived from MOS, which were designed for scalar rating tasks. MOS and preference listening tests use substantially dif-ferent setups, causing the derived datasets not only to bear the inherent noise from MOS data but also to introduce additional noise due to discrepancies in study protocols. This can obscure major improvements in supervised preference prediction, where accuracy differences of multiple models are smaller than actual differences in model capabilities. This work studies MOS-free pairwise preference prediction through PrefSQA and examines how dataset quality affects the visibility of model improvements. We construct five prefer-ence datasets based on SOMOS [17], NISQA [8], LibriSpeech [18], and ChiME-3 [19], which include pairs with matching and non-matching lexical content, with both real and simulated ut-terances. Despite being derived from existing MOS datasets, MOS labels are never seen by models in any way during de-velopment. This reduces the labeling noise they introduce. More importantly, this also aligns better with real-world sit-uations where preference labels are not always available with MOS. Building on the framework of UPPSQA [16], we adopt its semantic-acoustic architecture, which combines wav2vec 2.0 [20] and WavLM [21], as the starting point for our model de-sign. We then introduce original architectural decisions to im-prove pairwise preference modeling. Specifically, our model is augmented with uncertainty-aware Bradley-Terry preference logits [22], a lightweight impairment attention head that em-phasizes local degradations, and a feature-level non-matching-reference (NMR) head that refines global rankings through in-batch comparisons. Results on MOS-derived datasets show small gains, while results on high-quality simulated datasets re-veal clear performance gaps across models, showing how low-noise labels are essential for identifying benefits of architectural changes. Evaluations on human-preference labels and unseen data further confirm the effectiveness of our model.    
+
+> arXiv:2606.19597v1 [cs.SD] 17 Jun 2026 waveform x
+> wav2vec 2.0
+> WavLM
+> MLP
+> MLP
+> layer norm
+> layer norm
+> residual
+> residual
+> concat BLSTM &
+> pooling
+> 1-d conv pooling
+> MLP
+> score heads s0, logσ 2, and s r
+> In-batch NMR
+> score head
+
+Figure 1: PrefSQA model architecture for input waveform x with semantic-acoustic encoders, augmented with uncertainty-aware preference logits, a lightweight impairment attention head (purple blocks), and a feature-level non-matching-reference (NMR) head (blue blocks). The other input waveform y (not shown here) goes through the same process. 
+
+# 2. Method 
+
+2.1. Backbones: dual encoders 
+
+Figure 1 illustrates the PrefSQA architecture for a single sig-nal in a pair. Following [16], pretrained wav2vec2 and WavLM encoders provide semantic and acoustically sensitive represen-tations, respectively, for a waveform. The wav2vec2 branch uses the last hidden state, while the WavLM branch passes the full set of layer outputs through a learnable layer-weighted sum module that produces a single sequence of hidden states. The layer-weighted sum module maintains a learnable param-eter vector over layers and a temperature parameter that con-trols the sharpness of softmax weights. During training, a small gate randomly drops some layers before renormalization to pre-vent over-reliance on a small subset of WavLM layers and to encourage robust use of the encoder. The semantic and acous-tic sequences then pass through a residual feature processor of two linear layers with GELU activation and a layer normaliza-tion on the residual sum of input and output. This preserves the original dimensionality while allowing task-specific adaptation. The processed semantic and acoustic features are concatenated along the channel axis and fed into a BLSTM. The BLSTM output sequence is pooled by averaging across time, yielding a vector embedding per utterance that summarizes both semantic and acoustic cues. Two linear heads map this embedding to a scalar score s0 and a scalar log variance log σ2. s0 behaves as a latent MOS value in an arbitrary scale, while the variance pro-vides an uncertainty estimate that later controls the sharpness of the preference comparison between two utterances. 
+
+2.2. Impairment attention head 
+
+To emphasize local impairment cues, PrefSQA employs an im-pairment attention head that operates on encoder features. This branch applies a 1-D convolution over time on the concate-nated encoder features, followed by a sigmoid gating layer that produces a time-wise attention mask. This forms an attention-weighted average of the input that later passes through a mul-tilayer projection, offering a scalar residual sr . This residual, scaled by a factor α, is added to s0 and acts as a lightweight distortion-focused correction besides the global BLSTM sum-mary. The final quality score is s = s0 + α ∗ sr .
+
+2.3. Uncertainty-aware pairwise preference logits 
+
+Given utterance pair x and y, the model computes their scores and log variances, (sx, log σ2
+
+> x
+
+) and (sy , log σ2 
+
+> y
+
+). The prefer-ence logit for “ x preferred over y” is obtained as 
+
+zx,y = sx − sy
+
+pσ2 
+
+> x
+
++ σ2 
+
+> y
+
++ ϵ , (1) where the denominator, denoted as τ , acts as an uncertainty-dependent temperature. To avoid excessively sharp or overly flat preference logits, we clamp τ to a fixed range [a, b ] by 
+
+min(max( τ, a ), b ). The final preference probability for x over 
+
+y is the sigmoid of zx,y . For training, however, we optimize the raw logits directly using binary cross-entropy (BCE) with logits, which applies sigmoid internally for numerical stability (Section 2.5). Because the model only uses model-predicted scores and variances at the utterance level, it is valid regardless of whether the two signals share content or differ in length. 
+
+2.4. Lightweight feature-level NMR preference head 
+
+To further improve the global ranking, we include a feature-level NMR head [12]. It operates on embeddings from a batch and uses pseudo-labels derived from the model’s own scores. Specifically, after a BLSTM and average pooling, an MLP pro-duces the utterance embedding f , which is later fed into the NMR head. Given a batch of B preference pairs, we form a bag of 2B utterance items by first collecting utterances from all pairs and retrieving their embeddings f . Each item is then used once as an anchor, and for each anchor, up to k distinct part-ner items are sampled without replacement from the remaining 
+
+2B − 1 items. For each pair, we construct a feature vector 
+
+ui,j = [ fi, fj , fi − fj , |fi − fj |]. (2) where fi and fj are embeddings of the utterances. An MLP maps ui,j to a scalar logit ℓi,j that predicts the probability that 
+
+i has higher quality than j. The corresponding soft target ti,j 
+
+is the sigmoid of (si − sj )/τ nmr , built from the latent scores with a fixed temperature τnmr and light label smoothing toward 0.5. An NMR loss, LNMR , is then defined as the BCE between 
+
+ℓi,j and ti,j , averaged over all sampled in-batch pairs. This auxiliary head encourages the embedding space to respect the order implied by the model’s own scores in a more fine-grained way than the main pairwise loss alone. 
+
+2.5. Training objectives 
+
+The primary loss LBT in (3) is the Bradley-Terry logistic loss [22] on zx,y , where m indexes pairs in a batch and c[m] equals 1 if the label indicates x is preferred and 0 otherwise. The NMR loss LNMR is scaled by λ and then added to the primary loss to form the total loss L in (4). 
+
+LBT = BCEwithLogits  zx,y [m], c [m] (3) 
+
+L = LBT + λLNMR (4) 
+
+# 3. Datasets 
+
+3.1. MOS-derived datasets: NISQA and SOMOS 
+
+For the NISQA data, we use the full dataset including all sub-set conditions (e.g., P501, LIVE, SIM). We maintain all these subset conditions and also the original train, validation, and test split conditions. All pairs are generated inside those spe-cific conditions and no utterances are moved across conditions. Within each condition, we randomly sample pairs made of utter-ances with non-matching content. Each utterance can be used at most three times. No pair is used more than once. The utter-ance with the higher MOS in a pair is labeled as preferred. Tie pairs with equal MOS are dropped, as we are not predicting ties. We then concatenate all train, validation, and test pairs across all subset conditions. Similar to NISQA, we follow the original split in SOMOS, made of TTS samples. Only SOMOS-clean is used. We then sample pairs from utterances with the same underlying sentence text for matching-content pairs or with dif-ferent sentence texts for non-matching-content pairs. For both NISQA and SOMOS, the preferred signal appears as the first or second one in the pair randomly. 
+
+3.2. CHiLi matching and non-matching datasets 
+
+To obtain preference labels with minimal labeling noise, we construct pairwise matching (M) and non-matching (NM) datasets, named CHiLi, by mixing clean speech from Lib-riSpeech with additive background noise from CHiME-3. Both datasets share the same generation pipeline and differ only in whether two signals in a pair use the same clean speech or not. For the pairs, we define three scalar parameters: a base SNR 
+
+na for signal A sampled uniformly from -20 to 30 dB, an SNR difference ∆ sampled uniformly from 0.5 to 10 dB, and a ran-dom sign of either +, − to determine the SNR nb for signal B, where nb = na ± ∆. This ensures that absolute SNR values are within the range normally seen in the literature and SNR differ-ences between pairs make the task reasonably challenging. The SNR values for the resulting mixture are achieved by scaling the noise segment. The preferred signal in a pair is defined as the one with higher SNR. In the NM case, each sample appears exactly twice in two different pairs to achieve balanced repre-sentation and equal-sized datasets between M and NM. For any clean speech, the noise signal is always randomly selected from all conditions in CHiME-3. Thus, the background noise for two clean samples in any pair are essentially always different and sometimes even from different noise conditions, which greatly increases data diversity and therefore benefits model robustness. 
+
+# 4. Experimental Results 
+
+4.1. Experimental setup 
+
+Input signals are resampled to 16 kHz, truncated or zero-padded to a maximum length of 6 seconds, with an attention mask marking valid samples. The layer-weighted sum module uses temperature 0.5 and gate dropout 0.1. The two-layer feature processors for the encoders each have a 64-dimensional bottle-neck. A single-layer BLSTM has 256 hidden units per direc-tion, followed by an MLP with hidden sizes 256-128-64. The impairment attention head has scaling factor α of 0.1 and uses a temporal convolution with 128 channels and kernel size 5, fol-lowed by a 1 by 1 gate convolution. τ for zx,y is clamped to 
+
+[0 .6, 2.0] . The NMR loss samples k = 3 partners per anchor, with temperature 1.3, label smoothing 0.03, and λ of 0.9, us-ing a two-layer MLP of size 256-128-1. Training uses AdamW [23], with an effective batch size of 32, learning rate 0.001 for the task heads and wav2vec2, base learning rate 0.00003 for WavLM with layerwise decay factor 0.95, weight decay 0.01, and gradient norm clipping at 1.0. WavLM uses a smaller learn-ing rate to retain stable pretrained acoustic features. 
+
+4.2. Dataset setup 
+
+All datasets in Section 3 have balanced preference labels both globally and locally. Specifically, we partition pairs by absolute MOS or SNR difference into bins of width 0.1 and verify that in bins with enough samples, the two labels occur in approxi-mately equal numbers. Ensuring balanced datasets is important for this task as it removes trivial strategies such as always pre-dicting the majority class, which allows accuracy to reflect how well the model performs rather than label frequency bias. We also use SpeechEval [24] (tie pairs excluded) and SpeechJudge [25] to reflect performance on labels collected from real listen-ing tests. It is worth mentioning that these two datasets only contain pairs with matching speech content. We also use the IUB dataset [26], constructed from the COSINE corpus through MUSHRA tests, solely for testing to assess the model’s gener-alization capabilities. We use its scaled MOS for all three audio samples (reference, anchor, and test) in a MUSHRA test to de-rive three audio pairs. Preference labels derived this way can be roughly treated as authentic labels due to how MUSHRA tests are conducted. One COSINE test set is constructed with ran-domly selected MUSHRA tests from the original dataset. 
+
+4.3. Preference accuracy results 
+
+Table 1 presents experimental results for SQAPP [13], UPP-SQA [16], PrefSQA Frozen, and PrefSQA, trained and evalu-ated separately on selected datasets with their pair counts. It also reports results on the unseen IUB-COSINE test set using the same checkpoints trained on CHiLi NM or SpeechEval, ren-dering two different combinations. UPPSQA and the first stage of SQAPP are the two most closely related models that can be applied directly to our task. We implement both based on the original papers, as public code is not available. The difference between PrefSQA Frozen and PrefSQA is that dual encoders are frozen for the former during training. For NISQA and SOMOS data, PrefSQA models achieve the best results, with all mod-els except SQAPP showing small differences. For SOMOS M and NM, the same three models offer close accuracies, despite the NM task being intuitively harder. The contrast with ChiLi datasets is much clearer, where our models dominate the perfor-mance by a large margin, with CHiLi M offering higher accu-racies than NM across all four models. Our model also shows superior performance on SpeechEval and SpeechJudge, except that SQAPP performs the best on SpeechJudge. We assume this is because SpeechJudge provides direct, curated preference su-pervision that closely matches SQAPP’s training objective. We also achieve leading results with unseen data, as suggested by the IUB-COSINE set, tested on both CHiLi NM and Speecheval training checkpoints, which indicates strong generalization per-formance. Table 1: Prediction accuracy (%) and dataset pair counts. Best and second-best scores are shown in bold and underlined, respectively. PrefSQA-F has the pretrained encoders frozen. C and S suffixes indicate results from checkpoints trained on CHiLi NM (Non-Matching) and SpeechEval, respectively.                                                          
+
+> Dataset SQAPP UPPSQA PrefSQA-F PrefSQA Train Val Test
+> NISQA †64.83 83.46 82.80 83.84 15917 3870 1052 SOMOS M †65.54 71.96 73.27 73.18 18055 1776 1721 SOMOS NM †49.28 73.10 73.48 74.72 20862 4450 4430 CHiLi M ‡94.78 85.88 91.52 96.29 22831 2853 2855 CHiLi NM ‡86.90 81.05 87.50 90.37 22831 2853 2855 SpeechEval §80.24 86.31 86.85 84.32 15443 3294 3163 SpeechJudge §70.40 61.40 65.20 68.20 42097 1000 1000 IUB-COSINE-C ¶71.89 78.06 77.22 83.50 N/A N/A 1800 IUB-COSINE-S ¶48.56 87.89 91.61 89.28 N/A N/A 1800
+> †MOS-derived ‡simulated §human preference ¶unseen test-only
+
+4.4. Dataset quality and error analysis 
+
+Table 2 (left) shows the concordance correlation coefficient (CCC) [27] between ordered lists of misclassified pairs. Unlike Pearson correlation coefficient (PCC), a high CCC is a stronger indication that two models tend to make mistakes on similar pairs, not only in aggregate but also in the order induced by margin size, because it penalizes discrepancies in both scaling and mean level in addition to imperfect correlation. We first collect all misclassified test pairs, order them by their abso-lute MOS or SNR difference, and compute CCC between the margin lists of any two of the three selected models. We do this on all training sets except SpeechEval and SpeechJudge, which have no directly measurable statistics such as MOS or SNR. On MOS-derived sets, all CCC values are close to 1, in-dicating that the models make similar mistakes. Combined with small accuracy gaps in Table 1, this suggests that labeling noise in MOS-derived labels affects performance visibility, especially in small margin regions highlighted by the error analysis in the next paragraph. In contrast, simulated ChiLi sets show much lower CCC, which suggests that our model can genuinely im-prove performance. We also report the statistics of test pairs that PrefSQA misclassifies on all sets except SpeechEval and SpeechJudge. Given the same ordered lists obtained above, we group values in the lists into bins of width 0.1. Within each bin we divide the number of errors by the total number of samples in that bin, so that each bin contributes a normalized error rate rather than a raw count, removing the bias caused by some margin ranges containing more pairs than others. We summarize the distribu-tion of bin centers through percentiles in Table 2 (right). Across the sets, the statistics confirm that errors concentrate in regions with small MOS or SNR margins, as values of the 50th per-centile (P50), roughly representing the MOS or SNR ranges where the first half of misclassifications happen, are all much smaller than the values of P99-P50, representing the second half. This makes MOS-derived sets more vulnerable, as these regions happen to be those with dominating labeling noise. 
+
+4.5. Ablation study 
+
+In the ablation study shown in Table 3, we compare variants that remove key components of PrefSQA on ChiLi. All ac-curacies are relatively high on ChiLi M, with the Full model being the highest. This pattern suggests that performance on Table 2: CCC between ordered lists of misclassified pairs on selected models and normalized error distribution (indicated by percentiles P50, P75, etc.) for PrefSQA as a function of abso-lute MOS or SNR margin.                                                         
+
+> Dataset U-PF U-P PF-P P50 P75 P90 P95 P99 P99-P50
+> NISQA †0.94 0.97 0.90 0.43 0.68 1.12 1.33 2.23 1.80 SOMOS M †0.99 0.93 0.92 0.33 0.53 0.78 1.08 1.48 1.15 SOMOS NM †0.95 0.97 0.99 0.33 0.58 0.88 1.08 1.52 1.19 CHiLi M ‡0.56 0.30 0.51 1.38 2.23 3.23 3.68 4.43 3.05 CHiLi NM ‡0.80 0.61 0.78 2.08 3.78 5.43 7.47 9.18 7.10 U-PF: UPP vs Pref Frozen U-P: UPP vs Pref PF-P: Pref Frozen vs Pref
+
+Table 3: Ablation study accuracy (%) on PrefSQA.              
+
+> Dataset No Attn/NMR No Attn No NMR Full
+> ChiLi M 95.52 96.22 96.25 96.29
+> ChiLi NM 89.35 88.86 90.12 90.37
+> Attn: impairment attention head NMR: non-matching-reference head
+
+easy data saturates even with components missing and that it becomes hard to attribute gains to individual modules. In con-trast, ChiLi NM remains discriminative: removing the impair-ment attention head drops accuracy to 88.86 and removing the NMR head yields 90.12, both below the Full model. Although these gains are modest, the consistent improvement of the Full model suggests these two components provide complementary benefits when the task is harder. 
+
+4.6. Discussion 
+
+The accuracy results for our model do not consistently favor end-to-end fine-tuning, where the frozen and fine-tuned variants alternate as the best model across many datasets. This suggests that the benefit of adapting pretrained encoders depends on each preference dataset, where fine-tuning can improve task-specific representations on better-matched data, but can also underper-form otherwise. This motivates a more controlled fine-tuning recipe that trades off stability and performance, for example by using L2SP regularization to determine how much encoder adaptation is optimal. We also notice that our fine-tuned model reaches peak validation accuracy with much fewer optimiza-tion steps than competing baselines on most datasets, while the frozen variant often converges even more rapidly. 
+
+# 5. Conclusion and Future Work 
+
+This paper studies MOS-free pairwise preference prediction for perceptual speech quality assessment by introducing PrefSQA, a dual encoder system that fuses wav2vec 2.0 and WavLM fea-tures with uncertainty-aware logits, impairment attention, and a lightweight in-batch NMR head to refine global rankings. The experiments show that MOS-derived datasets can obscure archi-tectural advantages driven by labeling noise, while high-quality simulated datasets expose clearer performance gaps and high-light the benefits of the proposed architecture. Results also showcase satisfactory performance on real human preference data and unseen tests. A key limitation suggested by error anal-ysis is that difficult cases concentrate in small margin regions, where two samples may plausibly be perceived as having the same quality. Future work to incorporate an explicit tie option for near indistinguishable pairs could potentially both improve accuracy and better align model outputs with human perception. 6. Acknowledgment 
+
+This work was supported in part by the Ohio Supercomputer Center, NSF award IIS-2235228, and NSF award IIS-2523648. 
+
+# 7. Use of Generative AI Disclosure 
+
+Generative AI tools have been used for editing and polishing this manuscript. 
+
+# 8. References 
+
+[1] P. C. Loizou, Speech Quality Assessment . Berlin, Heidelberg: Springer Berlin Heidelberg, 2011, pp. 623–654. [2] R. Zequeira Jim´ enez, “Analysis of influencing factors in speech quality assessment using crowdsourcing,” Doctoral Thesis, Tech-nische Universit¨ at Berlin, Jan. 2022. [3] F. K¨ oster, D. Guse, M. W¨ altermann, and S. M¨ oller, “Comparison between the discrete ACR scale and an extended continuous scale for the quality assessment of transmitted speech,” Fortschritte der Akustik, DAGA , vol. 3, pp. 150–153, 2015. [4] W.-C. Huang, E. Cooper, and T. Toda, “MOS-Bench: Bench-marking generalization abilities of subjective speech quality as-sessment models,” arXiv preprint arXiv:2411.03715 , 2024. [5] A. P. Clark, K. L. Howard, A. T. Woods, I. S. Penton-Voak, and C. Neumann, “Why rate when you could compare? using the “elochoice” package to assess pairwise comparisons of perceived physical strength,” PLOS ONE , vol. 13, no. 1, pp. 1–16, 01 2018. [6] A. S. Phelps, D. M. Naeger, J. L. Courtier, J. W. Lambert, P. A. Marcovici, J. E. Villanueva-Meyer, and J. D. MacKenzie, “Pair-wise comparison versus likert scale for biomedical image assess-ment,” American Journal of Roentgenology , vol. 204, no. 1, pp. 8–14, 2015. [7] C.-C. Lo, S.-W. Fu, W.-C. Huang, X. Wang, J. Yamagishi, Y. Tsao, and H.-M. Wang, “MOSNet: Deep learning based objec-tive assessment for voice conversion,” in Proc. Interspeech , 2019, pp. 1541–1545. [8] G. Mittag, B. Naderi, A. Chehadi, and S. M¨ oller, “NISQA: A deep CNN-self-attention model for multidimensional speech quality prediction with crowdsourced datasets,” in Proc. Inter-speech , 2021, pp. 2127–2131. [9] W.-C. Huang, S.-W. Fu, E. Cooper, R. E. Zezario, T. Toda, H.-M. Wang, J. Yamagishi, and Y. Tsao, “The VoiceMOS challenge 2024: Beyond speech quality prediction,” in 2024 IEEE Spoken Language Technology Workshop (SLT) . IEEE, 2024, pp. 803– 810. [10] K. Wang, Y. Zhao, Q. Dong, T. Ko, and M. Wang, “MOSPC: MOS prediction based on pairwise comparison,” in Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 2: Short Papers) , 2023, pp. 1547–1556. [11] J. Serr` a, J. Pons, and S. Pascual, “SESQA: Semi-supervised learn-ing for speech quality assessment,” in IEEE International Con-ference on Acoustics, Speech and Signal Processing (ICASSP) .IEEE, 2021, pp. 381–385. [12] P. Manocha, B. Xu, and A. Kumar, “NORESQA: A framework for speech quality assessment using non-matching references,” Ad-vances in Neural Information Processing Systems , vol. 34, pp. 22 363–22 378, 2021. [13] P. Manocha, Z. Jin, and A. Finkelstein, “SQAPP: No-reference speech quality assessment via pairwise preference,” in IEEE Inter-national Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2022, pp. 891–895. [14] W. Wang, W. Zhang, C. Li, J. Wang, S. Cornell, M. Sach, K. Saijo, Y. Fu, Z. Ni, B. Han et al. , “UrgentMOS: Unified multi-metric and preference learning for robust speech quality assessment,” arXiv preprint arXiv:2601.18438 , 2026. [15] C. Valentini-Botinhao, M. S. Ribeiro, O. Watts, K. Richmond, and G. E. Henter, “Predicting pairwise preferences between TTS audio stimuli using parallel ratings data and anti-symmetric twin neural networks,” in Proc. Interspeech , 2022, pp. 471–475. [16] Y. Shi, Y. Ai, and Z. Ling, “Universal preference-score-based pair-wise speech quality assessment,” in Proc. Interspeech , 2025, pp. 1131–1135. [17] G. Maniati, A. Vioni, N. Ellinas, K. Nikitaras, K. Klapsas, J. S. Sung, G. Jho, A. Chalamandaris, and P. Tsiakoulis, “SOMOS: The Samsung Open MOS dataset for the evaluation of neural text-to-speech synthesis,” in Proc. Interspeech , 2022, pp. 2388–2392. [18] V. Panayotov, G. Chen, D. Povey, and S. Khudanpur, “Lib-riSpeech: An ASR corpus based on public domain audio books,” in IEEE International Conference on Acoustics, Speech and Sig-nal Processing (ICASSP) . IEEE, 2015, pp. 5206–5210. [19] J. Barker, R. Marxer, E. Vincent, and S. Watanabe, “The third ‘CHiME’ speech separation and recognition challenge: Dataset, task and baselines,” in IEEE Workshop on Automatic Speech Recognition and Understanding (ASRU) . IEEE, 2015, pp. 504– 511. [20] A. Baevski, Y. Zhou, A. Mohamed, and M. Auli, “wav2vec 2.0: A framework for self-supervised learning of speech repre-sentations,” Advances in Neural Information Processing Systems ,vol. 33, pp. 12 449–12 460, 2020. [21] S. Chen, C. Wang, Z. Chen, Y. Wu, S. Liu, Z. Chen, J. Li, N. Kanda, T. Yoshioka, X. Xiao et al. , “WavLM: Large-scale self-supervised pre-training for full stack speech processing,” IEEE Journal of Selected Topics in Signal Processing , vol. 16, no. 6, pp. 1505–1518, 2022. [22] R. A. Bradley and M. E. Terry, “Rank analysis of incomplete block designs: I. the method of paired comparisons,” Biometrika ,vol. 39, no. 3/4, pp. 324–345, 1952. [23] I. Loshchilov and F. Hutter, “Decoupled weight decay regulariza-tion,” in International Conference on Learning Representations (ICLR) , 2019. [24] H. Wang, J. Zhao, Y. Yang, S. Liu, J. Chen, Y. Zhang, S. Zhao, J. Li, J. Zhou, H. Sun et al. , “SpeechLLM-as-Judges: To-wards general and interpretable speech quality evaluation,” arXiv preprint arXiv:2510.14664 , 2025. [25] X. Zhang, C. Wang, H. Liao, Z. Li, Y. Wang, L. Wang, D. Jia, Y. Chen, X. Li, Z. Chen, and Z. Wu, “SpeechJudge: Towards human-level judgment for speech naturalness,” arXiv preprint arXiv:2511.07931 , 2025. [26] X. Dong and D. S. Williamson, “A pyramid recurrent network for predicting crowdsourced speech-quality ratings of real-world signals,” in Proc. Interspeech , 2020, pp. 4636–4640. [27] L. I.-K. Lin, “A concordance correlation coefficient to evaluate reproducibility,” Biometrics , vol. 45, no. 1, pp. 255–268, 1989.
