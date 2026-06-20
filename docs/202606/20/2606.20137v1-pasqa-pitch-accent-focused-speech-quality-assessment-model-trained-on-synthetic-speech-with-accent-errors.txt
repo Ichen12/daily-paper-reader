@@ -1,0 +1,174 @@
+Title: PASQA: Pitch-Accent-Focused Speech Quality Assessment Model Trained on Synthetic Speech with Accent Errors
+
+URL Source: https://arxiv.org/pdf/2606.20137v1
+
+Published Time: Fri, 19 Jun 2026 00:51:52 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# PASQA: Pitch-Accent-Focused Speech Quality Assessment Model Trained on Synthetic Speech with Accent Errors 
+
+# Masaya Kawamura 1, Yuma Shirahata 1, Kentaro Mitsui 1, Reo Shimizu 11 LY Corporation, Japan 
+
+kawamura.masaya, yuma.shirahata, kemitsui, reshimiz@lycorp.co.jp 
+
+# Abstract 
+
+Existing mean opinion score (MOS) prediction models typically predict utterance-level naturalness MOS and can be insensi-tive to localized pitch-accent errors. We propose Pitch-Accent-focused Speech Quality Assessment (PASQA), which explic-itly targets pitch-accent correctness. To train our model, we construct a controlled Japanese accent-error dataset by chang-ing accent patterns using an accent-controllable text-to-speech system, and compute a pseudo accent-quality score from the accent-error rate. PASQA builds on self-supervised representa-tions and employs mora-conditioned fusion, ranking loss, an auxiliary accent-error localization task, and speaker-invariant training. Experiments show that conventional models fail to preserve the ordering by accent-error severity, whereas PASQA achieves high ordering accuracy on both seen and unseen speak-ers. Further, PASQA shows stronger agreement with human accent-correctness judgments. The code is available at https: //github.com/lycorp-jp/PASQA .
+
+Index Terms : speech quality estimation, self-supervised learn-ing, pitch accent language, prosody 
+
+# 1. Introduction 
+
+Recent deep neural network (DNN)-based text-to-speech (TTS) systems can generate highly natural speech [1, 2, 3]. The qual-ity of synthesized speech has conventionally been assessed us-ing subjective listening tests, particularly Mean Opinion Score (MOS) evaluations by human raters, which provide accurate assessments. However, such evaluations are costly and time-consuming [4]. The MOS prediction models have therefore be-come increasingly used for rapid evaluation. In recent years, with the advancement of DNNs and the increase in available data, models that predict human preferences have been actively studied [5, 6, 7]. These approaches typically estimate an utterance-level score intended to reflect overall naturalness. However, speech naturalness is influenced not only by global signal quality but also by language-specific prosodic cues that carry lexical or grammatical information. For example, in Japanese, pitch ac-cent serves as such a perceptual cue [8, 9]. Even slight shifts in the position of the accent nucleus can alter lexical mean-ing, making it crucial for intelligibility and naturalness (e.g., the Japanese word “hashi,” which means “chopsticks” or “bridge” depending on accent placement). In contrast, conventional utterance-level naturalness scores can be insensitive to such lo-calized pitch-accent errors. This tendency is also observed in our experimental results (see Section 3.2). Some studies have also explored fine-grained, frame-level quality prediction for synthetic speech to improve explainability and localization of degradations [10], but these approaches have not yet focused on the correctness of pitch accent. These findings motivate the need for an assessment model that explicitly targets pitch-accent correctness. If a TTS system explicitly includes an accent prediction module, a straightforward approach would be to evaluate pitch-accent control by measuring the module’s accuracy [11, 12]. However, in many modern TTS architectures [13, 14], accent-related representations are not explicitly exposed and may be treated as black boxes. In such cases, internal accent labels or intermediate prosodic predictions are unavailable at evaluation time. Therefore, to ensure applicability across diverse TTS sys-tems, accent-focused assessment should operate directly on the speech signal. To address these problems, we propose Pitch-Accent-focused Speech Quality Assessment (PASQA), a speech qual-ity assessment model focused on pitch-accent correctness. To enable learning and evaluation of accent correctness, we first develop a corpus that covers representative pitch-accent error patterns. Since real-world datasets rarely provide accent-error labels, we construct a Japanese dataset using controllable TTS to generate synthetic speech samples with controlled accent er-rors. Our model builds on self-supervised representations, and to further enhance it, we adopt four strategies: additional mora-sequence inputs, ranking-based learning, an auxiliary task for accent-error localization, and speaker-invariant learning. Experimental results show that conventional utterance-level MOS prediction models do not adequately reflect pitch-accent correctness. In contrast, PASQA better preserves the ordering by accent-error severity and shows stronger agreement with hu-man judgments of accent-correctness, achieving a Spearman’s rank correlation coefficient (SRCC) of 0.828 and a Kendall’s τ
+
+(KTAU) of 0.614, both higher than those of conventional MOS prediction models. These results indicate that explicitly model-ing accent errors improves Japanese pitch-accent quality assess-ment. Moreover, PASQA demonstrates robust performance on an out-of-domain (OOD) TTS model. 
+
+# 2. Proposed method 
+
+2.1. Accent-error dataset 
+
+To develop a model that reflects accent errors in its predicted accent-quality scores, we constructed a Japanese speech dataset that includes accent errors. Figure 1 shows the overall pipeline for constructing the accent error dataset. In the figure, “/” denotes accent phrase boundaries, which segment an utter-ance into prosodic units, and “*” indicates the accent nucleus, the mora where the pitch falls within an accent phrase. We use a TTS model with a DNN-based prosodic label prediction model [11]. It enables Japanese speech synthesis with explicit control over accent patterns. For each sentence, we derive prosodic annotations using the prosodic label prediction model. The annotations consist                     
+
+> arXiv:2606.20137v1 [eess.AS] 18 Jun 2026 キョ ーワイーテンキ*/*/*
+> キョ ーワイーテンキ*/*/*
+> Phoneme Prosody Accent Nucleus Error
+> Accent-Error Dataset
+> TTS Model
+
+…  
+
+> Grapheme: 今⽇はいい天気
+> Morphological Analysis & Accent Label Prediction Model
+> …
+> Calculate
+> Accent-Quality Score
+> 5.0 3.5
+
+Figure 1: Accent-error dataset construction pipeline. 
+
+of three components: the mora sequence, accent phrase bound-aries, and the accent nucleus. Accent errors are created by modifying the nucleus position in a subset of phrases. Given a target error rate r, we uniformly sample max(1 , ⌊rP ⌋) phrases from the P accent phrases and alter their nucleus. For a phrase of length L, valid accent types are {0, 1, . . . , L − 1}, where 0 denotes the flat (0-type) accent and k ∈ { 1, . . . , L − 1} indicates a nucleus on the k-th mora. In Japanese pitch accent, a k-type accent means that the pitch drops after the k-th mora, whereas the 0-type (flat) accent has no pitch drop within the phrase. We uniformly resample the nucleus from valid positions, excluding the original, yielding unbiased accent-type conversions. The actual error rate is com-puted as the ratio of mora in modified phrases to the total num-ber of mora in the utterance. Each sample is assigned a pseudo accent-quality score by applying a monotonic mapping to the actual error rate. Specifically, we compute an utterance-level accent-quality score as Saq = 5 .0 − 4.0 × Ncorr  
+
+> N
+
+, where N de-notes the total number of mora in the utterance and Ncorr the number of mora belonging to corrupted accent phrases. 
+
+2.2. PASQA 
+
+2.2.1. Model architecture 
+
+Figure 2 shows the overview of the proposed PASQA. We adopt the SSL-MOS [15] architecture as the backbone of our proposed model. SSL-MOS is a non-intrusive speech quality prediction framework that extracts self-supervised acoustic representations from waveforms and estimates an utterance-level score using a projection head with masked mean pooling. In PASQA, the in-put is a waveform, and wav2vec 2.0 [16] produces frame-level acoustic features. The downstream network predicts an accent-quality score. To further improve prediction performance and robustness, we augment the base architecture with four modifi-cations: 1) mora-conditioned fusion that incorporates the mora sequence as auxiliary linguistic information, 2) ranking loss, 3) a frame-level accent-error detection head for auxiliary supervi-sion, and 4) a gradient reversal layer (GRL) [17] to encourage speaker-invariant representations. We describe each component in detail in the following subsections. 
+
+2.2.2. Mora sequence as auxiliary linguistic information 
+
+In the TTS evaluation setting, the input text is available. Since pitch accent in Japanese is defined at the mora level, we de-rive the mora sequence from the text and incorporate it as aux-iliary linguistic information to explicitly model accent place-SSL Model           
+
+> Transformer-Encoder
+> Mora: アシタノテンキハハレデス
+> Cross-Attention
+> MLP MLP
+> Pseudo Score
+> Loss
+> Input Waveform
+> 001111000
+> Accent Error Label
+> Loss
+> MLP
+> GRL
+> Speaker Label
+> Loss
+> Mean
+> Pooling
+> Mean
+> Pooling
+
+Figure 2: Overview of the proposed PASQA model. 
+
+ment. Each utterance is represented by a mora sequence ob-tained from text analysis, which is then tokenized and embed-ded into a fixed-dimensional vector space. We contextualize the sequence using a Transformer encoder [18]. Mora informa-tion is fused with acoustic frames via cross-attention to generate mora-conditioned acoustic representations. 
+
+2.2.3. Accent-quality head and ranking loss 
+
+The accent-quality head is composed of a multilayer perceptron (MLP). Range clipping maps outputs to the [1 , 5] accent-quality score interval using a tanh transform. We train the accent-quality head using a pairwise logistic ranking loss, inspired by the Bradley–Terry model [19]. This loss emphasizes ordinal re-lations: 
+
+P (i > j ) = σ(ˆ yi − ˆyj ), LBT = − X
+
+> i,j :yi>y j
+
+log P (i > j ),
+
+(1) where σ denotes the sigmoid function, ˆyi is the predicted score for utterance i, and yi is the corresponding accent-quality score. This objective learns relative ordering. We first average frame-level scores over time to obtain an utterance-level score and then compute the loss over all unique pairs (i, j ) satisfying yi > y j
+
+within a mini-batch, yielding B(B−1) 2 pairs for batch size B.
+
+2.2.4. Auxiliary frame error head 
+
+Utterance-level scores do not explicitly reflect where pitch-accent errors occur along the temporal axis. To address this limitation, we introduce an auxiliary task that detects the tem-poral locations of pitch-accent errors to improve the estimation of the accent-quality score. Specifically, we add a frame-level auxiliary head that predicts accent-error labels from the outputs of the SSL models. Let t = 1 , . . . , T index the encoder frames, where T denotes the total number of frames. For each frame 
+
+t, let lt ∈ { 0, 1} denote the corresponding binary label, where 
+
+lt = 1 indicates that frame t belongs to an accent phrase whose nucleus has been modified, and lt = 0 otherwise. The frame-level labels are obtained via alignment using the phoneme-level duration predictor of the TTS model. We optimize a binary cross-entropy loss Lframe .
+
+2.2.5. Speaker-invariant representation 
+
+The model may exploit speaker-specific acoustic traits rather than accent-related cues. To reduce speaker-specific bias, we attach a speaker classifier to the utterance-level representation via a GRL [17]. Specifically, we apply masked mean pooling to the SSL model’s outputs to obtain an utterance embedding, which we then feed to the speaker classifier via GRL. The clas-sifier is trained with cross-entropy loss, while the SSL model receives reversed gradients, encouraging speaker-invariant rep-resentations. Inspired by [20], we adapt scheduled GRL to our proposed model. In detail, we scale the reversal with 
+
+ρ(p) = 41+exp( −γp ) − 3, where γ is a constant, p ∈ [0 , 1] 
+
+denotes the normalized training progress, defined as the ratio of the current training step to the total number of training steps, and ρ(p) ∈ [−1, 1] .
+
+# 3. Experimental evaluation 
+
+3.1. Experimental setup Dataset preparation. We generate synthetic Japanese speech with controlled pitch-accent errors using NANSY-TTS [21]. The TTS model was trained on an internal Japanese corpus consisting of 173,987 samples with manually-annotated phone-mic and prosodic labels, totaling 207.96 hours. This corpus in-cluded 17 speakers. We apply this TTS model to 91,157 sen-tences to construct a dataset containing controlled pitch-accent errors. Prosodic annotations are obtained using a MeCab-based morphological analysis model [22] for text normalization, fol-lowed by a DNN-based prosodic label prediction model [11]. The prosodic label prediction model is trained on 80,061 man-ually annotated prosodic labels. Further details can be found in [11]. These annotations are used to manipulate accent nu-cleus for controlled data construction. This process also pro-vides mora sequences, which are used as auxiliary linguistic inputs in our model. For each sentence, to evaluate how sensitively the model responds to the proportion of accent errors, we explicitly ma-nipulate the accent nucleus and construct three severity condi-tions corresponding to different accent-error rates r. Specifi-cally, we generate speech with r = 0 for the error-free condi-tion, with r ∈ [0 .1, 0.2] for the low-severity condition, and with 
+
+r ∈ [0 .8, 0.9] for the high-severity condition. Therefore, three distinct speech samples are generated for each utterance. We generated these samples for 13 speakers. All generated samples were split into 80% for training and 20% for development. As a result, the training set consists of 2,130,858 speech samples, with a total duration of 2,898.79 hours, and the remaining sam-ples were used for validation. For the test set, we prepared 1,170 speech samples in total from 13 seen speakers used in training and 2,400 speech samples in total from 4 unseen speakers. 
+
+Model details. The backbone of our model follows the SSL-MOS [15] architecture with wav2vec 2.0 [16] frame-level fea-tures and a scalar prediction head. The utterance-level score is predicted by a two-layer MLP with a hidden size of 64 and range clipping. For mora-conditioned variants, mora tokens are embedded in 256 dimensions, contextualized by a 1-layer Transformer encoder (4 heads, feed forward network dimen-sion 512, dropout 0.1) with rotary positional encoding [23], and fused with acoustic features via cross-attention (attention dimension 256, 4 heads, dropout 0.1). We further add an aux-iliary frame-level error head (hidden size 64) and a speaker-adversarial branch with a GRL (speaker classifier hidden size 128, dropout 0.1). 
+
+Model training. All models are trained on 16 kHz waveforms. The model is optimized using stochastic gradient descent with a learning rate of 1 × 10 −3 and momentum of 0.9, and a batch size of 16. We apply gradient clipping with norm 1.0 and train for up to 100,000 steps. The final loss is as follows: 
+
+L = λBT LBT + λL1 LL1 + λframe Lframe + λspk Lspk . (2) Following the original SSL-MOS formulation, we also include an L1 loss LL1 between the predicted utterance-level score and the target audio quality score. The loss weights λBT , λL1 ,
+
+λframe , and λspk were set to 1.5, 0.5, 0.2, and 0.1, respectively. For GRL models, we use a GRL schedule with γ = 10 .
+
+Comparison methods. We compare against widely used non-intrusive quality predictors, including DNSMOS P.835 [24], DNSMOS P.808 [25], and NISQA [26]. We also use UT-MOS [6], UTMOSv2 [27] and SHEET SSL-MOS [28, 29]. We obtain these models’ scores using the VERSA toolkit [30, 31]. As models trained on the accent-error dataset, we train two baseline models and the proposed PASQA. To evaluate the ef-fectiveness of SSL-based representations, we compare against a model trained on features extracted using WORLD [32], re-ferred to as ACC-WORLD-MOS. WORLD features are ex-tracted at a 10 ms frame period from 16 kHz audio. We estimate 
+
+f0 within 50–500 Hz and use log-f0, a voiced/unvoiced flag, 24-dimensional mel-cepstral coefficients, and a 1-dimensional aperiodicity feature, concatenated into a 27-dimensional frame-level representation. We also include an SSL-MOS model trained solely with an L1 loss as a baseline, referred to as ACC-SSL-MOS. 
+
+Evaluation metrics. To verify that the model can differenti-ate between minimally and severely corrupted accent patterns within the same utterance, we evaluate its ability to preserve severity ordering. Each sentence has three controlled sever-ity conditions. We assess whether predicted scores preserve the expected ordering, i.e., error-free > low-severity > high-severity. Order accuracy is defined as the fraction of triplets that satisfy this strict ordering. Triplets are formed from the three variants synthesized from the same text and speaker, and ties are treated as violations. In addition, to assess how well the predicted utterance-level scores align with the accent-quality score derived, we measure Pearson’s linear correlation coeffi-cient (LCC), SRCC, and KTAU. 
+
+Subjective evaluation. We conducted a listening test with 15 native Japanese speakers. The listening test included 120 speech samples synthesized from four speakers (two male and two female). These speakers were included in the training dataset. The text used for synthesis did not overlap with those in the training dataset. Participants were instructed to rate each sample on a five-point scale based on whether its pitch accent sounded natural in the Tokyo dialect. We compute order accu-racy on the aggregated ratings. We also measure mean squared error (MSE), LCC, SRCC, and KTAU between model predic-tions and the aggregated human ratings. 
+
+Out-of-domain evaluation. To verify whether PASQA per-forms robustly on speech synthesized by an OOD TTS model, we use GPT-4o-mini-TTS [33]. We prepared 50 texts that do not overlap with the training dataset and synthesized speech from them. We synthesized speech using two input patterns: grapheme and mora sequence. In a preliminary listening test, we confirmed that speech synthesized from grapheme input tended to exhibit better Japanese pitch-accent quality than that synthesized from mora input. Based on this observation, we assigned the grapheme-input sample as having higher accent quality and treated it as the positive label. We then computed pairwise accuracy based on both the model predictions and the judgments of 10 native Japanese speakers regarding accent nat-uralness. Table 1: Results on seen and unseen speakers in the accent-error evaluation set.                                                                                                                   
+
+> Accent-error dataset Model Seen speaker Unseen speaker Order Acc. LCC SRCC KTAU Order Acc. LCC SRCC KTAU No DNSMOS P.835 0.200 -0.001 -0.001 -0.001 0.121 -0.073 -0.057 -0.040 DNSMOS P.808 0.167 -0.031 -0.028 -0.019 0.170 -0.029 -0.025 -0.017 NISQA 0.156 -0.010 0.011 0.007 0.195 0.004 0.006 0.004 SHEET SSL-MOS 0.139 -0.017 -0.049 -0.035 0.174 -0.004 -0.029 -0.020 UTMOS 0.133 -0.020 -0.013 -0.009 0.121 -0.039 -0.041 -0.029 UTMOSv2 0.162 -0.009 -0.009 -0.006 0.134 -0.054 -0.047 -0.033 Yes ACC-WORLD-MOS 0.346 0.020 0.036 0.025 0.339 0.040 0.040 0.028 ACC-SSL-MOS 0.710 0.811 0.666 0.472 0.738 0.818 0.724 0.530 PASQA 0.754 0.829 0.711 0.524 0.785 0.879 0.751 0.559
+> PASQA w/o bradley-terry loss 0.723 0.837 0.678 0.478 0.787 0.863 0.742 0.547 PASQA w/o frame error head 0.721 0.836 0.658 0.463 0.747 0.838 0.720 0.527 PASQA w/o GRL 0.662 0.779 0.625 0.433 0.745 0.818 0.712 0.520 PASQA w/o mora-conditioned fusion 0.695 0.761 0.628 0.441 0.735 0.833 0.721 0.526
+
+Table 2: Subjective evaluation results.                                       
+
+> Model Order Acc. MSE LCC SRCC KTAU Human ratings 0.925 ----DNSMOS P.835 0.175 0.811 -0.074 -0.074 -0.053 DNSMOS P.808 0.150 1.272 -0.043 -0.034 -0.027 NISQA 0.175 1.593 -0.012 -0.028 -0.022 SHEET SSL-MOS 0.125 3.059 -0.038 -0.058 -0.042 UTMOS 0.125 0.943 0.007 -0.012 -0.008 UTMOSv2 0.075 1.151 -0.158 -0.171 -0.117 ACC-WORLD-MOS 0.350 1.945 0.111 0.142 0.095 ACC-SSL-MOS 0.900 1.272 0.739 0.764 0.541 PASQA 0.850 1.293 0.814 0.828 0.614
+
+3.2. Experimental results 
+
+Table 1 shows objective evaluation results on the controlled accent-error dataset, where each text prompt is synthesized into three severity conditions (error-free, low-severity, high-severity) and we measure whether predicted utterance-level scores preserve the expected ordering. Publicly available mod-els that are not trained on the accent-error dataset yield near-chance ordering and correlations close to zero, often negative, suggesting that their utterance-level naturalness scores are not aligned with pitch-accent correctness under localized nucleus errors. In contrast, models trained on the accent-error dataset sub-stantially improve both ordering and proxy correlation. This result indicates that the constructed accent-error dataset is effec-tive for training pitch-accent quality assessment models. ACC-WORLD-MOS improves order accuracy on both seen and un-seen speakers but remains weak in correlation. ACC-SSL-MOS substantially outperforms ACC-WORLD-MOS across all eval-uation metrics. This suggests that data-driven self-supervised representations capture richer prosodic cues related to accent-error severity than acoustic features such as WORLD parame-ters. PASQA further outperformed both ACC-WORLD-MOS and ACC-SSL-MOS across all metrics for both seen and unseen speakers. These results suggest that PASQA, including the aux-iliary linguistic information, ranking loss, frame error head, and GRL, effectively enhanced the performance of accent-quality assessment. Ablation results indicate complementary contributions from each component. Removing the frame-level error head or mora-conditioned fusion degrades ordering and correlation, consistent with the role of localized supervision and linguis-tic conditioning for detecting mild errors. Removing GRL most strongly affects the seen-speaker condition, suggesting that speaker-adversarial training helps mitigate speaker-specific bias in the controlled corpus. Table 2 shows that human ratings show high consistency Table 3: Pairwise accuracy on GPT-4o-mini-TTS outputs. 
+
+p-values are computed using a one-sided exact binomial test against chance level (0.5).                         
+
+> Model Pairwise Acc. p-value Human ratings 0.984 <0.001
+> DNSMOS P.835 0.380 0.968 DNSMOS P.808 0.320 0.997 NISQA 0.620 0.060 SHEET SSL-MOS 0.520 0.444 UTMOS 0.260 0.999 UTMOSv2 0.580 0.161 ACC-WORLD-MOS 0.420 0.899 ACC-SSL-MOS 0.720 0.001 PASQA 0.780 <0.001
+
+in preserving the expected ordering (error-free > low > high), achieving an order accuracy of 0.925. ACC-SSL-MOS achieves the highest order accuracy, while PASQA achieves the strongest agreement with human ratings in terms of LCC, SRCC, and KTAU. These results suggest that the architectural enhance-ments in PASQA, including the ranking loss, auxiliary frame-level error head, GRL, and auxiliary linguistic information, con-tribute to improved robustness and higher correlation with hu-man ratings. The conventional MOS prediction models achieve lower MSE than PASQA. This is likely because PASQA is trained on pseudo accent-quality scores, which may lead to a mismatch between the dynamic range of predicted scores and the scale of human ratings. However, the primary objective of this study is not absolute score calibration but accurate severity ordering and sensitivity to localized accent errors. Table 3 shows pairwise accent-quality discrimination be-tween speech synthesized from grapheme input and mora-sequence input using GPT-4o-mini-TTS. PASQA achieves the highest pairwise accuracy and significantly exceeds chance level, while conventional MOS predictors fail to reach statis-tical significance. This result indicates that PASQA performs robustly on OOD TTS systems and remains sensitive to accent-quality differences. 
+
+# 4. Conclusion 
+
+We proposed PASQA, a pitch-accent-focused speech quality as-sessment model. Using a controllable TTS system, we con-structed a scalable accent-error dataset without manual annota-tion. Built on SSL-based acoustic representations, PASQA im-proves accent-quality assessment and outperforms conventional MOS models. In listening tests, it also shows stronger agree-ment with human accent-correctness judgments. Future work will focus on improving robustness to OOD scenarios and ex-tending the framework to multilingual settings. 5. Generative AI Use Disclosure 
+
+In accordance with ISCA policy, generative AI tools were used solely for English language editing and polishing of the manuscript. All (co-)authors have reviewed the final version and are fully responsible and accountable for the scientific con-tent, experimental design, results, and conclusions. 
+
+# 6. References 
+
+[1] Z. Ju, Y. Wang, K. Shen, X. Tan, D. Xin, D. Yang, Y. Liu, Y. Leng, K. Song, S. Tang, Z. Wu, T. Qin, X.-Y. Li, W. Ye, S. Zhang, J. Bian, L. He, J. Li, and S. Zhao, “NaturalSpeech 3: Zero-shot speech synthesis with factorized codec and diffusion models,” in 
+
+Proc. ICML , 2024. [2] S. Chen, S. Liu, L. Zhou, Y. Liu, X. Tan, J. Li, S. Zhao, Y. Qian, and F. Wei, “VALL-E 2: Neural codec language models are hu-man parity zero-shot text to speech synthesizers,” arXiv preprint arXiv:2406.05370 , 2024. [3] M. Le, A. Vyas, B. Shi, B. Karrer, L. Sari, R. Moritz, M. Williamson, V. Manohar, Y. Adi, J. Mahadeokar, and W.-N. Hsu, “Voicebox: Text-guided multilingual universal speech gen-eration at scale,” in Proc. NeurIPS , vol. 36, 2023, pp. 14 005– 14 034. [4] E. Cooper, W.-C. Huang, Y. Tsao, H.-M. Wang, T. Toda, and J. Ya-magishi, “A review on subjective and objective evaluation of syn-thetic speech,” Acoustical Science and Technology , vol. 45, no. 4, pp. 161–183, 2024. [5] B. Patton, Y. Agiomyrgiannakis, M. Terry, K. Wilson, R. A. Saurous, and D. Sculley, “AutoMOS: Learning a non-intrusive as-sessor of naturalness-of-speech,” in Proc. NeurIPS 2016 End-to-end Learning for Speech and Audio Processing Workshop , 2016. [6] T. Saeki, D. Xin, W. Nakata, T. Koriyama, S. Takamichi, and H. Saruwatari, “UTMOS: UTokyo-sarulab system for VoiceMOS challenge 2022,” in Proc. Interspeech , 2022, pp. 4521–4525. [7] C. K. A. Reddy, V. Gopal, and R. Cutler, “DNSMOS: A non-intrusive perceptual objective speech quality metric to evaluate noise suppressors,” in Proc. ICASSP , 2021, pp. 6493–6497. [8] T. Ariga and Y. Hirose, “Recognition of spoken words with mis-pronounced lexical prosody in Japanese,” J. Acoust. Soc. Am. , vol. 157, no. 6, p. 4102–4118, 2025. [9] A. Cutler and T. Otake, “Pitch accent in spoken-word recognition in Japanese,” J. Acoust. Soc. Am. , vol. 105, no. 3, p. 1877–1888, 1999. [10] M. Kuhlmann, F. Seebauer, P. Wagner, and R. Haeb-Umbach, “Towards frame-level quality predictions of synthetic speech,” in 
+
+Proc. Interspeech , 2025, pp. 2300–2304. [11] B. Park, R. Yamamoto, and K. Tachibana, “A unified accent esti-mation method based on multi-task learning for Japanese text-to-speech,” in Proc. Interspeech , 2022, pp. 1931–1935. [12] Y. Shirahata, B. Park, R. Yamamoto, and K. Tachibana, “Audio-conditioned phonemic and prosodic annotation for building text-to-speech models from unlabeled speech data,” in Proc. Inter-speech , 2024, pp. 2795–2799. [13] Z. Du, Y. Wang, Q. Chen, X. Shi, X. Lv, T. Zhao, Z. Gao, Y. Yang, C. Gao, H. Wang et al. , “CosyVoice 2: Scalable stream-ing speech synthesis with large language models,” arXiv preprint arXiv:2412.10117 , 2024. [14] Y. Chen, Z. Niu, Z. Ma, K. Deng, C. Wang, J. Zhao, K. Yu, and X. Chen, “F5-TTS: A fairytaler that fakes fluent and faithful speech with flow matching,” in Proc. ACL , 2025, pp. 6255–6271. [15] E. Cooper, W.-C. Huang, T. Toda, and J. Yamagishi, “Generaliza-tion ability of mos prediction networks,” in Proc. ICASSP , 2022, pp. 8442–8446. [16] A. Baevski, Y. Zhou, A. Mohamed, and M. Auli, “wav2vec 2.0: A framework for self-supervised learning of speech representa-tions,” in Proc. NeurIPS , vol. 33, 2020, pp. 12 449–12 460. [17] M. Abdelwahab and C. Busso, “Domain adversarial for acoustic emotion recognition,” IEEE/ACM Trans. on Audio, Speech, and Lang. Process. , vol. 26, no. 12, pp. 2423–2435, 2018. [18] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, L. u. Kaiser, and I. Polosukhin, “Attention is all you need,” in Proc. NeurIPS , vol. 30, 2017. [19] R. A. Bradley and M. E. Terry, “Rank analysis of incomplete block designs: I. the method of paired comparisons,” Biometrika ,vol. 39, no. 3/4, pp. 324–345, 1952. [20] L. Qu, C. Weber, W. Wang, J. Jin, Y. Gao, T. Li, and S. Wermter, “Disentanglement of prosody representations via diffusion mod-els and scheduled gradient reversal,” IEEE Trans. Neural Netw. Learn. Syst. , vol. 36, no. 8, pp. 15 043–15 054, 2025. [21] H.-S. Choi, J. Yang, J. Lee, and H. Kim, “NANSY++: Unified voice synthesis with neural analysis and synthesis,” in Proc. ICLR ,2023. [22] T. Kudo, K. Yamamoto, and Y. Matsumoto, “Applying condi-tional random fields to Japanese morphological analysis,” in Proc. EMNLP , 2004, pp. 230–237. [23] J. Su, M. Ahmed, Y. Lu, S. Pan, W. Bo, and Y. Liu, “RoFormer: Enhanced transformer with rotary position embedding,” Neuro-computing , vol. 568, p. 127063, 2024. [24] C. K. A. Reddy, V. Gopal, and R. Cutler, “DNSMOS P.835: A non-intrusive perceptual objective speech quality metric to evalu-ate noise suppressors,” in Proc. ICASSP , 2022, pp. 886–890. [25] B. Naderi and R. Cutler, “An open source implementation of ITU-T recommendation P.808 with validation,” in Proc. Interspeech ,2020, pp. 2862–2866. [26] G. Mittag, B. Naderi, A. Chehadi, and S. M¨ oller, “NISQA: A deep CNN-self-attention model for multidimensional speech quality prediction with crowdsourced datasets,” in Proc. Inter-speech , 2021, pp. 2127–2131. [27] K. Baba, W. Nakata, Y. Saito, and H. Saruwatari, “The T05 system for the VoiceMOS challenge 2024: Transfer learning from deep image classifier to naturalness MOS prediction of high-quality synthetic speech,” in Proc. SLT , 2024, pp. 818–824. [28] W.-C. Huang, E. Cooper, and T. Toda, “SHEET: A multi-purpose open-source speech human evaluation estimation toolkit,” in Proc. Interspeech , 2025, pp. 2355–2359. [29] ——, “MOS-Bench: Benchmarking generalization abilities of subjective speech quality assessment models,” arXiv preprint arXiv:2411.03715 , 2024. [30] J. Shi, H.-j. Shim, J. Tian, S. Arora, H. Wu, D. Petermann, J. Q. Yip, Y. Zhang, Y. Tang, W. Zhang, D. S. Alharthi, Y. Huang, K. Saito, J. Han, Y. Zhao, C. Donahue, and S. Watanabe, “VERSA: A versatile evaluation toolkit for speech, audio, and music,” in Proc. NAACL-HLT (System Demonstrations) , 2025, pp. 191–209. [31] J. Shi, J. Tian, Y. Wu, J.-W. Jung, J. Q. Yip, Y. Masuyama, W. Chen, Y. Wu, Y. Tang, M. Baali, D. Alharthi, D. Zhang, R. Deng, T. Srivastava, H. Wu, A. Liu, B. Raj, Q. Jin, R. Song, and S. Watanabe, “ESPnet-Codec: Comprehensive training and eval-uation of neural codecs for audio, music, and speech,” in Proc. SLT , 2024, pp. 562–569. [32] M. Morise, F. Yokomori, and K. Ozawa, “WORLD: A vocoder-based high-quality speech synthesis system for real-time applica-tions,” IEICE Trans. Inf. Syst. , vol. E99-D, no. 7, pp. 1877–1884, 2016. [33] OpenAI, “Introducing next-generation audio models in the API,” 2025.
