@@ -1,0 +1,814 @@
+Title: FlowTTS-GRPO: Online Reinforcement Learning with Multi-Objective Reward Optimization for Flow-Matching Based Text-to-Speech
+
+URL Source: https://arxiv.org/pdf/2606.23190v1
+
+Published Time: Tue, 23 Jun 2026 03:02:54 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# FlowTTS-GRPO: Online Reinforcement Learning with Multi-Objective Reward Optimization for Flow-Matching Based Text-to-Speech 
+
+## Haoxu Wang ID , Biao Tian, Weiqing Li ID , Xiang Lv ID , Han Zhao, Xiangang Li 
+
+## Tongyi Lab, Alibaba Group, China 
+
+{wanghaoxu.whx, tianbiao.tb, liweiqin.lwq, lyuxiang.lx, quantu.zh, lixiangang.lxg }@alibaba-inc.com 
+
+## Abstract 
+
+Existing Reinforcement Learning (RL) research for Text-to-Speech (TTS) focuses on large language models (LLMs), leaving Flow-Matching (FM) under-explored. We present FlowTTS-GRPO, an online RL framework for FM-based TTS. By converting ordinary differential equation (ODE) trajectories into stochastic differential equation (SDE) paths, our method enables direct fine-tuning of open-source FM models without auxiliary models. We show that a weighted reward combi-nation converges faster than a probabilistic scheme, and iden-tify three practical optimizations: omitting classifier-free guid-ance (CFG) during training accelerates convergence; synthesiz-ing hard cases improves robustness; and applying RL to the FM component enhances audio-detail metrics. Experiments on CosyVoice 3.0 and F5-TTS demonstrate objective and subjec-tive preference gains in speaker similarity and perceptual qual-ity, with F5-TTS also improving intelligibility. 
+
+Index Terms : text-to-speech, reinforcement learning, flow-matching, group relative policy optimization, speaker similar-ity, zero-shot voice cloning 
+
+## 1. Introduction 
+
+Text-to-speech (TTS) converts input text into audible speech and plays a key role in human–computer interaction. Re-cently, researchers have incorporated large language models (LLMs) [1] into TTS [2–9]. One line of work uses LLMs’ ability to model discrete speech tokens with in-context learn-ing (ICL) [2, 7, 8]: a speech codec [10, 11] produces discrete tokens, an LLM autoregressively (AR) predicts these tokens, and a decoder reconstructs the waveform. This pipeline is con-strained by the codec’s capacity and requires a trade-off be-tween semantic tokens and acoustic tokens [12]. Another ap-proach [13] relies solely on non-autoregressive (NAR) Flow Matching (FM) [14]: compared with token-decode pipelines it produces finer acoustic details and offers faster inference than AR models, but struggles to incorporate semantic information, predict speech duration accurately, and support streaming. Ahybrid paradigm has emerged [4–6], where LLMs model se-mantic tokens and FM recovers acoustic detail. This scheme captures text–token semantics while enhancing acoustic fidelity and naturalness, outperforming earlier paradigms with higher synthesis success rates [6, 15]. Although LLM–FM hybrid TTS models can generate di-verse speech, some outputs remain difficult to align with hu-man perceptual preferences. Meanwhile, post-training aligns models to human perception or downstream task objectives and is applied across many generative tasks (language understand-ing [16], image generation [17]), further fine-tuning a pretrained generative model using reinforcement learning (RL) to improve Prompt Mel:       
+
+> Reward Model
+> (ASR/SPK/MOS)
+> Group Relative Policy
+> Optimization
+> Group Computation
+> Advantages
+> Policy
+> Optimization
+> Reconstructed Mels
+> Rewards
+> ...
+> ... Flow Matching Based TTS
+> Model (CV3-FM/F5-TTS)
+> Markov Decision
+> Process via
+> SDE/ODE
+> Sampling
+> Vocoder
+> Reconstructed Wavs
+> Prompt + Generated Text:
+> ("Hello")
+> ("Hello") + I am fine !
+> Prompt + Generated Token:
+> Zero-Shot TTS Conditions Prompt Speech Token
+> Generated Speech Token
+> Prompt Speaker Embedding:
+> Need
+> Generated
+
+Figure 1: The pipeline of our FlowTTS-GRPO post-training for CosyVoice 3.0 and F5-TTS. Prompt speech tokens, generated speech tokens, and prompt speaker embedding are only used for CosyVoice 3.0. 
+
+human-perception metrics. In the TTS domain, RL work has largely focused on LLM-based models. Seed-TTS [9] applies proximal policy optimization (PPO) [18] to optimize Word Error Rate (WER) and speaker similarity (SS), but PPO requires training multi-ple auxiliary models, is complex and unstable, and yields no-ticeable improvement mainly in WER. Other works [19–21] use Direct Preference Optimization (DPO) [22] and its vari-ants to strengthen LLMs; although they avoid maintaining extra models during training, they demand large numbers of human-preference pairs, incurring heavy inference costs and ex-pensive annotations. DiffRO [23] directly applies differentiable reward optimization on speech tokens to improve intelligibil-ity and expressiveness, using Gumbel-Softmax to optimize an Automatic Speech Recognition (ASR) loss; however, it still re-quires a separately trained token-to-reward model and is sensi-tive to reward-model bias, which RRPO [24] addresses by train-ing a more robust reward model. [25] fine-tunes LLM-based TTS with Group Relative Policy Optimization (GRPO) and a compound CER+NLL reward. Crucially, these studies concen-trate on LLMs and there is little RL research for FM–based TTS. F5R-TTS [26] is the first work to apply RL on FM–based TTS. It makes preliminary RL gains in WER and SS but needs an independently trained Gaussian FM generator to produce randomness and cannot leverage widely used open-source mod-els; moreover, it uses a single rollout per prompt (rollout=1), 
+
+> arXiv:2606.23190v1 [eess.AS] 22 Jun 2026
+
+failing to exploit multiple similar syntheses per prompt, group-wise advantage gaps, and multi-objective optimization. Flow-GRPO [27] is the first method to introduce online re-inforcement learning into flow-matching models. It transforms the Ordinary Differential Equation (ODE) trajectory into a Stochastic Differential Equation (SDE), supplying the stochas-ticity required by RL and thereby improving human-perception metrics in image synthesis. FlowSE-GRPO [28] adapts this technique to speech enhancement. Unlike image synthesis or speech enhancement, zero-shot TTS must jointly preserve speaker identity, linguistic content, and perceptual quality un-der text and prompt-speech conditioning. This creates reward conflicts and architecture-specific behavior that have not been studied in prior Flow-GRPO applications. In this paper, we propose FlowTTS-GRPO, an online RL framework for FM-based TTS. Our contributions are: (1) We present the first successful introduction of Flow-GRPO to TTS by converting ODE trajectories to SDE paths, enabling di-rect fine-tuning of open-source FM models without retraining a separate stochastic generator. (2) FlowTTS-GRPO simplifies prior RL approaches by eliminating auxiliary models (value net-works, preference pairs, token-to-reward models) and leverag-ing off-the-shelf reward signals. (3) We analyze multi-objective reward conflicts in TTS and find that weighted combination with standard deviation normalization yields faster and more stable convergence than probabilistic combination. (4) We iden-tify three practical optimizations and observations: omitting classifier-free guidance (CFG) during training accelerates con-vergence, hard case synthesis enhances robustness and acceler-ates RL training, and RL on FM primarily improves audio-detail metrics while RL on LM targets intelligibility for LLM-FM hy-brid models. Experiments on CosyVoice 3.0 [6] (LLM-FM hy-brid, where intelligibility is governed by the LM and FM con-trols acoustic details) and F5-TTS [13] (FM-only, where FM can improve both intelligibility and audio details) demonstrate significant improvements in speaker similarity and perceptual quality, with F5-TTS also achieving reduced WER, and robust generalization across speaker verification models, languages, and LLM front-ends. 
+
+## 2. Methods 
+
+2.1. The TTS model used for RL finetuning 
+
+We select CosyVoice 3.0 [6] (CV3) and F5-TTS [13] as pre-trained TTS models for RL finetuning. Zero-shot voice-cloning refers to generating speech in a target speaker’s voice using only a short prompt audio without requiring explicit speaker adapta-tion or fine-tuning. To refine zero-shot voice-cloning behavior, we optimize the model with respect to its actual inference pro-cedure. We treat a training utterance as the prompt waveform and the prompt text, randomly sample a new target text, run the model’s inference to synthesize a generated waveform, and use the resulting (prompt, generated) pair as the RL training sample. 
+
+2.1.1. CosyVoice 3.0 
+
+CosyVoice 3.0 is a widely used TTS system that bridges an LLM with FM; its pipeline includes a speech tokenizer, an LM, an FM acoustic model, and a vocoder. At inference, the speech tokenizer extracts prompt tokens from the prompt wav. The LM autoregressively generates speech tokens conditioned on the prompt text and the target text. The FM model, conditioned on the concatenation of prompt and generated tokens plus the prompt mel and prompt speaker embedding, produces the gen-erated mel. Finally, the vocoder [29] converts the generated mel into the generated wav, yielding the cloned voice. In this paper, we optimize only the FM component and do not fine-tune the speech tokenizer, LM, or vocoder. 
+
+2.1.2. F5-TTS 
+
+F5-TTS is an FM-only TTS system consisting of an FM acous-tic model and a vocoder. At inference, the FM model condi-tions on the concatenation of prompt text and generated text to-gether with the prompt mel to produce the generated mel. The vocoder [30] then converts the generated mel to the generated wav to produce the cloned audio. In this paper, we fine-tune only the FM component and keep the vocoder fixed. 
+
+2.2. FlowTTS-GRPO 
+
+2.2.1. Markov Decision Process 
+
+The FM-based TTS model ϕθ predicts velocity v = x1 − x0
+
+from xt = (1 − t)x0 + tx 1, where x1 ∼ X1 is real speech and 
+
+x0 ∼ X0 = N (0 , I).Following FlowSE-GRPO [28], the FM decoding process is formulated as a Markov decision process (S, A, ρ 0, P, R )
+
+where time t evolves from 0 to 1 over T discrete steps (e.g. step size ∆t = 1 /T ). The components are defined as follows: • State st ∈ S: st ≜ (c, t, x t) with conditionals c (e.g., text phonemes, speaker embeddings) and latent xt.• Action at ∈ A: Predicted velocity at ≜ vt = ϕθ (xt, c ) with policy π(at | st) = pθ (vt | xt, c ).• Initial State Distribution ρ0: ρ0(s0) ≜ (pc, δ 0, N (0 , I)) ,starting from Gaussian noise at t = 0 .• Transition Dynamics P : Deterministic Euler update. Given 
+
+st and at, the next state is: 
+
+p(st+∆ t | st, a t) ≜ (δc, δ t+∆ t, δ xt+vt∆t) (1) with recursive update xt+∆ t = xt + vt∆t, where δy denotes a Dirac delta distribution centered at y.• Reward R: Terminal reward at t = 1 :
+
+R(st, a t) ≜
+
+(
+
+r(x1, c ) if t = 1 0 otherwise (2) where r(x1, c ) is the reward score evaluated on the final sam-ple x1.Formulating FM as an MDP enables RL-based velocity field refinement. However, deterministic inference ( π(at | st)
+
+as Dirac delta) limits exploration. We address this by converting ODE to SDE (Section 3.2), introducing stochasticity for effec-tive RL training. 
+
+2.2.2. ODE to SDE 
+
+Flow-GRPO [27] converts the deterministic ODE sampler into an equivalent SDE that preserves marginal distributions while introducing GRPO’s required stochasticity. The standard FM model uses the deterministic ODE: 
+
+dx t = vtdt (3) which is converted to the reverse-time SDE: 
+
+dx t = ( vt(xt) − σ2 
+
+> t
+> 2
+
+∇ log pt(xt)) dt + σtdw (4) According to [27], the above expression can be transformed into: 
+
+dx t = [ vt(xt) + σ2 
+
+> t
+> 2(1 −t)
+
+(xt + tv t(xt)) dt ] + σtdw (5) The final update rule in [27] is: 
+
+xt+∆ t = xt, mean + σt
+
+√∆tϵ xt, mean = xt + [ vθ (xt, t ) + σ2 
+
+> t
+> 2t
+
+(xt + (1 − t)vθ (xt, t ))]∆ t
+
+(6) Because our FM uses the opposite time ordering to the orig-inal Flow-GRPO and is the same as FlowSE-GRPO, we change Equation 6 to: 
+
+xt, mean = xt + vθ (xt, t )+ σ2
+
+> t
+
+2(1 − t) (−xt + tv θ (xt, t )) ∆t. (7) where ϵ ∼ N (0 , I) and σt = a
+
+q 1−tt . The noise level a is a hyperparameter that controls stochasticity in the reverse-time denoising process. Inspired by FlowSE-GRPO [28], MixGRPO [31] and Flow-GRPO-Fast [27], we also use window training. We apply SDE sampling only to a subset of early steps t ∈ S = [ Smin , S min +
+
+ws ], where Smin denotes the SDE window start and ws denotes the window size. The remaining steps use deterministic ODE updates. Optimization is performed only on these stochastic steps to reduce training burden and accelerate convergence. 
+
+2.2.3. GRPO Loss 
+
+RL learns a policy that maximizes the expected cumulative re-ward. The policy optimization objective is defined as: 
+
+max θ E(s0,a 0,... )∼πθ
+
+ P  
+
+> t∈S
+
+(R(st, a t)
+
+−βD KL (πθ (·| st)|| πref (·| st)))  (8) GRPO estimates the advantage A using an intra-group rel-ative formulation, which computes advantages by comparing each sample’s reward to the group mean. As shown in Fig 1, given all zero-shot TTS conditions c, the FM TTS model 
+
+pθ samples a group of G candidate outputs {ˆxiT =1 }Gi=1 with the mixed ODE–SDE sampler, together with their trajectories 
+
+{(xi
+
+> 0
+
+, . . . , x iT −1, x iT =1 )}Gi=1 . The advantage for the i-th esti-mated audio is then computed from the group-wise policy re-wards. 
+
+ˆAit = R(ˆ xi 
+
+> 1,c )−mean( {R(ˆ xi
+> 1,c )}Gi=1 )std( {R(ˆ xi
+> 1,c )}Gi=1 )
+
+(9) GRPO updates the policy model by maximizing the follow-ing objective: 
+
+Jflow -grpo (θ) = Ec∼C, {xi}Gi=1 ∼πθold (·| c) f (r, ˆA, θ, ϵ, β ),f (r, ˆA, θ, ϵ, β ) = 1
+
+> G
+
+PGi=1 1
+
+> S
+
+P
+
+> t∈S
+
+ 
+
+min( rit(θ) ˆAit, clip( rit(θ), 1 − ϵ, 1 + ϵ) ˆAit)
+
+−βD KL (πθ || πθref )) 
+
+(10) where rit(θ) = pθ (xit+1 |xit,c )  
+
+> pθold (xit+1 |xit,c )
+
+. The likelihood pθ (xit+1 |
+
+xit, c ) = pθ (xit+∆ t | xit, c ) = exp(log pθ (xit+∆ t | xit, c )) is the Gaussian density, which is defined as: 
+
+log pθ (xit+∆ t | xit, c ) = 
+
+
+
+− ∥xit+∆ t−xit, mean ∥2 
+
+> 2σ2
+> t∆t
+
+
+
+− log( σt
+
+√∆t) − log( √2π)
+
+(11) where the mean is defined by the drift term xit, mean , and 
+
+σt
+
+√∆t represents the standard deviation of the added Gaussian noise at each step. In this framework, the FlowTTS-GRPO maximizes the ob-jective Jflow -grpo (θ) and updates its parameters θ by adjusting 
+
+pθ (xit+∆ t | xit, c ) such that trajectories resulting in higher re-wards r(x1, c ) are assigned higher probabilities, effectively re-fining the velocity field ϕθ toward perceptually superior speech synthesis. 
+
+2.3. Reward Function for TTS 
+
+To optimize the FM-based TTS model using GRPO, we design several reward functions that account for speaker identity, lin-guistic accuracy, and perceptual quality. The components are defined as follows: • Speaker Similarity Reward ( RSS ): This metric evaluates the timbre consistency between the synthesized speech and the original reference audio. Following CV3 [6], we use ERes2Net [32] to extract speaker embeddings from both the generated and reference waveforms. The reward is defined as the cosine similarity between these two embeddings, map-ping to the range [0 , 1] .• ASR-based Reward ( Rasr ): To ensure semantic consistency and intelligibility, we utilize an ASR reward. We use off-the-shelf ASR models—Paraformer [33] for Chinese and Whisper-v3 [34] for English—to transcribe the generated au-dio. The reward is formulated as 1 − CER for Chinese and 
+
+1 − WER for English. CER represents character error rate. • Perceptual Quality Reward ( Rmos ): Following [6], we incor-porate the P.835 DNSMOS [35] to estimate the perceived quality of the audio signal. The DNSMOS model predicts three scores based on the P.835 standard: speech quality (SIG), background noise quality (BAK), and overall quality (OVRL). We adopt the P.835 DNSMOS OVRL score as the training reward to jointly optimize for speech naturalness and noise suppression. All generated waveforms are resampled to 
+
+16 kHz before being processed by the DNSMOS model. 
+
+2.4. Multi-Objective Reward Optimization 
+
+During the training phase, we observe that optimizing for a sin-gle reward often leads to reward hacking, where the model ag-gressively maximizes the specific proxy reward at the expense of other essential metrics. To mitigate this and balance multi-ple quality constraints, we investigate two strategies for reward fusion: probabilistic combination and weighted combination. 
+
+2.4.1. Probabilistic combination 
+
+Inspired by PromptRL [36], when optimizing multiple objec-tives, we probabilistically assign each prompt to one reward function. For a prompt that produces a set of G samples, only that reward is used to compute the rewards while all other re-wards are set to zero. This ensures the within-group advantage is governed by a single reward, removing the need to account for scale differences between rewards and avoiding reward inter-ference. Furthermore, we propose using weighted probabilities for prompt-to-reward assignment so that prompts are assigned 0 2000 4000 6000 8000 10000 
+
+> Training Step
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35
+> Standard Deviation
+> max=0.103
+> max=0.382
+> max=0.156
+> Three std Metrics Comparison with Mean Lines
+> Reward ASR std (actual)
+> Reward ASR std (mean=0.057)
+> Reward MOS std (actual)
+> Reward MOS std (mean=0.199)
+> Reward SS std (actual)
+> Reward SS std (mean=0.084)
+
+Figure 2: The standard deviation of three rewards in batch dur-ing training. 
+
+according to different weights; this enables more targeted opti-mization of particular downstream metrics and allows different emphasis across objectives. 
+
+2.4.2. Weighted combination 
+
+As shown in Fig.2, the standard deviations (std) of different re-wards are not equal. If multiple rewards are combined directly by a weighted sum, their contributions to the resulting within-group advantage will not follow the intended weights. There-fore, following FlowSE-GRPO [28], we normalize each reward by the standard deviation computed over all samples in the cur-rent batch, scaling each reward’s std to 1. This allows meaning-ful design of reward weights, and we use the weighted sum of the normalized rewards as the multi-objective reward: 
+
+R = λ1 RSS  
+
+> std( RSS )
+
++ λ2 RASR  
+
+> std( RASR )
+
++ λ3 RMOS  
+
+> std( RMOS )
+
+(12) 
+
+2.5. Robust Training via Hard Case Synthesis 
+
+To enhance the performance of RL on edge cases and improve the model’s robustness against complex linguistic patterns, we incorporate a difficulty-aware training strategy. Following the observations in Seed-TTS-Eval [9], particularly the HardZh subset which contains challenging patterns such as word repe-titions and tongue twisters, we observe that models often strug-gle with stability and prosodic consistency in these scenarios. To bridge this gap during the RL fine-tuning stage, we curate a specialized ”Hard Case” training set by applying heuristic-based text augmentation to the WenetSpeech4TTS dataset. For each text sentence, we randomly apply one of the following augmentation strategies to simulate common failure modes: • Local Word Repetition (LWR) : A single non-punctuation word is randomly selected and repeated 3 to 5 times. • Sparse Multi-word Repetition (SMR) : Two or three non-punctuation words are selected, each being repeated 2 to 3
+
+times. • Global Sentence Repetition (GSR) : The entire sentence is repeated multiple times to test the model’s long-form gener-ation stability. Table 1 shows examples of these augmentation strategies. These augmented texts are then randomly paired with origi-nal Chinese prompt waveforms and their corresponding prompt Table 1: Examples of hard case text augmentation strategies. 
+
+Strategy Example 
+
+Original Text 克隆音色与风格
+
+LWR 克隆音色与与与与 风格
+
+SMR 克隆克隆音色音色音色与风格
+
+GSR 克隆音色与风格，克隆音色与风格
+
+transcriptions. By exposing the agent to these synthesized dif-ficult samples during the FlowTTS-GRPO process, the model learns to maintain high synthesis quality and alignment accu-racy even under extreme textual conditions. 
+
+## 3. Experimental Setup 
+
+3.1. Training Dataset 
+
+We use WenetSpeech4TTS [38] Premium (Chinese) and LibriTTS-960 [39] (English) as training sets. Audio files serve as prompt waveforms with transcripts as prompt text. We ran-domly shuffle the original text corpus to produce target texts for voice cloning. We construct 20k samples each for Chinese and English (40k total, named train-easy-40k). Additionally, fol-lowing Section 2.5, we generate 20k extra challenging Chinese training samples (train-hard-20k). 
+
+3.2. Validation Sets 
+
+We construct two validation sets: dev-easy (200 utterances, ran-domly selected from Seed-TTS-Eval [9] Chinese and English test sets) and dev-hard (200 samples from Seed-TTS-Eval hard-zh test set with repeated-text cases). dev-easy monitors metric trends, while dev-hard specifically tracks CER changes on chal-lenging examples. 
+
+3.3. Training and Model Configuration 
+
+We fine-tune CosyVoice 3.0 [6] (CV3-2512 version) and F5-TTS [13] (Base v1) with 8 GPUs. For CV3, we pre-decode the training set with the 0.5B LM front-end (not RL-trained) to extract prompt and generated tokens for FM training. F5-TTS is fine-tuned directly. For CV3, we use Low-Rank Adaptation (LoRA) [40] with rank 32 and lora alpha 64 (10.09M trainable parameters, 2.78% of FM model). Learning rate is 1e-4 with linear decay to 0 at 10k steps. Each iteration samples 16 prompt waveforms (re-peated 4 times), generates 8 samples per prompt (512 total). We discard groups with std=0, reassemble into batch size 16, and perform 8 parameter updates per iteration. Training uses 2-step window (denoising step in [5, 8], Smin in [1, 3]) with-out CFG; inference uses 10 denoising steps. Unless otherwise noted, main training uses train-easy-40k and dev-easy. For F5-TTS, we use LoRA with rank 32 and lora alpha 64 (10.09M trainable parameters, 2.80% of FM model). Learning rate is 5e-5 with linear decay to 0 at 10k steps. Each iteration samples 6 prompt waveforms (repeated 4 times), generates 10 samples per prompt (240 total). We discard groups with std=0, reassemble into batch size 6, and perform 8 parameter updates per iteration. Training uses 2-step window (denoising step in [8, 16], Smin in [1, 3]) without CFG; inference uses 16 denoising steps. Unless otherwise noted, main training uses train-easy-40k + train-hard-20k and dev-hard. Table 2: Zero-shot TTS performance comparison on Seed-TTS-Eval. SS1: WavLM-based speaker similarity; SS2: ERes2Net-based speaker similarity; P808: P.808 DNSMOS; P835: P.835 DNSMOS (proxy reward); w/o: without; w.: with; Step: RL training steps. 
+
+Model RL Step test-zh test-en test-hard 
+
+CER ↓ SS1 ↑ SS2 ↑ P808 ↑ P835 ↑ WER ↓ SS1 ↑ SS2 ↑ P808 ↑ P835 ↑ CER ↓ SS1 ↑ SS2 ↑ P808 ↑ P835 ↑
+
+Human 1.26 0.755 0.775 - - 2.14 0.734 0.742 - - - - - -
+
+TTS Models w/o. RL 
+
+F5-TTS [13] 1.56 0.741 0.794 - - 1.83 0.647 0.742 - - 8.67 0.713 0.762 - -MaskGCT [37] 2.27 0.774 0.752 - - 2.62 0.714 0.730 - - 10.27 0.748 0.720 - -Seed-TTS [9] 1.12 0.796 - - - 2.25 0.762 - - - 7.59 0.776 - - -CosyVoice [4] 3.63 0.723 0.775 - - 4.29 0.609 0.699 - - 11.75 0.709 0.755 - -CosyVoice 2.0 [5] 1.45 0.748 0.806 - - 2.57 0.652 0.736 - - 6.83 0.724 0.776 - -
+
+TTS Models w. RL on LLM 
+
+Llasa-1B [7] ✗ 7.73 0.636 - - - 4.95 0.578 - - - - - - - -LM-GRPO 1.30 0.669 - - - 2.17 0.580 - - - - - - - -CosyVoice 2.0 [5] ✗ 1.41 0.753 - - - 2.46 0.655 - - - - - - - -LM-GRPO 1.07 0.753 - - - 2.30 0.659 - - - - - - - -CosyVoice 3.0-0.5B [6] ✗ 1.16 0.780 0.840 - - 2.02 0.718 0.790 - - 6.08 0.758 0.815 - -LM-DiffRO 0.75 0.774 0.836 - - 1.76 0.695 0.783 - - 5.09 0.750 0.809 - -CosyVoice 3.0-1.5B [6] ✗ 1.12 0.781 0.837 - - 2.21 0.720 0.789 - - 5.83 0.758 0.816 - -LM-DiffRO 0.71 0.775 0.836 - - 1.45 0.695 0.784 - - 5.66 0.750 0.810 - -
+
+TTS Models w. RL on FM 
+
+F5R-TTS [26] ✗ 1.65 0.726 - - - - - - - - 9.87 0.702 - - -FM-GRPO 1.37 0.754 - - - - - - - - 8.79 0.718 - - -
+
+Ours FlowTTS-GRPO Models 
+
+F5-TTS ✗ 0 1.81 0.760 0.796 3.762 3.313 1.88 0.677 0.753 3.794 3.154 9.00 0.730 0.759 3.765 3.304 FM-GRPO 1289 1.55 0.777 0.827 3.948 3.514 1.73 0.705 0.790 3.915 3.408 7.86 0.741 0.791 3.973 3.562 CosyVoice 3.0-0.5B-2512 ✗ 0 1.20 0.777 0.830 3.889 3.353 2.42 0.701 0.770 3.910 3.226 7.32 0.757 0.808 3.875 3.393 FM-GRPO 9545 1.26 0.804 0.859 3.987 3.536 2.49 0.743 0.818 3.956 3.460 7.08 0.792 0.844 3.976 3.559 
+
+CosyVoice 3.0-0.5B-2512 + LM w. RL 
+
+✗ 0 0.87 0.776 0.831 3.878 3.347 1.70 0.693 0.770 3.903 3.231 6.01 0.756 0.803 3.871 3.390 FM-GRPO 9545 0.85 0.803 0.858 3.979 3.528 1.83 0.737 0.817 3.954 3.457 5.89 0.790 0.841 3.971 3.544 0 2000 4000 6000 8000 10000           
+
+> Training Step
+> 0.805
+> 0.810
+> 0.815
+> 0.820
+> 0.825
+> 0.830
+> 0.835
+> 0.840
+> Speaker Similarity
+> Speaker Similarity
+> 2 GPU
+> 8 GPU
+> 02000 4000 6000 8000 10000
+> Training Step
+> 3.30
+> 3.35
+> 3.40
+> 3.45
+> 3.50
+> P835. DNSMOS
+> P835. DNSMOS Score
+> 2 GPU
+> 8 GPU
+> 02000 4000 6000 8000 10000
+> Training Step
+> 0.988
+> 0.989
+> 0.990
+> 0.991
+> 0.992
+> ASR (1 - WER)
+> ASR (1 - WER)
+> 2 GPU
+> 8 GPU
+
+Figure 3: Proxy reward curves for CV3 on the dev-easy set during RL training with different numbers of GPUs. 
+
+3.4. Evaluation Sets 
+
+We evaluate on Seed-TTS-Eval [9] (Chinese test-zh: 2,020 sam-ples; English test-en: 1,088 samples; challenging test-hard: 400 samples) and CV3-Eval [6]. CV3-Eval uses the Multilingual Voice Cloning subset, which contains nine languages with 500 samples each: Chinese (zh), English (en), Japanese (ja), Korean (ko), German (de), French (fr), Russian (ru), Italian (it), and Spanish (es). We also include two additional hard-case test sets from CV3-Eval for Chinese and English. 
+
+## 4. Results and Discussion 
+
+4.1. Evaluation Metrics 
+
+Following CV3 [6], we evaluate the effect of FlowTTS-GRPO fine-tuning using three objective metrics: • Content consistency (CER/WER): measures the intelligibil-ity of synthesized speech. We report Character Error Rate (CER) for Chinese and other non-English languages, and Word Error Rate (WER) for English. For Chinese we use Paraformer [33] and for other languages we use Whisper-large-v3 [34]. • Speaker similarity (SS): measures how well the synthesized audio matches the reference by computing the cosine sim-ilarity between their speaker embeddings. We report two speaker similarity metrics: SS1 (WavLM-based) [41] and SS2 (ERes2Net-based) [32]. • Audio quality: following [6], we score generated speech us-ing P.808 DNSMOS (P808) [42] and P.835 DNSMOS (P835) [35]. The DNSMOS scores correlate highly with human au-ditory perception; we use P835 as a proxy reward during training. Beyond these objective metrics, we also conduct subjective A/B preference tests in Sec. 4.5 to assess whether reward im-provements translate to human-perceived naturalness and tim-bre similarity. 
+
+4.2. Main Results 
+
+4.2.1. Main Results of CV3 on Seed-TTS-Eval 
+
+The blue curve in Fig. 3 shows validation trends for CV3-FM across speaker similarity (ERes2Net-based, SS2), perceptual quality (P835), and intelligibility (ASR reward) under weighted combination multi-objective RL. Both SS2 and P835 improve Table 3: Zero-shot TTS performance comparison between F5-TTS, CosyVoice 3.0 with FlowTTS-GRPO RL on the CV3-Eval Multilin-gual Voice Cloning subset. Step represents RL training steps.                                                                                                                                                                                              
+
+> Metric Models Step zh en hard-zh hard-en ja ko de es fr it ru CER F5-TTS 07.66 11.10 22.11 36.23 -------1289 5.44 7.07 17.46 25.63 -------CV3 03.72 5.09 9.04 8.11 6.54 5.92 6.48 3.58 10.66 5.43 7.84 9545 3.83 5.09 9.38 7.93 6.72 5.85 6.79 3.64 11.69 5.74 8.29 CV3-LM-RL 03.26 4.10 8.39 7.30 5.77 6.28 4.72 3.15 8.63 3.36 4.39 9545 3.28 4.31 8.26 7.29 5.91 6.10 4.69 3.40 8.52 3.75 4.67 SS1 F5-TTS 00.729 0.605 0.688 0.559 -------1289 0.760 0.665 0.718 0.627 -------CV3 00.777 0.681 0.765 0.687 0.748 0.761 0.735 0.752 0.718 0.732 0.745 9545 0.803 0.725 0.794 0.736 0.783 0.791 0.776 0.787 0.764 0.773 0.784 CV3-LM-RL 00.773 0.658 0.761 0.666 0.740 0.738 0.726 0.741 0.707 0.725 0.743 9545 0.800 0.708 0.787 0.719 0.774 0.774 0.770 0.781 0.756 0.769 0.783 SS2 F5-TTS 00.729 0.655 0.688 0.618 -------1289 0.799 0.755 0.761 0.727 -------CV3 00.804 0.745 0.780 0.747 0.777 0.800 0.785 0.796 0.772 0.772 0.775 9545 0.836 0.798 0.817 0.804 0.816 0.834 0.827 0.838 0.816 0.820 0.820 CV3-LM-RL 00.798 0.737 0.776 0.737 0.773 0.777 0.780 0.787 0.765 0.768 0.773 9545 0.832 0.791 0.814 0.797 0.813 0.818 0.823 0.830 0.813 0.819 0.819 P808 F5-TTS 03.358 3.300 3.224 3.220 -------1289 3.758 3.716 3.662 3.726 -------CV3 03.855 3.839 3.793 3.958 3.825 3.854 3.821 3.830 3.802 3.779 3.829 9545 3.923 3.897 3.881 4.007 3.870 3.908 3.884 3.882 3.849 3.829 3.885 CV3-LM-RL 03.864 3.835 3.826 3.966 3.799 3.790 3.806 3.827 3.786 3.758 3.831 9545 3.931 3.889 3.900 3.997 3.856 3.846 3.880 3.875 3.844 3.812 3.890
+
+steadily, demonstrating the effectiveness of GRPO fine-tuning for FM-based TTS. However, the ASR reward plateaus near 0.99, likely because (1) the system already achieves high in-telligibility, and (2) in the LLM+FM pipeline, intelligibility is primarily constrained by LLM-generated tokens. This aligns with findings that RL on the LLM component is the main driver for WER gains. Based on the validation RASR , we select the 9545-step checkpoint for final evaluation. As shown in Tab. 2, FM-RL (FM-GRPO) improves SS2 from 0.830 to 0.859 and SS1 from 0.777 to 0.804 on Seed-TTS-Eval-zh compared to the baseline CosyVoice 3.0-0.5B-2512 (CV3), with similar gains in English and hard-zh. Notably, our model’s SS1 on Seed-TTS-Eval-zh surpasses the closed-source Seed-TTS for the first time, achieving state-of-the-art (SOTA) performance. While improvement in SS2 is expected because it serves as a proxy reward model, SS1, which is not used for optimization, also improves. This indicates that RL fine-tuning does not over-fit or ”hack” to the reward model and that the speaker similarity gains are robust. CV3 also provides an LM-with-RL variant (CV3-0.5B-2512 + LM w.RL, CV3-LM-RL). Although FM fine-tuning uses tokens from the LM without RL, the RL-tuned FM general-izes well to CV3-LM-RL, improving both speaker similarity and P.835 DNSMOS. This suggests a functional decoupling in LLM+FM systems: RL for intelligibility is most effective on the LM, while RL for audio details (e.g., timbre similarity and perceptual quality) is better suited for the FM. As shown in Fig. 3, increasing the GPU count increases the number of samples seen per update and accelerates reward growth. This suggests that scaling the data throughput per up-date enhances RL training effectiveness. 
+
+4.2.2. Main Results of F5-TTS 
+
+Fig. 4 (blue curve) shows validation improvements for F5-TTS in SS2, P.835, and ASR reward. During training, SS2 and P.835 rise significantly, while the ASR metric improves more gradu-ally. We evaluate the 1289-step checkpoint of F5-TTS (F5-TTS required substantially more training time than CV3-FM, and re-source limits constrained our runs). As shown in Tab. 2, FM-RL enhances both in-domain and out-of-domain speaker sim-ilarity (SS2, SS1) and perceptual quality (P835, P808). Since F5-TTS synthesizes directly from text, unlike the LLM con-strained CV3-FM, it shows clear gains in intelligibility, further validating our RL approach. 
+
+4.3. The Results on CV3-Eval 
+
+Tab. 3 shows that FM-RL (applied to CV3-LM and CV3-LM-RL) improves speaker similarity and audio quality in languages beyond Chinese and English. Despite training only on Chinese and English, these gains demonstrate strong cross-lingual gen-eralization, which we plan to extend with multilingual data in future work. Furthermore, F5-TTS after FlowTTS-GRPO train-ing shows reduced CER and improved intelligibility and simi-larity, further validating the broad effectiveness of our method. 
+
+4.4. Ablation Study 
+
+All ablation study results on CV3 use 2 GPUs for training. 
+
+4.4.1. Robust Training via Hard Case 
+
+Fig. 4 shows proxy-reward trajectories on the dev-hard set for CV3 and F5-TTS variants. For CV3, even adding the train-hard-20k set yields minimal intelligibility gains, suggesting that semantic information is primarily LM-driven. In contrast, F5-0 500 1000 1500 2000 2500 3000 3500 4000 
+
+Training Step 
+
+0.78 
+
+0.79 
+
+0.80 
+
+0.81 
+
+0.82 
+
+0.83 
+
+0.84 
+
+> Speaker Similarity
+
+Speaker Similarity 
+
+CV3 w. train-hard-20k 
+
+F5-TTS w. train-hard-20k 
+
+F5-TTS w/o. train-hard-20k 
+
+0 500 1000 1500 2000 2500 3000 3500 4000 
+
+Training Step 
+
+3.30 
+
+3.35 
+
+3.40 
+
+3.45 
+
+3.50 
+
+3.55 
+
+> P835. DNSMOS
+
+P835. DNSMOS Score 
+
+CV3 w. train-hard-20k 
+
+F5-TTS w. train-hard-20k 
+
+F5-TTS w/o. train-hard-20k 
+
+0 500 1000 1500 2000 2500 3000 3500 4000 
+
+Training Step 
+
+0.925 
+
+0.930 
+
+0.935 
+
+0.940 
+
+0.945 
+
+0.950 
+
+0.955 
+
+> ASR (1 - WER)
+
+ASR (1 - WER) 
+
+CV3 w. train-hard-20k 
+
+CV3 w. train-hard-20k RL Step 0 
+
+F5-TTS w. train-hard-20k 
+
+F5-TTS w. train-hard-20k RL Step 0 
+
+F5-TTS w/o. train-hard-20k 
+
+F5-TTS w/o. train-hard-20k RL Step 0 Figure 4: Proxy reward curves for CV3 and F5-TTS on the dev-hard set during RL training with Robust Training via Hard Cases. train-hard-20k represents the hard case training set. 0 2000 4000 6000 8000 10000 
+
+Training Step 
+
+0.800 
+
+0.805 
+
+0.810 
+
+0.815 
+
+0.820 
+
+0.825 
+
+0.830 
+
+0.835 
+
+> Speaker Similarity
+
+Speaker Similarity 
+
+Weighted 
+
+Probabilistic 
+
+Weighted w/o std Norm. 
+
+0 2000 4000 6000 8000 10000 
+
+Training Step 
+
+3.25 
+
+3.30 
+
+3.35 
+
+3.40 
+
+3.45 
+
+> P835. DNSMOS
+
+P835. DNSMOS Score 
+
+Weighted 
+
+Probabilistic 
+
+Weighted w/o std Norm. 
+
+0 2000 4000 6000 8000 10000 
+
+Training Step 
+
+0.988 
+
+0.989 
+
+0.990 
+
+0.991 
+
+0.992 
+
+> ASR (1 - WER)
+
+ASR (1 - WER) 
+
+Weighted 
+
+Probabilistic 
+
+Weighted w/o std Norm. 
+
+Figure 5: Proxy reward curves for CV3 on the dev-easy set during RL training with different multi-objective reward combination strategies. 0 2000 4000 6000 8000 10000 
+
+Training Step 
+
+0.805 
+
+0.810 
+
+0.815 
+
+0.820 
+
+0.825 
+
+0.830 
+
+> Speaker Similarity
+
+Speaker Similarity  
+
+> 3
+> 3
+
+= 0.2  
+
+> 3
+
+= 0.4  
+
+> 3
+
+= 0.6  
+
+> 3
+
+= 0.8  
+
+> 3
+
+= 1.0 
+
+0 2000 4000 6000 8000 10000 
+
+Training Step 
+
+3.26 
+
+3.28 
+
+3.30 
+
+3.32 
+
+3.34 
+
+3.36 
+
+> P835. DNSMOS Score
+
+P835. DNSMOS Score  
+
+> 3
+> 3
+
+= 0.2  
+
+> 3
+
+= 0.4  
+
+> 3
+
+= 0.6  
+
+> 3
+
+= 0.8  
+
+> 3
+
+= 1.0 
+
+0 2000 4000 6000 8000 10000 
+
+Training Step 
+
+0.988 
+
+0.989 
+
+0.990 
+
+0.991 
+
+0.992 
+
+> ASR (1 - WER)
+
+ASR (1 - WER)  
+
+> 3
+> 3
+
+= 0.2  
+
+> 3
+
+= 0.4  
+
+> 3
+
+= 0.6  
+
+> 3
+
+= 0.8  
+
+> 3
+
+= 1.0 
+
+Figure 6: Proxy reward curves for CV3 on the dev-easy set during RL training with different DNSMOS weights. 0 1000 2000 3000 4000 5000 6000 7000 8000 
+
+> Training Step
+> 0.805
+> 0.810
+> 0.815
+> 0.820
+> 0.825
+> 0.830
+> 0.835
+> Speaker Similarity
+> 0.837
+> 0.831
+> w/o CFG
+> w CFG
+
+Figure 7: Effect of omitting CFG during RL training on the dev-easy set. 
+
+TTS synthesizes directly from text as an FM-only architecture and achieves ASR improvements with the train-easy-40k set. This indicates that the FM can independently adapt distribution modeling to enhance intelligibility. Additionally, using train-hard-20k samples accelerates ASR reward growth, supporting the observation that optimization on hard cases is more efficient. We therefore select both train-easy-40k and train-hard-20k for F5-TTS training. 0 1000 2000 3000 4000 5000 6000 7000 8000 
+
+> Training Step
+> 0.80
+> 0.81
+> 0.82
+> 0.83
+> Speaker Similarity
+> 0.808
+> 0.826
+> 0.834 0.834
+> 0.837 0.837
+> Noise Level
+> Noise Level 0.1
+> Noise Level 0.2
+> Noise Level 0.3
+> Noise Level 0.4
+> Noise Level 0.5
+> Noise Level 0.7
+
+Figure 8: Effect of different noise levels during RL training on the dev-easy set. 4.4.2. Different Multi-Objective Reward Combination Strate-gies 
+
+Fig. 5 compares the proxy reward trajectories of the probabilis-tic (orange) and weighted (blue) schemes. The orange curve, which uses per-prompt probabilistic assignment, shows early oscillations because reward preferences vary across groups. While the eventual reward increase validates the probabilistic 0% 25% 50% 75% 100%          
+
+> CV3
+> F5-TTS
+> 43.6% 56.4%
+> 34.6% 65.4%
+> CV3-FM-RL
+> F5-TTS-RL
+> Overall MOS
+> 0% 25% 50% 75% 100%
+> CV3
+> F5-TTS
+> 46.0% 54.0%
+> 35.8% 64.2%
+> CV3-FM-RL
+> F5-TTS-RL
+> Timbre Similarity
+> Prefer Baseline Prefer Model After FlowTTS-GRPO RL
+
+Figure 9: Subjective A/B preference test between the baseline and our FlowTTS-GRPO model on the English subjective eval-uation set. 
+
+approach, the weighted combination method yields faster and more stable growth. We therefore adopt the weighted combina-tion method as our final multi-objective strategy. We also conduct an ablation study on standard deviation (std) normalization during weighted combination. As shown by the green curve in Fig. 5, the DNSMOS improvement rate is significantly higher than the orange curve, while the SS growth rate is lower. This result aligns with the fact that RSS has a lower std than RMOS , which indicates that rewards with higher variance naturally exert more influence on advantage calcula-tion. Therefore, std normalization allows for more precise con-trol over reward contributions, which confirms the effectiveness of this method. 
+
+4.4.3. Different Weights of DNSMOS 
+
+Fig. 6 shows that adjusting weights in multi-reward com-binations regulates the contribution and improvement rate of each metric. Increasing λ3 from 0.2 to 1.0 accelerates DNS-MOS gains but slows speaker similarity growth, which indi-cates a conflict between their contributions to the advantage. At 
+
+λ3 = 0 .2, DNSMOS oscillates near the baseline as its influence is insufficient to drive updates. Given that speaker similarity is critical for zero-shot TTS, we set λ3 = 0 .4. The configuration 
+
+λ1 = λ2 = 1 .0, λ 3 = 0 .4 improves similarity while maintain-ing DNSMOS quality and stable ASR performance. 
+
+4.4.4. Effect of Omitting CFG During Training 
+
+We conduct an ablation study on classifier-free guidance (CFG). Fig. 7 compares proxy reward growth when CFG is applied during training sampling versus when it is omitted. This ex-periment uses SS as the sole reward and applies CFG during evaluation. Training without CFG produces faster proxy reward growth, which indicates that omitting CFG during sampling in-creases exploration and accelerates RL convergence. This also indicates that optimizing only the conditional velocity still ef-fectively improves performance under CFG-based inference. 
+
+4.4.5. Effect of Noise Levels 
+
+Fig. 8 shows how different noise level values influence the proxy reward growth rate. This experiment uses RSS as the sole reward. A higher noise level expands the FM’s exploration range under GRPO, which accelerates reward improvement. At noise level=0.1, the reward oscillates without sustained gain, whereas increasing the value to 0.5 reaches the training satura-tion point. We therefore select noise level=0.5 because it bal-ances exploration with growth speed. 0% 25% 50% 75% 100%          
+
+> CV3
+> F5-TTS
+> 47.0% 53.0%
+> 40.0% 60.0%
+> CV3-FM-RL
+> F5-TTS-RL
+> Overall MOS
+> 0% 25% 50% 75% 100%
+> CV3
+> F5-TTS
+> 47.7% 52.3%
+> 42.3% 57.7%
+> CV3-FM-RL
+> F5-TTS-RL
+> Timbre Similarity
+> Prefer Baseline Prefer Model After FlowTTS-GRPO RL
+
+Figure 10: Subjective A/B preference test between the baseline and our FlowTTS-GRPO model on the Chinese subjective eval-uation set. 
+
+4.5. Subjective Evaluation 
+
+To evaluate whether the objective reward gains translate to hu-man perception, we conduct subjective A/B preference tests comparing F5-TTS, CV3, and their RL-finetuned counterparts (F5-TTS-RL and CV3-FM-RL). For each language, 30 samples are randomly selected from the evaluation sets for zero-shot synthesis, and 10 native speakers are recruited to perform paired comparisons. As illustrated in Fig. 9 and 10, the models opti-mized via FlowTTS-GRPO are consistently preferred over their respective baselines across both English and Chinese datasets. The clear margins in Overall MOS and Timbre Similarity pref-erences confirm that our method bridges the gap between ob-jective proxy rewards and human auditory preferences. These results demonstrate that FlowTTS-GRPO achieves better per-ceptual alignment, leading to superior naturalness and more ac-curate voice cloning. 
+
+## 5. Conclusion 
+
+We introduce FlowTTS-GRPO, the first application of Flow-GRPO to text-to-speech models. Our method enables direct fine-tuning of open-source FM-only and LLM-FM hybrid mod-els by converting ODE trajectories to SDE paths. Our frame-work simplifies prior RL approaches by eliminating value net-works, preference pairs, and token-to-reward models, and we demonstrate that weighted reward combination with standard deviation normalization yields faster and more stable conver-gence than probabilistic schemes. We identify three practical optimizations: omitting classifier-free guidance during training accelerates convergence, hard case synthesis enhances robust-ness, and applying RL to the FM component primarily improves audio-detail metrics whereas RL on LLM targets intelligibility. Experiments on CosyVoice 3.0 and F5-TTS demonstrate signif-icant improvements in speaker similarity and perceptual qual-ity, with F5-TTS also achieving better intelligibility. Notably, FlowTTS-GRPO achieves state-of-the-art speaker similarity on Seed-TTS-Eval-zh, surpassing the closed-source Seed-TTS for the first time, and demonstrates robust generalization across speaker verification models, languages, and LLM front-ends. 
+
+## 6. Generative AI Use Disclosure 
+
+We use ChatGPT (OpenAI) and Qwen3-Max (Alibaba) for En-glish grammar checking, sentence polishing in the manuscript. The AI tools are used only for grammar checking and did not generate any significant part of the scientific content, technical contributions, or experimental results. All authors are fully re-sponsible for the content of this paper. 7. References 
+
+[1] J. Kaplan, S. McCandlish, T. Henighan, T. B. Brown, B. Chess, R. Child, S. Gray, A. Radford, J. Wu, and D. Amodei, “Scaling laws for neural language models,” arXiv preprint arXiv:2001.08361 , 2020. [2] C. Wang, S. Chen, Y. Wu, Z. Zhang, L. Zhou, S. Liu, Z. Chen, Y. Liu, H. Wang, J. Li et al. , “Neural codec language mod-els are zero-shot text to speech synthesizers,” arXiv preprint arXiv:2301.02111 , 2023. [3] Z. Du, J. Wang, Q. Chen, Y. Chu, Z. Gao, Z. Li, K. Hu, X. Zhou, J. Xu, Z. Ma et al. , “Lauragpt: Listen, attend, understand, and re-generate audio with gpt,” arXiv preprint arXiv:2310.04673 , 2023. [4] Z. Du, Q. Chen, S. Zhang, K. Hu, H. Lu, Y. Yang, H. Hu, S. Zheng, Y. Gu, Z. Ma et al. , “Cosyvoice: A scalable multi-lingual zero-shot text-to-speech synthesizer based on supervised semantic tokens,” arXiv preprint arXiv:2407.05407 , 2024. [5] Z. Du, Y. Wang, Q. Chen, X. Shi, X. Lv, T. Zhao, Z. Gao, Y. Yang, C. Gao, H. Wang et al. , “Cosyvoice 2: Scalable stream-ing speech synthesis with large language models,” arXiv preprint arXiv:2412.10117 , 2024. [6] Z. Du, C. Gao, Y. Wang, F. Yu, T. Zhao, H. Wang, X. Lv, H. Wang, C. Ni, X. Shi et al. , “Cosyvoice 3: Towards in-the-wild speech generation via scaling-up and post-training,” arXiv preprint arXiv:2505.17589 , 2025. [7] Z. Ye, X. Zhu, C.-M. Chan, X. Wang, X. Tan, J. Lei, Y. Peng, H. Liu, Y. Jin, Z. Dai et al. , “Llasa: Scaling train-time and inference-time compute for llama-based speech synthesis,” arXiv preprint arXiv:2502.04128 , 2025. [8] X. Wang, M. Jiang, Z. Ma, Z. Zhang, S. Liu, L. Li, Z. Liang, Q. Zheng, R. Wang, X. Feng et al. , “Spark-tts: An efficient llm-based text-to-speech model with single-stream decoupled speech tokens,” arXiv preprint arXiv:2503.01710 , 2025. [9] P. Anastassiou, J. Chen, J. Chen, Y. Chen, Z. Chen, Z. Chen, J. Cong, L. Deng, C. Ding, L. Gao et al. , “Seed-tts: A family of high-quality versatile speech generation models,” arXiv preprint arXiv:2406.02430 , 2024. [10] N. Zeghidour, A. Luebs, A. Omran, J. Skoglund, and M. Tagliasacchi, “Soundstream: An end-to-end neural audio codec,” IEEE/ACM Transactions on Audio, Speech, and Lan-guage Processing , vol. 30, pp. 495–507, 2021. [11] A. D´ efossez, J. Copet, G. Synnaeve, and Y. Adi, “High fidelity neural audio compression,” arXiv preprint arXiv:2210.13438 ,2022. [12] Y. Guo, Z. Li, H. Wang, B. Li, C. Shao, H. Zhang, C. Du, X. Chen, S. Liu, and K. Yu, “Recent advances in discrete speech tokens: A review,” IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. [13] Y. Chen, Z. Niu, Z. Ma, K. Deng, C. Wang, J. JianZhao, K. Yu, and X. Chen, “F5-tts: A fairytaler that fakes fluent and faithful speech with flow matching,” in Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 2025, pp. 6255–6271. [14] X. Liu, C. Gong, and Q. Liu, “Flow straight and fast: Learning to generate and transfer data with rectified flow,” in Proc. ICLR . OpenReview.net, 2023. [Online]. Available: https://openreview.net/forum?id=XVjTT1nw5z [15] S. Zhou, Y. Zhou, Y. He, X. Zhou, J. Wang, W. Deng, and J. Shu, “Indextts2: A breakthrough in emotionally expressive and duration-controlled auto-regressive zero-shot text-to-speech,” 
+
+arXiv preprint arXiv:2506.21619 , 2025. [16] L. Ouyang, J. Wu, X. Jiang, D. Almeida, C. Wainwright, P. Mishkin, C. Zhang, S. Agarwal, K. Slama, A. Ray et al. , “Train-ing language models to follow instructions with human feedback,” 
+
+Proc. NeurIPS , vol. 35, pp. 27 730–27 744, 2022. [17] J. Xu, X. Liu, Y. Wu, Y. Tong, Q. Li, M. Ding, J. Tang, and Y. Dong, “Imagereward: Learning and evaluating human prefer-ences for text-to-image generation,” Proc. NeurIPS , vol. 36, pp. 15 903–15 935, 2023. [18] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Proximal policy optimization algorithms,” arXiv preprint arXiv:1707.06347 , 2017. [19] J. Tian, C. Zhang, J. Shi, H. Zhang, J. Yu, S. Watanabe, and D. Yu, “Preference alignment improves language model-based tts,” in 
+
+Proc. ICASSP . IEEE, 2025, pp. 1–5. [20] X. Gao, C. Zhang, Y. Chen, H. Zhang, and N. F. Chen, “Emo-dpo: Controllable emotional speech synthesis through direct preference optimization,” in Proc. ICASSP . IEEE, 2025, pp. 1–5. [21] S. S. Hussain, P. Neekhara, X. Yang, E. Casanova, S. Ghosh, R. Fejgin, M. T. Desta, R. Valle, and J. Li, “Koel-tts: Enhanc-ing llm based speech generation with preference alignment and classifier free guidance,” in Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , 2025, pp. 21 230–21 245. [22] R. Rafailov, A. Sharma, E. Mitchell, C. D. Manning, S. Ermon, and C. Finn, “Direct preference optimization: Your language model is secretly a reward model,” Proc. NeurIPS , vol. 36, pp. 53 728–53 741, 2023. [23] C. Gao, Z. Du, and S. Zhang, “Differentiable Reward Optimiza-tion for LLM based TTS system,” in Proc. Interspeech , 2025, pp. 2450–2454. [24] C. Wang, C. Gao, Y. Xiang, Z. Du, K. An, H. Zhao, Q. Chen, X. Li, Y. Gao, and Y. Li, “Rrpo: Robust reward policy optimization for llm-based emotional tts,” arXiv preprint arXiv:2512.04552 , 2025. [25] C. Liu, Y.-J. Hu, Y.-Y. Gao, S.-L. Zhang, and Z.-H. Ling, “Group relative policy optimization for text-to-speech with large language models,” arXiv preprint arXiv:2509.18798 , 2025. [26] X. Sun, R. Xiao, J. Mo, B. Wu, Q. Yu, and B. Wang, “F5r-tts: Improving flow-matching based text-to-speech with group relative policy optimization,” arXiv preprint arXiv:2504.02407 , 2025. [27] J. Liu, G. Liu, J. Liang, Y. Li, J. Liu, X. Wang, P. Wan, D. Zhang, and W. Ouyang, “Flow-grpo: Training flow matching models via online rl,” arXiv preprint arXiv:2505.05470 , 2025. [28] H. Wang, B. Tian, Y. Jiang, Z. Pan, S. Zhao, B. Ma, D. Chen, and X. Li, “Flowse-grpo: Training flow matching speech en-hancement via online reinforcement learning,” arXiv preprint arXiv:2601.16483 , 2026. [29] J. Kong, J. Kim, and J. Bae, “HiFi-GAN: Genera-tive Adversarial Networks for Efficient and High Fi-delity Speech Synthesis,” in Proc. NeurIPS , 2020. [On-line]. Available: https://proceedings.neurips.cc/paper/2020/hash/ c5d736809766d46260d816d8dbc9eb44-Abstract.html [30] H. Siuzdak, “Vocos: Closing the gap between time-domain and fourier-based neural vocoders for high-quality audio synthesis,” 
+
+arXiv preprint arXiv:2306.00814 , 2023. [31] J. Li, Y. Cui, T. Huang, Y. Ma, C. Fan, M. Yang, and Z. Zhong, “Mixgrpo: Unlocking flow-based grpo efficiency with mixed ode-sde,” arXiv preprint arXiv:2507.21802 , 2025. [32] Y. Chen, S. Zheng, H. Wang, L. Cheng, Q. Chen, and J. Qi, “An Enhanced Res2Net with Local and Global Feature Fusion for Speaker Verification,” in Proc. Interspeech , 2023, pp. 2228–2232. [33] Z. Gao, S. Zhang, I. McLoughlin, and Z. Yan, “Paraformer: Fast and accurate parallel transformer for non-autoregressive end-to-end speech recognition,” in Interspeech . ISCA, 2022, pp. 2063– 2067. [34] Systran, “Faster whisper large v3,” 2023. [Online]. Available: https://huggingface.co/Systran/faster-whisper-large-v3 [35] C. K. Reddy, V. Gopal, and R. Cutler, “Dnsmos p. 835: A non-intrusive perceptual objective speech quality metric to evaluate noise suppressors,” in Proc. ICASSP . IEEE, 2022, pp. 886–890. [36] F.-Y. Wang, H. Zhang, M. Gharbi, H. Li, and T. Park, “Promptrl: Prompt matters in rl for flow-based image generation,” arXiv preprint arXiv:2602.01382 , 2026. [37] Y. Wang, H. Zhan, L. Liu, R. Zeng, H. Guo, J. Zheng, Q. Zhang, X. Zhang, S. Zhang, and Z. Wu, “Maskgct: Zero-shot text-to-speech with masked generative codec transformer,” arXiv preprint arXiv:2409.00750 , 2024. [38] L. Ma, D. Guo, K. Song, Y. Jiang, S. Wang, L. Xue, W. Xu, H. Zhao, B. Zhang, and L. Xie, “Wenetspeech4tts: A 12,800-hour mandarin tts corpus for large speech generation model bench-mark,” arXiv preprint arXiv:2406.05763 , 2024. [39] H. Zen, V. Dang, R. Clark, Y. Zhang, R. J. Weiss, Y. Jia, Z. Chen, and Y. Wu, “Libritts: A corpus derived from librispeech for text-to-speech,” in Proc. Interspeech , 2019, pp. 1526–1530. [40] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, W. Chen et al. , “Lora: Low-rank adaptation of large language models.” Iclr , vol. 1, no. 2, p. 3, 2022. [41] Z. Chen, S. Chen, Y. Wu, Y. Qian, C. Wang, S. Liu, Y. Qian, and M. Zeng, “Large-scale self-supervised speech representation learning for automatic speaker verification,” in ICASSP 2022-2022 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2022, pp. 6147–6151. [42] C. K. Reddy, V. Gopal, and R. Cutler, “Dnsmos: A non-intrusive perceptual objective speech quality metric to evaluate noise sup-pressors,” in Proc. ICASSP . IEEE, 2021, pp. 6493–6497.

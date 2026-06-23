@@ -1,0 +1,578 @@
+Title: AudioCALM: Continuous Autoregressive Language Modeling for Universal Audio Generation
+
+URL Source: https://arxiv.org/pdf/2606.23080v1
+
+Published Time: Tue, 23 Jun 2026 02:55:40 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# AudioCALM: Continuous Autoregressive Language Modeling for Universal Audio Generation 
+
+Huadai Liu 1,2, Kaicheng Luo 2, Wen Wang 2, Qian Chen 2
+
+Bin Ma 2, Xiangang Li 2, Wei Xue 1 ∗
+
+> 1
+
+Hong Kong University of Science and Technology (HKUST) 
+
+> 2
+
+Tongyi Fun Team, Alibaba Group 
+
+## Abstract 
+
+Unifying speech, sound, and music generation in one model is hindered by tradeoffs between fidelity, end-to-end training, in-context conditioning, and variable-length synthesis that no current paradigm fully resolves. To address this challenge, we present AudioCALM , a universal audio generation framework that extends au-toregressive (AR) next-token prediction from discrete tokens to continuous audio latents: a thin flow-matching head replaces the softmax to predict rectified-flow velocities at each position, and a block-causal AR-Flow attention pattern produces arbitrary-length output. Joint training of multiple audio generation tasks faces an asymmetric text–audio mismatch: speech transcripts align to specific time spans and demand tight, time-aligned attention, whereas sound and music captions de-scribe only overall semantics and rely on diffuse, holistic attention; mixing the two disproportionately degrades sound and music generation. We address this asymmetry at two levels: a data reformulation strategy that unifies all three tasks under a single description-style conditioning interface, and a novel architecture 
+
+Asymmetric Mixture-of-Modality-Experts (A-MoME) , which adds a dedicated residual expert for speech while sound and music share the backbone, incurring no inference overhead on non-speech inputs. Experimental results demonstrate that AudioCALM matches modality-specific state-of-the-art and outperforms prior unified baselines on speech, sound, and music generation benchmarks. The project page is at https://AudioCALM-Project.github.io .
+
+## 1 Introduction 
+
+One long-standing goal of audio generation is building a universal model that could synthesize a wide range of audio types (that is, modalities or domains), such as speech, music, and environmental sound, from natural-language conditioning in a unified manner: real-world audio rarely occurs in isolation, and a unified model can in principle leverage data and shared structure and knowledge across various audio domains, hence reducing development cost and improving generation performance. In practice, however, the field remains dominated by domain-specific systems built on three generative paradigms: discrete-token autoregressive (AR) modeling over neural audio codecs [Wang et al., 2023a, Copet et al., 2023, Kreuk et al., 2022, Borsos et al., 2023], cascaded language-model-then-acoustic-generator pipelines [Du et al., 2024, Wang et al., 2024, Ju et al., 2024], and non-autoregressive (NAR) latent diffusion or flow matching over continuous representations [Liu et al., 2024a, Evans et al., 2025, Le et al., 2023, Mehta et al., 2024]. Each of these paradigms imposes structural constraints on its generative interface, limiting how uniformly a single instantiation can support text-to-speech (TTS), text-to-sound, and text-to-music (T2M) tasks. Note that “Audio” is our umbrella term for speech, sound, and music, and T2A denotes the text-to-non-speech regime (sound and music together). On the other hand, truly unified attempts spanning all three modalities are far fewer, concentrated on 
+
+> ∗Corresponding author. Preprint.
+> arXiv:2606.23080v1 [eess.AS] 22 Jun 2026
+
+autoregressive language modeling over discrete audio tokens [Yang et al., 2023, 2024] and non-autoregressive flow matching with task-specific input formatting [Vyas et al., 2023, Xu et al., 2025b], with the cascaded paradigm comparatively less explored under the same unified setting. However, all three paradigms suffer from severe limitations. Specifically, discrete-token autore-gression [Wang et al., 2023a, Kreuk et al., 2022, Borsos et al., 2023] imposes its constraint by compressing audio into a finite codebook, an information bottleneck especially restrictive for high-bandwidth content such as polyphonic music and environmental sound, where token-based methods trail continuous-latent approaches [Liu et al., 2024a, Evans et al., 2025] in performance. Cascaded systems sidestep discretization by handing off to a separate diffusion or flow-matching module [Du et al., 2024, Wang et al., 2024], but the hand-off introduces a rigid intermediate representation and severs end-to-end optimization of the language model and the acoustic generator. Non-autoregressive flow matching models avoid both issues, but forgo the autoregressive in-context conditioning over previously generated content, and depend on external duration prediction or forced alignment for variable-length generation [Ju et al., 2024, Vyas et al., 2023]. These limitations motivate four desider-ata for universal audio generation— fidelity , end-to-end optimization , in-context understanding , and 
+
+natural variable-length generation —which no existing paradigm fully satisfies. We address this gap with AudioCALM , a universal audio generation framework instantiating Con-tinuous Autoregressive Language Modeling (CALM) : a paradigm that extends autoregressive next-token prediction from discrete tokens to continuous audio latents while retaining the autoregressive language-model backbone. A single LM processes a unified text–audio sequence, and at each audio position, a thin flow-matching head on the LM hidden state predicts a rectified-flow velocity over the continuous latent space—the continuous counterpart of the softmax in standard next-token prediction. The two components share one latent space and are jointly trained under a single rectified-flow objective, removing any intermediate discretization. Consequently, different from all three paradigms, 
+
+AudioCALM retains the LM interface of discrete-token autoregressive models, the high-fidelity continuous representation of non-autoregressive flow matching models, and the end-to-end optimization that cascaded LM-then-generator systems sacrifice . To support streaming arbitrary-length generation, we further introduce AR-Flow , a novel block-causal attention pattern in which each latent block is generated by flow matching while attending autoregressively to all preceding blocks and the full text condition, thus variable length becomes a property of the attention mask rather than a predefined hyperparameter. Within this unified architecture, text still plays substantially different roles across tasks: TTS exhibits largely local text–audio correspondence—transcript segments align to specific time spans—while T2A is largely global , with captions fixing only overall semantics. Therefore, speech favors sharp, locally aligned text–audio attention, while sound and music favor diffuse, globally distributed text– audio attention. Our joint-training experiments reveal an asymmetric mismatch (Table 3): adding speech to the training mixture degrades sound and music generation more than sound and music degrade speech generation, which is consistent with speech’s stricter alignment crowding out the dispersed attention that non-speech audio depends on. Symmetric designs that allocate capacity uniformly across modalities, therefore, fail to match the structure of this mismatch. We address this asymmetry at two levels. At the data level, we adopt a single description-style conditioning interface across all three modalities. An audio-conditioned multimodal LLM (MLLM) consumes each training clip together with its bare textual annotation—the transcript for speech, the short caption for sound and music—and emits a long-form description that surfaces modality-relevant attributes from the waveform as natural-language phrases: for speech, speaker timbre, fine-grained prosody, and acoustic context (e.g., reverberation, background noise, recording quality); for sound, acoustic events and their sources, scene, and event sequencing; for music, genre, instrumentation, tempo, mood, and recurring motifs. Under this interface, TTS, text-to-sound, and text-to-music all reduce to conditional next-block prediction over audio latents under one model, and zero-shot voice cloning is supported natively by prepending a speaker embedding as a global prefix. At the 
+
+architecture level, the residual parameter-level mismatch is handled by Asymmetric Mixture-of-Modality-Experts (A-MoME) , an asymmetric variant of modality-expert designs [Bao et al., 2022, Wang et al., 2023b, Liang et al., 2024]: self-attention and the main feed-forward network remain shared across speech, sound, and music, while a speech-specific residual expert is added in parallel to capture the tighter text–audio correspondence required by speech alone. The asymmetry, rather than the modality count, defines the design: sound and music share the backbone unchanged, and only the modality whose objective diverges from the others receives dedicated capacity. Notably, the 2integration of A-MoME layers into AudioCALM does not modify the flow-matching head or the AR-Flow attention pattern, and incurs no inference overhead on non-speech inputs. Our contributions are summarized as follows: • We propose AudioCALM , a universal audio generation framework that extends next-token predic-tion to continuous audio latents via a flow-matching head, paired with a block-causal AR-Flow attention pattern that yields arbitrary-length speech, sound, and music generation in a single model. • We identify an asymmetric local–global text–audio mismatch in joint training and address it at two levels: a data-level recasting of speech as a special case of audio that unifies the three modalities under one description-style conditioning interface, and an architecture-level innovation of A-MoME , which mirrors this asymmetry by adding a dedicated residual expert for speech alone while keeping sound and music to share the backbone, allocating capacity by demand rather than by modality. • AudioCALM achieves state-of-the-art (SoTA) performance on speech, sound, and music generation benchmarks, surpassing both modality-specific systems and prior unified models on per-domain quality across all three audio domains. 
+
+## 2 Related Work 
+
+Unified Audio Generation We use unified audio generation to refer to a single model whose 
+
+output modality jointly covers speech, music, and sound—replacing the historically separate TTS, T2A, and T2M systems—with text as the primary conditioning input , optionally augmented with reference-audio conditioning for voice cloning or style imitation. Existing output-unified frameworks fall along three architectural lines. The first category is discrete-token autoregressive modeling, exemplified by VALL-E [Wang et al., 2023a] for TTS, MusicGen [Copet et al., 2023] for T2M, AudioGen [Kreuk et al., 2022] for T2A, and the unified UniAudio [Yang et al., 2023, 2024] in the audio language model (AudioLM) family [Borsos et al., 2023], which tokenizes audio with a neural codec [Défossez et al., 2022, Kumar et al., 2023] and casts every task as next-token prediction; this yields a clean LM interface, but the codec bottleneck caps fidelity on polyphonic music and complex sound generation [Liu et al., 2024a, Evans et al., 2025, Liu et al., 2024c,b]. The second category is the cascaded LM-then-generator family, such as CosyVoice2 [Du et al., 2024] and MaskGCT [Wang et al., 2024], in which an LM emits semantic tokens for a downstream diffusion or flow-matching synthesizer, removing the fidelity ceiling but freezing the intermediate semantic code as a fixed contract between two separately optimized stages, which blocks end-to-end optimization. The third category is non-autoregressive flow matching [Liu et al., 2025a,b,c], e.g., Audiobox [Vyas et al., 2023], Stable Audio Open [Evans et al., 2025], and the recent UniFlow-Audio [Xu et al., 2025b], which conditions flow-matching networks on task-specific input formatting and attains strong fidelity, but generates in parallel and thereby requires an externally specified target length and drops the token-level in-context conditioning of AR models [Ju et al., 2024]. Orthogonal to the three output-unified lines above, a related strand of speech-output universal models—early speech-only LMs [Zhang et al., 2023, Rubenstein et al., 2023, Défossez et al., 2024] and recent omni-modal audio LMs [Ding et al., 2025, Xu et al., 2025a, Zhang et al., 2025, Team et al., 2025]—ingests speech, music, and sound as input for understanding but produces only speech (and text) as output , leaving music and sound generation unaddressed; concurrent work [Liu et al., 2025d] tackles the resulting cross-modal interference via mixture-of-experts in a unified speech–music generator, yet still excludes general sound. 
+
+Audio Language Models Among the three paradigms above, the AR LM family uniquely affords the standard LLM toolbox—streaming inference, in-context conditioning, and scalable training—yet discrete-token AR is bounded by lossy codec reconstruction and intricate multi-codebook residual-quantization decoding patterns, while continuous-latent diffusion and flow matching [Le et al., 2023, Liu et al., 2022, 2023] avoid the codec ceiling only by sacrificing the streaming and token-level in-context behavior of AR models. A more recent line resolves this tension by preserving the LM interface while removing the codec bottleneck: it replaces the discrete softmax with a continuous output head, instantiated by GIVT [Tschannen et al., 2024] and MAR [Li et al., 2024] in vision and by DiTAR [Jia et al., 2025] in audio, where a flow-matching head is attached to LM hidden states for speech generation alone. AudioCALM extends this continuous-latent AR line from the speech-only DiTAR to universal audio generation. Beyond this domain extension, AudioCALM further differs from DiTAR in three respects: (i) we directly use the LLM itself as the denoiser across speech, sound, and music; (ii) we introduce A-MoME to resolve the cross-modal local–global text–audio mismatch 3Continuous Autoregressive Language Modeling via Flow Matching                                   
+
+> Causal Transformer
+> Flow Matching Head
+> Block 1Block 2Block 3
+> Iterative Denoising within Each Block
+> Asymmetric Mixture -of -Modality -Experts
+> Block -Causal AR -Flow Attention
+> Flow Matching Head
+> Text Token Audio Latent Hidden State Noised Audio Latent Spk Emb
+> KV
+> Cache
+> "You are a
+> music/speech/sound
+> generation planner … "
+> Text Clean Audio Noisy Audio
+> Text
+> Clean Audio
+> Noisy Audio
+> Speech Sound Music Text
+> Transformer Block (×L layers)
+> Self -Attention +LayerNorm +Residual (Shared )
+> FFN shared
+> All Modalities
+> FFN speech
+> Speech Residual
+> +
+> Attenable
+> Prompt
+> Next Block
+> Masked Intra -block (full bidirectional)
+> VAE Decode
+> Causal Transformer
+> VAE Decode
+> VAE Encode
+
+Figure 1: Overview of AudioCALM. Left: a causal Transformer autoregresses over fixed-size blocks of continuous audio latents; a flow-matching head and a stop head are attached to its hidden states (top), and each block is produced by iterative denoising with KV-cache reuse (bottom). Top right: 
+
+the block-causal AR-Flow attention mask, causal across blocks and bidirectional within the active noisy block (red). Bottom right: the Asymmetric Mixture-of-Modality-Experts layer, in which a deterministically routed speech-only FFN is added to the shared backbone. that does not arise in DiTAR’s single-modality setting; and (iii) we recast speech as a special case of audio under a unified description-style conditioning interface, so that TTS, T2A, and T2M reduce to one conditional next-block prediction problem within a single model. 
+
+## 3 AudioCALM 
+
+3.1 Overview 
+
+Figure 1 illustrates the AudioCALM architecture. Section 3.2 introduces the flow-matching head that extends next-token prediction from a discrete softmax to a continuous rectified-flow velocity over VAE latents. Section 3.3 develops the block-causal AR-Flow attention pattern that couples autoregressive commitment across blocks with bidirectional flow matching within a block, supporting streaming variable-length generation. Section 3.4 addresses the speech–audio asymmetry through a description-style conditioning pipeline and the Asymmetric Mixture-of-Modality-Experts (A-MoME). Section 3.5 specifies the training objective, exposure-bias regularizers, and autoregressive inference procedure. 
+
+3.2 Continuous Autoregressive Language Modeling via Flow Matching Sequence formulation. A training example pairs a textual condition c with continuous audio latents x = ( x1, . . . , x L) ∈ RL×C from a frozen VAE [Kingma and Welling, 2013, Evans et al., 2025], with L latent positions and C channels per position, factorized autoregressively as p(x |
+
+c) = Q
+
+i p(xi | x<i , c ) where x<i = ( x1, . . . , x i−1). For speech, c is preceded by a single speaker embedding s ∈ RDs from a frozen speaker encoder (Spk Emb in Fig. 1). Text is embedded via the LM’s native token embedding; for each audio position i, a noisy latent x(t)
+
+i at flow-matching timestep 
+
+t ∈ [0 , 1] enters the LM through a linear projection ϕin : RC → RH , summed with a learned position embedding pi and a sinusoidal timestep embedding τ (t),
+
+e(t)
+
+i = ϕin 
+
+ x(t)
+
+i
+
+ + pi + τ (t), (1) where t = 0 marks a clean latent and t ∈ (0 , 1) a noisy one. Text and audio embeddings are interleaved and processed by a shared transformer backbone fθ initialized from a pretrained text LLM, yielding hidden states hi ∈ RH .
+
+Flow-matching head and training objective. At every audio position, a linear projection 
+
+vθ (hi) := ϕout (hi) ∈ RC (2) 4maps the hidden state to a velocity in the same latent space as xi, parameterizing each per-position conditional implicitly through the velocity field vθ . We zero-initialize ϕout so the velocity field starts at zero, preventing the untrained head from disturbing the backbone in early training. Following rectified flow [Liu et al., 2022] with a logit-normal timestep schedule [Esser et al., 2024], we draw 
+
+t = σ(u) with u ∼ N (0 , 1) and σ the logistic sigmoid, concentrating probability mass near t ≈ 0.5
+
+where denoising is hardest. With per-position noise ϵi ∼ N (0 , I C ), the linear interpolation and target velocity are 
+
+x(t) 
+
+> i
+
+= (1 − t) xi + t ϵ i, v⋆i := ϵi − xi, (3) and the training loss, averaged over the set N of noisy audio positions in the example, is 
+
+LFM (θ) = Ex, c, u, ϵ 
+
+"
+
+1
+
+|N | 
+
+X
+
+> i∈N
+
+vθ (hi) − v⋆i
+
+> 22
+
+#
+
+. (4) Because ϕin embeds clean and noisy latents through the same projection, a clean prefix latent and a noisy latent at t = 0 produce identical embeddings, allowing a fully denoised block to be committed to the cache without train–inference mismatch. 
+
+3.3 Block-Causal AR-Flow Attention 
+
+Combining autoregression with flow matching raises a structural question: causal attention serves AR commitment, while flow matching requires bidirectional access among the noisy latents being denoised together. AR-Flow resolves this by attending causally across blocks and fully within each block, yielding a single mask under which a flow-matching trajectory denoises one block while the LM commits the previous one. 
+
+Block-causal mask. Let ˜x(t) 
+
+> i
+
+denote a noisy latent at timestep t, and call a clean latent committed 
+
+once it has been denoised and written to the KV cache. At each generation step, the LM processes a packed sequence corresponding to one active noisy block (illustrated in Fig. 1 top-right): 
+
+ c1, . . . , c T , x 1, . . . , x i, ˜x(t)
+
+> i+1
+
+, . . . , ˜x(t)
+
+> i+B
+
+, (5) formed by a T -token textual condition, i committed clean latents, and a contiguous block of B noisy latents sharing a block-level timestep t. The AR-Flow mask enforces three rules: • every text token cj attends only to text tokens c≤j ;• every clean audio latent xk (k ≤ i) attends to all text tokens and to clean latents x≤k;• every noisy latent ˜x(t) 
+
+> m
+
+(i < m ≤ i + B) attends to the entire textual condition, all committed clean latents x1: i, and all noisy latents within its block, but not to any other noisy block. The mask is therefore causal across blocks and full within each block: the bidirectional intra-block context is what flow matching needs to denoise the block jointly, while the inter-block causality lets the cached prefix grow incrementally as blocks commit, so the model accommodates arbitrary length under the same mask at training and inference. 
+
+Single-pass teacher-forced training. A naïve realization would require one forward pass per noisy block, scaling linearly with the number of blocks per utterance and forfeiting the parallelism that makes LM training efficient. We instead collapse all blocks into a single pass over the extended packed sequence  c, x 1, . . . , x L ˜x(t1)1 , . . . , ˜x(tL)
+
+> L
+
+, (6) whose right half holds per-position noisy copies of the audio. Let β(m) denote the index of the noisy block containing position m and bs(m) its first position. The mask is generalized so that each 
+
+˜x(tm) 
+
+> m
+
+attends to c, to the clean prefix x1: bs(m)−1 strictly preceding its own block, and to all noisy positions in the same block—no noisy position ever attends to a clean counterpart inside its own block, so the training mask matches the inference mask of Eq. 5 exactly. The two halves share position embeddings, so noisy copies occupy the same RoPE [Su et al., 2024] positions as their clean counterparts and—by the ϕin equivalence in §3.2—train and inference interfaces coincide at 
+
+t = 0 . Timesteps are sampled once per block ( tm = tm′ whenever β(m) = β(m′)) and drawn independently across blocks, matching the inference schedule. The loss in Eq. 4 is computed on the noisy half; the clean half exists only to populate the KV cache. The result: per-token training cost of a standard LM, no teacher-forcing/inference mismatch beyond drift (handled in §3.5), and identical attention masks at training and generation. 53.4 Modality-Asymmetric Specialization 
+
+The local–global text–audio mismatch identified in Section 1 manifests on two levels: a conditioning 
+
+gap, with speech tightly aligned to a transcript while sound and music are described by global captions, and a computation gap, with speech demanding alignment-bound processing absent from the others. We close the former at the data level and the latter at the architecture level. 
+
+Description-style conditioning. Each clip is paired offline with two textual conditions. The short 
+
+variant is the corpus annotation—transcript for speech, original short caption for sound and music. The long-form variant is produced by an audio-conditioned MLLM that consumes the clip together with the short variant and surfaces modality-relevant attributes the short variant cannot recover (speaker prosody and acoustic context for speech; acoustic events and scene structure for sound; instrumentation, tempo, and recurring motifs for music) as natural-language phrases grounded in the waveform; for speech, the verbatim transcript is wrapped in explicit content delimiters so local alignment is preserved. Both variants are sampled with equal probability per step, exposing the LM to terse and verbose prompts under one description-style interface usable with either at inference. The MLLM choice, prompt templates, decoding settings, and speech delimiter convention are in Appendix A.3. 
+
+Asymmetric Mixture-of-Modality-Experts. Inspired by modality-expert designs that share self-attention while specializing the feed-forward sub-layer per modality [Bao et al., 2022, Wang et al., 2023b, Liang et al., 2024], A-MoME keeps self-attention, layer normalization, resid-ual connections, and the main feed-forward network shared, introducing a single residual ex-pert active only on speech positions. Let h denote the hidden state at any token position and 
+
+m(h) ∈ { speech , sound , music , text } the modality tag; the modified feed-forward computation is 
+
+FFN A-MoME (h) = 
+
+FFN shared (h) + FFN speech (h), m(h) = speech ,
+
+FFN shared (h), otherwise , (7) where FFN speech matches FFN shared in form but has its own parameters, zero-initialized as with ϕout 
+
+so A-MoME begins as a no-op and only departs from the shared backbone as training progresses. Modality tags are read from each position’s source corpus, so the branch selection in Eq. 7 is deterministic with no gating network. Unlike symmetric modality-expert variants that allocate a separate FFN per modality, A-MoME adds only one extra FFN sub-layer per block, and non-speech inference is unaffected since sound, music, and text activate only FFN shared .
+
+3.5 Training and Inference Training objective. The total objective combines the rectified-flow loss in Eq. 4 on the noisy half of the extended sequence (Eq. 6) with a binary cross-entropy on the stop head (described below). 
+
+Closing the train–inference gap. In inference, each committed block is the denoised latent ˆx from the previous step’s flow-matching trajectory, re-embedded as a clean prefix for the next step. Drift from the true clean latent accumulates across blocks, opening a gap that pure teacher forcing does not capture. We close it with two complementary regularizers: • Per-block clean-prefix noise (σclean ). We perturb only the input embeddings ϕin (xi) of clean prefix tokens with Gaussian noise; the noise scale ramps linearly from 0 at the first block to σclean at the last block of the utterance and is held constant within each block. The interpolation x(t) 
+
+> i
+
+and target v⋆i remain computed from the unperturbed xi, so the supervision is unchanged and the perturbation only simulates per-block drift in the cached prefix. • Exposure-bias perturbation (γexp ). For each sample we draw α ∼ U [0 , γ exp ] and form a perturbed clean target ˜xi = xi + α ξ i with ξi ∼ N (0 , I C ). Both the prefix embedding and the target v⋆i = ϵi − ˜xi are computed from ˜xi, training the model to recover from a slightly noisy commitment. 
+
+Autoregressive inference. AR-Flow accommodates arbitrary lengths by construction, so Audio-CALM needs no external duration predictor. A lightweight binary stop head gstop : RH → (0 , 1) on the clean hidden states is trained with binary cross-entropy whose targets ramp linearly from 0 to 1
+
+over the last Kstop tokens of each clip, so the model learns to anticipate clip end. At inference, each block is denoised by Euler integration of the learned velocity field [Liu et al., 2022] and committed to the KV cache; gstop is then queried at every position of the new block, and the first position exceeding a fixed threshold τstop cuts the output, yielding token- rather than block-level termination granularity. 64 Experiments 
+
+4.1 Experimental Setup Training Data. We jointly train AudioCALM on three corpora covering the universal audio setting. For speech, we combine L IBRI TTS [Zen et al., 2019] with the English subset of E MILIA [He et al., 2024]; for general sound, we aggregate the audio of VGGS OUND [Chen et al., 2020], A UDIO -CAPS [Kim et al., 2019], and W AV CAPS [Mei et al., 2024]; for music, we combine FMA [Defferrard et al., 2016] with MTG-J AMENDO [Bogdanov et al., 2019]. Only the official train splits are used; LibriTTS test-clean , the AudioCaps and Song-Describer evaluation sets, and SeedTTS-eval are held out to avoid test-set contamination. All audio is resampled to 44 .1 kHz, and every clip is re-captioned with G EMINI 3 P RO 2 into long-form natural-language descriptions through the description-style pipeline of Section 3.4, with the original transcript or tag retained as a parallel short-form condi-tioning channel. Corpus details are in Appendix A.2, and the verbatim G EMINI 3 P RO prompts in Appendix A.3. 
+
+Evaluation Benchmarks. We follow standard evaluation protocols for each domain. Text-to-speech is evaluated on the full L IBRI TTS test-clean split and the en split of S EED TTS-EVAL [Anas-tassiou et al., 2024]; text-to-sound on A UDIO CAPS and text-to-music on the held-out S ONG -DESCRIBER [Manco et al., 2023] captions. 
+
+Evaluation Metrics. We adopt both objective and subjective metrics. For speech, WER (Whisper-large-v3 [Radford et al., 2023]) measures intelligibility, and SIM (cosine similarity between W AV LM-LARGE [Chen et al., 2022] speaker-verification embeddings of the generation and the reference) measures speaker fidelity. For sound and music, FAD [Kilgour et al., 2018]—the Fréchet distance in VGGish [Hershey et al., 2017] embedding space—measures distributional fidelity, and LAION-
+
+CLAP [Wu et al., 2023] text–audio cosine similarity measures prompt adherence. Subjective evaluation uses MOS (overall quality) for speech and MOS-Q /MOS-T (quality, text relevance) for sound and music, on N =50 samples per system; full definitions and protocol are in Appendix B. 
+
+Baselines. We compare against modality-specific and unified baselines spanning the dominant generative paradigms in each domain. Modality-specific: F5-TTS [Chen et al., 2025] and COSY VOICE 3.0 [Du et al., 2025] for speech; A UDIO LDM 2-L ARGE [Liu et al., 2024a], T AN -
+
+> GO
+
+FLUX [Hung et al., 2024], and S TABLE AUDIO OPEN [Evans et al., 2025] for sound; M USIC GEN -LARGE [Copet et al., 2023] and S TABLE AUDIO OPEN for music. CosyVoice 3.0, TangoFlux, and Stable Audio Open are the current open SOTA in their respective domains. Unified: UNI AU- 
+
+> DIO
+
+[Yang et al., 2023], U NI MOE-A UDIO [Liu et al., 2025d], U NI FLOW -A UDIO [Xu et al., 2025b], and M ING -OMNI [AI et al., 2025], one representative per architectural line of Section 2. All baselines are evaluated from their official checkpoints under the recommended decoding configurations. 
+
+Implementation Details. The backbone is initialized from Q WEN 3-1.7B [Yang et al., 2025]; audio is encoded by our own continuous VAE on 44 .1 kHz waveforms. We train for 300 k steps on A800 ×8 GPUs under FSDP HYBRID-SHARD with AdamW ( β1=0 .9, β2=0 .95 , weight decay 0)at a constant learning rate of 1×10 −4 following 2,000 warmup steps, with a global batch of ∼ 64 ktokens (8 k tokens per GPU) and gradient clipping at 1.0, optimizing the rectified-flow objective. We apply 10% caption dropout for classifier-free guidance with scale w=3 . Inference uses Kflow =24 
+
+rectified-flow steps per block and an AR-Flow block size of B=1 .0 s, which corresponds to 11 VAE latent tokens at the bottleneck’s ≈ 10 .75 Hz rate (Appendix A). VAE architecture and training are in Appendix A, and the full hyperparameter ledger is in Appendix A.4. 
+
+4.2 Universal Audio Generation Results 
+
+Tables 1 and 2 compare AudioCALM against the two baseline families on the three target domains. Across all three domains, AudioCALM—a single set of weights—achieves results comparable to or better than the best modality-specific system, while clearly outperforming the unified baselines. AudioCALM also streams natively without an external duration predictor, a property the non-AR flow-matching baselines lack. 
+
+Zero-Shot TTS. Both benchmarks follow the standard zero-shot TTS protocol—a speaker em-bedding extracted from a 3 s reference utterance is prepended as the first input token—and report WER (intelligibility), SIM (speaker fidelity), and MOS (overall quality). AudioCALM achieves the 
+
+> 2https://deepmind.google/technologies/gemini/
+
+7Table 1: Text-to-speech evaluation on L IBRI TTS test-clean and the en split of S EED TTS-EVAL .MOS is reported as mean ±std. Best per column in bold , second-best underlined. 
+
+LibriTTS SeedTTS-eval (en) Model WER ↓ SIM ↑ MOS ↑ WER ↓ SIM ↑ MOS ↑
+
+Modality-specific baselines 
+
+F5-TTS 0.033 0.616 3.85 ±0.08 0.018 0.648 3.78 ±0.09 
+
+CosyVoice 3.0 0.022 0.697 3.96 ±0.07 0.015 0.695 3.88 ±0.08 
+
+Unified baselines 
+
+UniAudio 0.120 0.265 3.30 ±0.11 0.113 0.363 3.22 ±0.12 
+
+UniMoE-Audio 0.078 0.361 3.52 ±0.09 0.019 0.573 3.72 ±0.08 
+
+UniFlow-Audio 0.032 0.570 3.50 ±0.10 0.058 0.573 3.45 ±0.10 
+
+Ming-omni-TTS 0.025 0.553 3.82 ±0.08 0.013 0.633 3.80 ±0.07 
+
+AudioCALM (ours) 0.020 0.668 4.02 ±0.06 0.011 0.672 3.95 ±0.07 
+
+Table 2: Text-to-sound (AudioCaps) and text-to-music (Song-Describer) evaluation. “–” marks domains a modality-specific model is not trained for; UniMoE-Audio additionally does not support text-to-sound. 
+
+Text-to-sound (AudioCaps) Text-to-music (Song-Describer) Model FAD ↓ CLAP ↑ MOS-Q ↑ MOS-T ↑ FAD ↓ CLAP ↑ MOS-Q ↑ MOS-T ↑
+
+Modality-specific baselines 
+
+AudioLDM 2-Large 5.36 0.22 3.25 ±0.10 3.10 ±0.11 – – – –TangoFlux 2.70 0.36 3.82 ±0.07 3.85 ±0.08 – – – –Stable Audio Open 4.13 0.25 3.65 ±0.08 3.45 ±0.09 2.23 0.32 3.95 ±0.07 3.85 ±0.08 
+
+MusicGen-Large – – – – 5.28 0.19 3.65 ±0.08 3.45 ±0.10 
+
+Unified baselines 
+
+UniAudio 6.64 0.13 3.20 ±0.11 2.95 ±0.13 11.25 0.06 2.80 ±0.14 2.65 ±0.15 
+
+UniMoE-Audio – – – – 3.71 0.22 3.80 ±0.08 3.60 ±0.09 
+
+UniFlow-Audio 4.22 0.35 3.62 ±0.08 3.80 ±0.08 6.39 0.15 3.45 ±0.10 3.25 ±0.11 
+
+Ming-omni 2.46 0.27 3.85 ±0.07 3.60 ±0.09 7.98 0.07 3.25 ±0.11 2.92 ±0.13 
+
+AudioCALM (ours) 1.95 0.37 3.98 ±0.06 3.95 ±0.07 2.02 0.36 3.99 ±0.06 3.92 ±0.07 
+
+lowest WER on both L IBRI TTS test-clean (0.020 ) and S EED TTS-EVAL en (0.011 ) and the highest MOS on both ( 4.02 and 3.95 ), surpassing every modality-specific and unified baseline. On speaker similarity, it trails only CosyVoice 3.0 (LibriTTS: 0.668 vs. 0.697 ; SeedTTS-eval: 0.672 vs. 0.695 ), the only columns where a specialist outperforms us—a gap consistent with CosyVoice 3.0’s much larger English-only speech corpus and dedicated speaker-fidelity objective, neither of which a unified, multi-modal system would be expected to match. 
+
+Sound and Music Generation. On A UDIO CAPS , AudioCALM dominates every column, lowering FAD from the strongest sound generation specialist (TangoFlux, 2.70 ) to 1.95 —a 28% relative reduction—and edging LAION-CLAP from 0.36 to 0.37 . On S ONG -D ESCRIBER , AudioCALM likewise dominates: lowest FAD ( 2.02 vs. Stable Audio Open’s 2.23 ) and highest text–audio CLAP (0.36 vs. 0.32 ). Both subjective axes (MOS-Q and MOS-T) also place AudioCALM first on every non-speech track. 
+
+Cross-Modal Interference. Existing universal audio generation systems exhibit clear modality collapse : U NI AUDIO trails the SOTA by a large margin on every modality, U NI FLOW -A UDIO loses 
+
+≥ 2.8× FAD on music ( 6.39 vs. 2.23 ), and M ING -OMNI breaks down on music (FAD 7.98 , CLAP 
+
+0.07 ). AudioCALM is the only system in Tables 1 and 2 that ranks first or second on every column we report, supporting the claim that continuous-latent autoregression combined with description-style conditioning eliminates the cross-modal interference that has defined unified audio generation to date. 
+
+4.3 Ablation Studies 
+
+We ablate AudioCALM’s three core designs on text-to-speech (L IBRI TTS test-clean ; Sp. WER, SIM), text-to-sound (A UDIO CAPS ; Sn. FAD, CLAP), and text-to-music (S ONG -D ESCRIBER ; Mu. FAD, CLAP). The cumulative variants (a)–(e) in Table 3 share the joint training of Section 4.1, so each column reflects per-modality fidelity and any cross-modal crowd-out; the two single-modality 8Table 3: Ablation on text-to-speech (L IBRI TTS test-clean ), text-to-sound (A UDIO CAPS ), and text-to-music (S ONG -D ESCRIBER ). Top: single-modality specialists with variant (b)’s architecture, isolating crowd-out from architectural effects. Bottom: cumulative joint-training variants (a)–(e) sharing the Qwen3-1.7B backbone of Section 4.1; (a) shares the same VAE encoder/decoder as (b)–(e) but applies vector quantization to a discrete codebook at the bottleneck in place of the continuous flow-matching head, so the (a) →(b) comparison isolates the head choice from the codec.                                                    
+
+> Speech (LibriTTS) Sound (AudioCaps) Music (Song-Describer) Variant WER ↓SIM ↑FAD ↓CLAP ↑FAD ↓CLAP ↑
+> Single-modality specialists (variant (b) architecture, no joint training)
+> Speech-only training 0.022 0.628 ––––Non-speech-only training ––2.45 0.34 2.55 0.30
+> Joint speech/sound/music training, cumulative ablation
+> (a) Discrete-token AR baseline (no flow head) 0.040 0.560 4.50 0.22 4.80 0.20 (b) Continuous AR + flow head, raw transcripts 0.024 0.620 3.30 0.30 3.45 0.26 (c) (b) + description-style reframing 0.023 0.625 2.70 0.33 2.85 0.29 (d) (c) + symmetric MoME (3 modality experts) 0.022 0.660 2.30 0.35 2.40 0.33 (e) (c) + A-MoME (speech residual only) 0.020 0.668 1.95 0.37 2.02 0.36
+
+rows at the top use variant (b)’s architecture on one modality, isolating crowd-out from architectural effects. Backbone, CFG, block-size, and inference-step sweeps are deferred to Appendices C.1–C.4. 
+
+Asymmetric Crowd-Out. The two specialist rows vs. joint variant (b)—same architecture, only the training mixture differs—directly verify the asymmetric mismatch claimed in Section 1. Adding non-speech data to a speech-only run leaves speech metrics within noise (Sp. WER 0.022 → 0.024 ;SIM 0.628 → 0.620 ), whereas adding speech to a non-speech-only run inflates Sn. FAD 2.45 → 3.30 
+
+and Mu. FAD 2.55 → 3.45 (+35% each) and drops both CLAP scores by 10 –13% . The crowd-out is thus directional—non-speech pays a ∼ 4× larger fidelity tax—motivating the asymmetric data and architecture fixes below over uniform capacity across the three modalities. 
+
+Continuous Flow-Matching Head. Replacing (a)’s discrete codec head with (b)’s continuous flow-matching head is the single largest contributor across all three domains (Sp. WER 0.040 →0.024 , SIM 
+
+0.560 →0.620 ; Sn. FAD 4.50 →3.30 , CLAP 0.22 →0.30 ; Mu. FAD 4.80 →3.45 , CLAP 0.20 →0.26 ). The codec bottleneck is therefore the dominant fidelity cap on all three sides, and continuous-latent autoregression alone closes most of the gap to non-AR flow-matching baselines. 
+
+Description-Style Reframing. Rewriting raw transcripts and captions into long-form descriptions (c vs. b) lifts Sn. FAD/CLAP 3.30 /0.30 → 2.70 /0.33 and Mu. FAD/CLAP 3.45 /0.26 → 2.85 /0.29 
+
+while leaving speech metrics within noise (Sp. WER 0.024 → 0.023 , SIM 0.620 → 0.625 ). The non-speech gain stems from harmonising the conditioning surface across modalities rather than sacrificing speech accuracy: once transcripts and captions look alike to the LM, the shared self-attention layers escape the local-vs-global tug-of-war of raw-transcript joint training. 
+
+A-MoME vs. Symmetric MoME. Symmetric three-expert MoME (d) reaches Sp. 0.022 /0.660 , Sn. 
+
+2.30 /0.35 , Mu. 2.40 /0.33 , but duplicates the FFN width across every block. A-MoME (e), adding one speech-only residual FFN, improves all six metrics to 0.020 /0.668 /1.95 /0.37 /2.02 /0.36 with markedly fewer extra parameters and zero inference overhead on non-speech inputs—speech gets a dedicated branch while sound and music stop competing for shared FFN capacity. Capacity allocation that tracks the asymmetric source of the mismatch, therefore beats one that tracks the modality count. 
+
+## 5 Conclusion 
+
+We presented AudioCALM , a universal audio generation framework instantiating Continuous Au-toregressive Language Modeling (CALM) : a single autoregressive LM parameterizes per-position rectified-flow velocities via a thin flow-matching head, paired with a block-causal AR-Flow attention pattern for streaming, variable-length generation of speech, sound, and music. We further identified an asymmetric mismatch between locally aligned text-to-speech and globally conditioned text-to-audio, resolving it with a unified description-style conditioning interface and A-MoME, whose granularity tracks this mismatch rather than the modality count. As a single set of weights, AudioCALM matches state-of-the-art dedicated systems on all three benchmarks. Open questions remain around corpus coverage, backbone scale, and long-form generation; deployment additionally requires provenance and consent safeguards against voice-cloning and synthetic-media risks (see Appendices E, F, and G). 9References 
+
+Inclusion AI, Biao Gong, Cheng Zou, Chuanyang Zheng, Chunluan Zhou, Canxiang Yan, Chunxiang Jin, Chunjie Shen, Dandan Zheng, Fudong Wang, et al. Ming-omni: A unified multimodal model for perception and generation. arXiv preprint arXiv:2506.09344 , 2025. Philip Anastassiou, Jiawei Chen, Jitong Chen, Yuanzhe Chen, Zhuo Chen, Ziyi Chen, Jian Cong, Lelai Deng, Chuang Ding, Lu Gao, et al. Seed-tts: A family of high-quality versatile speech generation models. arXiv preprint arXiv:2406.02430 , 2024. Hangbo Bao, Wenhui Wang, Li Dong, Qiang Liu, Owais Khan Mohammed, Kriti Aggarwal, Subhojit Som, Songhao Piao, and Furu Wei. Vlmo: Unified vision-language pre-training with mixture-of-modality-experts. 
+
+Advances in neural information processing systems , 35:32897–32912, 2022. Dmitry Bogdanov, Minz Won, Philip Tovstogan, Alastair Porter, and Xavier Serra. The mtg-jamendo dataset for automatic music tagging. In Machine learning for music discovery workshop, international conference on machine learning (ICML 2019) , pages 1–3. Long Beach, CA, United States, 2019. Zalán Borsos, Raphaël Marinier, Damien Vincent, Eugene Kharitonov, Olivier Pietquin, Matt Sharifi, Dominik Roblek, Olivier Teboul, David Grangier, Marco Tagliasacchi, et al. Audiolm: a language modeling approach to audio generation. IEEE/ACM transactions on audio, speech, and language processing , 31:2523–2533, 2023. Honglie Chen, Weidi Xie, Andrea Vedaldi, and Andrew Zisserman. Vggsound: A large-scale audio-visual dataset. In ICASSP 2020-2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 721–725. IEEE, 2020. Sanyuan Chen, Chengyi Wang, Zhengyang Chen, Yu Wu, Shujie Liu, Zhuo Chen, Jinyu Li, Naoyuki Kanda, Takuya Yoshioka, Xiong Xiao, et al. Wavlm: Large-scale self-supervised pre-training for full stack speech processing. IEEE Journal of Selected Topics in Signal Processing , 16(6):1505–1518, 2022. Yushen Chen, Zhikang Niu, Ziyang Ma, Keqi Deng, Chunhui Wang, JianZhao JianZhao, Kai Yu, and Xie Chen. F5-tts: A fairytaler that fakes fluent and faithful speech with flow matching. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 6255–6271, 2025. Jade Copet, Felix Kreuk, Itai Gat, Tal Remez, David Kant, Gabriel Synnaeve, Yossi Adi, and Alexandre Défossez. Simple and controllable music generation. Advances in neural information processing systems , 36: 47704–47720, 2023. Michaël Defferrard, Kirell Benzi, Pierre Vandergheynst, and Xavier Bresson. Fma: A dataset for music analysis. 
+
+arXiv preprint arXiv:1612.01840 , 2016. Alexandre Défossez, Jade Copet, Gabriel Synnaeve, and Yossi Adi. High fidelity neural audio compression. 
+
+arXiv preprint arXiv:2210.13438 , 2022. Alexandre Défossez, Laurent Mazaré, Manu Orsini, Amélie Royer, Patrick Pérez, Hervé Jégou, Edouard Grave, and Neil Zeghidour. Moshi: a speech-text foundation model for real-time dialogue. arXiv preprint arXiv:2410.00037 , 2024. Ding Ding, Zeqian Ju, Yichong Leng, Songxiang Liu, Tong Liu, Zeyu Shang, Kai Shen, Wei Song, Xu Tan, Heyi Tang, et al. Kimi-audio technical report. arXiv preprint arXiv:2504.18425 , 2025. Zhihao Du, Yuxuan Wang, Qian Chen, Xian Shi, Xiang Lv, Tianyu Zhao, Zhifu Gao, Yexin Yang, Changfeng Gao, Hui Wang, et al. Cosyvoice 2: Scalable streaming speech synthesis with large language models. arXiv preprint arXiv:2412.10117 , 2024. Zhihao Du, Changfeng Gao, Yuxuan Wang, Fan Yu, Tianyu Zhao, Hao Wang, Xiang Lv, Hui Wang, Chongjia Ni, Xian Shi, et al. Cosyvoice 3: Towards in-the-wild speech generation via scaling-up and post-training. 
+
+arXiv preprint arXiv:2505.17589 , 2025. Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas Müller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, et al. Scaling rectified flow transformers for high-resolution image synthesis. In Forty-first international conference on machine learning , 2024. Zach Evans, Julian D Parker, CJ Carr, Zack Zukowski, Josiah Taylor, and Jordi Pons. Stable audio open. In 
+
+ICASSP 2025-2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) ,pages 1–5. IEEE, 2025. 
+
+10 Haorui He, Zengqiang Shang, Chaoren Wang, Xuyuan Li, Yicheng Gu, Hua Hua, Liwei Liu, Chen Yang, Jiaqi Li, Peiyang Shi, et al. Emilia: An extensive, multilingual, and diverse speech dataset for large-scale speech generation. In 2024 IEEE Spoken Language Technology Workshop (SLT) , pages 885–890. IEEE, 2024. Shawn Hershey, Sourish Chaudhuri, Daniel PW Ellis, Jort F Gemmeke, Aren Jansen, R Channing Moore, Manoj Plakal, Devin Platt, Rif A Saurous, Bryan Seybold, et al. Cnn architectures for large-scale audio classification. In 2017 ieee international conference on acoustics, speech and signal processing (icassp) , pages 131–135. IEEE, 2017. Chia-Yu Hung, Navonil Majumder, Zhifeng Kong, Ambuj Mehrish, Amir Ali Bagherzadeh, Chuan Li, Rafael Valle, Bryan Catanzaro, and Soujanya Poria. Tangoflux: Super fast and faithful text to audio generation with flow matching and clap-ranked preference optimization. arXiv preprint arXiv:2412.21037 , 2024. Dongya Jia, Zhuo Chen, Jiawei Chen, Chenpeng Du, Jian Wu, Jian Cong, Xiaobin Zhuang, Chumin Li, Zhen Wei, Yuping Wang, et al. Ditar: Diffusion transformer autoregressive modeling for speech generation. arXiv preprint arXiv:2502.03930 , 2025. Zeqian Ju, Yuancheng Wang, Kai Shen, Xu Tan, Detai Xin, Dongchao Yang, Yanqing Liu, Yichong Leng, Kaitao Song, Siliang Tang, et al. Naturalspeech 3: Zero-shot speech synthesis with factorized codec and diffusion models. arXiv preprint arXiv:2403.03100 , 2024. Kevin Kilgour, Mauricio Zuluaga, Dominik Roblek, and Matthew Sharifi. Fréchet audio distance: A metric for evaluating music enhancement algorithms. arXiv preprint arXiv:1812.08466 , 2018. Chris Dongjoo Kim, Byeongchang Kim, Hyunmin Lee, and Gunhee Kim. Audiocaps: Generating captions for audios in the wild. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers) , pages 119–132, 2019. Diederik P Kingma and Max Welling. Auto-encoding variational bayes. arXiv preprint arXiv:1312.6114 , 2013. Felix Kreuk, Gabriel Synnaeve, Adam Polyak, Uriel Singer, Alexandre Défossez, Jade Copet, Devi Parikh, Yaniv Taigman, and Yossi Adi. Audiogen: Textually guided audio generation. arXiv preprint arXiv:2209.15352 ,2022. Rithesh Kumar, Prem Seetharaman, Alejandro Luebs, Ishaan Kumar, and Kundan Kumar. High-fidelity audio compression with improved rvqgan. Advances in Neural Information Processing Systems , 36:27980–27993, 2023. Matthew Le, Apoorv Vyas, Bowen Shi, Brian Karrer, Leda Sari, Rashel Moritz, Mary Williamson, Vimal Manohar, Yossi Adi, Jay Mahadeokar, et al. Voicebox: Text-guided multilingual universal speech generation at scale. Advances in neural information processing systems , 36:14005–14034, 2023. Tianhong Li, Yonglong Tian, He Li, Mingyang Deng, and Kaiming He. Autoregressive image generation without vector quantization. Advances in Neural Information Processing Systems , 37:56424–56445, 2024. Weixin Liang, Lili Yu, Liang Luo, Srinivasan Iyer, Ning Dong, Chunting Zhou, Gargi Ghosh, Mike Lewis, Wen-tau Yih, Luke Zettlemoyer, et al. Mixture-of-transformers: A sparse and scalable architecture for multi-modal foundation models. arXiv preprint arXiv:2411.04996 , 2024. Haohe Liu, Yi Yuan, Xubo Liu, Xinhao Mei, Qiuqiang Kong, Qiao Tian, Yuping Wang, Wenwu Wang, Yuxuan Wang, and Mark D Plumbley. Audioldm 2: Learning holistic audio generation with self-supervised pretraining. 
+
+IEEE/ACM Transactions on Audio, Speech, and Language Processing , 32:2871–2883, 2024a. Huadai Liu, Rongjie Huang, Xuan Lin, Wenqiang Xu, Maozong Zheng, Hong Chen, Jinzheng He, and Zhou Zhao. Vit-tts: Visual text-to-speech with scalable diffusion transformer. arXiv preprint arXiv:2305.12708 ,2023. Huadai Liu, Rongjie Huang, Yang Liu, Hengyuan Cao, Jialei Wang, Xize Cheng, Siqi Zheng, and Zhou Zhao. Audiolcm: Text-to-audio generation with latent consistency models. arXiv preprint arXiv:2406.00356 , 2024b. Huadai Liu, Jialei Wang, Rongjie Huang, Yang Liu, Heng Lu, Zhou Zhao, and Wei Xue. Flashaudio: Rectified flows for fast and high-fidelity text-to-audio generation. arXiv preprint arXiv:2410.12266 , 2024c. Huadai Liu, Kaicheng Luo, Jialei Wang, Wen Wang, Qian Chen, Zhou Zhao, and Wei Xue. Thinksound: Chain-of-thought reasoning in multimodal large language models for audio generation and editing. arXiv preprint arXiv:2506.21448 , 2025a. 
+
+11 Huadai Liu, Kaicheng Luo, Wen Wang, Qian Chen, Peiwen Sun, Rongjie Huang, Xiangang Li, Jieping Ye, and Wei Xue. Prismaudio: Decomposed chain-of-thoughts and multi-dimensional rewards for video-to-audio generation. arXiv preprint arXiv:2511.18833 , 2025b. Huadai Liu, Tianyi Luo, Kaicheng Luo, Qikai Jiang, Peiwen Sun, Jialei Wang, Rongjie Huang, Qian Chen, Wen Wang, and Xiangtai Li. Omniaudio: Generating spatial audio from 360-degree video. arXiv preprint arXiv:2504.14906 , 2025c. Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003 , 2022. Zhenyu Liu, Yunxin Li, Xuanyu Zhang, Qixun Teng, Shenyuan Jiang, Xinyu Chen, Haoyuan Shi, Jinchao Li, Qi Wang, Haolan Chen, et al. Unimoe-audio: Unified speech and music generation with dynamic-capacity moe. arXiv preprint arXiv:2510.13344 , 2025d. Ilaria Manco, Benno Weck, Seungheon Doh, Minz Won, Yixiao Zhang, Dmitry Bogdanov, Yusong Wu, Ke Chen, Philip Tovstogan, Emmanouil Benetos, et al. The song describer dataset: a corpus of audio captions for music-and-language evaluation. arXiv preprint arXiv:2311.10057 , 2023. Shivam Mehta, Ruibo Tu, Jonas Beskow, Éva Székely, and Gustav Eje Henter. Matcha-tts: A fast tts architecture with conditional flow matching. In ICASSP 2024-2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 11341–11345. IEEE, 2024. Xinhao Mei, Chutong Meng, Haohe Liu, Qiuqiang Kong, Tom Ko, Chengqi Zhao, Mark D Plumbley, Yuexian Zou, and Wenwu Wang. Wavcaps: A chatgpt-assisted weakly-labelled audio captioning dataset for audio-language multimodal research. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 32: 3339–3354, 2024. Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision. In International conference on machine learning , pages 28492–28518. PMLR, 2023. Paul K Rubenstein, Chulayuth Asawaroengchai, Duc Dung Nguyen, Ankur Bapna, Zalán Borsos, Félix de Chau-mont Quitry, Peter Chen, Dalia El Badawy, Wei Han, Eugene Kharitonov, et al. Audiopalm: A large language model that can speak and listen. arXiv preprint arXiv:2306.12925 , 2023. Jianlin Su, Murtadha Ahmed, Yu Lu, Shengfeng Pan, Wen Bo, and Yunfeng Liu. Roformer: Enhanced transformer with rotary position embedding. Neurocomputing , 568:127063, 2024. Tongyi Fun Team, Qian Chen, Luyao Cheng, Chong Deng, Xiangang Li, Jiaqing Liu, Chao-Hong Tan, Wen Wang, Junhao Xu, Jieping Ye, et al. Fun-audio-chat technical report. arXiv preprint arXiv:2512.20156 , 2025. Michael Tschannen, Cian Eastwood, and Fabian Mentzer. Givt: Generative infinite-vocabulary transformers. In 
+
+European Conference on Computer Vision , pages 292–309. Springer, 2024. Apoorv Vyas, Bowen Shi, Matthew Le, Andros Tjandra, Yi-Chiao Wu, Baishan Guo, Jiemin Zhang, Xinyue Zhang, Robert Adkins, William Ngan, et al. Audiobox: Unified audio generation with natural language prompts. arXiv preprint arXiv:2312.15821 , 2023. Chengyi Wang, Sanyuan Chen, Yu Wu, Ziqiang Zhang, Long Zhou, Shujie Liu, Zhuo Chen, Yanqing Liu, Huaming Wang, Jinyu Li, et al. Neural codec language models are zero-shot text to speech synthesizers. 
+
+arXiv preprint arXiv:2301.02111 , 2023a. Wenhui Wang, Hangbo Bao, Li Dong, Johan Bjorck, Zhiliang Peng, Qiang Liu, Kriti Aggarwal, Owais Khan Mohammed, Saksham Singhal, Subhojit Som, et al. Image as a foreign language: Beit pretraining for vision and vision-language tasks. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 19175–19186, 2023b. Yuancheng Wang, Haoyue Zhan, Liwei Liu, Ruihong Zeng, Haotian Guo, Jiachen Zheng, Qiang Zhang, Xueyao Zhang, Shunsi Zhang, and Zhizheng Wu. Maskgct: Zero-shot text-to-speech with masked generative codec transformer. arXiv preprint arXiv:2409.00750 , 2024. Yusong Wu, Ke Chen, Tianyu Zhang, Yuchen Hui, Taylor Berg-Kirkpatrick, and Shlomo Dubnov. Large-scale contrastive language-audio pretraining with feature fusion and keyword-to-caption augmentation. In ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 1–5. IEEE, 2023. 
+
+12 Jin Xu, Zhifang Guo, Jinzheng He, Hangrui Hu, Ting He, Shuai Bai, Keqin Chen, Jialin Wang, Yang Fan, Kai Dang, Bin Zhang, Xiong Wang, Yunfei Chu, and Junyang Lin. Qwen2.5-omni technical report. arXiv preprint arXiv:2503.20215 , 2025a. Xuenan Xu, Jiahao Mei, Zihao Zheng, Ye Tao, Zeyu Xie, Yaoyun Zhang, Haohe Liu, Yuning Wu, Ming Yan, Wen Wu, et al. Uniflow-audio: Unified flow matching for audio generation from omni-modalities. arXiv preprint arXiv:2509.24391 , 2025b. An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, et al. Qwen3 technical report. arXiv preprint arXiv:2505.09388 , 2025. Dongchao Yang, Jinchuan Tian, Xu Tan, Rongjie Huang, Songxiang Liu, Xuankai Chang, Jiatong Shi, Sheng Zhao, Jiang Bian, Xixin Wu, et al. Uniaudio: An audio foundation model toward universal audio generation. 
+
+arXiv preprint arXiv:2310.00704 , 2023. Dongchao Yang, Haohan Guo, Yuanyuan Wang, Rongjie Huang, Xiang Li, Xu Tan, Xixin Wu, and Helen Meng. Uniaudio 1.5: Large language model-driven audio codec is a few-shot audio task learner. Advances in Neural Information Processing Systems , 37:56802–56827, 2024. Heiga Zen, Viet Dang, Rob Clark, Yu Zhang, Ron J Weiss, Ye Jia, Zhifeng Chen, and Yonghui Wu. Libritts: A corpus derived from librispeech for text-to-speech. arXiv preprint arXiv:1904.02882 , 2019. Dong Zhang, Shimin Li, Xin Zhang, Jun Zhan, Pengyu Wang, Yaqian Zhou, and Xipeng Qiu. Speechgpt: Empowering large language models with intrinsic cross-modal conversational abilities. In Findings of the Association for Computational Linguistics: EMNLP 2023 , pages 15757–15773, 2023. Dong Zhang, Gang Wang, Jinlong Xue, Kai Fang, Liang Zhao, Rui Ma, Shuhuai Ren, Shuo Liu, Tao Guo, Weiji Zhuang, et al. Mimo-audio: Audio language models are few-shot learners. arXiv preprint arXiv:2512.23808 ,2025. 
+
+13 A Additional Implementation Details 
+
+A.1 Continuous Audio VAE Architecture. Our autoencoder is a CNN–GAN of the S TABLE AUDIO OPEN [Evans et al., 2025]/DAC [Kumar et al., 2023] family with three deviations: (i) an iSTFT synthesis head re-places the time-domain transposed-convolution stack at the decoder output, (ii) self-attention layers are inserted at the lowest-resolution stages of both the encoder and the decoder, and (iii) a learned patch-with-[CLS] aggregator at the bottleneck further reduces the latent rate [AI et al., 2025]. 
+
+Encoder and bottleneck. The encoder takes 44 .1 kHz stereo waveforms through a stack of strided 
+
+1D residual blocks (Snake activations, weight normalisation) whose cumulative stride of 2048 ×
+
+yields a 21 .5 Hz feature sequence; self-attention blocks at the lowest-resolution stages let the encoder reach beyond its convolutional receptive field. This sequence is right-padded to a multiple of P =2 ,split into patches of P frames each augmented with a learnable [CLS] token, and processed by a small self-attention aggregator that mixes within and across patches. The [CLS] positions are collected and projected to the parameters of a diagonal Gaussian posterior q(z | x) = N (μ, diag( σ2)) 
+
+at 21 .5/P ≈ 10 .75 Hz, so an AR-Flow block of B=1 .0 s corresponds to 11 latent tokens. 
+
+Decoder. The decoder linearly interpolates the latent back to 21 .5 Hz, refines it through 1D ResBlocks with symmetric self-attention insertions, and synthesises the waveform with an iSTFT head whose analysis grid matches the feature rate (hop = 2048 samples, nfft = 8192 ). The head emits 2 · 2 ·
+
+(nfft /2+1) channels for two stereo-channel complex spectrograms, which a per-channel inverse short-time Fourier transform (Hann window) maps to the 44 .1 kHz stereo output. Routing the final 
+
+2048 × of upsampling through a closed-form filterbank rather than through additional transposed convolutions removes the dominant source of phase artefacts in DAC-style decoders. 
+
+Training. The VAE is trained on the corpora of Section A.2 at 44 .1 kHz stereo with a multi-resolution STFT reconstruction loss, a KL term on the Gaussian posterior with free-bits regularisation, and an adversarial loss combining a multi-period time-domain discriminator with a multi-resolution complex-spectrogram discriminator (topology following the public S TABLE AUDIO OPEN release). We then freeze the VAE for the remainder of AudioCALM training. 
+
+A.2 Training Corpora and Preprocessing 
+
+The training mixture covers three modalities: speech (L IBRI TTS [Zen et al., 2019] and the English subset of E MILIA [He et al., 2024]), general sound (the audio of VGGS OUND [Chen et al., 2020], AUDIO CAPS [Kim et al., 2019], and W AV CAPS [Mei et al., 2024]), and music (FMA [Defferrard et al., 2016] and MTG-J AMENDO [Bogdanov et al., 2019]). Only the official training splits are used; LIBRI TTS test-clean , the A UDIO CAPS and S ONG -D ESCRIBER [Manco et al., 2023] evaluation sets, and S EED TTS-EVAL [Anastassiou et al., 2024] are held out to rule out test-set contamination. All audio is resampled to 44 .1 kHz and converted to two-channel stereo, with mono sources upmixed by replicating the single channel. 
+
+A.3 Description-Style Conditioning Pipeline 
+
+This subsection details the offline pipeline that produces the dual textual conditions consumed by the body model (Section 3.4). For every training clip we store a short variant—the verbatim transcript for speech, the original short caption for sound and music—and a long-form variant generated by an audio-conditioned MLLM (G EMINI 3 P RO ). The two variants are sampled with equal probability per training step. 
+
+Prompt design. We use a two-tier prompt: a shared system message fixes the output format and the audio-grounding contract; a modality-specific user message lists the attributes to surface, with explicit priority ordering, and (for speech) pins the transcript-delimiter rule. The two-tier split is what makes the long-form descriptions homogeneous in style across speech, sound, and music while still soliciting modality-relevant content. The templates we issue to G EMINI 3 P RO are reproduced verbatim below. 
+
+System message (identical across modalities).   
+
+> You are an audio analyst. Listen to the supplied audio clip and write a single fluent paragraph that will be used as a text prompt for an audio-generation model–-so describe what the audio sounds like , not what is happening behind the recording.
+
+14 Hard rules: (1) Every adjective and attribute must be supported by the audio itself. If you are not confident from the audio alone, omit the attribute; do not guess and do not pad with generic adjectives. (2) Do not begin with “This is...” or “The audio shows...”. Start directly with the most distinctive sonic content. (3) Plain prose only: no bullet points, no markdown headings, no bracketed metadata, no numerical confidence scores. (4) Single paragraph, ≤ 200 words. 
+
+User message — speech. 
+
+Modality: speech. Surface, in roughly this order of priority: (i) speaker timbre, age range, and apparent gender; (ii) prosody–-speaking rate, pitch range, emphasis pattern, emotional tone; (iii) recording acoustics–-reverberation level, background-noise level, overall fidelity (e.g., studio-clean vs. mobile-recorded). At the end of the paragraph, splice the verbatim transcript wrapped in delimiters <spoken> ... </spoken>. The text inside the delimiters must reproduce the transcript character-for-character; do not rephrase, expand, shorten, or translate it. The delimiter pair must appear exactly once and must not be nested. Transcript: {short_variant} 
+
+User message — general sound. 
+
+Modality: general sound. Surface, in roughly this order of priority: (i) the dominant acoustic events and their likely physical sources; (ii) the scene or environment that ties the events together; (iii) the foreground/background structure of the soundscape; (iv) the temporal arc–-which events come first, which recur, and how the energy evolves. Do not invent specific named entities (particular cities, brands, individuals) that the audio cannot disambiguate; describe categories instead (“a busy city street” rather than “downtown Tokyo”). Original short caption: {short_variant} 
+
+User message — music. 
+
+Modality: music. Surface, in roughly this order of priority: (i) genre or stylistic register and the apparent instrumentation; (ii) tempo, rhythmic feel, and overall mood; (iii) structural cues–-recurring melodic or rhythmic motifs, dynamic arc, vocal vs. instrumental balance; (iv) production character–-production cleanliness, stereo image, lo-fi/hi-fi flavor. Do not specify exact BPM values, named musical keys, or named artists/albums even if you think you recognize them. Original short caption: {short_variant} 
+
+The system message anchors a uniform prose style and the audio-grounding contract; the user messages enumerate attributes by priority, ban modality-specific failure modes (named entities for sound, BPM/keys/artists for music), and pin the speech delimiter convention. The audio-grounding clause is what makes an audio-conditioned MLLM strictly required: a text-only LLM cannot recover speaker timbre, recording acoustics, or musical mood from the bare transcript or short caption alone. 
+
+Speech transcript delimiter. For speech, the prompt additionally instructs the MLLM to splice the verbatim transcript inside the long-form description, wrapped in explicit content delimiters 
+
+<spoken> . . . </spoken> . The body LM can therefore attend to a globally diffuse description and still see the exact spoken content for local content alignment, without the description-style and transcript-style conditioning collapsing into two separate prompts. The same delimiter convention is reused at inference for TTS and voice-cloning prompts. To prevent the byte-pair tokenizer from fragmenting these markers into multiple sub-pieces (which would scatter the boundary signal across ∼3–4 tokens per delimiter and force the LM to re-learn the same opening/closing semantics from many distinct token combinations), both <spoken> and 15 </spoken> are added as special tokens to the body LM’s tokenizer, extending the Qwen3 vocabulary by two entries. Each delimiter is then a single token at training and inference, and the LM has a single dedicated embedding row per boundary that it can attend to as a unit. The two new embedding rows are initialized as the mean of Qwen3’s existing chat-template special tokens, placing them within the boundary-marker subspace the backbone already uses, and are trained jointly with the rest of the model. 
+
+Quality control. For every captioning batch, 5% of the produced long-form descriptions are sampled uniformly at random and reviewed by trained annotators. A description is rejected if it (i) asserts audio attributes the clip does not actually exhibit, (ii) omits attributes the prompt template asks for, or (iii) violates the speech delimiter convention. Rejected clips are returned to the MLLM for re-captioning under the same prompt; a clip that fails review more than three times is dropped from the training set entirely. Clips that pass review (and the unsampled remainder of their batch) enter the training manifest. 
+
+Storage and loader behavior. Both variants are stored as parallel fields in the training manifest. At every step the data loader draws a Bernoulli( 0.5) coin per clip to select which variant is used as the conditioning text; the audio target is identical in both cases. This dual exposure is what teaches the LM to handle both terse prompts (a bare label) and richly described prompts at inference within a single conditioning interface. 
+
+A.4 Hyperparameters and Training Setup 
+
+Table 4 summarizes the architectural, training, regularization, and inference hyperparameters of the AudioCALM run that produces all results in Tables 1, 2, and 3. The appendix sweeps (Tables 5–7) differ only along the swept axis. All values were fixed before any evaluation on held-out splits: optimizer settings follow the Qwen3 pretraining recipe, the rectified-flow schedule and CFG dropout follow [Esser et al., 2024, Liu et al., 2022], and the AR-Flow block size, exposure-bias scale, and clean-prefix noise scale were selected on a 5% in-domain validation slice held out from the training mixture, with no held-out evaluation prompts used for selection. 
+
+## B Evaluation Metrics 
+
+B.1 Objective Metrics 
+
+AudioCALM and all baselines are decoded at 44 .1 kHz mono; audio is resampled per metric to the rate expected by the underlying scoring model— 16 kHz for Whisper, WavLM-Large, and VGGish, and 48 kHz for LAION-CLAP—using a polyphase resampler with a Kaiser window. 
+
+WER (speech). Intelligibility is measured as the word error rate of the generated speech when transcribed by the open-source W HISPER -LARGE -V3 [Radford et al., 2023] ASR model under greedy decoding ( temperature =0, condition_on_previous_text =False , no language hint). Both the hypothesis and the reference target text pass through the standard Whisper text-normalization pipeline—Unicode NFKC, case folding, removal of punctuation and bracketed annotations, white-space collapse, and number-to-word expansion via the Whisper EnglishTextNormalizer —before computing a Levenshtein word distance with jiwer . WER is reported as a fraction in [0 , 1] ; lower is better. We restrict speech evaluation to the en split of SeedTTS-eval, so CER is not reported. 
+
+SIM (speech). For zero-shot voice cloning we report SIM, the cosine similarity between the speaker embedding of the generated utterance and the speaker embedding of the prompt audio. Embeddings are extracted with W AV LM-L ARGE [Chen et al., 2022] fine-tuned for speaker verification on VoxCeleb, using the model’s mean-pooled embedding over the full utterance. On L IBRI TTS test-clean the prompt is a 3 s clip drawn from a different utterance of the same speaker as the target sentence, following the protocol of [Chen et al., 2025]; on S EED TTS-EVAL (en ) we use the prompt audio and target text shipped with the benchmark verbatim. SIM lies in [−1, 1] ; higher is better. 
+
+FAD (sound, music). Fréchet Audio Distance [Kilgour et al., 2018] measures the distributional gap between generated and reference audio in the VGG ISH [Hershey et al., 2017] embedding space. We use Google’s reference frechet_audio_distance implementation: both candidate and reference clips are downmixed to 16 kHz mono and split into 0.96 s VGGish frames, per-clip embeddings are pooled into a single multivariate Gaussian per set, and the Fréchet distance between the two Gaussians is reported. The reference distribution is built from the ground-truth waveforms of the AUDIO CAPS test split for sound and the S ONG -D ESCRIBER evaluation pool for music; the candidate 16 Table 4: Model, training, and inference hyperparameters for AudioCALM. 
+
+Backbone and head Value 
+
+Backbone init Qwen3-1.7B Hidden size / layers / heads 2048 / 28 / 16 (Qwen3 default) A-MoME speech FFN width matches shared FFN; zero-init Flow-matching head ϕout linear, zero-init Stop head gstop linear → sigmoid; ramp window Kstop = 10 
+
+Audio embedding ϕin linear; C=64 VAE channels → H=2048 
+
+Position embedding shared RoPE with text Timestep embedding τ (t) sinusoidal, summed into e(t)
+
+> i
+
+Training 
+
+Optimizer AdamW, β1=0 .9, β2=0 .95 , weight decay 0
+
+Learning rate 1×10 −4 constant after 2,000 -step linear warmup Gradient clipping global norm 1.0
+
+Total steps 300 ,000 
+
+Global batch ∼ 64 k tokens ( 8 k tokens / GPU, 8 GPUs; token count includes training-time noise tokens) Precision bfloat16 mixed precision; FSDP HYBRID-SHARD Sequence packing length 4096 tokens (text + audio) Modality mixing ratio (sp. / sn. / mu.) 0.4 / 0.3 / 0.3 at the example level Caption mode (short / long) 0.5 / 0.5 per example Caption (CFG) dropout 10% unconditional during training Rectified-flow timestep t σ(u), u ∼ N (0 , 1) (logit-normal) Per-block clean-prefix noise σclean 0.1
+
+Exposure-bias perturbation γexp 0.1
+
+Stop-head ramp length Kstop 10 tokens 
+
+Inference 
+
+AR-Flow block size B 1.0 s ( 11 latent tokens) Rectified-flow steps per block Kflow 24 , Euler integration CFG scale w 3.0
+
+Stop probability threshold τstop 0.95 
+
+Sampling temperature on velocity 1.0 (deterministic Euler) 
+
+distribution contains exactly one generated clip per evaluation prompt at the same nominal duration as the corresponding reference. FAD is non-negative; lower is better. 
+
+CLAP (sound, music). Text–audio alignment is reported as the cosine similarity between the LAION-CLAP [Wu et al., 2023] text and audio embeddings of an evaluation caption and its corre-sponding generation. To allow direct comparison across sound and music we use a single checkpoint, 
+
+music_audioset_epoch_15_esc_90.14 ; the audio branch consumes 48 kHz mono input zero-padded or centre-cropped to the model’s 10 s receptive field, while the text branch consumes the unmodified evaluation caption (no truncation is required at the caption lengths used). We report the per-prompt cosine similarity averaged over all prompts in the evaluation set; values lie in [−1, 1] ,higher is better. 
+
+B.2 Subjective MOS Protocol 
+
+For every system we additionally collect Mean Opinion Scores on a randomly sampled subset of 
+
+N =50 prompts per benchmark. Speech is rated on a single overall-quality scale, denoted MOS 
+
+in Table 1: because the target text is fixed and prompt adherence is already captured by WER, a separate text-relevance axis would be redundant. Sound and music are rated on two complementary axes: MOS-Q (overall perceived quality) and MOS-T (text relevance to the caption), the latter being essential in the absence of a ground-truth reference waveform. All axes use the standard 5-point ITU-T P.808 absolute-category-rating scale ( 1 bad, 2 poor, 3 fair, 4 good, 5 excellent), with anchor descriptions adapted per modality. 
+
+Listening setup. Each rater completes the study in a single session of at most 30 min on a desktop or laptop browser; mobile devices are blocked. All clips are loudness-normalized to −23 LUFS with a true-peak ceiling of −1 dBTP following ITU-R BS.1770-4 before being served, and playback level is fixed via a 1 kHz sine calibration trial at the start of the session. A short training stage shows 17 three labelled reference clips per modality (anchored at the 1, 3, and 5 levels of each axis) before the rating session begins, and three attention checks per session—an unmodified ground-truth clip, a 
+
+50% -time-stretched clip, and a clip with 20 dB additive white noise—are inserted at random positions. Sessions that fail more than one attention check are discarded and the affected ratings re-collected. 
+
+B.3 Human-Subjects Study Operationalization Recruitment and demographics. Listeners were recruited through a vetted commercial crowdsourc-ing platform restricted to workers self-reporting fluent English and normal hearing. Each listener completed a one-minute pre-screening that included three suprathreshold tone-detection trials and a short comprehension question covering the rating instructions; only listeners who passed all four were admitted. The final pool comprised ∼ 120 unique listeners (anonymized to numeric IDs at intake), self-reporting a balanced gender distribution and an age range of 19 –58 . No personally identifying information was collected, stored, or shared with the authors at any point. 
+
+Consent and instructions. Before any audio was played, each listener was shown a plain-language consent screen describing the purpose of the study (“rating the perceived quality of computer-generated audio”), the data collected (numeric ratings and click metadata, no audio recordings of the listener), the right to withdraw at any time without forfeiting accumulated payment for completed clips, and a contact mailbox for questions or complaints. The full text of the consent screen, the rating instructions for each axis (MOS, MOS-Q, MOS-T) and modality (speech, sound, music), the calibration trial, and screenshots of the rating UI are included verbatim in the supplemental zip under 
+
+supp/mos_protocol/ .
+
+Compensation. Listeners were paid a fixed task rate calibrated to a target hourly wage of $ 15 /hour, well above the federal and state minimum wage in both the data collector’s and the platform’s jurisdictions, and above the platform’s recommended floor. Payment was issued for every completed session, including sessions whose ratings were later discarded for failing attention checks; only the affected ratings were re-collected from a different listener. Bonus payments were awarded for sessions with all three attention checks correct. Median completion time was 22 min, yielding a realized median rate of ∼ $16 .4/hour after bonuses. 
+
+Voice-clone consent in evaluation. Speaker-similarity (SIM) evaluation requires a reference voice prompt. We use only voices from the public L IBRI TTS test-clean and S EED TTS-EVAL (en ) splits, both of which were released by their authors with explicit re-distribution permissions for research; we do not record, solicit, or generate additional voice prompts from any human participant in this study, so no consent step beyond the upstream dataset releases is required for the SIM measurements. 
+
+## C Additional Experimental Results 
+
+C.1 Backbone Scale Ablation 
+
+We initialize AudioCALM from three Qwen3 checkpoints—0.6B, 1.7B (default), and 4B—training each for the same number of tokens as the main run. Table 5 reports per-modality WER (speech) and FAD/CLAP (sound, music). Table 5: Backbone-scale ablation. All variants share the data, optimizer, and step budget of the main run. Bold marks the best result per column; the 1.7B row is the default used in the main results.                     
+
+> Backbone Sp. WER ↓Sn. FAD ↓Sn. CLAP ↑Mu. FAD ↓Mu. CLAP ↑
+> Qwen3-0.6B 0.025 2.38 0.31 3.75 0.31 Qwen3-1.7B (default) 0.020 1.95 0.37 2.02 0.36 Qwen3-4B 0.018 1.89 0.39 1.97 0.38
+
+C.2 Classifier-Free Guidance Scale Sweep 
+
+We sweep the inference CFG scale w ∈ { 1.0, 2.0, 3.0, 4.0, 5.0} with all other hyperparameters fixed. 
+
+C.3 AR-Flow Block-Size Sweep 
+
+We sweep the AR-Flow block size B ∈ { 0.25 , 0.5, 1.0, 2.0, 4.0} s, holding the VAE frame rate and total decoded duration fixed, and additionally report a non-autoregressive baseline without block-wise 18 Table 6: CFG scale sweep on the main evaluation benchmarks. Bold marks the best result per column; 
+
+w=3 .0 is the default used in the main results. 
+
+w Sp. WER ↓ Sn. FAD ↓ Sn. CLAP ↑ Mu. FAD ↓ Mu. CLAP ↑
+
+1.0 0.028 3.22 0.31 2.49 0.32 2.0 0.026 2.68 0.35 2.13 0.33 
+
+3.0 (default) 0.020 1.95 0.37 2.02 0.36 
+
+4.0 0.021 1.88 0.36 2.15 0.31 5.0 0.020 2.01 0.32 2.30 0.30 
+
+decoding. Table 7 reports per-modality quality. Smaller B improves streaming granularity at the cost of slight quality regressions, while larger B approaches the non-autoregressive regime. Table 7: AR-Flow block-size sweep (in seconds). Bold marks the best result per column; B=1 .0 s is the default used in the main results. 
+
+B (s) Sp. WER ↓ Sn. FAD ↓ Sn. CLAP ↑ Mu. FAD ↓ Mu. CLAP ↑
+
+0.25 0.019 2.45 0.35 2.48 0.33 0.5 0.018 2.17 0.36 2.22 0.34 
+
+1.0 (default) 0.020 1.95 0.37 2.02 0.36 
+
+2.0 0.025 2.11 0.34 2.18 0.34 4.0 0.031 2.08 0.33 2.14 0.33 Non-Autoregressive 0.036 2.05 0.34 2.11 0.35 
+
+C.4 Inference Step Sweep 4 14 24 34 
+
+> Sampling steps
+> 0.018
+> 0.020
+> 0.022
+> 0.024
+> 0.026
+> 0.028
+> 0.030
+> 0.032
+> 0.034
+> 0.036
+> WER
+> WER
+> Sn.FAD
+> Mu.FAD
+> 2
+> 4
+> 6
+> 8
+> 10
+> Frechet Audio Distance
+
+Figure 2: Inference-step sweep. We sweep the number of inference steps with all other hyperparameters fixed. Figure 2 shows that generation quality improves substantially as the number of inference steps increases, while the gains become marginal beyond roughly 20–30 steps. Based on this trade-off, we adopt 24 inference steps as the default configuration, which provides a favor-able balance between generation quality and compu-tational efficiency. 
+
+## D Asset Licenses and Use 
+
+All training and evaluation assets used by AudioCALM are publicly released, open-source datasets, benchmarks, and pretrained models, cited at first use in Section A.2 (data) and Section B (evaluators); we use each strictly within its open-source or research license. Our supplement releases only the AudioCALM weights, training and inference code, and the re-captioning prompts; no upstream dataset or pretrained checkpoint is re-hosted. 
+
+## E Limitations 
+
+AudioCALM has three limitations. First, our training mixture is restricted to English speech and to publicly available sound and music corpora, so several domains—non-English speech, singing voice, and limited audio events—are not covered; in future work we plan to incorporate singing voice data so that the same backbone also supports song generation. Second, our backbone-scale study covers up to 4 B parameters (Section C.1); whether the trends we observe continue to hold at larger scales remains open and is left to future work. Third, although the VAE compresses audio to a relatively low frame rate, this work does not investigate long-form audio generation in depth, and we leave a focused study of long-horizon coherence and termination to future work. 19 F Broader Impacts 
+
+A unified speech, sound, and music generator has positive applications in accessibility (text-to-speech for assistive devices), creative work (sound-design and music generation for independent creators), and research tooling (data augmentation for ASR and audio classification). The same capabilities raise misuse risks shared with the broader class of strong audio generators, most concretely zero-shot voice cloning and impersonation from a few seconds of reference audio, and the fabrication of plausible synthetic audio events that can be embedded in disinformation videos. 
+
+## G Safeguards for Responsible Release 
+
+We will release AudioCALM under a research-use license that explicitly prohibits non-consensual voice cloning, impersonation of identified individuals, and use in surveillance, harassment, or fraud workflows. The voice prompts used in our speaker-similarity evaluation come exclusively from public datasets whose original release permits such use (L IBRI TTS test-clean and S EED TTS-EVAL ), and the MOS study (Section B.3) collects no participant voice recordings, so this paper introduces no new voice-cloning targets. We do not claim that license clauses alone are sufficient against a determined adversary, and we regard parallel community work on synthetic-audio detection and content provenance as a necessary complement to this release. 
+
+## H Declaration of LLM Usage 
+
+We use G EMINI 3 P RO as the audio-conditioned captioner of the description-style conditioning pipeline (Section A.3), which contributes a measurable share of the gain over modality-specific baselines (ablation row (c) of Table 3). This pass runs once, offline, on the training data only; no LLM is invoked in AudioCALM’s inference path, and at evaluation the textual condition is the original benchmark text (verbatim transcripts for L IBRI TTS test-clean and S EED TTS-EVAL , original captions for A UDIO CAPS and S ONG -D ESCRIBER ) rather than any Gemini-rewritten variant, so reproducing the reported numbers does not require querying G EMINI 3 P RO at all. Because the captioner is closed-source, exact reproduction of training without comparable multimodal-LLM access is not guaranteed; we mitigate this by releasing the captioning prompts verbatim and the cached annotations for every public training clip, so the rest of the pipeline can be reproduced without re-querying the captioner. Beyond this methodological role, the authors used a general-purpose writing assistant for copy editing of text already drafted by the authors; per the NeurIPS LLM policy, writing-only use does not require declaration and is mentioned here only for transparency. 20

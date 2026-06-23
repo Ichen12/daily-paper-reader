@@ -1,0 +1,1219 @@
+Title: Interleaved Speech Language Models Latently Work In Text
+
+URL Source: https://arxiv.org/pdf/2606.22473v1
+
+Published Time: Tue, 23 Jun 2026 02:36:28 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+Interleaved Speech Language Models Latently Work In Text 
+
+Talia Sternberg Gallil Maimon Yossi Adi 
+
+The Hebrew University of Jerusalem 
+
+talia.sternberg@mail.huji.ac.il 
+
+Abstract 
+
+Speech language models (SLMs) have been ex-tensively studied, with the common paradigm incorporating text data and pre-trained text LMs. A leading approach is speech-text in-terleaving in which models are trained over se-quences containing both speech and text tokens, aiming to boost even speech-only capabilities. Yet the way these two modalities interact in the model latent space remains unclear. In this work, we analyze interleaved speech-text LMs from different model families and sizes through the scope of the logit lens to provide such in-sight. We reveal that these models go through an implicit transcription phase in which the text token of the spoken word becomes decodable in intermediate layers, despite not being trained for speech recognition . The transcription of the word appears as one of the top candidate words for as much as 77% of the data. Following this stage, the models proceed to predict the next word in the text space before transforming back to the speech domain. We finally analyze the role of interleaving data, and initializing from text LMs in eliciting this behavior, as well as seeing how this correlates with spoken knowl-edge abilities. Our analysis sheds light on the internal mechanisms underlying the relation-ship between speech and text modalities and could shape SLM optimization. For the full dataet and audio samples see. 
+
+1 Introduction 
+
+Speech language models (SLMs) are gaining popu-larity as the basis for universal speech processing systems as well as dialogue models (Arora et al., 2026). Such models hold potential to reason about speech (Yosha et al., 2026; Sakshi et al., 2025), as well as answer spoken questions or instructions (Nachmani et al., 2024; Chen et al., 2024). How-ever, several recent works have indicated lacking se-mantic and knowledge capabilities in speech-only SLMs (Cuervo and Marxer, 2024). More recently Speech LMs started integrating text data and pre-trained text LMs into speech LMs (Défossez et al., 2024; Hassid et al., 2023; Xie and Wu, 2024). One such method is speech-text inter-leaving, in which models are trained over “code switching” data which contains both speech and text tokens as a single stream (Nguyen et al., 2025; Zeng et al., 2025; Manakul et al., 2026). Maimon et al. (2025b) demonstrated that this interleaving method improves scaling dynamics of the seman-tic abilities of SLMs relative to the speech-only paradigm, even when considering speech-in speech-out performance. While these methods improve speech-in speech-out capabilities, the mechanism underlying this behavior, and the internal interplay between speech and text modalities, still remain unclear. In this work, we analyze latent dynamics be-tween modalities using the logit lens (nostalge-braist, 2020), which projects intermediate hidden states into the token vocabulary. This analysis re-veals a clear pattern in the model’s internal repre-sentations (Figure 1): interleaved SLMs operate in a meaningful textual latent space within the hid-den layers of the transformer. Specifically, speech-derived representations become decodable as the corresponding text transcription, and later as hy-potheses about the next word, before being pro-jected back into the speech-token space. This oc-curs despite the models not being explicitly trained for speech transcription. We refer to this phe-nomenon as implicit latent transcription .In section 4.4, we further analyze which training decisions impact this phenomenon. Notably, we highlight that both initialization from a trained text LM, as well as interleaving training data are nec-essary for implicit latent transcription to emerge. Conversely, when these two traits are satisfied, the phenomenon is present across model families, sizes, and training compute budgets. Finally, we analyze how this phenomenon corre-1                                                        
+
+> arXiv:2606.22473v1 [cs.CL] 21 Jun 2026 0
+> 3
+> 6
+> 9
+> 12
+> 15
+> 18
+> 21
+> 24
+> 27
+> Transformer Layer
+> cap capital of -you King s
+> caps capital capital capital king kingdom
+> caps capital capital hire
+> caps capital cities hire
+> cap capital capital region royal England
+> capital capital capital uguay States States Dominion stown Britann situated
+> capital samerica Amerik STATES STATES Dominion dom Britain London
+> istic samerica Amerik Kingdom Kingdom States kingdom dom sLondon
+> london
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> P(text modality) ״The capital of the United Kingdom is "
+
+Figure 1: Implicit transcription emerges without speech-recognition supervision. Logit-lens analysis of intermediate states for the spoken prompt “The capital of the United Kingdom is...”. Cells show textual tokens probability, from light yellow for zero to dark blue for high probability. The labels show the most probable relevant textual token at each position; notably, the model predicts “London” although it was not spoken in the prompt. 
+
+lates with basic factual knowledge retrieval from spoken input. Our results, presented in Section 4.5, suggest that implicit transcription is positively asso-ciated with factual knowledge abilities, but does not fully explain them. We also qualitatively analyze examples and find that transcriptions often build gradually over the course of a spoken word and sometimes contain acoustic errors (Section 4.6). Our main contributions are: (i) Showing that interleaved Speech LMs latently transcribe and “think” in text, while not being trained for speech recognition. (ii) Highlighting the importance of both text LM initialization, and interleaving data in eliciting this behavior. (iii) Analyzing to what extent this explains spoken knowledge abilities. 
+
+2 Background 
+
+We study joint speech-text LMs, trained on both discrete speech units and text tokens. These models commonly include three components: a speech-to-unit module, a joint speech-text LM, and a unit-to-speech module (Arora et al., 2026). The speech-to-unit module converts raw audio into discrete units, typically using a self-supervised model such as Hu-BERT (Hsu et al., 2021) and quantizing these rep-resentations. For more on speech tokenization see Mousavi et al. (2025a). The joint Speech LM then models sequences containing both speech units and text tokens, often initialized from a pretrained text LM (Hassid et al., 2023). Finally, generated speech units can be converted back into waveform audio using a unit-to-speech decoder (Lakhotia et al., 2021). We specifically focus on interleaved speech-text SLMs, where speech units and text tokens are mixed within the same sequence (Nguyen et al., 2025). Such models show promising results with elegant modeling of a single stream of tokens (Nguyen et al., 2025; Maimon et al., 2025b; Zeng et al., 2025). For model training, given time-aligned transcriptions of speech samples, each word is assigned either the speech or text modal-ity. Consecutive words with the same modality are grouped into spans: text spans are tokenized as text, while speech spans are replaced by their discrete units. This yields sequences such as [TEXT] the monkey climbed [SPEECH] Hu14 Hu62 Hu9 . . . 
+
+Hu31 [TEXT] tree. 
+
+Such a modeling approach trains the SLM to gen-erate cross-modal continuations within the same sentence, under the assumption that semantic infor-mation is transferred across modalities. 
+
+3 Approach 
+
+3.1 Interpreting Latent Embeddings: Logit Lens 
+
+We aim to understand what information is encoded in speech LM latent representations, and how this information evolves across the layers of the model. To do so, we use a common mechanistic inter-pretability tool known as the logit lens (nostal-gebraist, 2020), which maps intermediate hidden states into the model’s output vocabulary space us-ing the final learned projection to vocabulary logits. In auto-regressive transformers, next-token pre-dictions are normally computed only at the final layer: the last hidden state is passed through the model’s output projection and normalized with a softmax to obtain a distribution over the vocabu-lary. The logit lens applies this same projection to 2hidden states from intermediate layers. Formally, for a hidden state h(j) 
+
+> i
+
+at position i and layer j, we compute: 
+
+P (xi+1 | h(j) 
+
+> i
+
+) = softmax 
+
+
+
+Wout h(j)
+
+> i
+
+
+
+,
+
+where Wout is the learned output projection from hidden states to vocabulary logits. This yields a layer-wise next-token distribution, allowing us to inspect which tokens are linearly decodable from the representation at each depth. This approach is meaningful because trans-former predictions are built gradually across layers through a shared residual stream (Geva et al., 2022). Therefore, projecting intermediate hidden states into vocabulary space provides a direct way to track how the model’s linearly decodable predictions are formed, transformed, and refined throughout the forward computation. Logit-lens-style analyses are widely used in mechanistic interpretability to study residual-stream transformations and the evo-lution of intermediate predictions (Dar et al., 2023; Wendler et al., 2024; Yang et al., 2024; Halawi et al., 2024; Neo et al., 2025). 
+
+Interpreting Speech Latents. While a text word is usually represented by one or a few discrete to-kens, a spoken word typically corresponds to a longer, variable-length span of speech tokens, de-pending on its duration and pronunciation. Con-sequently, the same transcribed word may be rep-resented by different numbers and sequences of speech tokens across utterances. This makes ap-plying the logit lens to speech representations less straightforward than in text: there is no single fixed speech-token position that naturally corresponds to a word-level representation. We address this by first aligning speech tokens positions with word-level transcriptions. We then apply the logit lens to each hidden state within the aligned span and aggregate the resulting scores at the word level. Throughout our analysis, we aggre-gate the maximum over the spoken word, adapting the aggregation procedure to the specific question. When analyzing modality preference, we compute, at each position, the probability mass assigned to speech-modality and text-modality tokens. We then summarize each span by taking the maximum mass assigned to each modality across positions in that span. Finally, when testing whether a specific to-ken is present among the top-ranked predictions, such as whether the transcription appears in the top-k tokens, we check for its presence across all positions in the span. This type of aggregation is common in VLM interpretability (Nikankin et al., 2026) and has also been used in Spirit-LM (Nguyen et al., 2025). Our choice is motivated by the fact that the relevant signal is often localized: transcription-like infor-mation tends to appear strongly in only one or two positions within a speech span, while other posi-tions are less informative (see Appendix A.3.1). Max aggregation is therefore well suited for de-tecting such localized signals, in contrast to mean aggregation, which can dilute them. 
+
+3.2 Evaluation Data 
+
+A key motivation for studying interleaved speech-text LMs is to understand whether knowledge learned from text can be accessed from speech in-puts. This is particularly important because speech training corpora are typically less diverse and more constrained than large-scale text corpora, often con-sisting in large parts of read speech and parliamen-tary recordings. As a result, factual knowledge may be less frequent or less easily learned from speech-only training. Since it is difficult to determine exactly which facts are present in the speech data, we evaluate this question comparatively. We contrast inter-leaved speech-text models with speech-only and randomly initialized baselines. If speech-only mod-els perform poorly while text-pretrained models trained with speech-text interleaving succeed, this suggests that joint training enables knowledge ac-quired from text to become accessible from speech. Thus, speech-based fact completion serves as a con-trolled probe for cross-modal knowledge transfer, or for more efficient acquisition and use of factual knowledge in joint speech-text models. For this purpose, we manually create a common-sense fact completion dataset in which each exam-ple consists of a short text prompt with the final answer omitted, such as “The capital of France is ...” or “One plus one equals ...” . The dataset cov-ers several categories of elementary factual knowl-edge, including colors, days and months, object functions, common-sense facts, languages, family relations, numerical facts, opposites, professions, capital cities, simple arithmetic, and number se-quences. In total, it contains 282 manually curated examples, providing a controlled set of short and unambiguous prompts for evaluating factual com-pletion. 3We synthesize the prompts into speech using Kokoro-82M, an open-weight text-to-speech model (Hexgrad, 2025), and obtain time-aligned transcrip-tions for each synthesized sample with Whisper large-v3 (Radford et al., 2023). Dataset statistics and representative examples from each category are provided in table 2. To help the community further the study of factual knowledge in speech LMs we will make the data publicly available. 
+
+Knowledge Evaluation in Speech LMs. We then use the above dataset for factual knowledge evaluation. Each true fact is paired with a matched counterfactual example by replacing the correct an-swer with an incorrect one, chosen randomly from the same category, i.e ’The color of a banana is yellow’ Vs. ’The color of a banana is red’ . We score a model as correct when it assigns higher likelihood to the true fact than to the wrong fact. 
+
+log p(fact ) > log p(counterfactual fact ).
+
+We report the percentage of examples for which this condition holds. Such likelihood based evaluation is commonly used for Speech LMs (Hassid et al., 2023; Maimon et al., 2025c). 
+
+3.3 Experimental Setup 
+
+We study interleaved Speech LMs trained in the official SIMS study (Maimon et al., 2025b). These are models trained based on Llama3.2-3B (Dubey et al., 2024) and Qwen2.5 (Qwen et al., 2025), spanning different sizes and training budgets. All models were trained with diverse real and synthetic speech data, text data, and interleaving data in equal token ratio for each. For full details we refer the reader to the original paper or Appendix A.2. To analyze how training decisions affect the prevalence of implicit transcription, we train con-trolled Llama 3.2-3B models following the same data and optimization setup as SIMS. We vary two factors: initialization, comparing pretrained text-LM initialization with random initialization; and data composition, comparing speech-only training, balanced speech+text training, and training with additional speech–text interleaved data. In the inter-leaved setting, we keep the non-interleaved speech and text portions balanced, and vary only the frac-tion of training tokens coming from speech–text interleaved examples. We define three interleaved variants, in which interleaved examples constitute 
+
+1/3, 2/3, and 5/6 of the training tokens, respec-tively. We denote the data configurations as S, ST, 0.00                  
+
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> prob.
+> (a) text input speech input
+> 04812 16 20 24 28
+> Layer
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> top-200
+> prob.
+> (b)
+> 04812 16 20 24 28
+> Layer
+> speech modality text modality
+
+Figure 2: Speech LMs operate in text . Modality distri-bution of inner state Logit Lens. (a) Sum of probabilities over the all speech tokens and text tokens respectively. (b) Same but only considering top 200 tokens. 
+
+I-1/3, I-2/3, and I-5/6, corresponding to speech-only, speech+text, and speech+text+interleaved training with increasing fractions of interleaved tokens. We use the prefixes P and R to indicate pretrained text-LM initialization and random ini-tialization, respectively. All variants are trained with the same architec-ture and optimization setup, enabling controlled comparison across initialization and data composi-tion. Matching the original SIMS paper, all models are trained with a next-token prediction objective, sequence length 2048, an effective batch size of 32 samples, and 20K training steps. Training is performed with SLAMK IT (Maimon et al., 2025a). Full details are provided in Appendix A.2. 
+
+4 Results 
+
+4.1 Speech LMs Operate In Text Latent Domain 
+
+We first ask whether speech language models re-main within the speech-token domain throughout computation, or whether speech inputs become in-ternally represented in a text-like space. To quan-tify this, we apply a layer-wise logit lens and mea-sure the probability mass assigned to speech tokens versus text tokens. For each word-level span, we compute this quantity for all hidden states corre-sponding to the aligned speech tokens, and aggre-gate by taking the maximum probability mass for each modality over the span. Figure 2a shows the results for the SIMS-Llama3.2-3B model. Speech prompts exhibit a consistent three-stage pattern: early layers are dom-inated by speech-token predictions ( 0–2), middle layers shift toward text-token predictions ( 2–25 ), and late layers return to speech-token predictions 4Llama-3.2 3B                               
+
+> PI-1/3 20k (official)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Cumulative Recall@k  (a) Current word (b) Next word (c) Answer (last word)
+> Llama-3.2 3B
+> PI-2/3 20k
+> 0510 15 20 25
+> Layer
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Cumulative Recall@k
+> 0510 15 20 25
+> Layer
+> 0510 15 20 25
+> Layer
+> Qwen2.5 3B
+> PI-1/3 60k
+> 010 20 30
+> Layer
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Cumulative Recall@k
+> 010 20 30
+> Layer
+> 010 20 30
+> Layer
+> Recall@1 Recall@5 Recall@10 Recall@30 Recall@50
+
+Figure 3: Implicit transcription and textual continuation emerge in speech hidden states. We apply the logit lens to speech-token hidden states and report Recall@ k up to a given layer, for the current transcription word, the next word, and the final answer. Although the models are not explicitly trained for transcription, current-word transcription emerges reliably in intermediate layers across models, while next-word and answer-word predictions are weaker but still decodable. The random-token baseline remains near zero. 
+
+before generation ( 26 –28 ). This suggests that the model does not process speech purely within the speech-token domain. Instead, speech inputs ap-pear to pass through a text-like latent regime in the middle layers before being mapped back to speech. As a comparison, we apply the same analysis to text samples of the same dataset. In this case, the logit-lens distribution remains concentrated on text tokens throughout the layers, indicating that the speech-text-speech pattern is specific to speech inputs. Since the text vocabulary is much larger than the speech vocabulary, we also repeat the anal-ysis after restricting the distribution to the top-200 
+
+tokens, shown in Figure 2b. The same trend per-sists under this normalization, suggesting that the shift toward text tokens in the middle layers is not merely a vocabulary size artifact. 
+
+4.2 Speech LMs Implicitly Transcribe Words 
+
+A shift toward text-token probability does not by it-self show that the representation carries meaningful text content. We therefore test whether the interme-diate text-like regime contains lexical information about the spoken input, by asking whether each spoken word’s transcription can be recovered from the corresponding speech tokens representations. For each spoken prompt, we apply the logit lens at every layer and extract the top-k predicted tokens for each speech-token hidden state, us-ing k ∈ { 1, 5, 10 , 30 , 50 }. We report cumulative 
+
+Recall@ k over layers: for each word slot and layer, we check whether the gold transcription appears among the top-k predictions of any speech-token hidden state in the word’s aligned span, in any layer up to that point. We then compute the percentage of word slots recovered by each layer. Figure 3a shows that correct textual transcrip-tions emerge for a substantial fraction of spoken words and consistently across three interleaved speech language models: two Llama3.2-3B vari-ants with different amounts of interleaved speech-text training, and one Qwen-3B variant. For ex-ample, in SIMS-Llama3.2-PI-1/3, where inter-leaved examples constitute 1/3 of the training to-kens, Recall@1 reaches nearly 40% by layer 23, while Recall@50 reaches nearly 80% . The in-crease largely saturates in the final layers, consis-tent with the modality-level analysis above, where computation shifts back from the text-token domain toward the speech-token domain before generation, transitioning for predicting the next speech tokens. To test whether this effect could arise by chance, we use a random-token baseline: we sample 100 text tokens from the vocabulary and test whether 5they appear in the top-50 logit-lens predictions for each word and layer. This baseline remains close to zero, at most 0.01, indicating that the transcription signal is not explained by random overlap with text tokens. Additional model configurations show the same qualitative pattern and are reported in Figure 6 in Appendix A.3.2. Together, these results show that intermediate speech-token representations contain meaningful lexical information about the spoken input: cor-rect transcriptions are recoverable for many dataset words, across multiple models, and far above chance. Since the models are not trained with a transcription objective, this behavior cannot be at-tributed to direct supervision. We refer to this phe-nomenon as implicit latent transcription .
+
+4.3 Models Predict the Continuation in Text 
+
+We next ask whether the textual workspace is used not only to represent the current spoken word, but also to support prediction in the text modality. If the model is partially “thinking in text”, then in-termediate speech hidden states may contain clues about the expected textual continuation, not only the transcription of the current word. We therefore test whether the next word in the sentence can be recovered from the logit-lens predictions of speech-token hidden states. We use the same cumulative Recall@ k protocol as above, but change the target. Instead of eval-uating whether the logit lens recovers the current transcription word, we evaluate whether it recovers either the next word in the sentence or, for the final prompt word, the correct answer. For example, for the prompt “the capital of United Kingdom is” ,the hidden state corresponding to “Kingdom” is evaluated against the continuation “is” .Figure 3b shows that next-word information is decodable from speech hidden states, although the signal is weaker than for current-word transcription. The fine-tuned Llama variants reach nearly 40% 
+
+cumulative Recall@50 for next-word prediction, particularly in later layers, while the Qwen-based model reaches approximately 30% . This suggests that the textual workspace contains information beyond the identity of the currently spoken word. The lower recall for next word, relative to the current, might also be explained by inherent ambi-guity as next-word prediction is not always well-defined for intermediate words. For example, after 
+
+“United” , both “Kingdom” and “States” are plausi-ble continuations depending on the intended entity. As shown in Figure 1, the model sometimes pre-dicts “States” instead of “Kingdom” . Thus, low recall at intermediate positions may partly reflect ambiguity in the target continuation, rather than the absence of relevant information. We therefore additionally evaluate the final word of each prompt, where the target is the factual an-swer and is typically less ambiguous. this time, 
+
+“the capital of United Kingdom is” , the hidden state corresponding to “is” is evaluated against the an-swer “London” . Although this setting contains fewer evaluated positions, it provides a cleaner test of whether the model represents the expected tex-tual answer. As shown in Figure 3c, all models exceed 40% cumulative Recall@50 in this setting, and SIMS-Llama-3.2-PI-1/3 (official) trained with an equal number of text, speech and interleaving tokens recovers the correct answer for nearly 60% 
+
+of prompts at some layer. Figure 1 and Appendix A.3.1 provides examples of correct answer predic-tions across different models. Together, these results suggest that the textual workspace encodes both current-word transcription and expected textual continuations. While some examples are consistent with a transcription-then-prediction process, we do not observe a consistent ordering across the full dataset, suggesting that transcription and prediction may partially overlap. We leave the precise temporal structure of these computations to future work. 
+
+4.4 What Impacts Implicit Transcription Prevalence? 
+
+We next ask which training factors give rise to implicit transcription. In particular, we consider whether the effect is driven by text pretraining, by interleaved speech-text training, or by their combi-nation. We evaluate transcription ability by measur-ing the percentage of words for which the correct transcription appears somewhere in the top-k pre-dictions across the corresponding speech-token po-sitions and across all layers. Text pretraining may provide a strong textual language prior, whereas interleaved speech-text data may provide the align-ment signal needed to map speech-unit representa-tions onto textual representations. To test this, we repeat the transcription analysis across several Llama-3.2-3B-based variants, which differ in initialization and training mixture. These include pretrained and randomly initialized models, models trained with and without interleaved data, and models trained with different proportions of 6Model Text pre-trained Text Inter. Inter. frac. Cur Next Ans                                                          
+
+> SIMS Llama-3.2 PI-1/3 (official) ✓✓✓1/361.88 23.91 41.60
+> Llama-3.2 PI-1/3 (ours) ✓✓✓1/348.75 15.31 26.40
+> Llama-3.2 PI-2/3 ✓✓✓2/349.06 15.78 24.00 Llama-3.2 PI-5/6 ✓✓✓5/62.66 1.72 4.00 Llama-3.2 PST ✓✓x–3.75 3.28 0.00 Llama-3.2 PS ✓xx–0.16 0.00 0.00 Llama-3.2 RST x✓x–5.78 6.72 4.80 Llama-3.2 RI-1/3 x✓✓1/32.19 5.78 7.20
+> Table 1: Recall@10 for different Speech LMs, i.e the percentage of examples in which the correct current word (Cur), next word (Next), or answer word (Ans) appear among the top-10 predicted tokens across the relevant spoken word in any transformer layer. Baseline scores for random words are approximately 0.
+
+speech, text, and interleaved sequences. As shown in Table 1, for the setting of k = 10 ,implicit transcription is strongest in text-pretrained models trained with interleaved speech-text data. Both the official and our Llama-3.2-PI-1/3 variants show clear transcription signals when interleaved data was at at most 2/3. In contrast, models trained without interleaved data show substantially weaker transcription, even when text is included in the training mixture. Similarly, randomly initialized models show only weak transcription signals, in-cluding when trained with interleaved data. These results suggest that, in this setting, neither exposure to text tokens nor interleaved data alone is suffi-cient; implicit transcription emerges most clearly from their combination with a pretrained textual prior. Results for different ks show the same pat-tern and can be found in Tables 3, 4, 5 in Appendix A.3.2. The fraction of interleaved data also affects the strength of implicit transcription. Models trained with lower or intermediate interleaved-token frac-tions, such as 1/3 and 2/3, show strong implicit transcription, whereas the model trained with a much higher interleaved-token fraction, 5/6, shows a substantially weaker signal. This suggests that the effect is not simply monotonic in the amount of interleaved data: excessive interleaving may shift the training distribution or reduce exposure to pure modality-specific contexts. Overall, these ablations suggest that implicit transcription is not merely a byproduct of using a unified vocabulary or exposing the model to text tokens. Rather, it appears most clearly when a text-pretrained model receives sufficient interleaved speech-text supervision to align spoken units with textual representations. 
+
+4.5 Does Implicit Transcription Correlate With Factual Knowledge? 
+
+The fraction of interleaved data also affects the strength of implicit transcription. Models trained with lower or intermediate interleaved-token frac-tions, such as (1/3) and (2/3), show strong im-plicit transcription, whereas the model trained with a much higher interleaved-token fraction, (5/6), shows a substantially weaker signal. This sug-gests that the effect is not simply monotonic in the amount of interleaved data: excessive interleav-ing may shift the training distribution or reduce exposure to pure modality-specific contexts. Overall, these ablations suggest that implicit transcription is not merely a byproduct of using a unified vocabulary or exposing the model to text tokens. Rather, it appears most clearly when a text-pretrained model receives sufficient interleaved speech-text supervision to align spoken units with textual representations. Finally, we examine whether implicit transcrip-tion is associated with factual knowledge retrieval in spoken language. We consider all speech LMs from the official SIMS paper as well as our variants from Section 4.4. These include both LLaMa3.2-3B variants and models based on Qwen2.5 of differ-ent sizes. Each were trained on the same data, with the same optimization setup, but potentially differ-ent compute, initialization, etc. For each model, we compute a transcription score as the percentage of words for which the correct current-word or next-word transcription appears in the top-10 predictions at any corresponding speech-token position and layer. We then evaluate each model on our com-monsense benchmark and compare transcription score with knowledge accuracy in Figure 4. We find positive Spearman correlations with knowledge ability for both current-word transcrip-70.0 0.2 0.4 0.6 0.8        
+
+> Recall@10
+> 0.50
+> 0.52
+> 0.54
+> 0.56
+> 0.58
+> 0.60
+> 0.62
+> Knowledge Score
+> =0.70 (p=0.00526)
+> Current
+> 0.0 0.1 0.2 0.3
+> Recall@10
+> 0.50
+> 0.52
+> 0.54
+> 0.56
+> 0.58
+> 0.60
+> 0.62
+> =0.65 (p=0.0119)
+> Next
+> Qwen Llama interleaved text LM init random init
+> SIMS Llama-3.2 PI-1/3 20K (official)
+> Llama-3.2 PI-1/3 20K (ours)
+> Llama-3.2 PI-2/3 20K
+> Llama-3.2 PI-5/6 20K
+> Llama-3.2 PST 20K
+> Llama-3.2 PS 20K
+> Llama-3.2 RST 20K
+> Llama-3.2 RI-1/3 20K
+> Qwen2.5 1.5B PI-1/3 20K
+> Qwen2.5 1.5B PI-1/3 120k
+> Qwen2.5 1.5B PI-1/3 42K
+> Qwen2.5 3B PI-1/3 60k
+> Qwen2.5 0.5B PI-1/3 20k
+> Qwen2.5 0.5B PI-1/3 40k
+
+Figure 4: Implicit transcription ability is positively correlated with factual knowledge retrieval. Each point represents a model. The x-axis reports the percentage of words for which the correct current-word transcription (left) or next-word transcription (right) appears in the top-10 logit-lens predictions at any aligned speech-token position and layer. The y-axis shows the binary accuracy on our commonsense factual-knowledge benchmark. Both transcription scores correlates positively with knowledge scores. 
+
+tion ( ρ = 0 .70 , p = 0 .00526 ) and next-word tran-scription ( ρ = 0 .65 , p = 0 .0119 ). Thus, models with stronger transcription-like signals tend to as-sign higher likelihood to the correct answers in our factual knowledge benchmark. This trend holds for both current- and next-word transcription scores, suggesting an association between implicit tran-scription and speech-based knowledge retrieval. However, the relationship is not perfect. This suggests that our transcription score does not fully explain variation in factual knowledge likelihood across models. One reason may be that the score is relatively coarse: it aggregates over both layers and speech-token spans, and therefore may miss more fine-grained differences in where transcription-like information appears. Another possibility is that knowledge likelihood is affected by additional model-specific factors beyond the transcription signal measured here. The randomly initialized models further illustrate this point: they obtain non-zero transcription scores, but relatively low knowledge likelihood. Thus, the presence of some transcription-like tokens in the top-k predictions is not by itself sufficient to guarantee strong knowl-edge retrieval. We therefore interpret the observed correlations as evidence of an association between implicit transcription and factual knowledge re-trieval, rather than as a complete explanation of the underlying mechanism. 
+
+4.6 Qualitative Analysis 
+
+As part of a qualitative analysis of implicit tran-scription, we observed recurring phenomena that may provide broader context for this behavior. We present these findings as exploratory observations, and leave a broader and more systematic investiga-tion of their scope and implications to future work. For this analysis, we also consider single word ut-terances, synthesized using the same approach as our evaluation data, to provide a simpler setting for interpretation. 
+
+Implicit Transcription Builds Gradually. Im-plicit transcription sometimes appears to emerge incrementally over the course of a spoken word. For example, the logit lens first decodes white as "why" (Figure 8), lime as "lie" (Figure 7), kingdom 
+
+as "king" (Figure 11), and Pakistan (Figure 9) as "pack", before later converging to the full word. These examples suggest that the model may con-struct textual representations from partial acoustic evidence, updating them as more of the word be-comes available. More examples can be found in Appendix A.3.1. As a result, intermediate represen-tations can temporarily correspond to acoustically plausible but semantically unrelated words. Such transient mismatches may contribute to the broader speech - text representation gap, and we leave a sys-tematic investigation of this effect to future work. 
+
+Implicit Transcription Has Errors. We also ob-serve cases in which the implicit transcription con-verges to an incorrect but acoustically similar word. For example, the spoken word lime is decoded by the logit lens as “line” (Figure 7 in Appendix A.3.1). Unlike the gradual prefix effect above, these cases suggest that the model occasionally set-8tles on a text interpretation that is acoustically close to the input but is incorrect. Such errors highlight that the implicit transcription process may intro-duce ambiguity or noise into the speech-derived text representation. 
+
+5 Related Work 
+
+Interpreting Latent Computation in LMs. Sev-eral works suggest that multilingual LLMs share information across languages through English-centric latent representations; Wendler et al. (2024) show this in Llama-2, and related English-mediated processing or steering effects are reported by Zhao et al. (2024); Mahmoud et al. (2025). Related multi-modal work proposes a similar semantic-hub view, where representations from different modali-ties align in intermediate layers (Wu et al., 2025). Closest to our analysis, Neo et al. (2025) apply logit lens to visual-token hidden states in LLaVA, showing that image representations can become de-codable in the language vocabulary despite not cor-responding to discrete text tokens. Complementar-ily, Nikankin et al. (2026) further show that vision and text may rely on distinct circuits, with align-ment emerging only in late layers. Together, these works suggest that cross-modal reasoning requires non-textual inputs to enter a shared workspace early enough. However, they focus on multilin-gual text or vision-language models, whereas we study whether such a text workspace emerges dur-ing speech processing. 
+
+Analyzing Speech-Text LMs. Several studies have tried to interpret speech-text LMs by analyz-ing the sources of the modality gap: the mismatch between speech and equivalent text inputs. Recent work suggests that this gap is partly caused by the different structure of the two modalities; for ex-ample, redundant speech tokenization can lead to diffuse attention and weaker decision sharpening compared to text (Hsu et al., 2026). In SpiRit-LM (Nguyen et al., 2025), layer-wise analyses are used to explain why interleaving speech and text is beneficial: the two modalities become increas-ingly geometrically aligned across layers, suggest-ing that interleaving helps induce a shared latent structure that may reduce the speech-text gap. Re-lated studies further measure speech-text alignment across layers (Mousavi et al., 2025b; Xiang et al., 2025). Other work finds that audio LMs often rely on transcript-like information, behaving sim-ilarly to ASR →LLM cascades on text-sufficient tasks (Chen et al., 2025; Billa, 2026). Recent mech-anistic studies of ASR models further analyze how transcript tokens emerge across layers, using de-coder logit-lens analyses, probing, and activation patching to trace acoustic and semantic information during transcription (Lioubashevski et al., 2024; Glazer et al., 2025). Nevertheless, these works focus on audio-to-text models or static speech-text alignment. In contrast, we study a generative speech-text LM that both consumes and produces speech tokens, and ask whether speech process-ing internally passes through a textual workspace despite the model not being explicitly trained for speech-to-text transcription. 
+
+6 Discussion & Conclusion 
+
+Our work, clearly indicates that Speech LMs im-plicitly move to a text latent going through implicit transcription followed by next word hypothesis be-fore being projected back to speech tokens. We also demonstrate that this positively correlates with spoken fact knowledge abilities. This work immediately opens up future research question, most excitingly can this behavior be op-timized directly leading to overall better perfor-mance. However, acting on these insights explic-itly could also have negative sides. Specifically, we left for future work the analysis of the effect of implicit transcription on acoustic abilities. As acoustic abilities are a key motivation for modeling speech directly and avoiding explicit transcription, this poses a key question. Another interesting question that arises from this study is “what limits the spoken abilities relative to text and leads to a modality gap?”. Given that SLMs latently work in text, one could expect a small modality gap and yet this is not the case. Fu-ture work could further analyze if this has to do with transcription error, compute “wasted” on tran-scription, or lack of temporal compression making language reasoning more challenging. 
+
+Limitations 
+
+Our work shows that implicit transcription emerges in intermediate layers, but does not identify the precise mechanism that computes it, such as the specific heads, layers, or pathways involved. More-over, although transcription-like signals are posi-tively associated with factual knowledge retrieval from speech, the correlation reaches only up to 
+
+ρ = 0 .70 and is not sufficient to explain all vari-9ation across models. We also do not causally test this relationship by training or intervening on mod-els to increase implicit transcription and measuring whether knowledge retrieval improves. We leave this causal analysis for future work. 
+
+References 
+
+Siddhant Arora, Kai-Wei Chang, Chung-Ming Chien, Yifan Peng, Haibin Wu, Yossi Adi, Emmanuel Dupoux, Hung-Yi Lee, Karen Livescu, and Shinji Watanabe. 2026. On the landscape of spoken lan-guage models: A comprehensive survey. Preprint ,arXiv:2504.08528. Jayadev Billa. 2026. The cascade equivalence hypoth-esis: When do speech llms behave like asr →llm pipelines? Preprint , arXiv:2602.17598. Jingyi Chen, Zhimeng Guo, Jiyun Chun, Pichao Wang, Andrew Perrault, and Micha Elsner. 2025. Do au-dio llms really listen, or just transcribe? measuring lexical vs. acoustic emotion cues reliance. Preprint ,arXiv:2510.10444. Yiming Chen, Xianghu Yue, Chen Zhang, Xiaoxue Gao, Robby T Tan, and Haizhou Li. 2024. Voicebench: Benchmarking llm-based voice assistants. arXiv preprint arXiv:2410.17196 .Santiago Cuervo and Ricard Marxer. 2024. Scaling properties of speech language models. In Proceed-ings of the 2024 Conference on Empirical Methods in Natural Language Processing , pages 351–361. Guy Dar, Mor Geva, Ankit Gupta, and Jonathan Berant. 2023. Analyzing transformers in embedding space. In Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 16124–16170. Alexandre Défossez, Laurent Mazaré, Manu Orsini, Amélie Royer, Patrick Pérez, Hervé Jégou, Edouard Grave, and Neil Zeghidour. 2024. Moshi: a speech-text foundation model for real-time dialogue. arXiv preprint arXiv:2410.00037 .Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, and 1 others. 2024. The llama 3 herd of models. Preprint , arXiv:2407.21783. Daniel Galvez, Greg Diamos, Juan Ciro, Juan Felipe Cerón, Keith Achorn, Anjali Gopi, David Kanter, Maximilian Lam, Mark Mazumder, and Vijay Janapa Reddi. 2021. The people’s speech: A large-scale diverse english speech recognition dataset for com-mercial usage. Preprint , arXiv:2111.09344. Mor Geva, Avi Caciularu, Kevin Wang, and Yoav Gold-berg. 2022. Transformer feed-forward layers build predictions by promoting concepts in the vocabulary space. In Proceedings of the 2022 conference on empirical methods in natural language processing ,pages 30–45. Neta Glazer, Yael Segal-Feldman, Hilit Segev, Aviv Shamsian, Asaf Buchnick, Gill Hetz, Ethan Fe-taya, Joseph Keshet, and Aviv Navon. 2025. Be-yond transcription: Mechanistic interpretability in asr. Preprint , arXiv:2508.15882. Danny Halawi, Jean-Stanislas Denain, and Jacob Stein-hardt. 2024. Overthinking the truth: Understanding how language models process false demonstrations. In International Conference on Learning Representa-tions , volume 2024, pages 42749–42787. Michael Hassid, Tal Remez, Tu Anh Nguyen, Itai Gat, Alexis Conneau, Felix Kreuk, Jade Copet, Alexan-dre Defossez, Gabriel Synnaeve, Emmanuel Dupoux, and 1 others. 2023. Textually pretrained speech lan-guage models. Advances in Neural Information Pro-cessing Systems , 36:63483–63501. François Hernandez, Vincent Nguyen, Sahar Ghan-nay, Natalia Tomashenko, and Yannick Estève. 2018. 
+
+TED-LIUM 3: Twice as Much Data and Corpus Repartition for Experiments on Speaker Adaptation ,page 198–208. Springer International Publishing. Hexgrad. 2025. Kokoro-82m (revision d8b4fc7). Ming-Hao Hsu, Xueyao Zhang, Xiaohai Tian, Jun Zhang, and Zhizheng Wu. 2026. Anatomy of the modality gap: Dissecting the internal states of end-to-end speech llms. Preprint , arXiv:2603.01502. Wei-Ning Hsu, Benjamin Bolte, Yao-Hung Hubert Tsai, Kushal Lakhotia, Ruslan Salakhutdinov, and Abdel-rahman Mohamed. 2021. Hubert: Self-supervised speech representation learning by masked prediction of hidden units. Preprint , arXiv:2106.07447. J. Kahn, M. Riviere, W. Zheng, E. Kharitonov, Q. Xu, P.E. Mazare, J. Karadayi, V. Liptchinsky, R. Col-lobert, C. Fuegen, T. Likhomanenko, G. Synnaeve, A. Joulin, A. Mohamed, and E. Dupoux. 2020. Libri-light: A benchmark for asr with limited or no super-vision. In ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Process-ing (ICASSP) , page 7669–7673. IEEE. Arne Köhn, Florian Stegen, and Timo Baumann. 2016. Mining the spoken wikipedia for speech data and beyond. In Proceedings of the Tenth International Conference on Language Resources and Evaluation (LREC 2016) , Paris, France. European Language Re-sources Association (ELRA). Kushal Lakhotia, Eugene Kharitonov, Wei-Ning Hsu, Yossi Adi, Adam Polyak, Benjamin Bolte, Tu-Anh Nguyen, Jade Copet, Alexei Baevski, Abdelrahman Mohamed, and Emmanuel Dupoux. 2021. On gen-erative spoken language modeling from raw audio. 
+
+Transactions of the Association for Computational Linguistics , 9:1336–1354. Daria Lioubashevski, Tomer Schlank, Gabriel Stanovsky, and Ariel Goldstein. 2024. Looking beyond the top-1: Transformers determine top tokens in order. Preprint , arXiv:2410.20210. 
+
+10 Omar Mahmoud, Buddhika Laknath Semage, Thom-men George Karimpanal, and Santu Rana. 2025. Improving multilingual language models by align-ing representations through steering. Preprint ,arXiv:2505.12584. Gallil Maimon, Avishai Elmakies, and Yossi Adi. 2025a. Slamming: Training a speech language model on one GPU in a day. In Findings of the Association for Computational Linguistics: ACL 2025 , pages 12201– 12216, Vienna, Austria. Association for Computa-tional Linguistics. Gallil Maimon, Michael Hassid, Amit Roth, and Yossi Adi. 2025b. Scaling analysis of interleaved speech-text language models. In Second Conference on Lan-guage Modeling .Gallil Maimon, Amit Roth, and Yossi Adi. 2025c. Salmon: A suite for acoustic language model eval-uation. In ICASSP 2025 - 2025 IEEE International Conference on Acoustics, Speech and Signal Process-ing (ICASSP) , pages 1–5. Potsawee Manakul, Woody Haosheng Gan, Martijn Bartelds, Guangzhi Sun, William Held, and Diyi Yang. 2026. Scaling open discrete audio founda-tion models with interleaved semantic, acoustic, and text tokens. arXiv preprint arXiv:2602.16687 .Pooneh Mousavi, Gallil Maimon, Adel Moumen, Dar-ius Petermann, Jiatong Shi, Haibin Wu, Haici Yang, Anastasia Kuznetsova, Artem Ploujnikov, Ricard Marxer, Bhuvana Ramabhadran, Benjamin Elizalde, Loren Lugosch, Jinyu Li, Cem Subakan, Phil Wood-land, Minje Kim, Hung yi Lee, Shinji Watanabe, and 2 others. 2025a. Discrete audio tokens: More than a survey! Transactions on Machine Learning Re-search .Pooneh Mousavi, Yingzhi Wang, Mirco Ravanelli, and Cem Subakan. 2025b. Alas: Measuring la-tent speech-text alignment for spoken language understanding in multimodal llms. Preprint ,arXiv:2505.19937. Eliya Nachmani, Alon Levkovitch, Roy Hirsch, Julian Salazar, Chulayuth Asawaroengchai, Soroosh Mari-ooryad, Ehud Rivlin, RJ Skerry-Ryan, and Michele Tadmor Ramanovich. 2024. Spoken question an-swering and speech continuation using spectrogram-powered llm. In International Conference on Learn-ing Representations , volume 2024, pages 51883– 51898. Clement Neo, Luke Ong, Philip Torr, Mor Geva, David Krueger, and Fazl Barez. 2025. Towards interpret-ing visual information processing in vision-language models. In International Conference on Learning Representations , volume 2025, pages 57172–57189. Tu Anh Nguyen, Benjamin Muller, Bokai Yu, Marta R. Costa-jussa, Maha Elbayad, Sravya Pop-uri, Christophe Ropers, Paul-Ambroise Duquenne, Robin Algayres, Ruslan Mavlyutov, Itai Gat, Mary Williamson, Gabriel Synnaeve, Juan Pino, Benoît Sagot, and Emmanuel Dupoux. 2025. SpiRit-LM: In-terleaved spoken and written language model. Trans-actions of the Association for Computational Linguis-tics , 13:30–52. Yaniv Nikankin, Dana Arad, Yossi Gandelsman, and Yonatan Belinkov. 2026. Same task, different cir-cuits: Disentangling modality-specific mechanisms in VLMs. In The Thirty-ninth Annual Conference on Neural Information Processing Systems .nostalgebraist. 2020. Interpreting gpt: The logit lens. https://www. lesswrong.com/posts/AcKRB8wDpdaN6v6ru/ interpreting-gpt-the-logit-lens . Less-Wrong blog post. Vassil Panayotov, Guoguo Chen, Daniel Povey, and Sanjeev Khudanpur. 2015. Librispeech: an asr cor-pus based on public domain audio books. In 2015 IEEE international conference on acoustics, speech and signal processing (ICASSP) , pages 5206–5210. IEEE. Qwen, :, An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayiheng Liu, Fei Huang, Haoran Wei, Huan Lin, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jingren Zhou, and 25 oth-ers. 2025. Qwen2.5 technical report. Preprint ,arXiv:2412.15115. Alec Radford, Jong Wook Kim, Tao Xu, Greg Brock-man, Christine McLeavey, and Ilya Sutskever. 2023. Robust speech recognition via large-scale weak su-pervision. In Proceedings of ICML , pages 28492– 28518. Jack W Rae, Sebastian Borgeaud, Trevor Cai, Katie Millican, Jordan Hoffmann, Francis Song, John Aslanides, Sarah Henderson, Roman Ring, Susan-nah Young, and 1 others. 2021. Scaling language models: Methods, analysis & insights from training gopher. arXiv preprint arXiv:2112.11446 .Sakshi Sakshi, Utkarsh Tyagi, Sonal Kumar, Ashish Seth, Ramaneswaran Selvakumar, Oriol Nieto, Ra-mani Duraiswami, Sreyan Ghosh, and Dinesh Manocha. 2025. Mmau: A massive multi-task audio understanding and reasoning benchmark. In Inter-national Conference on Learning Representations ,volume 2025, pages 84929–84964. Changhan Wang, Morgane Rivière, Ann Lee, Anne Wu, Chaitanya Talnikar, Daniel Haziza, Mary Williamson, Juan Pino, and Emmanuel Dupoux. 2021. Voxpop-uli: A large-scale multilingual speech corpus for rep-resentation learning, semi-supervised learning and interpretation. Preprint , arXiv:2101.00390. Maurice Weber, Daniel Y. Fu, Quentin Anthony, Yonatan Oren, Shane Adams, Anton Alexandrov, Xiaozhong Lyu, Huu Nguyen, Xiaozhe Yao, Vir-ginia Adams, Ben Athiwaratkun, Rahul Chalamala, Kezhen Chen, Max Ryabinin, Tri Dao, Percy Liang, 
+
+11 Christopher Ré, Irina Rish, and Ce Zhang. 2024. Red-pajama: an open dataset for training large language models. NeurIPS Datasets and Benchmarks Track .Chris Wendler, Veniamin Veselovsky, Giovanni Monea, and Robert West. 2024. Do llamas work in english? on the latent language of multilingual transformers. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 15366–15394. Zhaofeng Wu, Xinyan Velocity Yu, Dani Yogatama, Ji-asen Lu, and Yoon Kim. 2025. The semantic hub hypothesis: Language models share semantic repre-sentations across languages and modalities. Preprint ,arXiv:2411.04986. Bajian Xiang, Shuaijiang Zhao, Tingwei Guo, and Wei Zou. 2025. Understanding the modality gap: An empirical study on the speech-text alignment mech-anism of large speech language models. Preprint ,arXiv:2510.12116. Zhifei Xie and Changqiao Wu. 2024. Mini-omni: Lan-guage models can hear, talk while thinking in stream-ing. arXiv preprint arXiv:2408.16725 .Sohee Yang, Elena Gribovskaya, Nora Kassner, Mor Geva, and Sebastian Riedel. 2024. Do large language models latently perform multi-hop reasoning? In 
+
+Proceedings of the 62nd Annual Meeting of the As-sociation for Computational Linguistics (Volume 1: Long Papers) , pages 10210–10229. Iddo Yosha, Gallil Maimon, and Yossi Adi. 2026. Stresstest: Can your speech lm handle the stress? 
+
+Preprint , arXiv:2505.22765. Aohan Zeng, Zhengxiao Du, Mingdao Liu, Lei Zhang, Yuxiao Dong, Jie Tang, and 1 others. 2025. Scaling speech-text pre-training with synthetic interleaved data. In International Conference on Learning Rep-resentations , volume 2025, pages 49396–49419. Yiran Zhao, Wenxuan Zhang, Guizhen Chen, Kenji Kawaguchi, and Lidong Bing. 2024. How do large language models handle multilingualism? Preprint ,arXiv:2402.18815. 
+
+12 A Appendix 
+
+A.1 Common Sense Dataset 
+
+Table 2 reports statistics for the different subsets of our evaluation dataset, along with one representa-tive example from each subset. 
+
+A.2 Experimental Setup Interleaving. We follow Zeng et al. (2025), sam-pling speech-segment lengths from a Poisson dis-tribution with λ = 10 until speech spans cover 
+
+η = 0.3 of the words. The resulting mixed-modality sequences are used to train a typically text-pretrained LM with a standard next-token pre-diction objective. 
+
+Training Data For speech training data, we fol-low Maimon et al. (2025b) and use the same En-glish speech mixture: LibriSpeech (Panayotov et al., 2015), LibriLight (Kahn et al., 2020), Vox-Populi (Wang et al., 2021), TED-LIUM (Her-nandez et al., 2018), People’s Speech (Galvez et al., 2021), SWC (Köhn et al., 2016), and syn-thetic sTinyStories (Maimon et al., 2025a). Text-only data is taken from RedPajama (Weber et al., 2024), filtered with Gopher rules (Rae et al., 2021). Speech is represented with discrete HuBERT-style units (Hsu et al., 2021): mHuBERT features are quantized using a 500-unit k-means codebook. Text is tokenized with the Llama 3.2 tokenizer. In interleaved configurations, speech and text spans are mixed using Whisper large-v3-turbo alignments (Radford et al., 2023). 
+
+A.3 Additional Results A.3.1 Transcription Examples 
+
+Figures 7-20 show logit lens analyses across differ-ent models and spoken inputs. Overall, the trends are similar to those presented in the main paper: several models exhibit clear implicit transcription and next word prediction. However, the strength and extent of this phenomenon vary across models. Figures 7-10 show examples of gradual transcrip-tion and possible transcription errors for single-word inputs. Figures 11-19 show examples of transcription for different inputs across different models, while Figure 20 shows a case in which transcription does not occur at all, for a randomly initialized model. This is consistent with the low transcription capacity observed for this model in Ta-ble 1 and Section 4. In all figures Cells are colored by textual-token probability, dark blue indicates high probability and light yellow is zero textual probability. Transcriptions are written for textual token according to the most probable token given by the logit lens. 
+
+A.3.2 Transcription Recall For Different Top Ks Across Different Models 
+
+We analyze Recall@ k for the Llama3.2-3B variants with k ∈ { 1, 5, 30 }. The results show consistent trends across different values of k and are reported in Tables 3, 4, and 5. The cumulative recall patterns across all values of k and all models are shown in Figure 6. 
+
+A.3.3 Model Evaluation 
+
+For reference, and as a proxy for the general se-mantic abilities of the trained models we also report standard likelihood speech metrics Figure 5. We note that indeed all models perform as expected with models randomly initialized and without in-terleaving under-performing those with. We also see that our version of SIMS performs comparably to the official version once again showing that our training setup works as expected. 
+
+A.4 AI Tools Usage 
+
+AI tools have been used to assist in fixing grammar mistakes and sentence paraphrasing. Additionally, AI tools have been partially used to enhance code implementations. However, the authors carefully reviewed all content, ensuring these tools were only used as supportive aids and in responsible manner. 13 Category # Examples Example 
+
+Colors 16 The color of grass is → green 
+
+Days of the week 7 The day that comes after Sunday is → Monday 
+
+Months of the year 14 The month that comes after January is → February 
+
+Object functions 21 People use eyes to → see 
+
+Common-sense facts 13 Water freezes into → ice 
+
+Country languages 10 The official language of France is → French 
+
+Family relations 18 The mother of mother is called → grandmother 
+
+Numerical facts 27 The number of seconds in a minute is → 60 
+
+Opposites 35 the opposite of hot is → cold 
+
+Baby animals and professions 10 a baby dog is called a → puppy 
+
+Capital cities 30 The capital of France is → Paris 
+
+Simple arithmetic 58 one plus one equals → 2
+
+Number sequences 23 the number after one is → two 
+
+Total 282 –
+
+Table 2: Statistics and representative examples from the factual-completion dataset. Each example consists of a short prompt with the final answer omitted and a single target completion. sWUGGY (oov) 
+
+> sBLIMP
+> StoryCloze (spoken)
+> StoryCloze (topic)
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> Accuracy
+> 61.72
+> 58.16
+> 64.78
+> 86.64
+> 59.82
+> 57.37
+> 59.86
+> 81.72
+> 60.07
+> 58.04
+> 59.97
+> 79.53
+> 57.64
+> 52.27
+> 54.89
+> 65.90
+> 57.60
+> 51.51
+> 54.36
+> 67.66
+> 59.68
+> 53.33
+> 55.26
+> 74.13
+> 58.57
+> 52.05
+> 55.00
+> 70.60
+> 58.53
+> 51.93
+> 55.32
+> 67.93
+> 60.39
+> 56.66
+> 60.82
+> 82.07
+> 61.00
+> 58.74
+> 60.82
+> 83.14
+> 61.31
+> 58.22
+> 61.14
+> 82.50
+> 60.53
+> 57.27
+> 60.74
+> 81.51
+> 60.13
+> 56.98
+> 59.30
+> 81.16
+> 60.26
+> 56.69
+> 60.15
+> 81.96
+
+log likelihood benchmarks 
+
+> SIMS Llama-3.2 PI-1/3 20K (official)
+> Llama-3.2 PI-1/3 20K (ours)
+> Llama-3.2 PI-2/3 20K
+> Llama-3.2 PI-5/6 20K
+> Llama-3.2 PST 20K
+> Llama-3.2 PS 20K
+> Llama-3.2 RST 20K
+> Llama-3.2 RI-1/3 20K
+> Qwen2.5 1.5B PI-1/3 20K
+> Qwen2.5 1.5B PI-1/3 120k
+> Qwen2.5 1.5B PI-1/3 42K
+> Qwen2.5 3B PI-1/3 60k
+> Qwen2.5 0.5B PI-1/3 20k
+> Qwen2.5 0.5B PI-1/3 40k
+
+Figure 5: Log Likelihood based evaluations for all models we used 
+
+Model Text pre-trained Text Inter. Inter. frac. Cur Next Ans 
+
+SIMS Llama-3.2 PI-1/3 (official) ✓ ✓ ✓ 1/3 37.19 10.31 23.20 
+
+Llama-3.2 PI-1/3 (ours) ✓ ✓ ✓ 1/3 32.66 4.84 12.80 
+
+Llama-3.2 PI-2/3 ✓ ✓ ✓ 2/3 27.34 3.59 5.60 
+
+Llama-3.2 PI-5/6 ✓ ✓ ✓ 5/6 0.00 0.00 0.00 Llama-3.2 PST ✓ ✓ x – 0.16 0.31 0.00 Llama-3.2 PS ✓ x x – 0.00 0.00 0.00 Llama-3.2 RST x ✓ x – 0.00 0.00 0.00 Llama-3.2 RI-1/3 x ✓ ✓ 1/3 0.00 0.00 0.00 
+
+Table 3: Recall@1 for different Speech LMs, i.e., the percentage of examples in which the correct current word (Cur), next word (Next), or answer word (Ans) appears as the top predicted token across the relevant spoken word in any transformer layer. Baseline scores for random words are approximately 0.
+
+14 SIMS Llama-3.2 
+
+> PI-1/3 20K (official)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Cumulative Recall@k
+
+(a) Current word (b) Next word (c) Answer (last word)                
+
+> Llama-3.2
+> PI-1/3 20K (ours)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Cumulative Recall@k
+> Llama-3.2
+> PI-2/3 20K
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Cumulative Recall@k
+> Llama-3.2
+> PI-5/6 20K
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Cumulative Recall@k
+> Llama-3.2
+> PST 20K
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Cumulative Recall@k
+> Llama-3.2
+> PS 20K
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Cumulative Recall@k
+> Llama-3.2
+> RST 20K
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Cumulative Recall@k
+> Llama-3.2
+> RI-1/3 20K
+> 0510 15 20 25
+> Layer
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Cumulative Recall@k
+> 0510 15 20 25
+> Layer
+> 0510 15 20 25
+> Layer
+
+Recall@1 Recall@5 Recall@10 Recall@30 Recall@50 Figure 6: Implicit transcription and textual continuation emerge in speech hidden states for text pre-trained with interleaving. We apply the logit lens to speech-token hidden states and report Recall@k up to a given layer, for the current transcription word, the next word, and the final answer. Although the models are not explicitly trained for transcription, current-word transcription emerges reliably in intermediate layers across models, while next-word and answer-word predictions are weaker but still decodable. The random-token baseline remains near zero. 
+
+15 Model Text pre-trained Text Inter. Inter. frac. Cur Next Ans 
+
+SIMS Llama-3.2 PI-1/3 (official) ✓ ✓ ✓ 1/3 55.16 19.22 34.40 
+
+Llama-3.2 PI-1/3 (ours) ✓ ✓ ✓ 1/3 42.81 8.91 21.60 
+
+Llama-3.2 PI-2/3 ✓ ✓ ✓ 2/3 43.75 11.87 18.40 Llama-3.2 PI-5/6 ✓ ✓ ✓ 5/6 1.09 1.09 3.20 Llama-3.2 PST ✓ ✓ x – 2.34 1.87 0.00 Llama-3.2 PS ✓ x x – 0.00 0.00 0.00 Llama-3.2 RST x ✓ x – 1.72 2.66 1.60 Llama-3.2 RI-1/3 x ✓ ✓ 1/3 0.94 2.34 4.80 
+
+Table 4: Recall@5 for different Speech LMs, i.e., the percentage of examples in which the correct current word (Cur), next word (Next), or answer word (Ans) appears among the top-5 predicted tokens across the relevant spoken word in any transformer layer. Baseline scores for random words are approximately 0.
+
+Model Text pre-trained Text Inter. Inter. frac. Cur Next Ans 
+
+SIMS Llama-3.2 PI-1/3 (official) ✓ ✓ ✓ 1/3 73.75 45.78 56.80 
+
+Llama-3.2 PI-1/3 (ours) ✓ ✓ ✓ 1/3 61.56 33.59 40.00 
+
+Llama-3.2 PI-2/3 ✓ ✓ ✓ 2/3 65.00 32.34 38.40 Llama-3.2 PI-5/6 ✓ ✓ ✓ 5/6 17.03 7.50 8.80 Llama-3.2 PST ✓ ✓ x – 18.91 9.38 4.80 Llama-3.2 PS ✓ x x – 2.81 1.87 0.00 Llama-3.2 RST x ✓ x – 25.31 17.50 22.40 Llama-3.2 RI-1/3 x ✓ ✓ 1/3 15.62 21.41 24.00 
+
+Table 5: Recall@30 for different Speech LMs, i.e., the percentage of examples in which the correct current word (Cur), next word (Next), or answer word (Ans) appears among the top-30 predicted tokens across the relevant spoken word in any transformer layer. Baseline scores for random words are approximately 0.
+
+16 Figure 7: Logit lens of intermediate states for the spoken input "lime", using the Llama-3.2 PI-1/3 (official) model. The example shows both gradual transcription, with an early prediction of "lie", and a transcription error, where the model predicts "line" instead of "lime". 
+
+17 Figure 8: Logit lens of intermediate states for the spoken input "white", using the Llama-3.2 PI-1/3 (official) model. The example shows gradual transcription, where the model first predicts the partial form "why" before later converging to the full word "white". 
+
+18 Figure 9: Logit lens of intermediate states for the spoken input "Pakistan", using the Llama-3.2 PI-1/3 (official) model. The example shows gradual transcription, where the model first predicts the partial form "pack” and later updates toward later components of the word, such as "istan", before converging to "Pakistan". 
+
+19 Figure 10: Logit lens of intermediate states for the spoken input "teacher", using the Llama-3.2 PI-1/3 (official) model. The example shows gradual transcription, where the model first predicts "tea", then "teach", and finally converges to the full word "teacher". 
+
+20 Figure 11: Logit Lens of inner states of the spoken input: "The capital of United Kingdom is...", using Llama-3.2 PI-1/3 (official).This version contains less filters on the time and layer domain and thus show higher resolution in the inner mechanism by logit lens perspective Paris is the capital of 
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10 
+
+12 
+
+14 
+
+16 
+
+18 
+
+20 
+
+22 
+
+24 
+
+26 
+
+28 
+
+> Transformer Layer
+
+acs Monster aber lx hovering Bray Howard rat prior prior queen bis illes ISTA Karn roots begs /is minster oret pac riors won bst jax Copp turnovers turnovers zhou ing s arda Costa ndon cheng ope Ferd Sc Kov sville amel kara 
+
+acz Ear McC dub uyo agher fruit contacts Pett times metal enlightenment roots unl rael splits decimal ipc riors Enemy gram l caps cap cap Theater capital capital usz iculo wat worthy flo mong IIC VL abe 
+
+Fast Flavor polite ero chio mails axial fruit frames frames hausen Mill itis dic enlightenment scr obus /is lington woke ucc lien Enemy nip Vue cap cap cap eyer capital capital s worm ndon rove capital orum iov hof tridge discounted Baum 
+
+linear Flavor skim adients .di .pol bah fruit sandbox sandbox superv elist alis Rome spiel ship ibar conj RHS strip werk lien Enemy mean mom caps straps straps eyer central hub vature pth anch Layout mong Bucc Mast Bra discounted AH 
+
+Narr appendix mac adients -controls li scout pair russian russian -mon superv ville -city melon dil cut olation gear .design oves chw chancellor mean McMahon lids straps straps SCH -city Manip erus vature robe anch Produ Brunswick unca unp Marble discounted AH 
+
+transc autobi alc asc isbn li scout pair mét mét superv frey -city city theme redux centre itself chine gateway WK backbone bour Bedford amount platz helmet helmet olit Corruption itet craft bard robe tru unik pillar unca unp Marble lec AH 
+
+transc appendix scanned excerpts excerpts Nr lights fruit mét mét för frey Paris city bols redux zilla mét busiest gateway iere nexus Enemy Emb Emb cap om om NST itet itet erus bard uminium Baylor babel ander acia Closed -general heights Franti 
+
+Quick PREF chia PREF PREF PREF lights scheme Relation Relation hausen chaft Paris Paris Bid gesch zilla abella olation busiest QB quickest CAPITAL chk ba cap pron pron NST capital itet cale Hist lle oland France -Le upo -general pch logue 
+
+Tanks PREF mine chapter PREF ii iors plum Relation Relation -general frey Paris Paris preferred achusetts itself abella olation gateway ortic headquarters CAPITAL oss chim cap cap cap érc capital capital qui hq lub Louisiana France opo oe inson Pic Conway sey 
+
+CHAPTER appendix chapter chapter chapter ii Appendix introduction tentative tentative Prot thang Paris July minster December itself abella otope capital centre capital capital capital capital capital of of -capital capital capital atr cities sink Louisiana France ardon acia lahoma Pic Conway ethyst 
+
+ellar end grammar end chapter chapter Appendix plum warmth warmth assy Paris July ers septembre tery otope periments capital zek capital capital capital capital capital of of ech city city of Cities BOTH France France French Patron PLUS bsd ethyst 
+
+CHAPTER end grammar End chapters Chapter lights Body gr gr Prot Paris september ers septembre een cessive capital -largest cap cap capital perl perl supper city city City city France France +++ bsd ferr 
+
+preview end mint End gr gr september greatest -largest cap cap City France france 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> P(text modality)
+
+Figure 12: Logit lens of inner states of the spoken input: "Paris is the capital of ...", using Llama-3.2 PI-1/3 (official). Paris is the capital of 
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10 
+
+12 
+
+14 
+
+16 
+
+18 
+
+20 
+
+22 
+
+24 
+
+26 
+
+28 
+
+> Transformer Layer
+
+avenport avenport lew INO arus idor idor ythe protagonists abi ddy Cliff otope Passage lew quiry IOS IOS oci LO VL ddy olkien OF oya avid ,
+
+avenport uncan iac esz inery buds avic avic ythe ylvania bows idor ful otope ERRY Lik lew quiry odium odium ually asa ROWN &M dog enstein ULE Patton uncan ,
+
+urban urban uncan west utilus Meals idor idor nel feminine AME AME lea anium rael ERRY simplest STA lew quiry akov brass brass aper ullen ople VL &M dog cala engo resden ,
+
+Kitchen idges orf /images Wave utilus INC jom jom nob japan AME AME idor -ST Fruit otope ERRY manifestation STA lew ircraft istles ophys ophys argas entre LO (D UCH novation SQUARE Potion [l resden ,
+
+Industrial idges orf /images Wave ocal ringe ringe nel aby grade grade idor -ST smelled otope affer backbone avenport rf quiry istles aic aic apps ynch -city (D atchet vasion laboratories Potion hot [l resden 
+
+]: experience Europeans iao Wave cedar jom jom nel aby harbor permanent idor -West smelled synonymous affer quickest smallest rf rf quiry aic aic ENTRY centerpiece centerpiece OUNTRY OST VC campo Potion hot [l resden 
+
+Atomic ucson sville bach lesbian cedar jom jom azure hone Bordeaux Qué nan -West lington otope olated fastest smallest cha mare ircraft aic aic IVITY -city -city Mess -ST precursor -city Potion hot enville avenport ôt 
+
+Colon lius dances bach episode aguay jom jom ircuit aby Paris ylvania stands /G itself otope olated fastest smallest hottest gateway ircraft aic aic IVITY nearest cities Mess AMES uppe icios Potion hot oil 
+
+Colon ooks dances novels novelist Trees ircuit Paris Paris gio /G lington situated olated safest smallest hottest gateway gateway acity acity cities cities andler mayor hub japan france hot 
+
+Lif variants dances purpos chapter Trees Broadcast Broadcast arence Paris Paris /G itself situated olated capital capital capital capital capital capital capital capital capital obe capital city andler outpost hub Louisiana France hot avenport 
+
+Lif american Manus chapter tridges OA OA wrink Paris Paris August itself situated olated largest capital capital capital capital capital capital capital capital incub of city départ japan France France hot 
+
+Lif american Manus Manus wr Paris Paris -Nov situated olated capital wealthiest capital capital capital capital capital capital capital lip city city AW Destination France France 
+
+Lif Subjects Africans .This rolled -Cal quickest largest capital capital capital ivism ivism of France 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> P(text modality)
+
+Figure 13: Logit Lens of inner states of the spoken input: "Paris is the capital of ...", using Llama-3.2 PI-1/3 (ours). Paris is the capital of 
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10 
+
+12 
+
+14 
+
+16 
+
+18 
+
+20 
+
+22 
+
+24 
+
+26 
+
+28 
+
+> Transformer Layer
+
+ka AK 724 ello LAND ologically Hend trap aday aday upa . Bieber 
+
+allel AK NAS adena LAND emergence atak destroyer Map Map doorstep capital igsaw upt asso Bieber 
+
+Hands Phot monk educators ixa ixa -pe otope otope culmination Cab destroyer cap cap exits Capital lund asso Bieber 
+
+Universe Hands 382 monk educators bourg paris works itself otope safest riage destroyer kom kom Mets city city /down hub Went 
+
+Language Hands ka thief berries bourg -area works cluster otope culmination Cutter bourg casualty gem gem Mets city isation sanitation orse Valor instein 
+
+Hands feeding Pam berries bourg -area works itself otope culmination quickest Mk destroyer gem gem quickest city isation VM orse eneration instein 
+
+Language Guy ], dismissing IPP nuts bourg Paris ruins olated preferable wealthiest easiest safest bearer apo gem gem quickest city city VM turned manufactures Went 
+
+Language Guy Hands III Phot ARENT tridge tridges tridges Hilton ienne germany situated situated wealthiest shortest shortest quickest rices rices quickest Capital izer -design UI turned Jiang Went 
+
+Fine Edward III chapter egasus tridge rots rots beam Hilton ienne France situated situated wealthiest safest safest city rices rices rices izing izer orraine turned France Mahar 
+
+Fine Revision chapter chapter rots rots rots Paris ienne July situated situated capital safest capital capital capital apo itol itol ropolis city IZED orraine /down France Payne 
+
+Parents end chapter volume rots rots rots Paris ienne France synonymous situated wealthiest greatest capital capital capital itol itol city of of city /down France Louis 
+
+Unlock Revision Revision chapter egasus rots tridges tridges Paris ienne July otope capital busiest capital capital -capital itol itol itol of of city France Louis 
+
+Unlock End End ienne wealthiest busiest largest cap cap itol itol of of France Famous 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> P(text modality)
+
+Figure 14: Logit Lens of inner states of the spoken input: "Paris is the capital of ...", using Llama-3.2 PI-2/3. 
+
+21 Paris is the capital of 
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10 
+
+12 
+
+14 
+
+16 
+
+18 
+
+20 
+
+22 
+
+24 
+
+26 
+
+28 
+
+> Transformer Layer
+
+gether Mond gether geopol vents i Feinstein egal egal hyth ieres ULLET pairing advance imperative ideology SAME gether WAYS Belmont RIORITY PACE PACE IEWS ière iones Print IZATION UILDER ENDING annon gether RIORITY gether äß 
+
+gether Mond gether ANDARD vents BEGIN i ieres ULLET -provider TURN imperative UIL SAME gether ultur WAYS Belmont RIORITY BEST BEST IEWS ière iones Print ieran backstage ristol ENDING gether RIORITY gether äß 
+
+gether Butt gether lear ventory TOUCH i ieres ULLET -provider PPER imperative UIL SAME gether Belmont REGION WAYS WAYS IEWS ière iones ENN IZATION ENCHMARK ENDING gether RIORITY /Main 
+
+gether Butt ventory ursive TOUCH i ieres ULLET ACES PPER inerary UIL SAME gether Belmont RESULTS WAYS WAYS ATAR ière iones EHICLE ENN AGEMENT ASK ENDING claim gether RIORITY /Main 
+
+gether Bound ventory ursive i abouts tör ULLET rego Markup imperative credited anova SAME lifetime nest olis WAYS WAYS ATAR ière iones EHICLE AGEMENT ENCHMARK ENDING claim gether UBLISH LOWER /Main 
+
+gether Bound ventory ventory degree lz OFFSET ulings ounc ULLET vincial Capt imperative rael iert SAME gether dle LI LI LI bueno Crane EHICLE ECT ARY IRTH ORN gether UBLISH --) /Main 
+
+Público Bound bread lz istr housing geries shares LOWER cco Independ areth rael iert centerpiece gether pad dle nist REFERENCES LI LI /problems EHICLE ARY IRTH uous gether UBLISH --) stalk 
+
+lyon andre /db slack body lz lz COVERY geries /octet ologna cco Independ areth indispensable rael oldest pad awai nist reader LI LI /problems anes EHICLE Expression NEL IRTH ERSIST gether UBLISH spikes stalk 
+
+REV andre /music /db denn lz lz peater /octet ELLOW plies Rand ardless rael rael oldest vec pad awai nist reader quality quality Alta Broadcast VISIBLE agrant Expression IRTH ERSIST gether UBLISH udad spikes stalk 
+
+REV .us /db denn chan i lz COVERY ieres cco Independ ardless rael rael safest vec pad UEL dat nist BAD quality quality possibly imiento UPPORT APON Ya NEL LI gether UBLISH udad stalk 
+
+REV andre noir denn excerpts i allax ieres theat Independ swallowed nestled abella busiest centerpiece awai liter Myth BAD quality quality Wade éra enclave agrant Rendering IZATION RIORITY gether UBLISH udad stalk 
+
+/category dak excerpts i erle thè regrets coverage Independ amer synonymous abella busiest deadliest Myth olis quality quality eltas metropolitan borough agrant pj liness (q gether UBLISH udad passe stalk 
+
+REV -sn CHAPTER denn excerpt i elas agrant agrant peater redux -tm Edited owes presently rael busiest deadliest shortest awai dat ashtra /java quality quality Wade outpost -city agrant Arena IZATION .bc (q agenta gether UBLISH udad stalk 
+
+meetup poem COPYRIGHT REFERENCES COPYRIGHT COPY i escription permalink permalink peater owes Edited owes situated busiest busiest cheapest destination destination ième theat fff =UTF =UTF .cgi Mayor -city Rendering Formation .bc suburb agenta fabulous pylab ern 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> P(text modality)
+
+Figure 15: Logit Lens of inner states of the spoken input: "Paris is the capital of...", using Qwen2.5-3B PI-1/3 60k Paris is the capital of 
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10 
+
+12 
+
+14 
+
+16 
+
+18 
+
+20 
+
+22 
+
+24 
+
+26 
+
+28 
+
+> Transformer Layer
+
+Kash -Out rips '_ Cre Sac Sac singleton e lection CORPORATION DEPEND try lh CELL ologically zd ighth Src nP retain teste teste LETE rek eneg Armor IMAGES s redo *)" +) lime SENSOR CLICK 
+
+Aly Cheer ascript ENSE SIZE ALL ALL arin e COVER VARIABLE ses CONSTANT Markup gether ighth Asc zend retain teste teste LETE rek Slug SENSOR semble s redo duct MASS +)/ lime ever HEN 
+
+Maul HELL -saving Savage mis mis sWith e AGAIN DIV KEY ful nova aac PERF BEST MATRIX Occ axy zend kp teste teste rek samp SENSOR s redo COMPLETE +)/ +)/ lime Smarty HEN 
+
+Bundy HELL orem rous val KS mis sb e Tim atural serialized s ALWAYS safest heel Occ Fed tent kp tea tea HAS igar s s <!--[ MAR +)/ +)/ lime .price 
+
+hend HELL ingredient ******************************************************** _Z KS moz ,module e LIABLE bar s ALWAYS gets quickest gether Occ axy multiply kp tere tere /Admin measurement tant igar sWith s .this Hav +)/ )f lime ordination PRICE 
+
+aryl ccount ingredient _Z KS istry istry kü e Hist serialized sz olated rael wealthiest Occ soc tent kp tere tere /Admin capital moderne ITIES spl s Az Hind +)/ )f )f -feedback CLE 
+
+Lyons ccount ingredient ichten nell istry istry mul e DEX pron serialized sie itself rael wealthiest largest Occ sist tent kp tee tee /Admin capital Municip Missouri ystal spl s Municip Territory )+ )f )f )f HORT 
+
+battle weapon :relative ichten Tile ogy istry istry mul e IGH reachable engl undoubtedly rael busiest largest ufact subnet kp holm holm Geme capital Municip sui inp spl spl .this Territory )+ )f )f CLE 
+
+battle weapon =index _Z -offs edList congr congr syn ierte excerpt reachable mq undoubtedly rael richest largest vend Occ subnet kp tere tere sui capital Municip ,', spl spl nations segments )f #__ INTERN HORT 
+
+#__ PROP answered **************************************** |_ _tunnel Alias Alias ,module e destruct reachable mq otope rael richest largest Brand Republic soc subnet zung tee tee centralized capital Municip acters INGS spl nations Territory *)" RDD INTERN HORT 
+
+End END End irror .res .res (*(( ed sf LATIN foremost busiest busiest -city -city cities cities zung detect detect Britt _Of .of acters Invariant /'. s France ^( __( __.__ #__ ARIABLE 
+
+Prelude /activity END /end |_ kest irror enh enh Detect Sibling marvelous busiest busiest -city -city cities pawn appearance _cre _cre _Of ofs s France 
+
+[end uteur 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> P(text modality)
+
+Figure 16: Logit Lens of inner states of the spoken input: "Paris is the capital of...", using Qwen2.5-1.5B PI-1/3 42K The capital of France is... 
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10 
+
+12 
+
+14 
+
+16 
+
+18 
+
+20 
+
+22 
+
+24 
+
+26 
+
+28 
+
+> Transformer Layer
+
+acs ám Coch igung the isoft .debian won bst jax Copp orum zhou ing s arda asn IDGE leaned onica urtle Jennings Jennings Ji ovan kind ivot zk rice explodes avin aram iene mae sav WC pek sville igham Coch 
+
+acz tram pcm Moor tones acia riors lero nip l caps cap Theater capital capital usz Henderson Repeated aleigh Fs ibold mega mega Friend Hollande orf adel wc dna HEIGHT Murray rams anko enlightenment VC upo -note pcm 
+
+Fast Dion Morse ato odore ynos Enemy nip Reads caps cap utter capital capital s YLON capital aleigh IVO ooled pooled pooled nels Hollande France France azo anchor debit avin Beer bear mae iec Bucc hof -note MSE adc 
+
+linear appendix Morse igkeit odore ulis Enemy nip mom caps straps atology capital stown hub capital erville idade sampled sampled unt Hollande Hollande France ROCK foil reet Beef stown gener pawn Bucc unp ville AH pcm 
+
+Narr LU Crus ltr odore ORE chancellor illas five caps straps icycle capital .fm erus centers cities erville idade isle isle Bordeaux Hollande French vine pod rite cut stown stran naire minster Bucc unp Marble McMaster pch 
+
+transc LU dik Herb odore Conversation (£ Reaper oris amount caps caps kah capital capital erus centers cities ampton tea porte porte fries japon Translations boys -Pacific ltr viz precinct inus ickness menu brig Bucc unp Marble igham IEEE 
+
+transc appendix _license odore latter ILLA ynos addock McMahon cap adventurers NST metro capital bows head cities -central pedia fries wd wd equipo dames French Hollande iaomi zilla Pan according /is hausen owitz -pt Closed -general igham pch 
+
+Quick appendix Bibli cerpt odore latter odore ynos chk Buchanan cap sticks NST capital capital bows STONE capital -states 51 itzerland france france furnished Télé Hollande france iaomi zilla Pan currently cities kami according -Le upo upo gee chia 
+
+Tanks bout Sherman Thou odore latter odore deal nos chim sergeant adventurers érc capital capital -capital virtue capital japan japan Sv fries fries porte Télé France Paris -Pacific occupies deaux ilities ander Paris according according Pett upo iyat Sherman 
+
+CHAPTER Gregg Sherman uated odore latter odore narrator nos chim today Cum -serving capital capital atr america japan japan itzerland holland holland socialist Télé Hollande throp occupies tery iens currently Paris says according sesame -general ethyst Sherman 
+
+ellar -title phia uated odore latter odore KING Aud today Cum ech capital city itself america france Peru itzerland healthy ville Hollande was occupies tery iens ardon Paris says ers Patron PLUS ethyst chia 
+
+CHAPTER -title uated remainder latter INO KING ycop originates -rad istic s CLU america gypt ERN itzerland hath occupies kino Paris says according -Col -class 
+
+preview e ke nos itzerland was Paris 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> P(text modality)
+
+Figure 17: Logit Lens of inner states of the spoken input: "The capital of France is...", using Llama-3.2 PI-1/3 (official). The capital of France is... 
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10 
+
+12 
+
+14 
+
+16 
+
+18 
+
+20 
+
+22 
+
+24 
+
+26 
+
+28 
+
+> Transformer Layer
+
+idelberg Kemp trap aday Wrath rame AVIS Buckley 
+
+.? idelberg lew destroyer Map Rockefeller capital lc rame umble teammates chiefly Lynch 
+
+.? eldest Ke catcher Map Eleven Capital CAPITAL costa ILA teammates kap uil aza NESS Buckley 
+
+Universe .? americ Cutter Ced casualty Map Mets Capital courthouse cities ustria utenberg -food -US bourg -West Located hof NESS Lynch 
+
+Language .? .? coolest particulars Cutter BALL catcher Map Mets city hubs cities farms EMALE -food -US atis -West hd however NESS -do 
+
+Hands .? .? odore particulars Cutter duke catcher Map Mets Capital hubs cities farms TRS -food -US iris possesses nicknamed however erton Lynch 
+
+Language .? !. odore odore Cutter duke catcher Map Mets Capital Capital city ustria EMALE landers /black /black -US iris possesses nicknamed chiefly however Lynch 
+
+Language .? [I odore odore acao duke prince rices -intensive itol Capital bourgeoisie Peru ustria ahrenheit oz furt furt anco anco possesses situated .-- undoubtedly however Lynch 
+
+Fine .? alice odore odore etchup prince rices rices itol IZED peru ustria ahrenheit oz furt furt #: anco bourg possesses situated .-- however however Lynch 
+
+Fine .? CHAPTER odore odore aiser prince rices -intensive istic isation bourgeoisie peru peru germany germany furt furt anco bourg possesses situated .-- however however Payne 
+
+Parents CHAPTER odore odore king carriage rices -intensive istic isation istr Mongolia peru germany Madagascar hattan hattan anco possesses consists possesses Marseille .-- ",[ however however Lynch 
+
+Unlock ABOUT odore odore King commod itol istic city Mongolia peru germany ustria Germany Germany possesses possesses consists possesses Located .-- however however 
+
+Unlock odore odore king itol istic Mongolia france France possesses 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> P(text modality)
+
+Figure 18: Logit Lens of inner states of the spoken input: "The capital of France is...", using Llama-3.2 PI-2/3 
+
+22 The capital of France is... 
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10 
+
+12 
+
+14 
+
+16 
+
+18 
+
+20 
+
+22 
+
+24 
+
+26 
+
+28 
+
+> Transformer Layer
+
+gether äß gether SAME (es adera WAYS Belmont RIORITY WAYS IEWS ière iones ENTIAL UILDER ieran ervatives ancock paralleled paralleled CCCCCC gether imperative hyth ATTERN ahrain ULLET pairing gether RIORITY äß gether 
+
+gether äß gether leveland SAME (es WAYS Belmont RIORITY BEST IEWS ière iones Print UILDER ieran ervatives ancock IBE IBE ETHER ENGINE gether advance imperative hyth ATTERN ULLET ULLET ARENT gether RIORITY äß gether 
+
+gether stalk ffee Federal Belmont innacle WAYS RICS ière iones UILDER ENDING ervatives RIORITY leftrightarrow ETHER CCCCCC listing gether imperative hyth ATTERN ULLET ULLET -provider gether RIORITY gether 
+
+gether /Main Races leveland Biggest scene DV innacle WAYS IEWS ière iones EHICLE ERRY ENDING TEGR CRT Territory Territory ETHER LIK nj feit gether lection hyth INCLUDED ULLET ULLET ACES DET RIORITY USED 
+
+gether stalk regon ENTITY ,* scene DCF LI WAYS ATAR ière iones EHICLE Alerts solid TEGR RED Territory Territory ETHER ENGINE nj rego MUCH lection abouts HOLDERS ULLET rego realizes ETERS LOWER USED 
+
+gether stalk sue lection Swal scene rone ttl dle LI LI IEWS Crane cente EHICLE UILDER solid CRT Territory Territory STER LIK nost gas gether lection ardless ulings ULLET ULLET rego FOX FOX sue 
+
+Público stalk sue ragon oretical scene ylum dle nist illow LI /problems EHICLE ROAD solid uteur restricted restricted ETHER ERIC nost geois gether lic eneral ulings hma ULLET cco gether stalk sue 
+
+lyon /ph slash erot oretical forb pad reader LI /problems anes EHICLE ROADCAST solid uteur herited aires aires ikip INET nel gas gether Independ areth housing hma ULLET etsy cco gether ETERS plates stalk eradicate 
+
+REV /ph scraps .preventDefault sounds forb pad awai nist BAD NO ibration pipeline pore agrant solid arket aires aires ikip INET nelle feit UDENT UILD eneral hma ULLET etsy cco gether innacle stalk eradicate 
+
+REV _news .preventDefault algu forb dat pedia BAD quality promo inue ponse APON icial supply herited mpl aira aira ETHER BEL nelle gether unchecked ardless construction hma olute cco gether innacle stalk eradicate 
+
+REV stalk .preventDefault muttered forb dat dat BAD quality =node éra wealthiest agrant UILDER monopoly herited IFO aira aira ça BEL nelle Confeder Independ ardless ulings Dominion ULLET cco gether UBLISH (es stalk francais 
+
+stalk .preventDefault nächste forb ylum Reliable NAME quality Piper downtown wealthiest oodoo Owned neighbouring sway herited mpl aira aira Rif BEL nia nomin ardless -With .movie yay gether UBLISH (es stalk eradicate 
+
+REV stalk .preventDefault odore unab ylum dat NAME quality Offset downtown enclave Implemented southwestern cities herited ucus aira aira Pep 'Brien owes owes u owes ardless emiah inherently ip artment addon gether udad stalk eradicate 
+
+meetup stalk denn odore unab Badge _pg NAME Caps .cgi downtown towns southwestern neighbouring venta ucus Named Named Pep orro owes owes owes owes owes ackson overrun ip orpion Mant gether udad erotica 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+> P(text modality)
+
+Figure 19: Logit Lens of inner states of the spoken input: "The capital of France is...", using Qwen2.5-3B PI-1/3 60k. Paris is the capital of 
+
+0
+
+2
+
+4
+
+6
+
+8
+
+10 
+
+12 
+
+14 
+
+16 
+
+18 
+
+20 
+
+22 
+
+24 
+
+26 
+
+28 
+
+> Transformer Layer
+
+438 
+
+761 
+
+351 
+
+West N Ho 351 
+
+Contact are UB N Powers Powers Chicago undergraduate AMIL enforcement enforcement About F mir 
+
+Bank of point N statement Powers Powers Hungarian Economic Chicago US GO General Communist Communist Communist Gaz significantly 
+
+Bank .ca point N Bel Powers Powers Tri Editor Editor disorder Gaz Ho 
+
+Tell inski point N Fischer Fischer Specialist 
+
+Archives N und und Gaz pe 
+
+N reinc reinc ? 928 
+
+N ? ? 321 
+
+0.0 
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+> P(text modality)
+
+Figure 20: Logit Lens of inner states of the spoken input: "Paris is the capital of ...", using Llama3.2-3B RST 
+
+23
