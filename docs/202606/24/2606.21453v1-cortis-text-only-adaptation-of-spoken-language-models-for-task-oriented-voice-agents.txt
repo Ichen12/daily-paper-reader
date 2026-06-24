@@ -1,0 +1,315 @@
+Title: CORTIS: Text-Only Adaptation of Spoken Language Models for Task-Oriented Voice Agents
+
+URL Source: https://arxiv.org/pdf/2606.21453v1
+
+Published Time: Tue, 23 Jun 2026 00:59:43 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# CORTIS: Text-Only Adaptation of Spoken Language Models for Task-Oriented Voice Agents 
+
+Youngwon Choi 1, Hyeonyu Kim 1, Taeyoun Kwon 1,2 , Donghyuk Jung 3, Myeongkyun Cho 1,4 
+
+> 1
+
+Maum AI Inc., 2Seoul National University, 3Korea Culture Technology Institute, 4KAIST  
+
+> Correspondence: youngwonchoi@maum.ai
+
+Abstract 
+
+Task-oriented voice agents need to map spoken user requests to structured outputs such as se-mantic frames, executable actions, and function calls. A common approach is to cascade ASR with a text-based LLM, but transcription errors can propagate to downstream structured output generation, especially under noisy conditions. Spoken language models (SLMs) offer a direct speech-based alternative, yet adapting them to new tasks typically requires paired speech– target annotations. Motivated by this gap, we present CORTIS, a text-only adaptation frame-work for task-oriented voice agents. CORTIS fine-tunes SLMs using text-form task super-vision, enabling speech-based structured out-put generation at inference time without task-specific speech–target annotations during adap-tation. We evaluate CORTIS on two Qwen2.5-Omni backbones and three task-oriented speech datasets, including an in-house product dataset, and compare it with matched ASR–LLM cas-cades trained with the same text-form task su-pervision. Results show that CORTIS performs competitively with matched cascades and of-fers clearer advantages under acoustic degrada-tion, particularly in preserving high-level task semantics. These findings suggest that text-only fine-tuning of SLMs can serve as a practi-cal adaptation strategy for voice agents when paired speech–target data are costly to collect. 
+
+1 Introduction 
+
+Large language models (LLMs) are increasingly being adapted into task-oriented agents that map natural language instructions to structured out-puts (Geng et al., 2025). Such outputs provide a machine-readable interface for downstream exe-cution, including semantic representations (Mekala et al., 2023), executable actions (Huang et al., 2022), and tool calls (Schick et al., 2023). Al-though structured output generation can be elicited through prompting and in-context demonstrations, many applications rely on supervised fine-tuning to make models reliably follow predefined task schemas and generate valid task-specific out-puts (Patil et al., 2024; Qin et al., 2024). However, these approaches typically assume that user instruc-tions are provided as text. This creates a modality mismatch for real-world voice agents, which must map spoken user requests to the same structured outputs. A common way to bridge this mismatch is to use ASR as a speech front-end for an otherwise text-based agent, passing the resulting transcript to the LLM at inference time (Everson et al., 2024; Huang et al., 2024). Such cascaded pipelines are modular and easy to integrate, but recognition errors can propagate to the downstream model and degrade task performance (Faruqui and Hakkani-Tur, 2022; Avila et al., 2023; Shapira et al., 2025), particu-larly under challenging acoustic conditions (Ever-son et al., 2024; Jung and Choi, 2026). In this work, we use spoken language models (SLMs) to refer to speech-capable LLMs that can take speech as input and generate text outputs. SLMs provide a direct alternative to ASR–LLM cascades by producing task outputs without an ex-plicit transcription step (Fathullah et al., 2024; Tang et al., 2024). A straightforward way to adapt SLMs to new domains or downstream tasks is to fine-tune them with paired speech–target supervision, where each spoken utterance is aligned with a task-specific output (Mai et al., 2025; Hacioglu et al., 2025). Obtaining such data is costly and time-consuming, as it requires collecting or curating speech and annotating it for each target task (Qin et al., 2021; Huang et al., 2020). This motivates text-only adaptation as a cost-effective alternative, where SLMs are fine-tuned on text input–output pairs while retaining their ability to process speech input at inference time. Recent studies have explored text-only adaptation of SLMs in ASR and speech understanding settings (Ma 1
+
+> arXiv:2606.21453v1 [cs.HC] 19 Jun 2026
+
+# Train             
+
+> Structured Output
+> Output
+> Text Query
+> Inputs
+> Task Instruction
+> Based on the user query, please call the correct function and generate the parameters to call the function. How is the weather in Pangyo?
+
+# SLM 
+
+> Spoken Language Model
+
+# SLM 
+
+> Spoken Language Model
+
+# Inference Structured Output                  
+
+> get_weather(location="Pangyo") get_weather(location="Pangyo")
+> Spoken Query
+> Inputs
+> Task Instruction
+> Based on the user query, please call the correct function and generate the parameters to call the function.
+> “How is the weather in Pangyo?”
+> Action Engine
+> “The weather of Pangyo is ....”
+> Output
+
+Figure 1: Overview of the CORTIS framework. 
+
+et al., 2024; Choi et al., 2026). However, it re-mains unclear whether text-only fine-tuned SLMs can reliably support structured output generation for voice agents, especially under noisy conditions and compared with ASR–LLM cascades trained with the same text-form supervision. To narrow this gap, we develop and evaluate CORTIS, a practical adaptation framework for building speech-based CO nve Rsational agents via 
+
+Text-only supervised Instruction tuning of SLMs. CORTIS fine-tunes SLMs on text-form task data that pairs user instructions with structured outputs, relying on the pretrained speech–text alignment of SLMs to transfer this adaptation to speech in-puts at inference time. We evaluate CORTIS on two Qwen2.5-Omni (Xu et al., 2025) backbones and three task-oriented speech datasets, includ-ing an in-house product dataset, and compare it against ASR–LLM cascades trained with the same text-form task supervision. Our results show that CORTIS-tuned SLMs perform competitively with ASR–LLM cascades trained with the same text-form supervision, while offering clearer advantages for high-level task semantics under acoustic degra-dation. These findings demonstrate that text-only fine-tuning of SLMs can be an annotation-efficient route for building task-oriented voice agents when collecting paired speech–target data is costly. 
+
+2 Related Work 
+
+2.1 Structured Output Generation with LLMs 
+
+Structured output generation has been widely stud-ied as a way to make LLM outputs executable, machine-readable, or directly usable by down-stream systems (Geng et al., 2025). Prompting and in-context reasoning enable LLMs to produce task-oriented representations, plan actions, call tools, or interact with external environments at in-ference time, without task-specific parameter up-dates (Mekala et al., 2023; Yao et al., 2023; Lu et al., 2023). Supervised fine-tuning instead im-proves schema following by training LLMs on tool-use demonstrations or function calling instruc-tion data, making them more reliable at gener-ating valid structured outputs (Patil et al., 2024; Qin et al., 2024). This training-based approach has also been extended to compact and on-device models for efficient API execution (Chen and Li, 2024). More recently, structured output generation has been extended to speech-based settings, where ASR–LLM cascades or SLMs derive task-oriented outputs from spoken user input for dialogue sys-tems and voice agent applications (Maben et al., 2025; Pahwa et al., 2026; Choi et al., 2025; Ha-cioglu et al., 2025). Our work builds on this direc-tion, but focuses on text-only adaptation of SLMs for task-oriented voice agents and compares them with ASR–LLM cascades trained with the same text-form supervision. 
+
+2.2 Spoken Language Models 
+
+Spoken language models (SLMs) have evolved from speech recognition and translation tasks (Lakhotia et al., 2021; Kharitonov et al., 2022; Chang et al., 2022; Wu et al., 2023; Zhang et al., 2023; Chen et al., 2024) into general-purpose models capable of following diverse instructions directly from spoken input (Chen et al., 2024; Tang et al., 2024; Chu et al., 2024). Most SLMs connect a pretrained speech encoder to an LLM through a modality adapter that projects speech features into the LLM input space (Wang et al., 2023; Fathullah et al., 2024; Kang et al., 2025). By generating responses directly from speech, SLMs avoid an intermediate transcription and aim to reduce error propagation in ASR–LLM cascades while preserving speech-specific information (Fathullah et al., 2024; Wang et al., 2024). 22.3 Text-Only Adaptation of Spoken Language Models 
+
+Recent studies have explored text-only adaptation of SLMs mainly in LLM-based ASR and domain adaptation settings (Ma et al., 2024; Fang et al., 2025; Carofilis et al., 2026). Closer to our setting, prior work on data-efficient SLU adaptation shows that SLMs can be adapted to structured output gen-eration using text-only fine-tuning, with additional paired speech–target data further improving per-formance (Choi et al., 2026). These studies moti-vate our focus on task-oriented voice agent settings, where it remains unclear how text-only fine-tuned SLMs compare with ASR–LLM cascades trained with the same text-form supervision under clean and noisy speech conditions. 
+
+3 CORTIS: Text-Only Adaptation of SLMs for Voice Agents 
+
+CORTIS uses only text-form supervision to adapt SLMs for generating structured outputs from speech. Instead of collecting speech–target annota-tions, CORTIS fine-tunes only the LLM component on text instructions paired with task-specific struc-tured outputs, while keeping the speech-related modules frozen. By relying on pretrained cross-modal alignment, the adapted model can generate structured outputs directly from speech at inference time without an explicit transcription step. Figure 1 provides an overview of the CORTIS training and inference pipeline. 
+
+3.1 Task Setup 
+
+We consider a structured output generation task where a user request is mapped to a task output fol-lowing a predefined schema. For each instance, we denote the spoken user query as ai, its correspond-ing text-form query as xi, and the target structured output as yi. Depending on the task, yi may repre-sent an intent with slot values, an action schema, or a function call with arguments. The target out-put is serialized as a text sequence, allowing both text-based LLMs and SLMs to be trained with the same output format. CORTIS assumes access only to text-form task supervision: 
+
+Dtext = {(xi, y i)}Ni=1 .
+
+Unlike speech-supervised adaptation, CORTIS does not use task-specific speech–target pairs 
+
+(ai, y i) during fine-tuning. The objective is to ob-tain a model that can predict the structured output from spoken input at inference time. 
+
+3.2 Text-Only Adaptation 
+
+Given Dtext , each example is converted into an instruction-following format using a task-specific prompt template. The input consists of the task in-struction and the text query xi, and the output is the serialized target yi. We denote the prompt template as T (·), where the argument fills the query slot in the same task instruction context. The SLM is fine-tuned with the standard next-token prediction objective: 
+
+Ltext (θ) = −
+
+> N
+
+X
+
+> i=1
+
+log pθ (yi | T (xi)) ,
+
+where pθ denotes the conditional distribution pa-rameterized by the SLM and θ denotes the trainable parameters of the LLM component. At inference time, the fine-tuned SLM receives the spoken user query ai in the same query slot where the text query xi appears during training. The speech encoder and modality adapter of the SLM transform ai into speech-conditioned repre-sentations aligned with the LLM input space, al-lowing the model to generate the structured output directly from speech using the same prompt tem-plate: 
+
+ˆyi = Decode ( pθ(· | T (ai))) .
+
+Thus, CORTIS preserves the same instruction and output schema across text-only training and speech-based inference, relying on the SLM’s pre-trained speech–text alignment to apply the learned task mapping to spoken input. 
+
+3.3 Implementation Considerations 
+
+We apply two implementation choices to preserve the transfer from text-only fine-tuning to speech-based inference. First, we explicitly freeze the speech-related modules of the SLM during adap-tation. Since CORTIS is fine-tuned only with text-form inputs, the speech encoder and modal-ity adapter are not directly supervised by the text-only training objective. We therefore keep these modules fixed as an explicit implementation con-straint, avoiding unintended updates to the pre-trained speech input pathway and restricting adap-tation to the LLM component. 3Dataset Target Format Metric # Train # Dev # Test FSC {action, object, location} EM 23132 3118 3793 SLURP {scenario, action, entities} Intent Acc., Entity F1, SLU-F1 11514 2033 13078 In-house Function call with arguments EM 21397 891 591 
+
+Table 1: Overview of the datasets used in our experiments. Target formats are JSON-style semantic frames for FSC and SLURP, and function calls for the in-house dataset. Train and development splits are used only as text-form supervision. For SLURP, train and development instances are constructed at the sentence level, while test instances correspond to audio-level utterances. <|im_start|>user                                 
+
+> <audio> //Spoken query
+> Extract action, object, and location and return asingle-line JSON:
+> {"action":"<string>", "object":"<string>", "location":"<string>"} <|im_end|> <|im_start|>assistant <|im_start|>user
+> Turn the kitchen lights on //Text query
+> Extract action, object, and location and return asingle-line JSON:
+> {"action":"<string>", "object":"<string>", "location":"<string>"} <|im_end|> <|im_start|>assistant {"action":"activate", "object":"lights", "location":"kitchen"} <|im_end|>
+> Inference Example Training Example
+
+Figure 2: CORTIS training and inference prompt for-mats illustrated with an FSC example. 
+
+Second, we strictly keep the prompt structure consistent between text-only training and speech-based inference. During training, the text query xi
+
+is inserted into a fixed query position in the prompt template T (·). At inference time, the spoken query 
+
+ai replaces xi in the same position through an au-dio placeholder. This prompt-position consistency helps ensure that the model receives the user query in the same functional context during training and inference. Figure 2 shows an example instance in the ChatML-style prompt format used in our ex-periments, illustrating how xi and the audio place-holder for ai occupy the same query position. 
+
+4 Experimental Setup 
+
+We compare CORTIS-tuned SLMs with ASR– LLM cascades under matched text-form task super-vision. In the cascade baseline, an ASR module transcribes speech and a text-tuned LLM generates the structured output from the transcript, whereas CORTIS fine-tunes the SLM on the same text-form data and directly processes speech at inference time. For a fair comparison, each CORTIS model is paired with an ASR–LLM cascade using a scale-matched LLM from the same language-backbone family. We evaluate all systems under clean and babble-noise conditions at multiple SNR levels. 
+
+4.1 Datasets and Noise Conditions 
+
+We evaluate on three task-oriented speech datasets: Fluent Speech Commands (FSC) (Lugosch et al., 2019), SLURP (Bastianelli et al., 2020), and an in-house product dataset. FSC is a smart-home command understanding dataset with action, ob-ject, and location annotations, and is evaluated using exact match (EM) over the full semantic frame. SLURP is a spoken language understand-ing dataset of single-turn home-assistant interac-tions with scenario, action, and entity annotations. Compared with FSC, SLURP covers broader lin-guistic and semantic variation, allowing us to eval-uate structured-output prediction in a more realistic voice-assistant setting. We evaluate SLURP using intent accuracy, entity F1, and SLU-F1, follow-ing the standard SLURP evaluation protocol. The 
+
+in-house dataset is an English smart-home func-tion calling dataset for product-oriented voice agent commands. Inspired by Octopus v2 (Chen and Li, 2024), each command is paired with one of 42 predefined target functions and its arguments, but we do not use special function tokens or function descriptions in the prompt. The speech data were recorded in the target product environment under clean acoustic conditions and include the product-level audio preprocessing used by the voice agent system. We evaluate this dataset using EM over the generated function call and arguments. Table 1 summarizes the target format, evaluation metrics, and the number of examples in the train, develop-ment, and test splits after preprocessing. Example instances and task prompt formats for each dataset are provided in Appendix A. For noisy evaluation, we generate babble noise using the speech subset of the MUSAN cor-pus (Snyder et al., 2015), following the augmen-tation procedure adopted in the Kaldi speaker-recognition recipes (Snyder et al., 2018). Specif-ically, we mix three to seven randomly selected speech segments to create background babble noise, and add it to each test utterance at SNR levels of 460                              
+
+> 70
+> 80
+> 90
+> 100
+> FSC (EM)
+> 40
+> 60
+> 80
+> SLURP (Intent Acc.)
+> 20
+> 40
+> 60
+> 80
+> SLURP (Entity F1)
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> SLURP (SLU-F1)
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> In-house (EM)
+> Clean 15 10 52.5 0
+> 0
+> 10
+> Δ (CORTIS−Casc.)
+> Δ 3B
+> Δ 7B
+> Clean 15 10 52.5 0
+> 0
+> 10
+> Clean 15 10 52.5 0
+> SNR (dB)
+> 0
+> 10
+> Clean 15 10 52.5 0
+> 0
+> 10
+> Clean 15 10 52.5 0
+> 0
+> 10
+> CORTIS ASR-LLM cascade 3B 7B Oracle (text input)
+
+Figure 3: Performance of CORTIS-tuned SLMs and the ASR-LLM cascades under increasing babble noise. Top: absolute performance on FSC, SLURP (intent accuracy, entity F1, SLU-F1), and the in-house dataset. Bottom: per-condition performance difference between CORTIS and the cascade (CORTIS − ASR-LLM cascade), where positive values indicate that CORTIS performs better. Gray bands indicate oracle-text upper-bound references obtained with gold transcripts. Detailed numerical results are provided in Appendix B. 
+
+15, 10, 5, 2.5, and 0 dB. 
+
+4.2 Models and Compared Systems 
+
+We evaluate CORTIS against an ASR–LLM cas-cade of comparable scale. For CORTIS, we use the Thinker components of Qwen2.5-Omni-3B (Xu et al., 2025) and Qwen2.5-Omni-7B as our product-oriented and larger-scale SLM back-bones, respectively. These models are fine-tuned with text-form task supervision and directly re-ceive speech input at inference time. For the ASR– LLM cascade baseline, we use Whisper large-v3 as the ASR module and Qwen2.5-3B-Instruct or Qwen2.5-7B-Instruct (Yang et al., 2024b) as the downstream LLM. Each cascade is paired with the corresponding CORTIS configuration: Whisper large-v3 with Qwen2.5-3B-Instruct is compared against Qwen2.5-Omni-3B, and Whisper large-v3 with Qwen2.5-7B-Instruct is compared against Qwen2.5-Omni-7B. The downstream LLMs in the cascade are fine-tuned with the same text-form supervision used for CORTIS. This setup allows us to compare direct speech-based inference with transcript-based inference while keeping the task adaptation data consistent across systems. We also include an oracle-text setting, where the fine-tuned models receive the gold transcript at inference time. This setting provides an upper-bound reference for evaluating structured output generation after remov-ing ASR-induced errors. 
+
+4.3 Training and Inference Details 
+
+We largely follow the training setup of Choi et al. (2026) unless otherwise noted. Specifically, all trainable LLM/SLM components are fine-tuned for three epochs using the AdamW optimizer with bfloat16 precision. Training is conducted on four NVIDIA A100 GPUs with a per-device batch size of 2 and gradient accumulation steps of 8. We use a learning rate of 5.0 × 10 −6 with a warmup ratio of 0.04. At inference time, both systems are evaluated on the same speech inputs, but differ in how the speech signal is processed. For the ASR–LLM cascade, speech inputs are first transcribed by the ASR mod-ule, and the generated transcripts are then passed to the fine-tuned text LLM with the task description. For CORTIS, speech inputs are directly fed into the fine-tuned SLM with the same task description, without an intermediate transcription step. 
+
+5 Results 
+
+5.1 Performance under Clean and Noisy Speech 
+
+Figure 3 shows the performance of CORTIS-tuned SLMs and ASR–LLM cascades under clean and noisy speech conditions. On FSC, CORTIS con-sistently outperforms the cascade across all speech conditions and both model scales. For example, with the 7B backbone, the absolute EM gain of CORTIS increases from 1.00 under clean speech 5Dataset Gold Transcript ASR Hypothesis ASR-LLM Cascade CORTIS FSC Heat down Feet down. ✗ {action: deactivate, object: feet, location: none}              
+
+> ✓{action: decrease, object: heat, location: none}
+> SLURP is it going to rain on mon-day Is it going straight on Monday? ✗{scenario: transport, action: query, entities: [date: Monday]}
+> ✓{scenario: weather, action: query, entities: [weather_descriptor: rain, date: monday]}
+> In-house Turn off the screen bright-ness. turn off this room privately. ✗set_privacy_mode(enable=False) ✓set_brightness(brightness=0)
+> SLURP i would like to hear some rap music I would like to hear some rap music.
+> ✓{scenario: play, action: music, entities: [music_genre: rap]}
+> ✗{scenario: play, action: music, entities: [music_genre: rock]}
+
+Table 2: Qualitative examples comparing the ASR-LLM cascade and the CORTIS-tuned SLM at 5 dB SNR. CORTIS uses Qwen2.5-Omni-3B, while the cascade uses Whisper large-v3 and Qwen2.5-3B-Instruct. Green check marks indicate outputs that match the gold annotation, while red crosses indicate incorrect outputs. 
+
+to 5.59 at 0 dB. On SLURP, CORTIS shows the clearest gains in intent accuracy, indicating that direct speech-based inference is particularly effective for high-level se-mantic prediction. With the 7B backbone, COR-TIS improves intent accuracy over the cascade by 4.05, 8.78, and 7.15 percentage points under clean speech, 5 dB, and 0 dB, respectively. The gains on entity F1 and SLU-F1 are more mixed, espe-cially with the 3B backbone, suggesting that SLM-based direct speech inference is more reliable for intent-level prediction than for fine-grained entity prediction. The in-house function calling results further show the robustness advantage of CORTIS under noisy conditions. In the 3B setting, the cascade is slightly better under clean and mild-noise condi-tions, but CORTIS surpasses it at 5 dB and below, reaching an absolute EM gain of 4.57 at 0 dB. In the 7B setting, CORTIS outperforms the cascade across all speech conditions, with the largest gain at 0 dB improving EM from 44.84 to 55.33. Taken together, these results show that text-only adapted SLMs can perform competitively with ASR–LLM cascades trained with the same text-form supervision, while offering clearer advantages for high-level task semantics such as command un-derstanding, intent prediction, and function call generation under acoustic degradation. 
+
+5.2 Qualitative Analysis 
+
+Table 2 presents qualitative examples comparing the ASR–LLM cascade and the CORTIS-tuned SLM. The first three examples illustrate a com-mon failure mode of cascade systems: ASR er-rors distort task-relevant words, and these errors propagate to the downstream LLM as incorrect structured outputs. For example, “Heat down” is transcribed as “Feet down,” causing the cascade to predict the wrong object and action. In contrast, the CORTIS-tuned SLM can often recover the in-tended task semantics directly from speech, even when the corresponding ASR transcript is mislead-ing or severely corrupted. The last example shows a failure mode of COR-TIS. The CORTIS-tuned SLM correctly identifies the high-level scenario and action, but replaces the fine-grained entity value “rap” with “rock.” This suggests that direct speech-based prediction can capture high-level task semantics but may still struggle with exact lexical grounding for slot val-ues. In contrast, when the ASR transcript is correct, the cascade can benefit from the explicit textual intermediate and recover the correct entity. 
+
+6 Conclusion 
+
+We presented CORTIS, a text-only adaptation framework for speech-based task-oriented agents. CORTIS fine-tunes SLMs with text-form task su-pervision while keeping the speech-related mod-ules fixed, enabling structured output genera-tion directly from speech without task-specific speech–target annotations. Across three task-oriented speech datasets, CORTIS performs com-petitively with matched ASR–LLM cascades, showing clearer advantages for high-level task semantics and stronger robustness under acous-tic degradation. At the same time, CORTIS still struggles with fine-grained entity grounding, espe-cially with smaller backbones, indicating that exact slot-level prediction remains challenging for direct speech-based inference. These results support text-only adaptation as a practical approach for building voice agents when task-specific speech annotation is costly. 6Limitations 
+
+This work has several limitations. First, FSC and SLURP are public benchmarks, and their utter-ances or annotations may have been included in the pretraining data of existing LLMs or SLMs. To mitigate this concern, we additionally evaluate on an in-house product dataset that has not been publicly released. Second, our main experiments focus on Qwen2.5-Omni backbones. While CORTIS shows competitive performance with these models, pre-liminary experiments with Qwen2-Audio (Chu et al., 2024) show weaker results, which we re-port in Appendix C. Further investigation is needed to understand how well text-only adaptation gener-alizes across different SLM families and architec-tures. Third, our robustness evaluation uses synthetic babble noise generated from the MUSAN speech subset. Although this provides a controlled way to compare systems across SNR levels, it does not cover the full range of real-world acoustic condi-tions, such as reverberation, far-field speech, or device noise. Finally, we focus on simple text-only fine-tuning and do not explore complementary adaptation strategies such as text denoising (Carofilis et al., 2026) or incorporating a small amount of paired speech data (Choi et al., 2026). Comparing these strategies and understanding when each is most effective remains an important direction for future work. 
+
+Ethical Considerations 
+
+Our in-house data were collected internally for product-oriented voice-agent development and evaluation. The speech content, transcripts, and text-form training examples do not contain person-ally identifiable information. We do not release the in-house dataset. 
+
+References 
+
+Anderson R Avila, Mehdi Rezagholizadeh, and Chao Xing. 2023. Multimodal audio-textual architecture for robust spoken language understanding. arXiv preprint arXiv:2306.06819 .Emanuele Bastianelli, Andrea Vanzo, Pawel Swietojan-ski, and Verena Rieser. 2020. Slurp: A spoken lan-guage understanding resource package. In Proceed-ings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP) , pages 7252–7262. Andrés Carofilis, Sergio Burdisso, Esaú Villatoro-Tello, Shashi Kumar, Kadri Hacioglu, Srikanth Madikeri, Pradeep Rangappa, Petr Motlicek, Shankar Venkate-san, and Andreas Stolcke. 2026. Text-only adapta-tion in llm-based asr through text denoising. arXiv preprint arXiv:2601.20900 .Kai-Wei Chang, Wei-Cheng Tseng, Shang-Wen Li, and Hung-yi Lee. 2022. An exploration of prompt tun-ing on generative spoken language model for speech processing tasks. In Proc. Interspeech , pages 5005– 5009. Wei Chen and Zhiyuan Li. 2024. Octopus v2: On-device language model for super agent. arXiv preprint arXiv:2404.01744 .Zhehuai Chen, He Huang, Andrei Andrusenko, Oleksii Hrinchuk, Krishna C Puvvada, Jason Li, Subhankar Ghosh, Jagadeesh Balam, and Boris Ginsburg. 2024. Salm: Speech-augmented language model with in-context learning for speech recognition and transla-tion. In IEEE International Conference on Acous-tics, Speech and Signal Processing (ICASSP) , pages 13521–13525. Youngwon Choi, Donghyuk Jung, and Hwayeon Kim. 2025. Desamo: A device for elder-friendly smart homes powered by embedded llm with audio modal-ity. In Adjunct Proceedings of the 38th Annual ACM Symposium on User Interface Software and Technol-ogy , pages 1–3. Youngwon Choi, Jaeyoon Jung, Hyeonyu Kim, Huu-Kim Nguyen, and Hwayeon Kim. 2026. Exploring fine-tuning of large audio language models for spo-ken language understanding under limited speech data. In IEEE International Conference on Acous-tics, Speech and Signal Processing (ICASSP) , pages 16562–16566. Yunfei Chu, Jin Xu, Qian Yang, Haojie Wei, Xipin Wei, Zhifang Guo, Yichong Leng, Yuanjun Lv, Jinzheng He, Junyang Lin, Chang Zhou, and Jingren Zhou. 2024. Qwen2-audio technical report. arXiv preprint arXiv:2407.10759 .Kevin Everson, Yile Gu, Huck Yang, Prashanth Gu-runath Shivakumar, Guan-Ting Lin, Jari Kolehmainen, Ivan Bulyko, Ankur Gandhe, Shalini Ghosh, Wael Hamza, Hung-Yi Lee, Anya Rastrow, and Andreas Stolcke. 2024. Towards asr robust spoken language understanding through in-context learning with word confusion networks. In IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 12856–12860. Yangui Fang, Jing Peng, Xu Li, Yu Xi, Chengwei Zhang, Guohui Zhong, and Kai Yu. 2025. Low-resource domain adaptation for speech llms via text-only fine-tuning. arXiv preprint arXiv:2506.05671 .
+
+7Manaal Faruqui and Dilek Hakkani-Tur. 2022. Revis-iting the boundary between asr and nlu in the age of conversational dialog systems. Computational Linguistics , 48(1):221–232. Yassir Fathullah, Chunyang Wu, Egor Lakomkin, Ke Li, Junteng Jia, Yuan Shangguan, Jay Mahadeokar, Ozlem Kalinli, Christian Fuegen, and Mike Seltzer. 2024. Audiochatllama: Towards general-purpose speech abilities for llms. In Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) ,pages 5522–5532. Saibo Geng, Hudson Cooper, Michał Moskal, Samuel Jenkins, Julian Berman, Nathan Ranchin, Robert West, Eric Horvitz, and Harsha Nori. 2025. JSON-SchemaBench: A rigorous benchmark of struc-tured outputs for language models. arXiv preprint arXiv:2501.10868 .Kadri Hacioglu, KE Manjunath, and Andreas Stolcke. 2025. Speechllms for large-scale contextualized zero-shot slot filling. In Proceedings of the 2025 Confer-ence on Empirical Methods in Natural Language Processing: Industry Track , pages 703–715. Rongjie Huang, Mingze Li, Dongchao Yang, Jia-tong Shi, Xuankai Chang, Zhenhui Ye, Yuning Wu, Zhiqing Hong, Jiawei Huang, Jinglin Liu, Yi Ren, Zhou Zhao, and Shinji Watanabe. 2024. Audiogpt: Understanding and generating speech, music, sound, and talking head. In Proceedings of the AAAI Confer-ence on Artificial Intelligence , pages 23802–23804. Wenlong Huang, Pieter Abbeel, Deepak Pathak, and Igor Mordatch. 2022. Language models as zero-shot planners: Extracting actionable knowledge for em-bodied agents. In International Conference on Ma-chine Learning , pages 9118–9147. Yinghui Huang, Hong-Kwang Kuo, Samuel Thomas, Zvi Kons, Kartik Audhkhasi, Brian Kingsbury, Ron Hoory, and Michael Picheny. 2020. Leveraging un-paired text data for training end-to-end speech-to-intent systems. In IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) ,pages 7984–7988. Donghyuk Jung and Youngwon Choi. 2026. Analyzing error propagation in korean spoken qa with asr-llm cascades. arXiv preprint arXiv:2605.17443 .Wonjune Kang, Junteng Jia, Chunyang Wu, Wei Zhou, Egor Lakomkin, Yashesh Gaur, Leda Sari, Suyoun Kim, Ke Li, Jay Mahadeokar, and Ozlem Kalinli. 2025. Frozen large language models can perceive paralinguistic aspects of speech. In Proc. Interspeech ,pages 4323–4327. Eugene Kharitonov, Ann Lee, Adam Polyak, Yossi Adi, Jade Copet, Kushal Lakhotia, Tu-Anh Nguyen, Morgane Rivière, Abdelrahman Mohamed, Em-manuel Dupoux, and Wei-Ning Hsu. 2022. Text-free prosody-aware generative spoken language modeling. In Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 8666–8681. Kushal Lakhotia, Eugene Kharitonov, Wei-Ning Hsu, Yossi Adi, Adam Polyak, Benjamin Bolte, Tu-Anh Nguyen, Jade Copet, Alexei Baevski, Abdelrahman Mohamed, and Emmanuel Dupoux. 2021. On gen-erative spoken language modeling from raw audio. 
+
+Transactions of the Association for Computational Linguistics , 9:1336–1354. Pan Lu, Baolin Peng, Hao Cheng, Michel Galley, Kai-Wei Chang, Ying Nian Wu, Song-Chun Zhu, and Jianfeng Gao. 2023. Chameleon: Plug-and-play compositional reasoning with large language models. In Thirty-seventh Conference on Neural Information Processing Systems .Loren Lugosch, Mirco Ravanelli, Patrick Ignoto, Vikrant Singh Tomar, and Yoshua Bengio. 2019. Speech model pre-training for end-to-end spoken lan-guage understanding. In Proc. Interspeech , pages 814–818. Yingyi Ma, Zhe Liu, and Ozlem Kalinli. 2024. Effec-tive text adaptation for llm-based asr through soft prompt fine-tuning. In 2024 IEEE Spoken Language Technology Workshop (SLT) , pages 64–69. Leander Melroy Maben, Gayathri Ganesh Lakshmy, Srijith Radhakrishnan, Siddhant Arora, and Shinji Watanabe. 2025. AURA: agent for understanding, reasoning, and automated tool use in voice-driven tasks. In IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) , pages 1–4. Jialong Mai, Xiaofen Xing, Weidong Chen, Yuanbo Fang, and Xiangmin Xu. 2025. Aa-sllm: An acous-tically augmented speech large language model for speech emotion recognition. In Proc. Interspeech ,pages 4328–4332. Dheeraj Mekala, Jason Wolfe, and Subhro Roy. 2023. Zerotop: Zero-shot task-oriented semantic parsing using large language models. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 5792–5799. Ramit Pahwa, Apoorva Beedu, Parivesh Priye, Rutu Gandhi, Saloni Takawale, Aruna Baijal, and Zengli Yang. 2026. Audio2tool: Speak, call, act–a dataset for benchmarking speech tool use. arXiv preprint arXiv:2604.22821 .Shishir G. Patil, Tianjun Zhang, Xin Wang, and Joseph E. Gonzalez. 2024. Gorilla: Large language model connected with massive apis. In Advances in Neural Information Processing Systems .Libo Qin, Tianbao Xie, Wanxiang Che, and Ting Liu. 2021. A survey on spoken language understanding: Recent advances and new frontiers. In 30th Inter-national Joint Conference on Artificial Intelligence (IJCAI) , pages 4577–4584. International Joint Con-ferences on Artificial Intelligence. 
+
+8Yujia Qin, Shihao Liang, Yining Ye, Kunlun Zhu, Lan Yan, Yaxi Lu, Yankai Lin, Xin Cong, Xiangru Tang, Bill Qian, Sihan Zhao, Lauren Hong, Runchu Tian, Ruobing Xie, Jie Zhou, Mark Gerstein, Dahai Li, Zhiyuan Liu, and Maosong Sun. 2024. Toolllm: Fa-cilitating large language models to master 16000+ real-world apis. In International Conference on Learning Representations , pages 9695–9717. Timo Schick, Jane Dwivedi-Yu, Roberto Dessí, Roberta Raileanu, Maria Lomeli, Eric Hambro, Luke Zettle-moyer, Nicola Cancedda, and Thomas Scialom. 2023. Toolformer: language models can teach themselves to use tools. In Proceedings of the 37th International Conference on Neural Information Processing Sys-tems , pages 68539–68551. Ori Shapira, Shlomo Chazan, and Amir David Nissan Cohen. 2025. Measuring the effect of transcription noise on downstream language understanding tasks. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 29978–30004. David Snyder, Guoguo Chen, and Daniel Povey. 2015. Musan: A music, speech, and noise corpus. arXiv preprint arXiv:1510.08484 .David Snyder, Daniel Garcia-Romero, Gregory Sell, Daniel Povey, and Sanjeev Khudanpur. 2018. X-vectors: Robust dnn embeddings for speaker recogni-tion. In IEEE international conference on acoustics, speech and signal processing (ICASSP) , pages 5329– 5333. Changli Tang, Wenyi Yu, Guangzhi Sun, Xianzhao Chen, Tian Tan, Wei Li, Lu Lu, Zejun Ma, and Chao Zhang. 2024. Salmonn: Towards generic hear-ing abilities for large language models. In Inter-national Conference on Learning Representations ,pages 16607–16629. Chen Wang, Minpeng Liao, Zhongqiang Huang, Jin-liang Lu, Junhong Wu, Yuchen Liu, Chengqing Zong, and Jiajun Zhang. 2023. Blsp: Boot-strapping language-speech pre-training via behavior alignment of continuation writing. arXiv preprint arXiv:2309.00916 .Chen Wang, Minpeng Liao, Zhongqiang Huang, Jun-hong Wu, Chengqing Zong, and Jiajun Zhang. 2024. Blsp-emo: Towards empathetic large speech-language models. In Proceedings of the 2024 Con-ference on Empirical Methods in Natural Language Processing , pages 19186–19199. Jian Wu, Yashesh Gaur, Zhuo Chen, Long Zhou, Yi-meng Zhu, Tianrui Wang, Jinyu Li, Shujie Liu, Bo Ren, Linquan Liu, and Yu Wu. 2023. On decoder-only architecture for speech-to-text and large lan-guage model integration. In IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) ,pages 1–8. Jin Xu, Zhifang Guo, Jinzheng He, Hangrui Hu, Ting He, Shuai Bai, Keqin Chen, Jialin Wang, Yang Fan, Kai Dang, Bin Zhang, Xiong Wang, Yunfei Chu, and Junyang Lin. 2025. Qwen2.5-omni technical report. 
+
+arXiv preprint arXiv:2503.20215 .An Yang, Baosong Yang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Zhou, Chengpeng Li, Chengyuan Li, Dayiheng Liu, Fei Huang, Guanting Dong, Hao-ran Wei, Huan Lin, Jialong Tang, Jialin Wang, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Ma, and 42 others. 2024a. Qwen2 technical report. arXiv preprint arXiv:2407.10671 .An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayiheng Liu, Fei Huang, Haoran Wei, Huan Lin, Jian Yang, Jian-hong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jingren Zhou, Junyang Lin, Kai Dang, and 23 others. 2024b. Qwen2.5 technical report. arXiv preprint arXiv:2412.15115 .Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik Narasimhan, and Yuan Cao. 2023. React: Synergizing reasoning and acting in language models. In International Conference on Learning Representations .Hao Zhang, Nianwen Si, Yaqi Chen, Wenlin Zhang, Xukui Yang, Dan Qu, and Xiaolin Jiao. 2023. Tuning large language model for end-to-end speech transla-tion. arXiv preprint arXiv:2310.02050 .
+
+A Dataset Examples and Prompt Templates 
+
+Table 3 provides example text-form training in-stances and task prompt templates used in our ex-periments. At inference time, the same prompt structure is used, with the text query replaced by an audio placeholder as described in Section 3.3. 
+
+B Full Numerical Results 
+
+Tables 4, 5, and 6 report the full experimental results on FSC, SLURP, and the in-house prod-uct dataset, respectively, across all model scales and acoustic conditions. For CORTIS, the 3B and 7B settings use Qwen2.5-Omni-3B and Qwen2.5-Omni-7B, respectively. For the ASR–LLM cas-cade, the 3B and 7B settings use Whisper large-v3 with Qwen2.5-3B-Instruct and Qwen2.5-7B-Instruct, respectively. 
+
+C Additional Results with Qwen2-Audio 
+
+Table 7 reports additional results with Qwen2-Audio-7B (Chu et al., 2024). We apply the same text-only adaptation procedure used in the main ex-periments and compare it with a Whisper large-v3 + Qwen2-7B-Instruct (Yang et al., 2024a) cascade. 9While CORTIS remains competitive with the ASR– LLM cascade on FSC and SLURP, it performs worse on the in-house dataset. The weaker in-house results may reflect a mismatch between Qwen2-Audio and the product-processed audio used in the in-house data. Further analysis is needed to deter-mine the main cause. 10 Dataset User message Assistant target FSC Turn on the washroom lights Extract action, object, and location and return a single-line JSON: {"action": "<string>", "object": "<string>", "location": "<string>"} {"action": "activate", "object": "lights", "location": "washroom"} I couldn’t hear anything, turn up the volume Extract action, object, and location and return a single-line JSON: {"action": "<string>", "object": "<string>", "location": "<string>"} {"action": "increase", "object": "volume", "location": "none"} 
+
+SLURP silent mode on for the next three hours Extract scenario, action, and entities (empty list if none) and return asingle-line JSON: {"scenario": "<string>", "action": "<string>", "entities": [{"<entity_type>": "<entity_value>"}, ...]} {"scenario": "audio", "action": "volume_mute", "entities": [{"time": "next three hours"}]} what’s happening tonight in chicago Extract scenario, action, and entities (empty list if none) and return asingle-line JSON: {"scenario": "<string>", "action": "<string>", "entities": [{"<entity_type>": "<entity_value>"}, ...]} {"scenario": "recommendation", "action": "events", "entities": [{"timeofday": "tonight"}, {"place_name": "chicago"}]} 
+
+In-house How is the weather in Pangyo? Based on the user query, please call the correct function and generate the parameters to call the function. get_weather(location="Pangyo") Turn the volume all the way down. Based on the user query, please call the correct function and generate the parameters to call the function. set_volume(volume=0) 
+
+Table 3: Example text-form training instances and task prompt formats for each dataset. Each user message consists of a query followed by a task instruction, and each assistant target is the structured output used as text-form task supervision. 
+
+Scale System Oracle Speech input condition Clean 15 dB 10 dB 5 dB 2.5 dB 0 dB 3B CORTIS 100.00 98.63 96.78 93.86 85.26 76.43 63.14 
+
+ASR–LLM Cascade 100.00 98.21 95.49 91.77 82.47 73.56 59.45 7B CORTIS 100.00 99.26 97.73 95.25 87.82 79.07 65.81 
+
+ASR–LLM Cascade 100.00 98.26 95.52 91.93 82.86 74.43 60.22 
+
+Table 4: Full experimental results on FSC. We report exact match (EM) over the full semantic frame. Oracle denotes evaluation using gold transcripts. Clean denotes clean speech input, and dB values denote noisy speech-input conditions at the corresponding signal-to-noise ratios. The better result between CORTIS and the ASR–LLM cascade for each scale and condition is shown in bold. 
+
+11 Scale System Metric Oracle Speech input condition Clean 15 dB 10 dB 5 dB 2.5 dB 0 dB 3B CORTIS Intent Acc. 90.71 84.11 79.32 73.08 57.43 46.13 32.53 
+
+Entity F1 82.30 61.36 56.26 50.84 38.78 30.27 20.21 SLU-F1 84.60 70.64 66.23 61.25 49.35 40.38 28.74 ASR–LLM Cascade Intent Acc. 89.88 81.27 75.19 67.21 49.90 38.65 26.19 Entity F1 82.16 59.64 55.64 50.55 39.04 30.49 20.44 
+
+SLU-F1 84.73 70.34 66.90 62.12 50.81 42.90 29.74 
+
+7B CORTIS Intent Acc. 91.57 86.02 81.34 74.94 59.47 46.68 33.29 
+
+Entity F1 83.17 65.11 60.45 54.54 42.29 32.62 22.39 
+
+SLU-F1 84.92 73.77 69.86 64.40 52.86 47.66 31.21 
+
+ASR–LLM Cascade Intent Acc. 91.21 81.97 75.75 67.98 50.69 38.91 26.14 Entity F1 83.86 59.84 56.05 51.08 39.63 31.59 20.68 SLU-F1 86.01 70.23 66.98 62.41 51.36 43.26 29.97 
+
+Table 5: Full experimental results on SLURP. We report intent accuracy, entity F1, and SLU-F1 following the standard SLURP evaluation protocol. Oracle denotes evaluation using gold transcripts. Clean denotes clean speech input, and dB values denote noisy speech-input conditions at the corresponding signal-to-noise ratios. The better result between CORTIS and the ASR–LLM cascade for each scale, metric, and condition is shown in bold. 
+
+Scale System Oracle Speech input condition Clean 15 dB 10 dB 5 dB 2.5 dB 0 dB 3B CORTIS 95.94 89.51 88.32 84.77 75.30 64.30 49.24 
+
+ASR–LLM Cascade 95.43 90.86 89.00 85.28 72.59 60.07 44.67 7B CORTIS 94.42 90.19 89.68 86.80 76.82 67.34 55.33 
+
+ASR–LLM Cascade 93.91 89.68 86.97 83.93 73.60 62.10 44.84 
+
+Table 6: Full experimental results on the in-house product dataset. We report exact match (EM) over the generated function call and arguments. Oracle denotes evaluation using gold transcripts. Clean denotes clean speech input, and dB values denote noisy speech-input conditions at the corresponding signal-to-noise ratios. The better result between CORTIS and the ASR–LLM cascade for each scale and condition is shown in bold. 
+
+Condition FSC SLURP In-house CORTIS ASR–LLM CORTIS ASR–LLM CORTIS ASR–LLM EM EM Intent Acc. Entity F1 SLU-F1 Intent Acc. Entity F1 SLU-F1 EM EM Oracle 100.00 100.00 91.54 83.86 86.04 90.82 83.62 85.84 94.92 95.94 
+
+Clean 98.44 98.08 84.57 63.05 71.57 82.24 60.61 71.12 87.82 91.54 
+
+15 dB 95.99 95.23 81.04 58.21 67.73 76.20 56.60 67.58 86.29 88.83 
+
+10 dB 93.30 91.62 74.86 52.17 62.71 68.20 51.57 62.85 84.60 85.28 
+
+5 dB 84.95 82.49 58.74 40.37 51.40 50.53 40.07 51.46 73.60 73.94 
+
+2.5 dB 75.93 73.85 44.53 30.44 41.32 39.06 31.42 42.12 60.41 61.25 
+
+0 dB 62.30 59.50 29.90 18.82 28.20 26.28 20.93 30.09 39.76 44.67 
+
+Table 7: Additional results with Qwen2-Audio-7B. CORTIS denotes text-only adaptation of Qwen2-Audio-7B, and ASR–LLM denotes the Whisper large-v3 + Qwen2-7B-Instruct cascade. Oracle denotes evaluation using gold transcripts. The better result between CORTIS and the ASR–LLM cascade for each dataset, metric, and condition is shown in bold. 
+
+12
