@@ -6,68 +6,70 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-06-24
-- 运行时间：2026-06-24 21:54:43 UTC
+- 最新运行日期：2026-06-25
+- 运行时间：2026-06-25 22:15:07 UTC
 - 运行状态：成功
 - 本次总论文数：16
-- 精读区：6
-- 速读区：10
+- 精读区：11
+- 速读区：5
 
 ### 今日简报（AI）
-今日精读聚焦构音障碍ASR的SSL表示优化与跨语言流式编码器迁移，速读涉及非洲裔美国英语方言分析、越南语说话人识别及音频-图像对齐辅助低资源ASR。最值得关注的两大方向是：自编码器最小化复杂度提升构音障碍语音识别精度，以及数据规模而非延迟主导跨语言编码器迁移效果。建议后续重点探索低资源场景下的多模态预训练策略与方言自适应技术。
-- 详情：[/202606/24/README](/202606/24/README)
+今日日报收录16篇论文，聚焦多语言语音处理与编码技术。
+精读推荐《IndicContextEval》评测8种印度语言音频大模型的上下文利用，以及《Adding Robust Code-Switching》为多语言ASR添加稳健语码转换能力。
+建议关注低码率语音编解码与可微分对齐等前沿技术，可进一步探索语码转换的实际应用场景。
+- 详情：[/202606/25/README](/202606/25/README)
 
 ### 精读区论文标签
-1. [Autoencoder based optimized SSL representations: Complexity Minimization and improved Dysarthric ASR](/202606/24/2606.24088v1-autoencoder-based-optimized-ssl-representations-complexity-minimization-and-improved-dysarthric-asr)  
+1. [IndicContextEval: A Benchmark for Evaluating Context Utilisation in Audio Large Language Models Across 8 Indic Languages](/202606/25/2606.19157v2-indiccontexteval-a-benchmark-for-evaluating-context-utilisation-in-audio-large-language-models-across-8-indic-languages)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：基于自编码器优化SSL表示的构音障碍ASR
-2. [Data Scale, Not Latency, Shapes Cross-Lingual Encoder Transfer in Streaming ASR](/202606/24/2606.24169v1-data-scale-not-latency-shapes-cross-lingual-encoder-transfer-in-streaming-asr)  
+   evidence：评估音频大语言模型上下文利用的多语言基准
+2. [Adding Robust Code-Switching Capabilities to High Performance Multilingual ASR](/202606/25/2606.21990v1-adding-robust-code-switching-capabilities-to-high-performance-multilingual-asr)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：流式语音识别中的跨语言迁移
-3. [ZONOS2 Technical Report](/202606/24/2606.24320v1-zonos2-technical-report)  
+   evidence：多语言ASR中的代码切换
+3. [Error-Aware TF-IDF Retrieval-Augmented Generation for ASR Error Correction](/202606/25/2606.24915v1-error-aware-tf-idf-retrieval-augmented-generation-for-asr-error-correction)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：最新的TTS模型，采用新颖的混合专家架构和大规模训练
-4. [ESPnet3: Infrastructure for Scalable Speech and Audio Research in the Foundation Model Era](/202606/24/2606.21854v1-espnet3-infrastructure-for-scalable-speech-and-audio-research-in-the-foundation-model-era)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：语音和音频研究框架，提供数据集集成和基准实验
-5. [Kiwano: A Cutting-Edge Open-Source Toolkit for Speaker Verification](/202606/24/2606.22369v1-kiwano-a-cutting-edge-open-source-toolkit-for-speaker-verification)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：说话人验证工具包，包含基准测试
-6. [On the Effect of Segmentation Width and Cluster Size on Speech Resynthesis and Continuation in Generative Spoken Language Models](/202606/24/2606.23285v1-on-the-effect-of-segmentation-width-and-cluster-size-on-speech-resynthesis-and-continuation-in-generative-spoken-language-models)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：基于离散语音表示的语言模型语音合成
+   evidence：基于检索增强生成的ASR纠错
+4. [Sarashina2.2-TTS: Tackling Kanji Polyphony in Japanese Speech Generation via Data Scaling and Targeted Data Synthesis](/202606/25/2606.25369v1-sarashina22-tts-tackling-kanji-polyphony-in-japanese-speech-generation-via-data-scaling-and-targeted-data-synthesis)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：日语TTS的数据扩展与定向合成
+5. [From Sounds to Scenes: A Benchmark for Evaluating Context-Aware Auditory Scene Understanding in Large Audio Language Models](/202606/25/2606.25391v1-from-sounds-to-scenes-a-benchmark-for-evaluating-context-aware-auditory-scene-understanding-in-large-audio-language-models)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：上下文感知听觉场景理解基准
+6. [CrossAccent-TTS: Cross-Lingual Accent-Intensity Controllable Text-to-Speech via Disentangled Speaker and Accent Representations](/202606/25/2606.25403v1-crossaccent-tts-cross-lingual-accent-intensity-controllable-text-to-speech-via-disentangled-speaker-and-accent-representations)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：跨语言口音强度可控的文本转语音
+7. [Adaptive Oscillatory Inductive Bias for Modeling Sharp Prosodic Dynamics in Diffusion-Based TTS](/202606/25/2606.25424v1-adaptive-oscillatory-inductive-bias-for-modeling-sharp-prosodic-dynamics-in-diffusion-based-tts)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：扩散式文本到语音的韵律建模
+8. [STEB: A Speech-to-Speech Translation Expressiveness Benchmark for Evaluating Beyond Translation Fidelity](/202606/25/2606.25529v1-steb-a-speech-to-speech-translation-expressiveness-benchmark-for-evaluating-beyond-translation-fidelity)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：语音到语音翻译表情基准
+9. [Joint Residual Reweighting for Classifier Free Guidance in Flow-Matching Zero-Shot TTS](/202606/25/2606.25672v1-joint-residual-reweighting-for-classifier-free-guidance-in-flow-matching-zero-shot-tts)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：流匹配零样本文本到语音的联合残差加权
+10. [SpeechEQ: Benchmarking Emotional Intelligence Quotient in Socially Aware Voice Conversational Models](/202606/25/2606.25990v1-speecheq-benchmarking-emotional-intelligence-quotient-in-socially-aware-voice-conversational-models)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：情感智能基准数据集
+11. [Dziri Voicebot: An End-to-End Low-Resource Speech-to-Speech Conversational System for Algerian Dialect](/202606/25/2606.26003v1-dziri-voicebot-an-end-to-end-low-resource-speech-to-speech-conversational-system-for-algerian-dialect)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：集成了ASR和TTS的端到端语音对话系统，面向低资源阿尔及利亚方言
 
 ### 速读区论文标签
-1. [Layer-wise Probing of wav2vec 2.0 and Whisper for Consonant Cluster Reduction in African American English](/202606/24/2606.23948v1-layer-wise-probing-of-wav2vec-20-and-whisper-for-consonant-cluster-reduction-in-african-american-english)  
+1. [AugCodec: A Low-Bitrate Disentangled Neural Speech Codec via Data Augmentation](/202606/25/2606.21893v1-augcodec-a-low-bitrate-disentangled-neural-speech-codec-via-data-augmentation)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：探测ASR模型的语音变异表征
-2. [VieSpeaker: A Large-Scale Vietnamese Speaker Recognition Dataset Beyond Visual Dependency](/202606/24/2606.24066v1-viespeaker-a-large-scale-vietnamese-speaker-recognition-dataset-beyond-visual-dependency)  
+   evidence：用于语音转换的分离神经语音编解码器
+2. [Fully Differentiable Neural Forced Alignment via Soft Dynamic Programming](/202606/25/2606.25460v1-fully-differentiable-neural-forced-alignment-via-soft-dynamic-programming)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：大规模越南语说话人识别数据集，含902小时
-3. [Audio--Image Alignment as a Continued-Pretraining Stage Improves Low-Resource ASR](/202606/24/2606.24080v1-audio--image-alignment-as-a-continued-pretraining-stage-improves-low-resource-asr)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：音像对齐用于低资源ASR
-4. [ParaPairAudioBench: Paralinguistic Pairwise Audio Benchmark for LALM-as-a-Judge](/202606/24/2606.24648v1-parapairaudiobench-paralinguistic-pairwise-audio-benchmark-for-lalm-as-a-judge)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：用于语音评估中副语言维度的成对基准
-5. [A Generalized Formalism of Auto-Regressive Decoding for Speech Processing](/202606/24/2606.20714v1-a-generalized-formalism-of-auto-regressive-decoding-for-speech-processing)  
+   evidence：用于ASR的神经强制对齐
+3. [Post-Training Speech Enhancement Language Models with Perceptual Rewards](/202606/25/2606.21458v1-post-training-speech-enhancement-language-models-with-perceptual-rewards)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：语音处理自回归解码通用形式化
-6. [CORTIS: Text-Only Adaptation of Spoken Language Models for Task-Oriented Voice Agents](/202606/24/2606.21453v1-cortis-text-only-adaptation-of-spoken-language-models-for-task-oriented-voice-agents)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：使用文本监督微调口语模型，用于语音代理的ASR和结构化输出
-7. [Post-Training Speech Enhancement Language Models with Perceptual Rewards](/202606/24/2606.21458v1-post-training-speech-enhancement-language-models-with-perceptual-rewards)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：基于感知奖励的语音增强语言模型后训练
-8. [A Fusion-Aware Two-Stage Framework for Mispronunciation Detection and Diagnosis in Low-Resource Modern Standard Arabic](/202606/24/2606.24086v1-a-fusion-aware-two-stage-framework-for-mispronunciation-detection-and-diagnosis-in-low-resource-modern-standard-arabic)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：阿拉伯语发音错误检测与诊断
-9. [NeuroSonic: Conditional Flow Matching for EEG-to-Speech Reconstruction](/202606/24/2606.24087v1-neurosonic-conditional-flow-matching-for-eeg-to-speech-reconstruction)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：基于流匹配的脑电图到语音重建
-10. [Backdoor Attacks on Speech Emotion Recognition via TTS-Generated Poisoning](/202606/24/2606.21052v1-backdoor-attacks-on-speech-emotion-recognition-via-tts-generated-poisoning)  
+   evidence：语音增强语言模型后训练
+4. [MixProLAP: Mixture-Induced Uncertainty Modeling for Probabilistic Language-Audio Pretraining](/202606/25/2606.20418v1-mixprolap-mixture-induced-uncertainty-modeling-for-probabilistic-language-audio-pretraining)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：利用TTS生成音频对语音情感识别的后门攻击
+   evidence：概率音频-语言预训练用于音频文本对齐
+5. [Time-Frequency Weighted Losses for Phoneme Reconstruction in DNN-Based Speech Enhancement](/202606/25/2606.21635v1-time-frequency-weighted-losses-for-phoneme-reconstruction-in-dnn-based-speech-enhancement)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：面向ASR的音素感知损失
 
 
 <div class="dpr-home-promo-card">
