@@ -1,0 +1,342 @@
+Title: VoiceTTA: Enhancing Zero-Shot Text-to-Speech via Reinforcement Learning-Based Test-Time Adaptation
+
+URL Source: https://arxiv.org/pdf/2606.26534v1
+
+Published Time: Fri, 26 Jun 2026 00:24:25 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# VoiceTTA: Enhancing Zero-Shot Text-to-Speech via Reinforcement Learning-Based Test-Time Adaptation 
+
+# Tianxin Xie 1, Chenxing Li 2, Dong Yu 2, Li Liu 1,∗
+
+1 The Hong Kong University of Science and Technology (Guangzhou) 
+
+2 Tencent 
+
+> ∗
+
+avrillliu@hkust-gz.edu.cn 
+
+# Abstract 
+
+Recently, zero-shot text-to-speech (TTS) has enabled high-fidelity and expressive speech synthesis, but it often fails to im-itate unseen speaking styles from uncommon scenarios (e.g., crosstalk, dialects). Moreover, fine-tuning pretrained models requires large, high-quality datasets, limiting rapid personaliza-tion. We propose VoiceTTA, a reinforcement learning-based test-time adaptation (TTA) method that improves voice imi-tation of pretrained zero-shot TTS models. VoiceTTA intro-duces two style rewards based on coefficient-of-variation dif-ferences of F0 and energy, combined with speaker similarity and intelligibility (WER from a pretrained Whisper model), and optimizes learnable prefixes via group relative preference opti-mization (GRPO) in a flow matching-based model at inference time. Extensive experiments demonstrate substantial improve-ments on uncommon speech prompts, outperforming state-of-the-art baselines. Audio samples are available at https: //voicetta.pages.dev/ .
+
+Index Terms : Text-to-speech, test-time adaptation, reinforce-ment learning, zero-shot TTS 
+
+# 1. Introduction 
+
+Zero-shot text-to-speech (TTS) [1, 2, 3] has advanced consid-erably in recent years, enabling users to generate authentic, natural-sounding personalized speech from a reference prompt. However, existing zero-shot TTS models are primarily trained on large-scale datasets from common scenarios (e.g., podcasts, TV shows, and audiobooks) [4, 5, 6], which limits their effec-tiveness in less common settings, such as crosstalk, game com-mentary, and regional dialects. This highlights the need for a lightweight and efficient adaptation method for such scenarios. Existing zero-shot TTS methods encounter two key chal-lenges when processing uncommon speech prompts. First ,such prompts (e.g., slurred, dialects) often feature accents, speaking styles, and linguistic content that differ substantially from the datasets on which these models are trained. This mismatch introduces a domain shift between training and test data, causing generated speech to retain characteristics of the training domain while failing to capture the unique style of unseen prompts. For example, VALL-E [2] and its succes-sors [7, 8] can produce intelligible speech that matches the tim-bre of speech prompts, but often fail to imitate exaggerated prosody or regional accents. Second , collecting and annotat-ing speech datasets with dramatic vocal variations for uncom-mon scenarios is laborious, which compounds the difficulty of training high-quality TTS models for such cases. Moreover, de-ployed TTS systems inevitably encounter corner cases that are 
+
+> *
+
+indicates the corresponding author. Pre-trained model       
+
+> (A few seconds of speech prompt)
+> Test data
+> ①Test-time adaptation
+> (different task, online )Adapted model
+> Pre-trained model
+> (A substantial set of samples from the target speaker)
+> Fine-tuning data
+> ①Fine-tuning (same task, offline )Fine-tuned model
+> ②Inference Test data
+> ②Inference
+> (b) (a)
+
+Figure 1: (a) The fine-tuning paradigm repeats the pre-training task on target-speaker data. (b) The TTA paradigm learns ad-ditional knowledge from the test data via a different task. 
+
+not covered in training datasets. Thus, these two issues impede the broader application of zero-shot TTS technologies. Adapting pre-trained zero-shot TTS models to unseen speakers can help alleviate domain shift. Existing speaker adap-tation methods mainly include: (1) speaker embedding-based adaptation, which learns speaker-specific representations (e.g., x-vectors [9]) to enable synthesis for new speakers with little data, but relies on high-quality embedding models [10, 11]; and (2) fine-tuning-based adaptation, which updates model parame-ters using more target-speaker data to better capture voice traits such as accent and style, though it is more time-consuming and data-intensive [12, 13]. However, both approaches may strug-gle to generalize to diverse speaking styles in unseen prompts and lack efficient adaptability to new users. To address these challenges, we propose a reinforcement learning-based test-time adaptation (TTA [14]) framework to improve voice imitation in pre-trained zero-shot TTS models. As shown in Fig. 1, TTA performs lightweight parameter adap-tation during inference using only a few speech samples from the target speaker, enabling efficient online adaptation to unseen prompts. Compared with traditional fine-tuning that requires large-scale data, TTA can quickly align synthesized speech with the prosodic and stylistic characteristics of reference audio us-ing only seconds of speech. A key challenge in TTA is the design of effective auxiliary tasks, since directly transferring tasks from other domains of-ten leads to suboptimal performance [15, 16]. Our experiments show that modeling F0 variation, energy variation, and speaker similarity as auxiliary tasks improves voice imitation, while in-corporating an ASR-related objective helps maintain speech in-telligibility. During inference, multiple candidate utterances are generated, and auxiliary-task-based rewards are computed to train the group relative preference optimization (GRPO) algo-      
+
+> arXiv:2606.26534v1 [cs.SD] 25 Jun 2026 ①Test-time Adaptation ②Inference
+> Flow Matching-based
+> Zero-Shot TTS Model
+> Speech Prompt
+> Text
+> Speech Candidate 1
+> Speech Candidate 2
+> Speech Candidate
+> ... Candidate Sampling
+> Learnable Prefixes
+> ...
+> Coefficient Diff of F0 Variation
+> Coefficient Diff of Energy Variation
+> GRPO Algorithm
+> ASR Model Style Reward Intelligibility Reward GRPO Gradient
+> Flow Matching-based
+> Zero-Shot TTS Model
+> Speech Prompt
+> Synthesized Speech
+> Trainable Frozen
+> Speaker Similarity
+> ... ...
+> Adapted Prefixes
+
+Figure 2: The overview of the proposed VoiceTTA method. We first apply the GRPO algorithm to optimize learnable prefixes in a flow matching-based TTS model, guided by intelligibility and style rewards. Then, we use the adapted prefixes to guide new speech synthesis. 
+
+rithm [17], which optimizes lightweight learnable prefixes be-fore final synthesis. To our knowledge, this is the first work to enhance the voice imitation capability of pre-trained zero-shot TTS models on unseen prompts via TTA. In summary, our con-tributions are as follows: • We propose VoiceTTA, a reinforcement learning-based test-time adaptation framework that improves zero-shot TTS models by optimizing lightweight learnable prefixes with minimal parameter overhead. • The proposed F0- and energy-variation rewards, together with the speaker similarity reward, guide the TTS model to capture acoustic details from the reference speech and en-hance its imitation ability, while the WER-based reward im-proves voice intelligibility. • Extensive objective and subjective evaluations on several SOTA zero-shot TTS models demonstrate the effectiveness of our method, particularly on uncommon prompts. 
+
+# 2. Method 
+
+2.1. Overview 
+
+Given an unseen speech prompt x and text p, our goal is to max-imize the probability that the speech y = Fθ (x, p ) generated by a TTS model Fθ closely matches the speaking style of x at in-ference time: minimize:  
+
+> θ
+
+D(x, F θ (x, p )) , (1) where D is a distance function that measures the similarity in speech characteristics between two audio samples. However, 
+
+D cannot be explicitly defined and must be estimated in prac-tice. As shown in Fig. 2, to minimize D in the TTA setting, we employ GRPO with intelligibility and style rewards to opti-mize the parameters of the learnable prefixes, sampling k can-didate speeches for reward computation. For each candidate, the intelligibility reward is measured by the Word Error Rate (WER), while the style reward is derived from the coefficient of variation of F0 (F0-CV), the coefficient of variation of en-ergy (Energy-CV), and speaker similarity (S-SIM) between the speech prompt and the synthesized output. After G GRPO steps, the adapted model is used to synthesize new speech. It is worth noting that the additional model parameters are minimal and cheap to store. Adaptation requires only a few seconds of user audio, after which the personalized model supports fast, re-peated inference, making it well-suited for online deployment. 
+
+2.2. Speech Candidate Sampling 
+
+In this paper, we use a flow matching–based TTS model to sample speech candidates. The flow matching process trans-forms a latent variable into a mel-spectrogram conditioned on the encoded text and speech prompts, progressively transport-ing a prior distribution toward the learned data manifold in the acoustic feature space [18]. The latent variable is initially sam-pled from an isotropic Gaussian prior N (0 , T 2I), where the temperature T controls the stochasticity of generation: higher 
+
+T increases prosodic and stylistic variation, while lower T pro-duces more stable but less diverse outputs. The latent is then converted to a mel-spectrogram via the flow model and finally to a waveform using a vocoder [19]. To generate k diverse can-didates for reward computation, T is sampled from a uniform distribution, while all candidates share the same text content. 
+
+2.3. Rewards Computation 
+
+We use k candidates and a speech prompt to compute the style reward (F0-CV, Energy-CV, S-SIM) and the intelligibility re-ward (WER). To measure the similarity in pitch dynamics be-tween a candidate and the reference speech, we compute the F0-CV difference between them. Let F 0gen = [ f gen  
+
+> 1
+
+, . . . , f gen 
+
+> LG
+
+]
+
+and F 0ref = [ f ref  
+
+> 1
+
+, . . . , f ref 
+
+> LR
+
+] denote the voiced frame-level F0 contours of the candidate and the reference speech, respectively. We first compute their F0-CV as: F0-CV gen = σF 0gen 
+
+μF 0gen 
+
+, F0-CV ref = σF 0ref 
+
+μF 0ref 
+
+, (2) where μ, σ are the mean and standard deviation of the F0 con-tours, respectively. The F0-CV reward is then defined as: 
+
+rF0-CV = −| F0-CV gen − F0-CV ref |. (3) A higher rF0-CV indicates closer alignment with the reference pitch dynamics, positively contributing to the style reward. To quantify the similarity in energy dynamics between a candidate and the reference speech, we extract voiced frame-level energy sequences Egen = [egen  
+
+> 1
+
+, . . . , e gen 
+
+> LG
+
+] and Eref =[eref  
+
+> 1
+
+, . . . , e ref 
+
+> LR
+
+], where the energy of each voiced frame is the sum of its mel frequencies: 
+
+ej = X
+
+> m
+
+M (j, m ), (4) where M is the mel-spectrogram, j denotes the frame index, m
+
+denotes the Mel filter bank channel index. The Energy-CV of the candidate and the reference speech are: Energy-CV gen = σEgen 
+
+μEgen 
+
+, Energy-CV ref = σEref 
+
+μEref 
+
+, (5) where μ and σ denote the mean and standard deviation of the frame-level energy, respectively. Then, the Energy-CV reward for a candidate is defined as: 
+
+rEnergy-CV = −| Energy-CV gen − Energy-CV ref |. (6) A larger Energy-CV indicates that the generated speech better captures the energy dynamics of the reference speech. The S-SIM reward between a candidate and the reference speech is computed as the cosine similarity between their em-beddings extracted from a speaker embedding model SE :
+
+rS-SIM = cos( SE (Agen ), SE (Aref )) , (7) where Agen and Aref are the waveforms of the candidate and the reference speech. The intelligibility reward rIntel for each candidate is computed as its WER. 
+
+2.4. GRPO-Based Test-Time Adaptation 
+
+To adapt the TTS model to unseen speech prompts, we treat the learnable prefixes as a stochastic policy πθ within a re-inforcement learning framework and employ GRPO, which needs no value model and computes rewards using rule-based or model-based methods, as implemented in our ap-proach. Assuming we have k candidates and their rewards (ri
+
+> F0-CV
+
+, r i
+
+> Energy-CV
+
+, r i
+
+> S-SIM
+
+, r i
+
+> Intel
+
+, i ∈ [1 , k ]), we first normalize each type of reward into the range [0,1] for k candidates. The normalized rewards for each candidate are denoted as 
+
+si
+
+> F0-CV
+
+, s i
+
+> Energy-CV
+
+, s i
+
+> S-SIM
+
+, s i
+
+> Intel
+
+. Then the total reward ri for can-didate i is the sum of the normalized rewards: 
+
+ri = λ1si 
+
+> F0-CV
+
++ λ2si 
+
+> Energy-CV
+
++ λ3si 
+
+> S-SIM
+
++ λ4si
+
+> Intel
+
+. (8) Then, the GRPO loss for our method is defined as: 
+
+JGRP O = E
+
+" kX
+
+> i=1
+
+
+
+min 
+
+ πθ (oi)
+
+πθold (oi) Ai,
+
+Clip 
+
+ πθ (oi)
+
+πθold (oi) , 1 − ϵ, 1 + ϵ
+
+
+
+Ai
+
+ 
+
+, (9) where 
+
+Ai = ri − mean ({r1, r 2, ..., r k })
+
+std ({r1, r 2, ..., r k }) . (10) Note that there is no KL term in JGRP O because we are opti-mizing the lightweight learnable prefixes instead of the whole model, which is different from the original GRPO loss [17]. In our work, we prepend multiple learnable prefixes to the input of the first layer of a pre-trained TTS model. Unlike LLMs, which predict token probabilities, flow-matching-based mod-els directly regress mel-spectrograms. Therefore, we adopt the flow matching loss as a probability proxy to compute πθ (oi)
+
+and πθold (oi), which measure the tendency to generate output 
+
+oi. Following [18], the flow matching loss is defined as: 
+
+LF M,θ (o) = Et,p (xt|o)[|vθ (xt, t ) − ut(xt|o)|2], (11) which measures the discrepancy between the model-predicted velocity field vθ (xt, t ) and the ideal target velocity field 
+
+ut(xt|o). The lower the flow-matching loss for a sample o, the more accurately the model’s learned dynamics can transform noise into o. Therefore, we can reasonably assume: 
+
+πθ (o) = log pθ (o) ∝ − LFM ,θ (o). (12) Thus, we define the probability ratio term in GRPO as: 
+
+πθ (oi)
+
+πθold (oi) = log pθ (oi) − log pθold (oi)
+
+≈ (−L F M,θ (oi)) − (−L F M,θ old (oi)) = LF M,θ old (oi) − L F M,θ (oi). (13) After G GRPO adaptation steps on the unseen speech prompt, we use the model to synthesize new speech samples. After adaptation and prediction for a given sample, the prefixes are randomly reinitialized before processing the next one, prevent-ing updates from accumulating across the test set. 
+
+# 3. Experiment 
+
+3.1. Experimental Settings Datasets. We collected an internal dataset of 200 speech sam-ples with uncommon speaking styles (90 accented, 40 chil-dren’s, 30 slurred, and 40 from Chinese sketches), which are underrepresented in existing corpora and serve as realistic test-time scenarios. To further assess dialectal adaptation, we sam-pled 160 utterances (20 per dialect) from KeSpeech [20], cov-ering eight Chinese dialects. 
+
+Models. We use F5-TTS [21] as our backbone and the baseline. We also compare with three SOTA zero-shot TTS models, i.e., CosyVoice [22], MaskGCT [23], and Vevo [24]. 
+
+Implementation. For each test sample, we generate four can-didates to compute the GRPO reward. For the final reward in Eq. 8, we set λ1=λ2=0.2, λ3=1, and λ4=1.5, as rS-SIM and 
+
+rIntel primarily drive speaker similarity and WER reduction, as demonstrated in the ablation study. We prepend 4 learnable pre-fixes to the input of the first DiT layer of F5-TTS. The learning rate is set to 5×10 −4 with a 5% warmup ratio, and we run G=50 GRPO adaptation steps. For candidate sampling, we draw a new T from the uniform distribution U (0 .5, 1.5) to synthesize a new speech sample, and we sample 4 candidates for each GRPO optimization step. All the evaluations are conducted on an NVIDIA RTX 6000 Ada GPU. 
+
+Evaluation Metrics. For objective evaluation, we report WER and Speaker Similarity (S-SIM). WER is derived from Whisper-Large V3 [25] transcriptions, while S-SIM is computed as the cosine similarity between embeddings of the synthesized speech and a neutral reference using a speaker embedding model [26]. For subjective evaluation, we report Naturalness MOS (N-MOS) and Similarity MOS (S-MOS), both rated on a 1–5 scale. N-MOS measures perceived naturalness (1 = very unnatural, 5 = completely natural), while S-MOS evaluates per-ceived style similarity (1 = very dissimilar, 5 = highly similar). 
+
+3.2. Objective Evaluation 
+
+As shown in Table 1, our method achieves a WER of 3.12, out-performing F5-TTS (3.19), MaskGCT (3.26), and substantially surpassing CosyVoice (4.57) and Vevo (12.41). These results demonstrate that VoiceTTA enhances stylistic attributes with-out sacrificing clarity, confirming that improvements in voice imitation do not come at the cost of intelligibility. For S-SIM, our method attains the highest score (0.64), exceeding F5-TTS (0.57), MaskGCT (0.62), CosyVoice (0.54), and Vevo Table 1: Performance comparison on five test-time scenarios.                                                                                                                             
+
+> Method WER( ↓)S-SIM( ↑)S-MOS( ↑)N-MOS( ↑)Accented CosyVoice [22] 3.18 0.58 3.26 3.94
+> MaskGCT [23] 3.09 0.69 3.18 3.52 Vevo [24] 5.72 0.44 3.01 2.37 F5-TTS [21] 2.81 0.67 3.22 3.62 VoiceTTA (Ours) 2.82 0.69 3.46 3.51 Children CosyVoice [22] 3.26 0.53 3.34 3.85
+> MaskGCT [23] 3.11 0.61 3.26 3.41 Vevo [24] 9.54 0.45 3.05 2.11 F5-TTS [21] 3.03 0.60 3.19 3.51 VoiceTTA (Ours) 3.01 0.63 3.37 3.50 Slurred CosyVoice [22] 5.18 0.51 3.05 3.25
+> MaskGCT [23] 4.82 0.57 3.09 2.98 Vevo [24] 16.73 0.29 1.54 1.34 F5-TTS [21] 4.57 0.55 2.83 3.05 VoiceTTA (Ours) 4.49 0.58 3.44 3.07 Chinese Sketches CosyVoice [22] 5.02 0.55 3.16 3.55
+> MaskGCT [23] 4.73 0.49 3.08 3.17 Vevo [24] 13.65 0.35 2.16 1.83 F5-TTS [21] 3.11 0.58 3.11 3.45 VoiceTTA (Ours) 3.26 0.60 3.25 3.44 Chinese Dialects CosyVoice [22] 4.92 0.51 3.14 3.26
+> MaskGCT [23] 4.16 0.56 3.10 3.01 Vevo [24] 15.69 0.28 1.82 1.57 F5-TTS [21] 3.38 0.59 2.93 3.16 VoiceTTA (Ours) 3.13 0.62 3.18 3.20 Averaged CosyVoice [22] 4.57 0.54 3.25 ±0.92 3.58 ±0.73
+> MaskGCT [23] 3.26 0.62 3.14 ±0.93 3.14 ±1.07 Vevo [24] 12.41 0.34 2.05 ±1.03 1.91 ±1.01 F5-TTS [21] 3.19 0.57 3.07 ±1.07 3.36 ±1.04 Ours 3.12 0.64 3.27 ±0.62 3.35 ±0.77
+
+(0.34). This improvement highlights the effectiveness of our re-inforcement learning–based TTA framework in capturing target speaker characteristics, even under challenging prompts. 
+
+3.3. Subjective Evaluation 
+
+We evaluate perceptual style similarity using S-MOS. 24 par-ticipants are asked to rate S-MOS between 20 pairs of reference and generated samples. Table 1 shows that our method achieves the highest score (3.27), slightly surpassing CosyVoice (3.25) and clearly outperforming F5-TTS (3.07), MaskGCT (3.14), and Vevo (2.05). This aligns with the S-SIM results, where our method also ranks highest (0.64), confirming that style-based rewards effectively guide adaptation toward target characteris-tics. For naturalness, our method attains an N-MOS of 3.35, comparable to F5-TTS (3.36) and slightly below CosyVoice (3.58), which is pretrained on over 130,000 hours and post-trained on 500 hours of high-quality speech. While not the top score, this demonstrates that the improvements in style sim-ilarity do not compromise fluency or intelligibility. Overall, VoiceTTA achieves superior stylistic fidelity while maintaining competitive naturalness, underscoring its balanced design. 
+
+3.4. Ablation Study Reward Types. We conduct an ablation study on the four re-ward types, evaluating S-SIM and WER using the same dataset and hyperparameters in the main experiment. As shown in Ta-ble 2, using only the intelligibility reward ( rIntel ) achieves the lowest WER (3.10) but the weakest S-SIM (0.43), while com-bining the three style rewards ( rF0-CV + rEnergy-CV + rS-SIM ) yields the highest S-SIM (0.67) but severely degrades intelligibility (WER = 7.04). The full model, integrating all four rewards, bal-ances both objectives, reaching a WER of 3.12 and an S-SIM of 𝑇 =1 
+
+> 𝑇 =2
+> 𝑇 =3
+
+(a ) (b) 
+
+Figure 3: (a) The effect of the number of learnable prefixes. (b) High temperature T reduces intelligibility. 
+
+Table 2: Ablation study on the four reward types.                             
+
+> Reward WER( ↓)S-SIM( ↑)
+> rF0-CV 7.62 0.53
+> rEnergy-CV 7.76 0.51
+> rS-SIM 6.58 0.62
+> rIntel 3.10 0.43
+> rF0-CV +rEnergy-CV 7.69 0.55
+> rF0-CV +rEnergy-CV +rS-SIM 7.04 0.67
+> rF0-CV +rEnergy-CV +rS-SIM +rIntel 3.12 0.64
+
+0.64. These results highlight the complementary roles of these rewards and the necessity of a composite reward for effective style imitation without sacrificing intelligibility. 
+
+Number of Learnable Prefixes. We analyze the effect of the number of learnable prefixes by reporting average S-SIM on the Seed-TTS [27] test-en set using models adapted on KeSpeech and our internal dataset. As shown in Fig. 3-a, S-SIM on Seed-TTS peaks with a single prefix and declines as more are added, suggesting that excessive adaptation may harm synthesis. In contrast, on KeSpeech and our internal dataset, S-SIM improves with more prefixes, indicating enhanced adaptability to novel characteristics. We therefore use four prefixes in the main ex-periments to balance adaptation and in-domain performance. 
+
+Temperature T . As shown in Fig. 3-b, large T values yield unintelligible speech. Therefore, we sample T from a uniform distribution with a small range as in the experimental setting. 
+
+3.5. Model Parameters 
+
+For each unseen speaker, only a lightweight 16 KB prompt needs to be stored, enabling efficient personalization. This de-sign makes VoiceTTA more practical and scalable than existing methods for real-world deployment, where rapid adaptation to new speakers is essential. 
+
+# 4. Conclusion 
+
+We present VoiceTTA, a reinforcement learning–based TTA method for flow matching–based TTS models that optimizes lightweight prefixes with multiple rewards to balance style sim-ilarity and intelligibility. VoiceTTA surpasses SOTA zero-shot TTS models in style similarity on five uncommon test-time scenarios while preserving naturalness, requires only a one-time adaptation, and introduces negligible parameters, making it practical for online, real-world personalized speech synthesis. 5. Acknowledgement 
+
+This work was supported by the National Natural Science Foundation of China (No. 62471420), GuangDong Basic and Applied Basic Research Foundation (2025A1515012296), and 2025 Tencent AI Lab Rhino-Bird Program. 
+
+# 6. Generative AI Use Disclosure 
+
+We used ChatGPT only for language editing and stylistic refine-ment; no technical content was generated by the tool. 
+
+# 7. References 
+
+[1] J. Kim, J. Kong, and J. Son, “Conditional variational autoencoder with adversarial learning for end-to-end text-to-speech,” in Inter-national conference on machine learning , 2021, pp. 5530–5540. [2] S. Chen, C. Wang, Y. Wu, Z. Zhang, L. Zhou, S. Liu, Z. Chen, Y. Liu, H. Wang, J. Li, L. He, S. Zhao, and F. Wei, “Neural codec language models are zero-shot text to speech synthesizers,” IEEE Transactions on Audio, Speech and Language Processing , vol. 33, pp. 705–718, 2025. [3] T. Xie, Y. Rong, P. Zhang, W. Wang, and L. Liu, “Towards con-trollable speech synthesis in the era of large language models: A systematic survey,” in Proceedings of the 2025 Conference on Em-pirical Methods in Natural Language Processing , 2025, pp. 764– 791. [4] H. He, Z. Shang, C. Wang, X. Li, Y. Gu, H. Hua, L. Liu, C. Yang, J. Li, P. Shi et al. , “Emilia: An extensive, multilingual, and diverse speech dataset for large-scale speech generation,” in 2024 IEEE Spoken Language Technology Workshop (SLT) , 2024, pp. 885– 890. [5] H. Zen, V. Dang, R. Clark, Y. Zhang, R. J. Weiss, Y. Jia, Z. Chen, and Y. Wu, “LibriTTS: A corpus derived from librispeech for text-to-speech,” in Interspeech , 2019, pp. 1526–1530. [6] Y. Rong, J. Wang, G. Lei, S. Yang, and L. Liu, “Audiogenie: A training-free multi-agent framework for diverse multimodality-to-multiaudio generation,” in Proceedings of the 33rd ACM Interna-tional Conference on Multimedia , 2025, pp. 8872–8881. [7] Z. Zhang, L. Zhou, C. Wang, S. Chen, Y. Wu, S. Liu, Z. Chen, Y. Liu, H. Wang, J. Li et al. , “Speak foreign languages with your own voice: Cross-lingual neural codec language modeling,” arXiv preprint arXiv:2303.03926 , 2023. [8] L. Meng, L. Zhou, S. Liu, S. Chen, B. Han, S. Hu, Y. Liu, J. Li, S. Zhao, X. Wu et al. , “Autoregressive speech synthesis without vector quantization,” in Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 2025, pp. 1287–1300. [9] D. Snyder, D. Garcia-Romero, G. Sell, D. Povey, and S. Khudan-pur, “X-vectors: Robust dnn embeddings for speaker recognition,” in ICASSP , 2018, pp. 5329–5333. [10] E. Casanova, J. Weber, C. D. Shulby, A. C. Junior, E. G¨ olge, and M. A. Ponti, “Yourtts: Towards zero-shot multi-speaker tts and zero-shot voice conversion for everyone,” in International confer-ence on machine learning , 2022, pp. 2709–2720. [11] H. Lu, Z. Wu, D. Dai, R. Li, S. Kang, J. Jia, and H. Meng, “One-shot voice conversion with global speaker embeddings,” in Inter-speech , 2019, pp. 669–673. [12] R. Huang, Y. Wang, R. Hu, X. Xu, Z. Hong, D. Yang, X. Cheng, Z. Wang, Z. Jiang, Z. Ye et al. , “VoiceTuner: Self-supervised pre-training and efficient fine-tuning for voice generation,” in Pro-ceedings of the 32nd ACM International Conference on Multime-dia , 2024, pp. 10 630–10 639. [13] P. Neekhara, J. Li, and B. Ginsburg, “Adapting TTS mod-els for new speakers using transfer learning,” arXiv preprint arXiv:2110.05798 , 2021. [14] J. Liang, R. He, and T. Tan, “A comprehensive survey on test-time adaptation under distribution shifts,” International Journal of Computer Vision , vol. 133, no. 1, pp. 31–64, 2025. [15] D. Wang, E. Shelhamer, S. Liu, B. Olshausen, and T. Darrell, “Tent: Fully test-time adaptation by entropy minimization,” in In-ternational Conference on Learning Representations , 2021, pp. 1–15. [16] Y. Sun, X. Wang, Z. Liu, J. Miller, A. Efros, and M. Hardt, “Test-time training with self-supervision for generalization under distri-bution shifts,” in International conference on machine learning ,2020, pp. 9229–9248. [17] Z. Shao, P. Wang, Q. Zhu, R. Xu, J. Song, X. Bi, H. Zhang, M. Zhang, Y. Li, Y. Wu et al. , “Deepseekmath: Pushing the lim-its of mathematical reasoning in open language models,” arXiv preprint arXiv:2402.03300 , 2024. [18] Y. Lipman, R. T. Q. Chen, H. Ben-Hamu, M. Nickel, and M. Le, “Flow matching for generative modeling,” in The Eleventh Inter-national Conference on Learning Representations , 2023, pp. 1– 28. [19] H. Siuzdak, “Vocos: Closing the gap between time-domain and fourier-based neural vocoders for high-quality audio synthesis,” in The Twelfth International Conference on Learning Representa-tions , 2024, pp. 1–15. [20] Z. Tang, D. Wang, Y. Xu, J. Sun, X. Lei, S. Zhao, C. Wen, X. Tan, C. Xie, S. Zhou et al. , “Kespeech: An open source speech dataset of mandarin and its eight subdialects,” in Thirty-fifth conference on neural information processing systems datasets and bench-marks track (Round 2) , 2021. [21] Y. Chen, Z. Niu, Z. Ma, K. Deng, C. Wang, J. JianZhao, K. Yu, and X. Chen, “F5-TTS: A fairytaler that fakes fluent and faithful speech with flow matching,” in Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 2025, pp. 6255–6271. [22] Z. Du, Q. Chen, S. Zhang, K. Hu, H. Lu, Y. Yang, H. Hu, S. Zheng, Y. Gu, Z. Ma et al. , “Cosyvoice: A scalable multi-lingual zero-shot text-to-speech synthesizer based on supervised semantic tokens,” arXiv preprint arXiv:2407.05407 , 2024. [23] Y. Wang, H. Zhan, L. Liu, R. Zeng, H. Guo, J. Zheng, Q. Zhang, X. Zhang, S. Zhang, and Z. Wu, “MaskGCT: Zero-shot text-to-speech with masked generative codec transformer,” in The Thir-teenth International Conference on Learning Representations ,2025, pp. 1–24. [24] X. Zhang, X. Zhang, K. Peng, Z. Tang, V. Manohar, Y. Liu, J. Hwang, D. Li, Y. Wang, J. Chan, Y. Huang, Z. Wu, and M. Ma, “Vevo: Controllable zero-shot voice imitation with self-supervised disentanglement,” in The Thirteenth International Conference on Learning Representations , 2025, pp. 1–24. [25] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak supervision,” in International conference on machine learning ,2023, pp. 28 492–28 518. [26] H. Bredin, R. Yin, J. M. Coria, G. Gelly, P. Korshunov, M. Lavechin, D. Fustes, H. Titeux, W. Bouaziz, and M.-P. Gill, “Pyannote. audio: neural building blocks for speaker diarization,” in ICASSP 2020-2020 IEEE International conference on acous-tics, speech and signal processing (ICASSP) , 2020, pp. 7124– 7128. [27] P. Anastassiou, J. Chen, J. Chen, Y. Chen, Z. Chen, Z. Chen, J. Cong, L. Deng, C. Ding, L. Gao et al. , “Seed-tts: A family of high-quality versatile speech generation models,” arXiv preprint arXiv:2406.02430 , 2024.

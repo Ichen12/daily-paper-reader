@@ -6,70 +6,59 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-06-25
-- 运行时间：2026-06-25 22:15:07 UTC
+- 最新运行日期：2026-06-26
+- 运行时间：2026-06-26 21:02:14 UTC
 - 运行状态：成功
-- 本次总论文数：16
-- 精读区：11
-- 速读区：5
+- 本次总论文数：13
+- 精读区：4
+- 速读区：9
 
 ### 今日简报（AI）
-今日日报收录16篇论文，聚焦多语言语音处理与编码技术。
-精读推荐《IndicContextEval》评测8种印度语言音频大模型的上下文利用，以及《Adding Robust Code-Switching》为多语言ASR添加稳健语码转换能力。
-建议关注低码率语音编解码与可微分对齐等前沿技术，可进一步探索语码转换的实际应用场景。
-- 详情：[/202606/25/README](/202606/25/README)
+今日聚焦语音编解码与转换，精读两篇9分论文《SDP-Codec》和《ProsoCodec》，并速读语音增强与LLM相关进展。最值得关注的是说话人解耦和韵律导向的低比特率编解码器，在零样本语音转换中表现突出。建议后续重点探索编解码器中说话人与韵律信息的独立建模，这是提升语音转换质量的关键方向。
+- 详情：[/202606/26/README](/202606/26/README)
 
 ### 精读区论文标签
-1. [IndicContextEval: A Benchmark for Evaluating Context Utilisation in Audio Large Language Models Across 8 Indic Languages](/202606/25/2606.19157v2-indiccontexteval-a-benchmark-for-evaluating-context-utilisation-in-audio-large-language-models-across-8-indic-languages)  
+1. [SDP-Codec: A Speaker-Decoupled Speech Codec with Pitch Injection for Low-Bitrate Coding and Zero-Shot Voice Conversion](/202606/26/2606.21157v1-sdp-codec-a-speaker-decoupled-speech-codec-with-pitch-injection-for-low-bitrate-coding-and-zero-shot-voice-conversion)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：评估音频大语言模型上下文利用的多语言基准
-2. [Adding Robust Code-Switching Capabilities to High Performance Multilingual ASR](/202606/25/2606.21990v1-adding-robust-code-switching-capabilities-to-high-performance-multilingual-asr)  
+   evidence：通过说话人解耦编解码器实现零样本语音转换
+2. [ProsoCodec: Prosody-Oriented Speech Codec for Voice Conversion](/202606/26/2606.21888v1-prosocodec-prosody-oriented-speech-codec-for-voice-conversion)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：多语言ASR中的代码切换
-3. [Error-Aware TF-IDF Retrieval-Augmented Generation for ASR Error Correction](/202606/25/2606.24915v1-error-aware-tf-idf-retrieval-augmented-generation-for-asr-error-correction)  
+   evidence：使用面向韵律的编解码器进行语音转换
+3. [VoiceTTA: Enhancing Zero-Shot Text-to-Speech via Reinforcement Learning-Based Test-Time Adaptation](/202606/26/2606.26534v1-voicetta-enhancing-zero-shot-text-to-speech-via-reinforcement-learning-based-test-time-adaptation)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：基于检索增强生成的ASR纠错
-4. [Sarashina2.2-TTS: Tackling Kanji Polyphony in Japanese Speech Generation via Data Scaling and Targeted Data Synthesis](/202606/25/2606.25369v1-sarashina22-tts-tackling-kanji-polyphony-in-japanese-speech-generation-via-data-scaling-and-targeted-data-synthesis)  
+   evidence：使用强化学习测试时自适应增强零样本TTS。
+4. [RedVox: Safety and Fairness Gaps in Speech Models Across Languages](/202606/26/2606.26968v1-redvox-safety-and-fairness-gaps-in-speech-models-across-languages)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：日语TTS的数据扩展与定向合成
-5. [From Sounds to Scenes: A Benchmark for Evaluating Context-Aware Auditory Scene Understanding in Large Audio Language Models](/202606/25/2606.25391v1-from-sounds-to-scenes-a-benchmark-for-evaluating-context-aware-auditory-scene-understanding-in-large-audio-language-models)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：上下文感知听觉场景理解基准
-6. [CrossAccent-TTS: Cross-Lingual Accent-Intensity Controllable Text-to-Speech via Disentangled Speaker and Accent Representations](/202606/25/2606.25403v1-crossaccent-tts-cross-lingual-accent-intensity-controllable-text-to-speech-via-disentangled-speaker-and-accent-representations)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：跨语言口音强度可控的文本转语音
-7. [Adaptive Oscillatory Inductive Bias for Modeling Sharp Prosodic Dynamics in Diffusion-Based TTS](/202606/25/2606.25424v1-adaptive-oscillatory-inductive-bias-for-modeling-sharp-prosodic-dynamics-in-diffusion-based-tts)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：扩散式文本到语音的韵律建模
-8. [STEB: A Speech-to-Speech Translation Expressiveness Benchmark for Evaluating Beyond Translation Fidelity](/202606/25/2606.25529v1-steb-a-speech-to-speech-translation-expressiveness-benchmark-for-evaluating-beyond-translation-fidelity)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：语音到语音翻译表情基准
-9. [Joint Residual Reweighting for Classifier Free Guidance in Flow-Matching Zero-Shot TTS](/202606/25/2606.25672v1-joint-residual-reweighting-for-classifier-free-guidance-in-flow-matching-zero-shot-tts)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：流匹配零样本文本到语音的联合残差加权
-10. [SpeechEQ: Benchmarking Emotional Intelligence Quotient in Socially Aware Voice Conversational Models](/202606/25/2606.25990v1-speecheq-benchmarking-emotional-intelligence-quotient-in-socially-aware-voice-conversational-models)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：情感智能基准数据集
-11. [Dziri Voicebot: An End-to-End Low-Resource Speech-to-Speech Conversational System for Algerian Dialect](/202606/25/2606.26003v1-dziri-voicebot-an-end-to-end-low-resource-speech-to-speech-conversational-system-for-algerian-dialect)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：集成了ASR和TTS的端到端语音对话系统，面向低资源阿尔及利亚方言
+   evidence：多语言语音安全与公平性基准
 
 ### 速读区论文标签
-1. [AugCodec: A Low-Bitrate Disentangled Neural Speech Codec via Data Augmentation](/202606/25/2606.21893v1-augcodec-a-low-bitrate-disentangled-neural-speech-codec-via-data-augmentation)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：用于语音转换的分离神经语音编解码器
-2. [Fully Differentiable Neural Forced Alignment via Soft Dynamic Programming](/202606/25/2606.25460v1-fully-differentiable-neural-forced-alignment-via-soft-dynamic-programming)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：用于ASR的神经强制对齐
-3. [Post-Training Speech Enhancement Language Models with Perceptual Rewards](/202606/25/2606.21458v1-post-training-speech-enhancement-language-models-with-perceptual-rewards)  
+1. [Post-Training Speech Enhancement Language Models with Perceptual Rewards](/202606/26/2606.21458v1-post-training-speech-enhancement-language-models-with-perceptual-rewards)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：语音增强语言模型后训练
-4. [MixProLAP: Mixture-Induced Uncertainty Modeling for Probabilistic Language-Audio Pretraining](/202606/25/2606.20418v1-mixprolap-mixture-induced-uncertainty-modeling-for-probabilistic-language-audio-pretraining)  
+   evidence：使用含WER的感知奖励优化语音增强模型
+2. [Don't Listen to Me: A Lightweight, Low-Latency Model for Own-Voice Cancellation in Far-Field Speech Enhancement](/202606/26/2606.23332v1-dont-listen-to-me-a-lightweight-low-latency-model-for-own-voice-cancellation-in-far-field-speech-enhancement)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：语音增强相关音频处理
+3. [FBK's Long-form SpeechLLMs for IWSLT 2026 Instruction Following](/202606/26/2606.26819v1-fbks-long-form-speechllms-for-iwslt-2026-instruction-following)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：长形式语音LLM及ASR性能分析
+4. [wav2tok 2.0: Scalable Audio Tokenization Maintaining Explicit Pairwise Token Alignment for Efficient Audio Retrieval](/202606/26/2606.26824v1-wav2tok-20-scalable-audio-tokenization-maintaining-explicit-pairwise-token-alignment-for-efficient-audio-retrieval)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：用于语音表示和检索的音频分词方法
+5. [DNSMOS-C: Improving End-to-end Speech Quality Models via Contrastive Learning](/202606/26/2606.26903v1-dnsmos-c-improving-end-to-end-speech-quality-models-via-contrastive-learning)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：改进端到端语音质量评估模型
+6. [MixProLAP: Mixture-Induced Uncertainty Modeling for Probabilistic Language-Audio Pretraining](/202606/26/2606.20418v1-mixprolap-mixture-induced-uncertainty-modeling-for-probabilistic-language-audio-pretraining)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：概率音频-语言预训练用于音频文本对齐
-5. [Time-Frequency Weighted Losses for Phoneme Reconstruction in DNN-Based Speech Enhancement](/202606/25/2606.21635v1-time-frequency-weighted-losses-for-phoneme-reconstruction-in-dnn-based-speech-enhancement)  
+   evidence：概率音频-语言预训练处理音频-文本对齐
+7. [Backdoor Attacks on Speech Emotion Recognition via TTS-Generated Poisoning](/202606/26/2606.21052v1-backdoor-attacks-on-speech-emotion-recognition-via-tts-generated-poisoning)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：面向ASR的音素感知损失
+   evidence：使用TTS生成中毒样本对SER进行后门攻击
+8. [Towards Detecting Neural Audio Codec Synthesized Heart Sounds](/202606/26/2606.21727v1-towards-detecting-neural-audio-codec-synthesized-heart-sounds)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：用于合成心音检测的基准数据集
+9. [SE-AGCNet: An End-to-End Framework for Joint Speech Enhancement and Loudness Control in Meeting Scenarios](/202606/26/2606.25959v1-se-agcnet-an-end-to-end-framework-for-joint-speech-enhancement-and-loudness-control-in-meeting-scenarios)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：提出SE-AGC-DataGen数据仿真管线可作为基准资源。
 
 
 <div class="dpr-home-promo-card">
