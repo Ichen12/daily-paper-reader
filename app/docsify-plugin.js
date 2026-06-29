@@ -2143,6 +2143,305 @@ window.$docsify = {
         }
       };
 
+      const COLOR_BOOKMARKS = [
+        { key: 'good', label: '绿色', className: 'good' },
+        { key: 'blue', label: '蓝色', className: 'blue' },
+        { key: 'orange', label: '橙色', className: 'orange' },
+        { key: 'bad', label: '红色', className: 'bad' },
+      ];
+      const COLOR_BOOKMARK_KEYS = new Set(
+        COLOR_BOOKMARKS.map((item) => item.key),
+      );
+
+      const normalizePaperRouteId = (value) => {
+        const text = String(value || '').trim();
+        if (!text) return '';
+        try {
+          return decodeURIComponent(text).replace(/\/$/, '');
+        } catch {
+          return text.replace(/\/$/, '');
+        }
+      };
+
+      const getPaperIdFromSidebarHref = (href) => {
+        const text = String(href || '').trim();
+        const matched = text.match(/#\/(.+)$/);
+        if (!matched) return '';
+        const paperId = normalizePaperRouteId(matched[1]);
+        if (!paperId || paperId.endsWith('/README')) return '';
+        return paperId;
+      };
+
+      const getSidebarPaperTitle = (anchor, paperId) => {
+        if (!anchor) return paperId || '';
+        const titleEl = anchor.querySelector('.dpr-sidebar-title');
+        const title = String(
+          (titleEl && titleEl.textContent) || anchor.textContent || '',
+        )
+          .replace(/\s+/g, ' ')
+          .trim();
+        return title || paperId || '';
+      };
+
+      const getSidebarPaperContext = (li) => {
+        if (!li) return '';
+        const parts = [];
+        let current = li.parentElement ? li.parentElement.closest('li') : null;
+        while (current && parts.length < 3) {
+          const dayLabel = current.querySelector(
+            ':scope > .sidebar-day-toggle .sidebar-day-toggle-label',
+          );
+          const confLabel = current.querySelector(
+            ':scope > .sidebar-conference-toggle .sidebar-conference-toggle-label',
+          );
+          const labelNode = dayLabel || confLabel;
+          let text = labelNode ? String(labelNode.textContent || '').trim() : '';
+          if (!text) {
+            const directAnchor = current.querySelector(':scope > a');
+            if (directAnchor) {
+              text = String(directAnchor.textContent || '').replace(/\s+/g, ' ').trim();
+            } else if (typeof Node !== 'undefined') {
+              const textNode = Array.from(current.childNodes || []).find(
+                (node) =>
+                  node &&
+                  node.nodeType === Node.TEXT_NODE &&
+                  String(node.textContent || '').trim(),
+              );
+              text = String((textNode && textNode.textContent) || '').trim();
+            }
+          }
+          if (text && !parts.includes(text)) parts.unshift(text);
+          current = current.parentElement ? current.parentElement.closest('li') : null;
+        }
+        return parts.join(' / ');
+      };
+
+      const getPaperDateSortToken = (paperId, context) => {
+        const idText = String(paperId || '');
+        const routeMatch = idText.match(/(?:^|\/)(\d{4})(\d{2})\/(\d{2})(?:\/|$)/);
+        if (routeMatch) {
+          return `${routeMatch[1]}${routeMatch[2]}${routeMatch[3]}`;
+        }
+
+        const contextText = String(context || '');
+        const dateMatches = Array.from(
+          contextText.matchAll(/((?:19|20)\d{2})-(\d{2})-(\d{2})/g),
+        );
+        if (dateMatches.length) {
+          const latest = dateMatches[dateMatches.length - 1];
+          return `${latest[1]}${latest[2]}${latest[3]}`;
+        }
+
+        return '';
+      };
+
+      const compareColorBookmarkedPapers = (a, b) => {
+        const ad = String((a && a.dateSortToken) || '');
+        const bd = String((b && b.dateSortToken) || '');
+        if (ad !== bd) return bd.localeCompare(ad);
+        const ai = Number((a && a.sidebarOrder) || 0);
+        const bi = Number((b && b.sidebarOrder) || 0);
+        if (ai !== bi) return ai - bi;
+        return String((a && a.title) || '').localeCompare(String((b && b.title) || ''));
+      };
+
+      const collectColorBookmarkedPapers = () => {
+        const state = loadReadState();
+        const nav = document.querySelector('.sidebar-nav');
+        const byId = {};
+        const orderedIds = [];
+
+        if (nav) {
+          const anchors = Array.from(nav.querySelectorAll('a[href*="#/"]'));
+          anchors.forEach((anchor, index) => {
+            const paperId = getPaperIdFromSidebarHref(anchor.getAttribute('href') || '');
+            if (!paperId || byId[paperId]) return;
+            const status = state[paperId];
+            if (!COLOR_BOOKMARK_KEYS.has(status)) return;
+            const li = anchor.closest('li');
+            const context = getSidebarPaperContext(li);
+            byId[paperId] = {
+              paperId,
+              href: `#/${paperId}`,
+              title: getSidebarPaperTitle(anchor, paperId),
+              context,
+              dateSortToken: getPaperDateSortToken(paperId, context),
+              sidebarOrder: index,
+              status,
+            };
+            orderedIds.push(paperId);
+          });
+        }
+
+        Object.keys(state).forEach((paperId) => {
+          const status = state[paperId];
+          if (!COLOR_BOOKMARK_KEYS.has(status) || byId[paperId]) return;
+          byId[paperId] = {
+            paperId,
+            href: `#/${paperId}`,
+            title: paperId,
+            context: '未在当前列表',
+            dateSortToken: getPaperDateSortToken(paperId, ''),
+            sidebarOrder: Number.MAX_SAFE_INTEGER,
+            status,
+          };
+          orderedIds.push(paperId);
+        });
+
+        return orderedIds
+          .map((paperId) => byId[paperId])
+          .filter(Boolean)
+          .sort(compareColorBookmarkedPapers);
+      };
+
+      const countColorBookmarkedPapers = () => {
+        return collectColorBookmarkedPapers().length;
+      };
+
+      const ensureColorBookmarksOverlay = () => {
+        let overlay = document.getElementById('dpr-color-bookmarks-overlay');
+        if (overlay) return overlay;
+
+        overlay = document.createElement('div');
+        overlay.id = 'dpr-color-bookmarks-overlay';
+        overlay.innerHTML = `
+          <div class="dpr-color-bookmarks-modal" role="dialog" aria-modal="true" aria-labelledby="dpr-color-bookmarks-title">
+            <div class="dpr-color-bookmarks-head">
+              <div>
+                <div id="dpr-color-bookmarks-title" class="dpr-color-bookmarks-title">色标论文</div>
+                <div class="dpr-color-bookmarks-subtitle"></div>
+              </div>
+              <button type="button" class="dpr-color-bookmarks-close" aria-label="关闭">×</button>
+            </div>
+            <div class="dpr-color-bookmarks-body"></div>
+          </div>
+        `;
+        overlay.addEventListener('pointerdown', (e) => {
+          if (e && e.target === overlay) {
+            overlay.classList.remove('show');
+          }
+        });
+        const closeBtn = overlay.querySelector('.dpr-color-bookmarks-close');
+        if (closeBtn) {
+          closeBtn.addEventListener('click', () => {
+            overlay.classList.remove('show');
+          });
+        }
+        overlay.addEventListener('click', (e) => {
+          const link = e && e.target && e.target.closest
+            ? e.target.closest('.dpr-color-bookmark-paper')
+            : null;
+          if (link) {
+            overlay.classList.remove('show');
+          }
+        });
+        document.addEventListener('keydown', (e) => {
+          if (e && e.key === 'Escape') overlay.classList.remove('show');
+        });
+        document.body.appendChild(overlay);
+        return overlay;
+      };
+
+      const renderColorBookmarksOverlay = () => {
+        const overlay = ensureColorBookmarksOverlay();
+        const body = overlay.querySelector('.dpr-color-bookmarks-body');
+        const subtitle = overlay.querySelector('.dpr-color-bookmarks-subtitle');
+        if (!body) return;
+
+        const papers = collectColorBookmarkedPapers();
+        const total = papers.length;
+        if (subtitle) {
+          subtitle.textContent = total ? `${total} 篇已标记` : '暂无已标记论文';
+        }
+        if (!total) {
+          body.innerHTML = '<div class="dpr-color-bookmarks-empty">暂无颜色标记论文</div>';
+          return;
+        }
+
+        const groupsHtml = COLOR_BOOKMARKS.map((bookmark) => {
+          const items = papers.filter((paper) => paper.status === bookmark.key);
+          if (!items.length) return '';
+          const links = items
+            .map((paper) => {
+              const context = paper.context
+                ? `<span class="dpr-color-bookmark-context">${escapeHtml(paper.context)}</span>`
+                : '';
+              return (
+                `<a class="dpr-color-bookmark-paper ${bookmark.className}" href="${escapeHtml(paper.href)}">` +
+                `<span class="dpr-color-bookmark-paper-title">${escapeHtml(paper.title)}</span>` +
+                context +
+                '</a>'
+              );
+            })
+            .join('');
+          return (
+            `<section class="dpr-color-bookmark-group ${bookmark.className}">` +
+            '<div class="dpr-color-bookmark-group-head">' +
+            `<span class="dpr-color-bookmark-swatch ${bookmark.className}"></span>` +
+            `<span>${escapeHtml(bookmark.label)}</span>` +
+            `<span class="dpr-color-bookmark-count">${items.length}</span>` +
+            '</div>' +
+            `<div class="dpr-color-bookmark-list">${links}</div>` +
+            '</section>'
+          );
+        })
+          .filter(Boolean)
+          .join('');
+
+        body.innerHTML = groupsHtml || '<div class="dpr-color-bookmarks-empty">暂无颜色标记论文</div>';
+      };
+
+      const openColorBookmarksOverlay = () => {
+        const overlay = ensureColorBookmarksOverlay();
+        renderColorBookmarksOverlay();
+        overlay.classList.add('show');
+      };
+
+      const refreshColorBookmarkHub = () => {
+        const count = countColorBookmarkedPapers();
+        const countEl = document.querySelector('.dpr-color-bookmark-entry-count');
+        if (countEl) {
+          countEl.textContent = String(count);
+          countEl.hidden = count <= 0;
+        }
+        const overlay = document.getElementById('dpr-color-bookmarks-overlay');
+        if (overlay && overlay.classList.contains('show')) {
+          renderColorBookmarksOverlay();
+        }
+      };
+
+      const setupColorBookmarkHub = () => {
+        const nav = document.querySelector('.sidebar-nav');
+        const sidebar = nav ? nav.closest('.sidebar') : document.querySelector('.sidebar');
+        if (!nav || !sidebar) return;
+
+        let entry = sidebar.querySelector(':scope > .dpr-color-bookmark-entry');
+        if (!entry) {
+          entry = document.createElement('div');
+          entry.className = 'dpr-color-bookmark-entry';
+          entry.innerHTML = `
+            <button type="button" class="dpr-color-bookmark-entry-btn">
+              <span class="dpr-color-bookmark-entry-swatches" aria-hidden="true">
+                <span class="good"></span><span class="blue"></span><span class="orange"></span><span class="bad"></span>
+              </span>
+              <span class="dpr-color-bookmark-entry-label">色标论文</span>
+              <span class="dpr-color-bookmark-entry-count" hidden>0</span>
+            </button>
+          `;
+          const before = nav;
+          sidebar.insertBefore(entry, before);
+          const btn = entry.querySelector('.dpr-color-bookmark-entry-btn');
+          if (btn) {
+            btn.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              openColorBookmarksOverlay();
+            });
+          }
+        }
+        refreshColorBookmarkHub();
+      };
+
       // ---------- Share to GitHub Gist ----------
       const loadGithubTokenForGist = () => {
         try {
@@ -2570,6 +2869,7 @@ window.$docsify = {
                 }
                 saveReadState(latestState);
                 markSidebarReadState(null);
+                refreshColorBookmarkHub();
                 requestAnimationFrame(() => {
                   syncSidebarActiveIndicator({ animate: false });
                 });
@@ -2643,6 +2943,7 @@ window.$docsify = {
 
 	          applyLiState(li, paperIdFromHref);
 	        });
+        refreshColorBookmarkHub();
 	      };
 
       const scoreToStarRating = (scoreValue) => {
@@ -4604,6 +4905,7 @@ window.$docsify = {
         hydrateStructuredSidebarItems();
         bindSidebarVirtualHashLinks();
         neutralizeSidebarNoactiveLinks();
+        setupColorBookmarkHub();
 
         // ----------------------------------------------------
         // G. 侧边栏已阅读论文状态高亮
