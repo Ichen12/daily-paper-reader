@@ -1,0 +1,682 @@
+Title: READ More than What You See: Reinforcement Learning for Accurate and Coherent Audio Description Generations
+
+URL Source: https://arxiv.org/pdf/2606.22766v1
+
+Published Time: Tue, 23 Jun 2026 03:02:55 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+## READ More than What You See : Reinforcement Learning for Accurate and Coherent Audio Description Generations 
+
+Bo Fang 1 Xinyao Zhang 2,3 Yuxin Song 2 Hui Zhang 2
+
+Hang Zhou 2 Antoni B. Chan 1
+
+> 1
+
+City University of Hong Kong, 2Baidu Inc, 3Tsinghua University  
+
+> Correspondence: bofang6-c@my.cityu.edu.hk
+
+Abstract 
+
+Audio Description aims to generate concise narrations of essential visual content in audio-visual media for blind and low-vision audi-ences. Existing methods either rely on prompt-ing off-the-shelf multimodal models, which of-ten mismatch AD style, or partially optimize training-based systems with next-token predic-tion, which under-explores model capacity and biases generation toward generic expressions. We present READ, the first reinforcement-learning (RL) framework for training-based AD generation. READ formulates AD as sequence-level optimization with reference-matching, length, and format rewards, and further introduces a dedicated coherence re-ward under context-aware supervision to pro-mote narratively coherent descriptions. Ex-periments on MAD-Eval, CMD-AD, and TV-AD show that READ substantially outperforms prior methods across diverse evaluation met-rics. Our results highlight RL as a promising paradigm for accurate and coherent AD gen-eration. Our codes, models, and benchmark results will be publicly available. 
+
+1 Introduction 
+
+Audio Descriptions (ADs) refer to the generation of concise natural-language narrations that convey es-sential visual content in audiovisual media for blind and low-vision audiences. Unlike dense video cap-tioning (Krishna et al., 2017), ADs are tightly con-strained by narrative contexts and delivery time, as descriptions must be inserted around dialogues without disrupting the original audio (Pavel et al., 2020). High-quality AD therefore requires both 
+
+accurate selection of salient plot-relevant visual information such as actions, expressions, and scene changes, and coherent narration that integrates nat-urally with contexts and story understanding. Recent advances in large vision-language mod-els (VLMs) (Wang et al., 2024; Bai et al., 2025; Hurst et al., 2024) have rapidly pushed forward automatic AD generation, giving rise to two main paradigms: training-free prompting and 
+
+training-based models. The former rely on off-the-shelf multimodal models with carefully designed prompts and contextual cues (Zhang et al., 2024; Xie et al., 2024, 2025), while the latter adapt mod-els to AD domain, typically by learning a projector from CLIP (Radford et al., 2021) visual features into the language model space (Han et al., 2023b, 2024; Fang et al., 2025; Wang et al., 2025). However, current methods still face clear lim-itations. Training-free approaches often remain mismatched to the style of ADs, and their perfor-mance is inherently limited without task-specific learning. Training-based methods, on the other hand, can generate more in-domain descriptions, but most simply learn a lightweight projector on top of frozen modules, leaving the underlying model capacity for AD in sufficiently exploited. More im-portantly, prior end-to-end methods are typically optimized solely with next-token prediction loss, which encourages imitation of frequent patterns in the training data and can bias the model toward generic expressions rather than truly informative descriptions. While such objectives may improve local reference matching, they do not directly op-timize sequence-level AD properties, particularly accurate content specification and consistency with the surrounding contexts. Our motivation comes from recent progress in RL-based post-training, which has strongly im-proved reasoning in LLMs beyond next-token pre-diction (Shao et al., 2024; Guo et al., 2025), and is increasingly being extended to multimodal vi-sual understanding (Huang et al., 2025; Deng et al., 2025; Feng et al., 2025). We view audio descrip-tion in a similar light: generating ADs is not merely a token-level matching problem, but an open-ended generation task that involves non-trivial reasoning over which visual content is salient, how it should be verbalized in AD style, and how each description 
+
+1
+
+> arXiv:2606.22766v1 [cs.CV] 22 Jun 2026
+
+should remain compatible with the contexts . This motivates us to go beyond conventional supervised fine-tuning and investigate RL for AD generation. We propose READ , a RE inforcement-learning based framework for automatic Audio Description generation. At its core, READ treats AD as a se-quence level optimization problem, rather than rely-ing solely on token-level supervision. Accordingly, the baseline framework is driven by a reference-matching reward that encourages generated de-scriptions to remain faithful to human-authored ADs at the sequence level. In practice, we instan-tiate this objective with a ROUGE-based reward computed between sampled rollouts and reference ADs, which provides a simple yet effective learn-ing signal for this open-ended generation task. To account for the temporal constraints of AD, we fur-ther introduce a length reward that encourages clip-appropriate word counts, so that generated descrip-tions can be delivered within the available narration window. Additionally, we add a format reward to regularize the output structure, requiring intermedi-ate reasoning and final descriptions to be enclosed in <think> and <answer> tags, respectively. To-gether, these designs establish a strong RL baseline for AD. To further promote narrative coherence, we ex-tend READ beyond clip-level supervision by incor-porating additional training instances of the form 
+
+{context,clip} →AD , so that the model is encour-aged to generate descriptions that are compatible with the surrounding ADs. Building on this for-mulation, we introduce a dedicated coherence re-ward that explicitly favors contextually coherent generations. Concretely, this reward is based on a lightweight AD-adapted LLM, which evaluates the conditional plausibility of a generated description given its context. To prevent trivial gains from sim-ply repeating contextual words, the coherence sig-nal is computed in a way that discounts overlapping n-grams with the context. Our coherence reward is applied only when the generation already achieves reasonable content fidelity, allowing READ to im-prove narrative consistency without sacrificing de-scriptive accuracy. Extensive experiments show that sequence-level RL enables READ to substan-tially surpass prior methods on conventional cap-tioning metrics, while also yielding significant im-provements on AD-specific evaluation measures. To summarize, our contributions are three-fold: • To the best of our knowledge, READ is the first training-based AD framework to incorporate rein-forcement learning, establishing a new optimiza-tion paradigm for automatic AD generation. • Beyond improving fidelity to human-authored refer-ences, READ further introduces a dedicated coher-ence reward into RL training to promote narratively coherent, context-aware ADs. • Extensive evaluations on MAD-Eval (Soldan et al., 2022), CMD-AD (Han et al., 2024), and TV-AD (Xie et al., 2024) show that READ substan-tially and consistently outperforms prior training-free and training-based methods, achieving large gains across a wide range of evaluation metrics. 
+
+2 Related Work 
+
+AD generation. Early AD systems mainly relied on specialized authoring tools (Branje and Fels, 2012) and skilled human contributors. Increasing efforts have been made to AD research with the rapid development of powerful LLMs (Radford et al., 2019; Touvron et al., 2023; Grattafiori et al., 2024) and VLMs (Radford et al., 2021; Wang et al., 2024; Hurst et al., 2024). For automatic AD generation, training-free ap-proaches (Chu et al., 2024; Ye et al., 2024; Zhang et al., 2024; Xie et al., 2024, 2025) typically cus-tomize their AD outputs by prompting foundation models together with handcrafted pipelines and manually designed visual cues (characters, con-texts, shots, etc ). Yet, these methods still lag in performance due to noticeable domain discrepancy between general-purpose LLM corpora and ADs. Alternatively, training-based methods (Han et al., 2023b,a, 2024; Lin et al., 2024; Fang et al., 2025; Wang et al., 2025) usually adapt VLMs to AD by fine-tuning a lightweight connector that projects visual features into the LLM space and optimizing with next-token prediction. Despite better perfor-mance, their training objective still tends to favor generic and less informative descriptions. In con-trast, our READ introduces RL into automatic AD generation, treating AD as an open-ended genera-tion task that requires more effective optimization beyond standard next-token supervision. 
+
+RL for (vision-)language models. RL has been widely used for sequence-level optimization in tasks such as machine translation (Ranzato et al., 2015), summarization (Paulus et al., 2017), and im-age captioning (Rennie et al., 2017). More recently, RL post-training has played an increasingly impor-2tant role in LLMs (Ouyang et al., 2022; Guo et al., 2025) and multimodal models (Huang et al., 2025; Deng et al., 2025), substantially enhancing align-ment, reasoning, and visual understanding. How-ever, such advances have not been systematically explored for automatic AD. READ fills this gap by introducing GRPO-based RL into training-based AD generation. 
+
+Context and coherence in AD. Context-aware gen-eration has long been studied in AD, where neigh-boring descriptions, shot-level cues, or broader video contexts are used to improve narrative con-tinuity and distinctiveness (Han et al., 2023b; Lin et al., 2024; Xie et al., 2025; Khandelwal et al., 2025). UniAD (Wang et al., 2025) and Distinc-tAD (Fang et al., 2025) fine-tune VLMs over mul-tiple consecutive clips to incorporate boarder tem-poral context. However, most existing works rarely optimizing contextual coherence as a training ob-jective explicitly, which results superficial coher-ence by repeating contextual content. In contrast, READ introduces an explicit coherence reward for AD generation and combines it with anti-copy masking to encourage context-compatible yet dis-tinctive descriptions. 
+
+3 Method 
+
+3.1 Preliminary 
+
+Recent advances in reinforcement-learning-based post-training have demonstrated strong effective-ness in improving complex reasoning behaviors in large language and multimodal models. In this work, we focus on the RL component and build our method on Group Relative Policy Opti-mization (GRPO) (Shao et al., 2024), a variant of Proximal Policy Optimization (PPO) (Schulman et al., 2017) that avoids training an additional value model and is thus more computationally efficient. For each input q, GRPO samples a group of re-sponses { o1, o 2, · · · , o n} from the current policy model πθ. A reward function assigns scalar re-wards { R1, R 2, · · · , R n} to these responses, and the relative advantage of each response is estimated by normalizing its reward within the group: 
+
+Ai = Ri − mean( {R1, R 2, · · · , R G})std( {R1, R 2, · · · , R n}) . (1) This group-relative formulation encourages the pol-icy to prefer responses with higher relative quality within each sampled group. GRPO then optimizes the policy using a clipped objective together with KL regularization toward a reference model, which stabilizes the training updates while preserving use-ful prior behaviors: 
+
+JGRPO =Eq, {oi}
+
+h 1
+
+> G
+
+XGi=1 
+
+  min   πθ (oi|q)  
+
+> πθold (oi|q)
+
+Ai,
+
+clip( πθ (oi|q)  
+
+> πθold (oi|q)
+
+, 1 − ϵ, 1 + ϵ)Ai
+
+−
+
+βDKL (πθ ∥ πref )i
+
+,
+
+(2) where G is the rollout group size, ϵ is the clipping threshold, πref is the reference policy, and πθold 
+
+denotes the old policy. 
+
+3.2 GRPO for AD Generation: A Baseline 
+
+Building on the GRPO framework introduced above, we first construct a RL baseline for auto-matic AD generation, which we refer to as READ-base (Fig. 1). The baseline is designed to cap-ture three basic requirements: 1) content fidelity to human-authored references , 2) structural compli-ance with the desired output format , and 3) tempo-ral suitability for narration . Accordingly, READ adopts three fundamental rewards, namely accu-racy , format , and length . We describe them below. 
+
+Accuracy reward. The core reward in READ is designed to measure how well a sampled de-scription matches the human-authored reference. Since AD generation is an open-ended language generation task, exact matching is overly restrictive and cannot adequately reflect partial correctness in content selection and phrasing. Following (Feng et al., 2025), we adopt a sequence-level reference reward based on the average of ROUGE score (Lin, 2004). Given a sampled response oi and its corre-sponding GroundTruth AD g, the accuracy reward is computed as: 
+
+Racc  
+
+> i
+
+= 13
+
+ ρ1(oi, g ) + ρ2(oi, g ) + ρL(oi, g ), (3) where ρ1, ρ2, and ρL denote ROUGE-1, ROUGE-2, and ROUGE-L, respectively. This reward provides an effective and efficient supervision signal for en-couraging descriptions that remain faithful to the salient visual content of the target clip. 
+
+Format reward. We impose a simple formatting constraint on model responses. Specifically, the model is required to place its intermediate content within <think>...</think> tags and the final AD output within <answer>...</answer> tags. This structured format standardizes model outputs and 3Policy 
+
+> Model
+> 𝜋 !
+
+🔥 
+
+𝑜 !
+
+𝑜 "
+
+𝑜 #
+
+…
+
+> rollout
+> LLM -
+> AD *
+> e.g.,
+> GPT -2
+
+🧊 
+
+𝑅 !
+
+𝑅 "
+
+𝑅 #
+
+…
+
+𝐴 !
+
+𝐴 "
+
+𝐴 #
+
+…                  
+
+> GRPO update
+> Reward Advantage
+> Task: Please provide a concise audio description
+> summarizing what happens in the {3.90} seconds long
+> target video clip in one sentence .Possible character
+> names and their portraits are: Johnny
+> Task Prompt
+> Movie Clip
+> 37.2s -41.1s
+> 𝑜 !
+> GT
+> accuracy
+> length
+> coherence
+> format
+> [22.6 -24.6]: They throw him on the floor and surround him. \n
+> [27.9 -33.0]: Johnny turns into a leather -clad skeleton. \n
+> [33.2 -35.2]: His skull and hands ablaze. \n
+> Context Prompt
+> e.g.,
+> <
+> <
+> 𝑜 !
+> 𝑜 !
+> 𝑐𝑡𝑥
+> Output
+> (optional) ranking
+> AvgLog P(𝑜 !|𝑐𝑡𝑥 )
+> …
+> 𝑠 "
+> 𝑠 #
+> 𝑠 $
+> …
+> 𝑠 "
+> 𝑠 #
+> 𝑠 $discretizing
+> accuracy
+> gating
+> Coherence Reward
+> 𝑅 %&'
+> …
+> 0
+> Answer :He cracks his knuckles and strides
+> towards the shaven -headed ringleader.
+> 1
+> 2
+> 𝑅 %&'
+
+Figure 1: Framework of READ. For automatic AD generation, READ samples multiple candidates and optimizes them with GRPO using accuracy, format, and length rewards. It further introduces a context-aware coherence reward to encourage context-compatible and narratively coherent AD generation. 
+
+enables reliable extraction of the final AD descrip-tion for reward computation. We therefore assign a positive reward Rfmt  
+
+> i
+
+to a sampled response if it satisfies the required tagging structure. 
+
+Length Reward. Since movie clips vary substan-tially in duration, the appropriate length of the cor-responding AD also differs across samples. De-scriptions that are too short may omit important plot details, while overly long descriptions may exceed the available narration window and thus be difficult to deliver in time. We therefore introduce a length reward to encourage temporally appropriate AD generation. Concretely, we use the word count of the GroundTruth AD g as a simple proxy for the desired description length, and compare it with the word count of each sampled response. If the absolute length difference is within a predefined range, i.e. , |wc( oi) − wc( g)| ≤ Λ, the response is regarded as length-compatible and receives a posi-tive reward Rlen  
+
+> i
+
+. (More analysis are in §C.1.) 
+
+3.3 Context-Aware Coherence Reinforcement 
+
+Although the READ-base improves clip-level fi-delity, it optimizes each clip independently, leav-ing locally accurate outputs that may still be in-consistent with or redundant to surrounding ADs. To address this limitation, we introduce context-aware coherence reinforcement, which encourages each generated AD to remain faithful to the current clip while fitting the surrounding narrative con-text. Specifically, beyond original clip–AD pairs, we construct and merge context-aware training in-stances of the form ([ c1; · · · ; cm], q ) → g, where 
+
+[c1, . . . , c m] are the temporal nearest contextual ADs associated with the current clip q. As shown in Fig. 1, the coherence reward is built as follows. Since narrative coherence is meaningful only when a response is already reasonably faithful to the current clip, a sampled response is consid-ered for coherence evaluation only if its ROUGE score (accuracy) exceeds a predefined threshold 
+
+τacc . This gating strategy prevents the model from receiving extra reward for contextually plausible but visually inaccurate descriptions. 
+
+Coherence score. For each eligible response oi, we concatenate its contextual ADs into a single context sequence c1: m = [ c1; · · · ; cm], and feed [c1: m; oi]
+
+into LLM-AD ∗ to estimate the conditional likeli-hood of the response under the given context. LLM-AD ∗ is a lightweight language model ( e.g. , GPT-2) fine-tuned on AD corpora, making it better aligned with the concise narration style, temporal conti-nuity commonly observed in ADs. (See §B.2 for more details.) We use it as a domain-adapted scorer to rank rollouts within the same group, rather than as an absolute evaluator of AD quality. To avoid trivial gains from simply copying con-textual content, we compute the coherence si using a masked average log-probability, where 3-gram or 4-gram spans of response tokens are excluded if they overlap with the context sequence. Formally, the coherence score of oi is computed as 
+
+si =
+
+PLi 
+
+> t=1
+
+mi,t log pϕ(oi,t | c1: m, o i,<t )
+
+PLi 
+
+> t=1
+
+mi,t 
+
+, (4) where pϕ denotes the LLM-AD ∗, Li is the response length, and mi,t ∈ { 0, 1} is a token-level mask 4indicating whether token oi,t is retained for scoring. 
+
+Coherence reward. We then rank all eligible re-sponses within the same rollout group according to their coherence scores si in descending order. To make the reward signal more robust, we discretize the ranked scores into a small number of reward levels rather than using the raw language-model scores directly. Specifically, only the top-k ranked responses receive a positive coherence reward, with the reward magnitude determined by their rank level, while the remaining responses receive zero additional reward. The resulting coherence reward is defined as 
+
+Rcoh  
+
+> i
+
+=
+
+(
+
+λrank( si), if Racc  
+
+> i
+
+≥ τacc , rank( si) ≤ k, 
+
+0, otherwise ,
+
+(5) where λrank( si) denotes a rank-dependent dis-cretized coherence reward, k is the number of re-warded top-ranked responses. 
+
+3.4 Overall READ Training 
+
+Our final READ framework is trained by combin-ing the four reward components described above into a unified reward: 
+
+Ri = Racc  
+
+> i
+
++ λ1Rfmt  
+
+> i
+
++ λ2Rlen  
+
+> i
+
++ λ3Rcoh  
+
+> i
+
+, (6) where the accuracy reward Racc  
+
+> i
+
+serves as the an-chor signal, and the remaining rewards are scaled accordingly. The resulting reward is used for policy optimization under the GRPO framework. 
+
+4 Experiment 
+
+4.1 Setup Datasets. We evaluate READ on three standard datasets: CMD-AD (Han et al., 2024), MAD-Eval (Han et al., 2023b), and TV-AD (Xie et al., 2024). For CMD-AD, we train and evaluate on its official split, which contains ∼101K ADs from 1,432 movies, with 100 movies reserved for eval-uation. For MAD-Eval, we follow the common protocol of training on MAD-v2-Named (Soldan et al., 2022), which contains ∼330K ADs from 488 movies, and evaluating on MAD-Eval, which con-sists of 6,520 ADs from 10 movies. For TV-AD, we use the official testing split with 3K evaluation ADs collected from 13 TV series. 
+
+Evaluation metric. We report conventional cap-tioning metrics including CIDEr (Vedantam et al., 2015), ROUGE-L (Lin, 2004), METEOR (Baner-jee and Lavie, 2005), BLEU-1 (Papineni et al., 2002), SPICE (Anderson et al., 2016) and AD-oriented evaluation metrics including Recall@k/N (Han et al., 2023a), Action (Xie et al., 2025) and LLM-AD-Eval (Han et al., 2024). Detailed introductions are in §B.3. 
+
+Implementation details. We instantiate READ on Qwen3-VL-8B (Bai et al., 2025) as the main back-bone and fine-tune GPT-2 model (Radford et al., 2019) on pure AD corpus as LLM-AD ∗. For co-herence RL, we construct and select context-aware training samples {context,clip} →AD according to their average temporal proximity. The ratio be-tween these instances and standard clip →AD pairs is set to 3:1. Based on the true scale of accuracy reward Racc , the weights for the Rfmt , R len , R coh 
+
+are set to 0.08 , 0.05 , and 0.05 , respectively. The accuracy threshold for activating coherence is set to 
+
+τacc = 0 .12 . For rank-based coherence discretiza-tion, the top-2 responses in each rollout group re-ceive additional coherence rewards. Detailed ex-perimental settings can be seen in §B. 
+
+4.2 Comparisons with previous methods 
+
+We conduct comprehensive comparisons with prior training-free and training-based methods on widely-adopted MAD-Eval, CMD-AD and TV-AD. 
+
+Comparisons on MAD-Eval are shown in Tab. 1. Very early AD systems including ClipCap (Mokady et al., 2021), ClipDec (Nukrai et al., 2022), and MM-Vid (Lin et al., 2023) are omitted due to space limitation. We group previous studies into Training-free (upper rows) and Training-based (bottom rows) approaches, as described in Sec. 1. Existing training-based methods mainly adapt frozen visual encoders (CLIP) and LLMs (Touvron et al., 2023; Grattafiori et al., 2024) through lightweight projec-tor tuning, whereas READ performs full-parameter RL training of the underlying VLMs (Wang et al., 2024; Bai et al., 2025). This allows the model to exploit its capacity more effectively for AD gen-eration. With rule-based RL optimization, READ consistently outperforms all previous methods on every reported metric. Using Qwen3-VL-8B as backbone, READ obtains striking gains on conven-tional captioning metrics including BLEU-1 (22.7 
+
+vs. 15.9), CIDEr (40.0 vs. 28.2) and ROUGE-L (20.8 vs. 17.6). For AD-specific metrics, READ achieves the best R@5/16 (61.7 vs. 56.4) and Ac-tion score (36.1 vs. 33.5), indicating that the gener-ated ADs are not only closer to human references but also more distinctive and semantically precise. These large and consistent improvements confirm 5Method VLM LLM Train? BLEU-1 METEOR ROUGE-L SPICE CIDEr R@5/16 Action *                                                                                                                                          
+
+> MM-Narrator CLIP-L14 GPT-4 ✗12.8 6.7 13.4 5.2 13.9 49.0 –LLM-AD GPT-4V –✗––13.5 –20.5 ––AutoAD-Zero Qwen2-VL-7B LLaMA3-8B ✗13.6 6.6 14.6 7.8 23.6 51.3 –AutoAD-Zero GPT-4o GPT-4o ✗13.7 6.7 14.3 8.1 25.4 54.3 26.7 Shot-by-Shot Qwen2-VL-7B LLaMA3-8B ✗16.2 7.2 14.7 7.8 25.0 50.6 27.9 Shot-by-Shot GPT-4o GPT-4o ✗15.9 7.4 15.0 8.5 26.9 56.4 33.5 AutoAD-I CLIP-B32 GPT-2 ✓––11.9 4.4 13.4 42.1 –AutoAD-II CLIP-B32 GPT-2 ✓––13.4 –19.5 51.3 –AutoAD-III EVA-CLIP LLaMA2-7B ✓13.1 5.5 13.9 6.1 24.0 52.8 –MovieSeq CLIP-B16 LLaMA2-7B ✓––15.5 7.0 24.4 51.6 –DistinctAD CLIP AD -B16 LLaMA3-8B ✓––17.6 8.3 27.3 56.0 –Uni-AD CLIP-L14 LLaMA3-8B ✓––17.2 –28.2 54.9 –
+> READ (Ours) Qwen2-VL-7B ✓20.7 9.4 20.4 9.8 39.5 60.2 35.6
+> READ (Ours) Qwen3-VL-8B ✓22.7 10.4 20.8 10.9 40.0 61.7 36.1
+
+Table 1: Quantitative comparisons on MAD-Eval. Best , second best , and third best denote the top-3 results for each metric. * denotes Action scores evaluated using the official Shot-by-Shot implementation (Xie et al., 2025).                                                                                                
+
+> Method Train? CMD-AD TV-AD CIDEr Action R@1/5 LLM-AD-Eval CIDEr Action R@1/5 LLM-AD-Eval
+> Video-LLaMA ✗4.8 –22.0 1.89 | – ––––Video-BLIP ✗5.2 –23.6 1.91 | – ––––AutoAD-Zero ✗22.4 30.7 32.9 3.08 | 2.49 30.9 26.8 34.7 3.12 | 2.57 Shot-by-Shot ✗26.1 32.5 36.5 3.17 | 2.66 34.2 27.4 36.6 3.12 | 2.59 AutoAD-II ✓13.5 –26.1 2.08 | – ––––AutoAD-III ✓25.0 31.5 31.2 2.89 | 2.01 26.1 26.4 30.1 2.78 | 1.99 Uni-AD ✓21.8 ––2.92 | – 26.6 ––2.89 | – DistinctAD ✓22.7 –33.0 2.88 | 2.03 27.4 –32.1 2.89 | 2.00
+> READ (Ours) ✓33.7 34.9 38.0 3.24 | 2.55 40.9 30.7 40.0 3.16 |2.62
+
+Table 2: Quantitative comparison on CMD-AD and TV-AD. Best , second best , and third best denote the top-3 results for each metric. For both evaluations, we report results with Qwen3-VL-8B as the backbone. 
+
+the effectiveness of READ on AD generation. Among training-free approaches (Chu et al., 2024; Zhang et al., 2024; Xie et al., 2024, 2025), Shot-by-Shot achieves the strongest performance through careful shot threading, handcrafted text processing, and prompting, even surpassing most prior training-based methods. However, compared with prompt-heavy training-free pipelines, READ consistently outperforms these works by clear mar-gins, highlighting the stronger potential of training-based AD systems for domain adaptation and prac-tical deployment. 
+
+Comparisons on CMD-AD and TV-AD. We fur-ther examine the generalizabilty of READ on two extra benchmarks, with results reported in Tab. 2. Consistent with the results on MAD-Eval, READ also achieves the best overall performance on AD-oriented metrics. On CMD-AD, READ improves previous best CIDEr, Action, and R@1/5 scores from 26.1, 32.5, and 36.5 to 33.7, 34.9, and 38.0, respectively, and also obtains the highest LLM-AD-Eval score with LLaMA2 (3.24). READ like-wise ranks first on all metrics on TV-AD, demon-strating strong generalizability from different per-spectives. One exception is the second LLM-AD-Eval score evaluated by GPT-3.5 on CMD-AD, READ performs slightly lower than Shot-by-Shot (2.55 vs. 2.66). A possible reason is that Shot-by-Shot uses GPT-4o to generate ADs, which may en-joy an advantage when evaluated by a GPT-series judge. Nevertheless, READ remains clearly su-perior on the core reference-based and semantic metrics, showing that RL with our reward design yields substantial gains in both descriptive fidelity and action-level understanding. 
+
+Quantitative comparisons on coherence. Un-like CoherentAD (Khandelwal et al., 2025), which assesses coherence indirectly through story recall and repetition-based measures, we directly quan-tify coherence using our tuned LLM-AD scorer (Fig. 1, bottom) via the average conditional log-probability in Eq. 4. As shown in Tab. 3, the full READ model with Rcoh achieves the best LogP (-3.61) and Masked LogP (-3.96), as well as the lowest PPL (99.5). Removing the coherence re-ward leads to consistent degradation on all metrics, confirming that our coherence reinforcement effec-tively improves contextual compatibility between 6Method Train? LogP ↑ Masked LogP ↑ PPL ↓                       
+
+> AutoAD-Zero ✗-4.40 -4.57 273.6 Shot-by-Shot ✗-5.21 -5.28 553.0 AutoAD-III ✓-3.91 -4.32 121.0
+> READ-Base (w/o Rcoh )✓-4.19 -4.56 222.8
+> READ (w/ Rcoh )✓-3.61 -3.96 99.5
+
+Table 3: Quantitative coherence evaluation on CMD-AD. LogP denotes the average log-probability of gener-ated ADs conditioned on previous ADs, Masked LogP (Eq. 4) denotes the corresponding anti-copy masked av-erage log-probability. PPL is short for perplexity.                                                
+
+> #. Setting MAD-Eval CIDEr BLEU-1 R@5/16 Action A.0 Qwen3-VL-8B (0-shot) 4.1 9.7 55.3 38.0
+> A.1 Qwen3-VL-8B (SFT) †30.8 15.5 56.5 33.3 A.2 Baseline ( Racc )Non-compliant outputs
+> A.3 Baseline ( Racc , R fmt )37.2 24.1 57.6 28.1 A.4 READ ( Racc , R fmt , R len )38.5 21.6 61.0 35.4 AREAD (w/ Rcoh )40.0 22.7 61.7 36.1 #. Setting CMD-AD CIDEr Action R@1/5 LLM-Eval ∗
+> B.0 Qwen3-VL-8B (0-shot) 3.0 36.8 33.9 2.73 B.1 READ ( Racc , R fmt , R len )32.4 32.1 36.5 3.01 BREAD (w/ Rcoh )33.7 34.9 38.0 3.24
+
+Table 4: Ablation analysis. † denotes supervised fine-tuning with next-token prediction. ∗ denotes LLM-AD-Eval with LLaMA2-7B-Chat. 
+
+generated ADs and their preceding descriptions. This trend also suggests that training-free methods, 
+
+i.e. , AutoAD-Zero and Shot-by-Shot, are generally weaker at maintaining narrative continuity, likely because they do not explicitly model context. 
+
+4.3 Ablation analysis Training mechanism. We first verify the effective-ness of RL for AD generation (Tab. 4). On both benchmarks, RL-based READ markedly outper-forms the zero-shot and SFT baselines, with the most notable gains on CIDEr, e.g. , from 30.8 to 40.0 over SFT (Tab. 4 row A.1 vs . A), and from 3.0 to 33.7 over zero-shot (B.0 vs . B). These results show that RL provides a much more effective train-ing mechanism than direct prompting or standard next-token supervised fine-tuning. Although the zero-shot model achieves high Action scores, its outputs are overly detailed and lengthy, which in-creases the chance of matching GT verbs but tends to dilute salient information under other metrics; such behavior is also undesirable in practice, since ADs must fit within limited narration window be-tween dialogues. 
+
+Baseline rewards. Next, we study the effect of major rewards in READ, on top of the anchor Racc .Without format Rfmt (A.2), the model often fails to follow the required template, making it difficult Method Coherence CMD-AD                            
+
+> gating masking CIDEr Action R@1/5 LLM-Eval Baseline ✗✗32.4 32.1 36.5 3.01
+> Rcoh w/ gating ✓✗31.7 32.3 34.7 3.02
+> Rcoh w/ masking ✗✓30.0 33.6 35.7 2.97
+> READ ✓✓33.7 34.9 38.0 3.24
+
+Table 5: Coherence reward design. 
+
+to evaluate consistently. In A.3, removing length 
+
+Rlen encourages reward hacking , with the model favoring short and generic descriptions. While such outputs reduce the risk of obvious errors, they are also less informative, which is evidenced by the lowest Action (28.1) among all variants. Together, these three reward components establish a robust and effective READ baseline (A.4 & B.1). 
+
+Effectiveness of Rcoh . We finally evaluate the ef-fect of the coherence reward by comparing A.4 
+
+vs. A on MAD-Eval and B.1 vs. B on CMD-AD in Tab. 4. Despite Rcoh is mainly designed to improve coherence with preceding ADs, it also consistently yields descent and stable gains on stan-dard AD quality metrics. This indicates that, under the accuracy-gating design, coherence RL does not compromise descriptive fidelity, but instead helps the model refine its outputs into descriptions that are context-compatible and narratively coherent. 
+
+Coherence reward mechanism. Accuracy gating 
+
+and anti-copy masking are important in coherence reward assignment (Tab. 5). The gating mechanism restricts coherence reinforcement to responses suf-ficiently faithful to the current clip, making co-herence optimization more controlled. Anti-copy masking prevents the model from obtaining coher-ence reward by simply repeating contexts. Without masking, R@1/5 drops markedly (34.7), indicating reduced distinctiveness and clear reward hacking. 
+
+4.4 Training curves 
+
+Fig. 2 presents the reward curves during RL train-ing. All curves show stable and reasonable trends, indicating that the optimization process is well-behaved. The format and length rewards increase rapidly and quickly plateau, suggesting that the model soon learns to follow the required output format and control the description length. The accuracy reward rises more gradually and satu-rates around 0.18, reflecting steady improvement in reference alignment. Although the coherence reward remains much smaller in magnitude due to the accuracy-gating mechanism and top-k reward assignment, it also shows a clear upward trend, in-dicating progressively better contextual coherence. 70.001 
+
+> 0.002
+> 0.003
+> 0.004
+> 0.005
+
+Figure 2: Reward curves during RL training. GT: He drags Marty in.                                                 
+
+> READ (Baseline) : Emmet walks in.
+> READ :Emmett walks through the door.
+> AutoAD -0:Emmett walks out of the room.
+> Shot* :Emmett opens door wearing headpiece.
+> GT: Detaching a small dog from our smoke machine of wires and needles, he attaches
+> the device to Marty's forehead .
+> READ (Baseline) :Emmett turns on the machine and puts a device on his head.
+> READ :Emmett puts the device on Marty’s head and attaches the wire sto his forehead .
+> AutoAD -0:Emme adjusts the machine as Marty watches, smoke billowing around .
+> Shot* :Emmett adjusts a device on the dog ’shead while Marty watches the large
+> machine with lights and wires.
+> GT :Marty unhooks himself.
+> READ (Baseline) :Marty looks.
+> READ : Marty looks at the device on his head.
+> AutoAD -0:Marty adjusts the device carefully.
+> Shot* :He looks towards Emmett.
+> AutoAD -3:Marty runs out of the house.
+> AutoAD -3:Marty's eyes widen.
+> AutoAD -3:Marty's eyes widen.
+> GT: Phoebe holds the turkey open.
+> READ : Phoebe puts the turkey in the pan.
+> AutoAD -0:Phoebe leans over as Ross looks attentively.
+> AutoAD -3:Rachel puts the turkey in the oven.
+> Shot* :Ross interacts with a large raw turkey.
+> GT: He holds a small pizza box.
+> READ : Hands opens the door and Mike
+> holds the pizza.
+> AutoAD -0:He opens the door.
+> AutoAD -3:He opens the door.
+> Shot* :Mike holds a pizza box.
+> GT: A set of swings and a climbing frame stand in a rural
+> backyard, along with a picnic table and brick barbecue.
+> READ :The backyard has a swing set, picnic table, and a
+> playhouse in the grass .
+> AutoAD -0:Nothing happens in this static frame.
+> AutoAD -3:The camera pans out to show the farmhouse.
+> Shot* :The scene shows a swing set and picnic table.
+
+Figure 3: Qualitative comparison of AD results. GT is the ground-truth. Shot ∗ is short for Shot-by-Shot. 
+
+Training-free and training-based methods are highlighted seperately. Video frames are taken from Back to the Future (1985), Friends (S3E2), Fast Times at Ridgemont High (1982), and Signs (2002). Zoom in for details. 
+
+#. Context w/ Rcoh ? CIDEr Action R@1/5 LLM-Eval ∗
+
+A NA ✗ 32.4 32.1 36.5 3.01 A.1 Reccurrent ✗ 32.2 ↓ 31.3 ↓ 35.5 ↓ 2.99 ↓
+
+A.2 Oracle ✗ 39.7 32.4 34.9 3.07 
+
+B NA ✓ 33.7 34.9 38.0 3.24 B.1 Reccurrent ✓ 34.2 ↑ 35.2 ↑ 36.1 ↓ 3.25 ↑
+
+B.2 Oracle ✓ 39.6 36.4 34.2 3.30 
+
+Table 6: Context evaluation on CMD-AD. Arrows indicate whether performance improves or degrades rel-ative to the recurrent setting. ∗ denotes LLM-AD-Eval with LLaMA2-7B-Chat. 
+
+4.5 Evaluation under contextual settings 
+
+Since READ is trained with extra context-aware samples, it can naturally operate in a recurrent eval-uation setting, where previous AD predictions are used as contexts (Han et al., 2023b). As shown in Tab. 6, coherence modeling is crucial in this setting: w/ Rcoh , recurrent evaluation brings addi-tional gains (B.1 vs. B), whereas w/o Rcoh , intro-ducing context instead degrades performance. With GT contexts ( oracle ), CIDEr improves substan-tially, whereas R@1/5 drops, indicating reduced distinctiveness. This suggests that the model may over-attend on the context and reproduce contextual content, rather than generating sufficiently discrim-inative ADs for the current clip. 
+
+4.6 Qualitative results 
+
+Fig. 3 shows qualitative comparisons of AD gen-eration. In the top row, consisting of three con-secutive clips, READ baseline (w/o Rcoh ) is more visually accurate than prior methods, while the full READ produces more coherent cross-clip descrip-tions. For instance, in the last clip, READ explicitly connects the current output to the previously men-tioned “device,” demonstrating better contextual continuity. In the bottom row, which contains three independent clips, READ generates ADs that are consistently closer to GT, further confirming its superiority. More examples are in §D. 
+
+5 Conclusion 
+
+We presented READ, an effective RL framework for automatic AD generation. READ introduces RL into training-based AD generation and further improves narrative coherence through a dedicated coherence reward with accuracy gating and anti-copy masking. Extensive experiments on multi-ple AD benchmarks show that READ consistently outperforms prior training-free and training-based methods across a wide range of metrics. These re-sults demonstrate that reinforcement learning pro-vides an effective training paradigm for generating accurate, distinctive, and context-compatible ADs. 8Limitations 
+
+The limitations of READ includes: First, coher-ence modeling in READ relies on an external LLM-AD scorer and heuristic designs such as accuracy gating, reward discretization, and anti-copy mask-ing, which may not fully capture higher-level narra-tive coherence. In addition, the current framework mainly uses local textual context from neighbor-ing ADs, without explicitly modeling longer-range story structure, dialogue semantics, or audio cues. Finally, our experiments are conducted on existing English AD benchmarks, and the generalization of READ to broader domains, longer contexts, and other languages remains to be explored. 
+
+References 
+
+Peter Anderson, Basura Fernando, Mark Johnson, and Stephen Gould. 2016. Spice: Semantic propositional image caption evaluation. In European conference on computer vision , pages 382–398. Springer. Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao, Chunjiang Ge, and 1 others. 2025. Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 .Satanjeev Banerjee and Alon Lavie. 2005. Meteor: An automatic metric for mt evaluation with improved cor-relation with human judgments. In Proceedings of the acl workshop on intrinsic and extrinsic evaluation measures for machine translation and/or summariza-tion , pages 65–72. Carmen J Branje and Deborah I Fels. 2012. Livedescribe: can amateur describers create high-quality audio description? Journal of Visual Impair-ment & Blindness , 106(3):154–165. Peng Chu, Jiang Wang, and Andre Abrantes. 2024. Llm-ad: Large language model based audio description system. arXiv preprint arXiv:2405.00983 .Yihe Deng, Hritik Bansal, Fan Yin, Nanyun Peng, Wei Wang, and Kai-Wei Chang. 2025. Openvlthinker: An early exploration to complex vision-language reason-ing via iterative self-improvement. arXiv e-prints ,pages arXiv–2503. Bo Fang, Wenhao Wu, Qiangqiang Wu, Yuxin Song, and Antoni B Chan. 2025. Distinctad: Distinctive audio description generation in contexts. In Proceed-ings of the Computer Vision and Pattern Recognition Conference , pages 13571–13581. Kaituo Feng, Manyuan Zhang, Hongyu Li, Kaixuan Fan, Shuang Chen, Yilei Jiang, Dian Zheng, Peiwen Sun, Yiyuan Zhang, Haoze Sun, and 1 others. 2025. Onethinker: All-in-one reasoning model for image and video. arXiv preprint arXiv:2512.03043 .Aaron Grattafiori, Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Alex Vaughan, and 1 others. 2024. The llama 3 herd of models. arXiv preprint arXiv:2407.21783 .Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Peiyi Wang, Qihao Zhu, Runxin Xu, Ruoyu Zhang, Shirong Ma, Xiao Bi, and 1 others. 2025. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 .Tengda Han, Max Bain, Arsha Nagrani, Gul Varol, Weidi Xie, and Andrew Zisserman. 2023a. Autoad ii: The sequel-who, when, and what in movie au-dio description. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 13645–13655. Tengda Han, Max Bain, Arsha Nagrani, Gül Varol, Weidi Xie, and Andrew Zisserman. 2023b. Autoad: Movie description in context. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pat-tern Recognition , pages 18930–18940. Tengda Han, Max Bain, Arsha Nagrani, Gül Varol, Weidi Xie, and Andrew Zisserman. 2024. Autoad iii: The prequel-back to the pixels. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 18164–18174. Wenxuan Huang, Bohan Jia, Zijie Zhai, Shaosheng Cao, Zheyu Ye, Fei Zhao, Zhe Xu, Xu Tang, Yao Hu, and Shaohui Lin. 2025. Vision-r1: Incentivizing reasoning capability in multimodal large language models. arXiv preprint arXiv:2503.06749 .Aaron Hurst, Adam Lerer, Adam P Goucher, Adam Perelman, Aditya Ramesh, Aidan Clark, AJ Ostrow, Akila Welihinda, Alan Hayes, Alec Radford, and 1 others. 2024. Gpt-4o system card. arXiv preprint arXiv:2410.21276 .Eshika Khandelwal, Junyu Xie, Tengda Han, Max Bain, Arsha Nagrani, Andrew Zisserman, Gül Varol, and Makarand Tapaswi. 2025. More than a moment: Towards coherent sequences of audio descriptions. 
+
+arXiv preprint arXiv:2510.25440 .Ranjay Krishna, Kenji Hata, Frederic Ren, Li Fei-Fei, and Juan Carlos Niebles. 2017. Dense-captioning events in videos. In Proceedings of the IEEE in-ternational conference on computer vision , pages 706–715. Chin-Yew Lin. 2004. Rouge: A package for automatic evaluation of summaries. In Text summarization branches out , pages 74–81. Kevin Lin, Faisal Ahmed, Linjie Li, Chung-Ching Lin, Ehsan Azarnasab, Zhengyuan Yang, Jianfeng Wang, Lin Liang, Zicheng Liu, Yumao Lu, and 1 others. 2023. Mm-vid: Advancing video understanding with gpt-4v (ision). arXiv preprint arXiv:2310.19773 .
+
+9Kevin Qinghong Lin, Pengchuan Zhang, Difei Gao, Xide Xia, Joya Chen, Ziteng Gao, Jinheng Xie, Xuhong Xiao, and Mike Zheng Shou. 2024. Learning video context as interleaved multimodal sequences. In European Conference on Computer Vision , pages 375–396. Springer. Ron Mokady, Amir Hertz, and Amit H Bermano. 2021. Clipcap: Clip prefix for image captioning. arXiv preprint arXiv:2111.09734 .David Nukrai, Ron Mokady, and Amir Globerson. 2022. Text-only training for image captioning using noise-injected clip. In Findings of the Association for Com-putational Linguistics: EMNLP 2022 , pages 4055– 4063. Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, and 1 others. 2022. Training language models to follow in-structions with human feedback. Advances in neural information processing systems , 35:27730–27744. Kishore Papineni, Salim Roukos, Todd Ward, and Wei-Jing Zhu. 2002. Bleu: a method for automatic evalu-ation of machine translation. In Proceedings of the 40th annual meeting of the Association for Computa-tional Linguistics , pages 311–318. Romain Paulus, Caiming Xiong, and Richard Socher. 2017. A deep reinforced model for abstractive sum-marization. arXiv preprint arXiv:1705.04304 .Amy Pavel, Gabriel Reyes, and Jeffrey P Bigham. 2020. Rescribe: Authoring and automatically editing au-dio descriptions. In Proceedings of the 33rd Annual ACM Symposium on User Interface Software and Technology , pages 747–759. Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sas-try, Amanda Askell, Pamela Mishkin, Jack Clark, and 1 others. 2021. Learning transferable visual models from natural language supervision. In International conference on machine learning , pages 8748–8763. PmLR. Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Dario Amodei, Ilya Sutskever, and 1 others. 2019. Language models are unsupervised multitask learn-ers. OpenAI blog , 1(8):9. Marc’Aurelio Ranzato, Sumit Chopra, Michael Auli, and Wojciech Zaremba. 2015. Sequence level train-ing with recurrent neural networks. arXiv preprint arXiv:1511.06732 .Steven J Rennie, Etienne Marcheret, Youssef Mroueh, Jerret Ross, and Vaibhava Goel. 2017. Self-critical sequence training for image captioning. In Proceed-ings of the IEEE conference on computer vision and pattern recognition , pages 7008–7024. Gerard Salton and Christopher Buckley. 1988. Term-weighting approaches in automatic text retrieval. In-formation processing & management , 24(5):513– 523. John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. 2017. Proxi-mal policy optimization algorithms. arXiv preprint arXiv:1707.06347 .Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, and 1 others. 2024. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 .Guangming Sheng, Chi Zhang, Zilingfeng Ye, Xibin Wu, Wang Zhang, Ru Zhang, Yanghua Peng, Haibin Lin, and Chuan Wu. 2025. Hybridflow: A flexible and efficient rlhf framework. In Proceedings of the Twentieth European Conference on Computer Sys-tems , pages 1279–1297. Mattia Soldan, Alejandro Pardo, Juan León Alcázar, Fabian Caba, Chen Zhao, Silvio Giancola, and Bernard Ghanem. 2022. Mad: A scalable dataset for language grounding in videos from movie audio descriptions. In Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition ,pages 5026–5035. Hugo Touvron, Louis Martin, Kevin Stone, Peter Al-bert, Amjad Almahairi, Yasmine Babaei, Nikolay Bashlykov, Soumya Batra, Prajjwal Bhargava, Shruti Bhosale, and 1 others. 2023. Llama 2: Open foun-dation and fine-tuned chat models. arXiv preprint arXiv:2307.09288 .Ramakrishna Vedantam, C Lawrence Zitnick, and Devi Parikh. 2015. Cider: Consensus-based image de-scription evaluation. In Proceedings of the IEEE conference on computer vision and pattern recogni-tion , pages 4566–4575. Hanlin Wang, Zhan Tong, Kecheng Zheng, Yujun Shen, and Limin Wang. 2025. Contextual ad narration with interleaved multimodal sequence. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 8372–8383. Peng Wang, Shuai Bai, Sinan Tan, Shijie Wang, Zhi-hao Fan, Jinze Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, and 1 others. 2024. Qwen2-vl: Enhancing vision-language model’s perception of the world at any resolution. arXiv preprint arXiv:2409.12191 .Junyu Xie, Tengda Han, Max Bain, Arsha Nagrani, Es-hika Khandelwal, Gül Varol, Weidi Xie, and An-drew Zisserman. 2025. Shot-by-shot: Film-grammar-aware training-free audio description generation. In 
+
+Proceedings of the IEEE/CVF International Confer-ence on Computer Vision , pages 16503–16513. 
+
+10 Junyu Xie, Tengda Han, Max Bain, Arsha Nagrani, Gül Varol, Weidi Xie, and Andrew Zisserman. 2024. Autoad-zero: A training-free framework for zero-shot audio description. In Proceedings of the Asian Conference on Computer Vision , pages 2265–2281. Xiaojun Ye, Junhao Chen, Xiang Li, Haidong Xin, Chao Li, Sheng Zhou, and Jiajun Bu. 2024. Mmad: Multi-modal movie audio description. In Proceedings of the 2024 Joint International Conference on Compu-tational Linguistics, Language Resources and Evalu-ation (LREC-COLING 2024) , pages 11415–11428. Chaoyi Zhang, Kevin Lin, Zhengyuan Yang, Jianfeng Wang, Linjie Li, Chung-Ching Lin, Zicheng Liu, and Lijuan Wang. 2024. Mm-narrator: Narrating long-form videos with multimodal in-context learning. In 
+
+Proceedings of the IEEE/CVF conference on com-puter vision and pattern recognition , pages 13647– 13657. Tianyi Zhang, Varsha Kishore, Felix Wu, Kilian Q Weinberger, and Yoav Artzi. 2019. Bertscore: Eval-uating text generation with bert. arXiv preprint arXiv:1904.09675 .
+
+Appendix 
+
+The appendix is organized as follows: • Appendix A reports the LLM usage state-ment. • Appendix B provides experimental details, including (B.1) the training prompts, (B.2) the training details and hyperparameter settings for READ and the LLM-AD scorer, and (B.3) 
+
+the definitions of the evaluation metrics. • Appendix C presents additional analyses, in-cluding (C.1) AD length statistics, (C.2) acomparison between ROUGE and CIDEr as the accuracy reward, and (C.3) the effect of longer RL training. • Appendix D provides additional qualitative visualizations. 
+
+A LLM Usage 
+
+LLMs were primarily used to polish the writing of this paper, including improving fluency, gram-mar, and presentation. We also used LLMs in a limited scope to assist with minor implementation refinement, mainly for code optimization related to parallel evaluation and inference efficiency. GPT-5.4 was the primary LLM used. The core research ideas, method design, experimental setup, and fi-nal conclusions were developed and verified by the authors. 
+
+B Experimental Details 
+
+B.1 Training prompts 
+
+Listing 1: Prompt of {clip -> AD} 
+
+> <image><image><image><image><image><image><image ><image>\n Audio Descriptions (ADs) are written narrations that describe the visual elements of a video , including characters, actions, interactions, and scene settings, especially those not conveyed through dialogue. The video clip is 2.70 seconds long. Consider the clip duration when completing the following task. \n Please provide a concise audio description summarizing what happens in the video clip in one sentence, focusing on key characters, actions, interactions, or important visual details.\n Possible character portraits and their names are: <image> Jeff Kohlver.
+
+READ uses two types of training prompts, as shown in Lst. 1 and 2. The first is a standard 11 Hyperparameter Value 
+
+Algorithm GRPO Base model Qwen3-VL-8B-Instruct Training batch size 32 Rollout batch size 128 Rollout per prompt (n) 8Learning rate 2 × 10 −6
+
+Max prompt length 16,384 Max response length 4,096 Precision bf16 Optimizer AdamW bf16 Epochs 1KL coefficient 1 × 10 −2
+
+Table 7: Key hyperparameters for READ training with the VeRL framework. 
+
+clip →AD prompt, while the second is a context-aware prompt for {context,clip} →AD training. 
+
+Listing 2: Prompt of {context, clip -> AD} 
+
+> <image><image><image><image><image><image><image ><image>\n Audio Descriptions (ADs) are written narrations that describe the visual elements of a video , including characters, actions, interactions, and scene settings, especially those not conveyed through dialogue.\n\n You are given a video clip with its prior and chronologically ordered contexts.\n Context:\n [AD] The sprinkler system goes on.\n [AD] He drags the ringleader to his feet.\n [AD] Ghost Rider puts on the skinheads leather jackets.\n\n Task:\n Please provide a concise audio description summarizing what happens in the target video clip in one sentence. The video clip is 2.75 seconds long. Consider the clip duration when summarizing ADs.
+
+B.2 Training details 
+
+Tab. 7 summarizes the main hyperparameter set-tings for fine-tuning READ on Qwen3-VL-8B-Instruct with the VeRL framework (Sheng et al., 2025). The Qwen2-VL-7B-Instruct variant uses the same training configuration. All experiments are conducted on 8 NVIDIA A800 GPUs with 80GB memory each. Tab. 8 reports the hyperparameter settings for fine-tuning the LLM scorer on AudioVault 1. We use GPT-2 as the base model and train it with casual 
+
+> 1https://audiovault.net
+
+Hyperparameter Value 
+
+Base model GPT-2 Max sequence length 1,024 Batch size per device 8Gradient accumulation 8Learning rate 1 × 10 −4
+
+Epochs 1Warmup ratio 0.03 Weight decay 0
+
+Table 8: Hyperparameters for GPT-2 fine-tuning on the AudioVault corpus. 
+
+language model modeling: given the preceding three adjacent ADs as context, the model predicts the next AD. The resulting scorer is then used for coherence evaluation and reward construction in READ. 
+
+B.3 Evaluation metrics details CIDEr measures the similarity between a gener-ated description and reference descriptions using TF-IDF (Salton and Buckley, 1988) weighted n-gram matching. It emphasizes informative content words and phrases. 
+
+ROUGE-L is based on the longest common sub-sequence (LCS) between the generated description and the reference. It reflects sequence-level overlap in content and word order. 
+
+METEOR evaluates word-level alignment be-tween the generated description and the reference using a harmonic mean of precision and recall, with additional flexibility such as stemming and syn-onym matching. It is designed to better capture semantic similarity than exact lexical overlap. 
+
+BLEU-1 measures unigram precision between the generated description and the reference, to-gether with a brevity penalty. It mainly reflects local lexical overlap. 
+
+SPICE compares the semantic content of the gen-erated description and the reference by converting them into scene-graph tuples, such as objects, at-tributes, and relations. It focuses on semantic agree-ment rather than surface-level wording. 
+
+Recall@k/N is a retrieval-based metric that eval-uates whether a generated description can be matched to the correct GT AD among N tempo-rally adjacent references. For each generated AD, 12 similarity scores with the neighboring GT ADs are computed using BERTScore (Zhang et al., 2019), and Recall@k is then measured within this local temporal window. 
+
+Action measures whether a generated description correctly captures the actions in the reference AD. It combines two components: a semantic similarity score computed with text embeddings, and a verb-matching score based on whether the predicted and GT descriptions contain the same action verbs. The final score is obtained by combining these two signals. 
+
+LLM-AD-Eval uses a LLM as a judge to as-sess the quality of a generated AD with respect to the GT AD. Following prior work, the LLM is prompted to score each prediction-reference pair on a scale from 1 to 5, where higher scores indicate better matching quality. 
+
+LogP denotes the average log-probability of the generated AD conditioned on the contextual ADs. It measures how likely the generated description is under the context according to the LLM-AD scorer. 
+
+Masked LogP refers to the corresponding masked average log-probability, where tokens that overlap with context-copying spans are excluded from the computation. It is designed to better re-flect genuine contextual compatibility rather than superficial repetition. 
+
+PPL (perplexity) is computed from the average token-level log-probability and reflects the over-all uncertainty of the scorer on the generated AD. Lower PPL indicates that the generated description is more probable under the given context. 
+
+C More Analysis. 
+
+C.1 AD Length Statistics. 
+
+Fig. 4 summarizes the statistics of AD word count and the corresponding clip duration on the three benchmarks. Two observations are particularly im-portant. First, most ADs are concentrated in the lower-left region of the scatter plots, indicating that short descriptions dominate the data distribution, while longer ADs form a relatively sparse long tail. This imbalance suggests that pure next-token prediction can easily bias the model toward short and generic outputs, making RL-based optimization more suit-able for controlling generation behavior.    
+
+> Figure 4: Clip duration vs. AD word count statistics.
+
+Second, AD length is positively correlated with clip duration across all three datasets, showing that appropriate description length should depend on the temporal span of the target clip. This moti-vates the introduction of an explicit length reward in READ. Since the exact duration–length relation-ship varies across datasets, we do not fit a dataset-specific function; instead, we design the length reward based on the distance between the gener-ated word count and the ground-truth AD length. In practice, the acceptable range is controlled by a tolerance threshold Λ = 4 .
+
+C.2 ROUGE vs. CIDEr as the Accuracy Reward 
+
+We further compare two choices for the anchor ac-curacy reward Racc , namely the average ROUGE score in Eq. 3 and CIDEr. As shown in Tab. 9, us-ing CIDEr as the optimization target yields slightly better performance on the final CIDEr metric it-self, which is expected since the reward is more directly aligned with this evaluation measure. How-ever, when coherence reinforcement is enabled, the ROUGE-based formulation produces consistently stronger AD-specific results, including higher Ac-tion, R@1/5, and LLM-AD-Eval scores. A plausible explanation is that CIDEr and ROUGE provide different optimization signals. CIDEr is based on TF-IDF weighted n-gram match-13 #. Setting Racc Metric BLEU-1 METEOR ROUGE-L SPICE CIDEr Action R@1/5 LLM-AD-Eval                                               
+
+> A.1 Baseline (w/o Rcoh )ROUGE (Eq. 3) 18.4 7.2 16.5 7.5 32.4 32.1 36.5 3.01 A.2 Baseline (w/o Rcoh )CIDEr 19.9 7.6 17.0 7.6 35.1 31.9 37.4 3.05
+> B.1 READ (w/ Rcoh )ROUGE (Eq. 3) 19.7 8.2 17.5 7.7 33.7 34.9 38.0 3.24
+> B.2 READ (w/ Rcoh )CIDEr 20.9 7.9 17.5 7.7 35.8 33.1 37.7 3.17
+
+Table 9: Effect of accuracy reward formulation on CMD-AD: ROUGE vs. CIDEr. READ with more Training steps READ -Base with more Training steps 
+
+Figure 5: Effect of longer RL training on READ-Base (left) and READ (right). 
+
+ing and therefore more strongly favors exact over-lap with informative reference phrases, which nat-urally benefits the final CIDEr metric. In contrast, the average ROUGE reward provides a smoother and more balanced sequence-level supervision sig-nal, focusing more on overall content coverage and structural overlap. This makes it a more robust anchor reward when combined with coherence re-inforcement: the model can rewrite its outputs to better fit the context without being overly penal-ized for moderate lexical variation. As a result, although CIDEr-based optimization yields slightly better CIDEr scores, the ROUGE-based formula-tion leads to stronger overall AD-specific perfor-mance. 
+
+C.3 Effect of Longer RL Training 
+
+Fig. 5 shows the effect of continuing RL optimiza-tion with more training steps for both READ-Base and READ. We observe that longer training further improves conventional captioning metrics such as BLEU-1, ROUGE-L, and CIDEr. However, this gain does not necessarily reflect better AD quality. Instead, it suggests a form of reward hacking : the model may increasingly rely on frequent words and generic expressions that are more likely to match the reference and thus obtain higher accuracy re-wards. In contrast, AD-specific metrics such as Action and R@1/5 show a clear downward trend as training continues, indicating that the generated descriptions become less action-accurate and less distinctive. This discrepancy further highlights a limitation of using overlap-based metrics such as ROUGE or CIDEr as the anchor accuracy reward. How to design a more robust accuracy reward re-mains an important direction for future work. 
+
+D More Qualitative Results 
+
+We provide more qualitative results in Fig. 6. Com-pared with prior methods and the non-recurrent READ output, READ ∗ better leverages narrative context to produce more coherent and context-compatible descriptions. The right side shows the intermediate thinking process, illustrating how READ reasons over (preceding AD context and) current visual content before generating the final description. 14 GT: The officers arrive and shine their flashlights, revealing four grazing cows. 
+
+READ : The guards shine their flashlights on the cows in the field. 
+
+AutoAD -0: The police officer shines a flashlight in the forest, looking at the cow eating grass. 
+
+Shot -by -Shot : He walks through the forest holding a flashlight as animals watch him. 
+
+AutoAD -3: The cows and the mule are in a field. 
+
+READ* : The men with flashlights search the woods and find the cows grazing in the field .
+
+<thinking> \n
+
+The previous context describes the cows in the car, laughing and 
+
+driving at night. The current video clip begins with a shot of a 
+
+man in a blue uniform holding a flashlight in a dark forest, with 
+
+other men behind him. The next shot shows the cows in a field at 
+
+night. Combining these, we can infer that the action is a 
+
+continuation of the previous scene. The audio description must 
+
+reflect the sequence: the men are in the forest, and then the cows 
+
+are in the field. The final summary should be concise and include 
+
+the main action and setting. \n
+
+</ thinking> 
+
+GT: Janet walks into the bathroom .
+
+READ : She walks into the bathroom. 
+
+AutoAD -0: She walks towards him, smiling, as he smiles back. 
+
+Shot -by -Shot : He looks around cautiously. 
+
+AutoAD -3: She opens the door and steps inside. 
+
+READ* : She steps into the shower .
+
+<thinking >\n
+
+The previous context describes her running down the hospital 
+
+hall and looking at the shower. The current video clip shows the 
+
+shower door open with water running, and then a silhouette of a 
+
+person, presumably her, entering the frame and moving toward 
+
+the shower. Combining these elements, we can infer that she is 
+
+entering the shower. The final audio description should reflect 
+
+the action that occurs in this specific 2.00 -second clip, which is 
+
+her entering the shower. \n
+
+</ thinking> \n
+
+GT: He puts his hands on his hips, distraught. 
+
+READ : Duncan puts his hands on his hips and looks at Phoebe, who crosses her arms. 
+
+AutoAD -0: Duncan smiles at Phoebe. .
+
+Shot -by -Shot : Duncan gestures with open arms towards Phoebe by the clothing rack. 
+
+READ* : Duncan puts his hands on his hips and Phoebe crosses her arms. 
+
+<thinking> \n
+
+The sequence of images shows a man, identified as Duncan, 
+
+entering a room and striking a pose with his hands on his hips. 
+
+The next image shows a woman, identified as Phoebe Buffay, 
+
+standing with her arms crossed, looking at him. The final two 
+
+images are portraits of the two characters. Combining the actions 
+
+and character identification, we can infer that the audio 
+
+description should reflect the interaction between the two 
+
+characters. The final sentence should capture the sequence: 
+
+Duncan enters, poses, and Phoebe reacts. \n
+
+</ thinking >
+
+GT: Sarah receives a text message from Irene - Urgent, I need you right away. 
+
+READ : Sarah reads a text message from Irene on her phone .
+
+AutoAD -0: Sara texts on her phone. 
+
+Shot -by -Shot : Sara puts books into a large bag. 
+
+READ* : Sarah picks up her phone and reads a text from Irene: \"Urgent. I need you right away. \"
+
+<thinking> \n
+
+The provided context describes events from a previous scene 
+
+(Rebecca stabbing, Jason dying, Sarah packing books) and then 
+
+transitions to the current scene at the library. \n2. The visual 
+
+content provided shows the character Sarah at a table in the library, 
+
+reaching for and opening a flip phone. \n3. The phone screen is 
+
+shown, displaying a text message from \"Irene \" that says, \"Urgent. 
+
+I need you right away. \"\n4. The character is identified as Sarah 
+
+Matthews. \n5. The action is focused on her receiving and reading 
+
+this urgent message on her phone. \n6. The audio description 
+
+should focus on this key action and the content of the message, as 
+
+it's the main event in this clip. \n
+
+</ thinking >Figure 6: Additional qualitative results. READ ∗ denotes recurrent inference using the previous three predicted ADs as context. The right side visualizes the intermediate thinking process used to infer the final description. 
+
+15

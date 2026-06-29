@@ -1,0 +1,466 @@
+Title: Real-Time Interactive Music Generation via Data-Free Streaming Consistency Distillation
+
+URL Source: https://arxiv.org/pdf/2606.24307v1
+
+Published Time: Wed, 24 Jun 2026 00:43:38 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+PREPRINT June 2026 
+
+# Real-Time Interactive Music Generation via Data-Free Streaming Consistency Distillation 
+
+## Baisen Wang* 
+
+## DynamiX 
+
+## wbs2788@gmail.com 
+
+## Chenxi Bao* 
+
+## DynamiX 
+
+## Qisong Han* 
+
+## Cardiff University 
+
+Abstract 
+
+Interactive music and live performance relies on real-time human expression, but modern generative music AI remains largely absent from this domain due to its prohibitive inference latency and offline rendering paradigm. To provide pioneer musicians with a novel medium for interactive composition, we should fundamentally change these static models into dynamic, playable instruments. In this paper, we propose a framework that bridges this gap. To achieve the low latency required for live interaction without sacrificing structural coherence, we formulate distillation within a streaming autoregressive latent space. Our approach gets rid of the need for expensive paired audio-latent datasets by utilizing prompt-only inputs to synthesize teacher-guided, chunk-wise trajectories on the fly. Because live instruments require high acoustic fidelity, we introduce music-aware consistency objectives, which combine latent, spectral, and temporal-difference losses, to preserve crucial qualities like timbre, transients, and rhythmic stability during accelerated single-step streaming generation. Implemented via parameter-efficient adaptation, our distillation reduces generation steps to achieve a low real-time factor. Crucially, by operating as a continuous autoregressive stream, the system can seamlessly assimilate dynamic human inputs on the fly, allowing users to instantly steer the musical trajectory without interrupting the audio flow. Ultimately, this work recontextualizes generative text-to-music models not as passive prompt-and-wait systems, but as responsive instruments, opening new frontiers for live human-AI musical co-creation. 
+
+# 1 Introduction 
+
+Musical expression unfolds through time and depends on continuous real-time interaction, yet most generative music models remain designed for static, offline generation. Although recent text-to-music systems like Suno, Stable Audio, and ACE-Step Series, can synthesize high-quality and structurally coherent audio, they still largely formulate music generation as one-shot rendering from fixed conditioning, in a manner more reminiscent of image synthesis than live musical behavior. This formulation makes it difficult to modify musical trajectories along the time axis or to incorporate new human input on the fly without restarting or disrupting the generation process. To address this gap, we introduce a data-free streaming consistency distillation framework that enables single-step autoregressive music generation for real-time human–AI co-creation. This mismatch is not merely a matter of inference speed. A playable generative music system must continuously extend an evolving musical stream while remaining immediately responsive to new controls, all without sacrificing the perceptual qualities that make musical interaction meaningful. Achieving this is challenging because low-latency generation often comes at the cost of degraded timbral fidelity, weakened transient structure, unstable rhythm, or reduced long-range coherence, especially in streaming settings where errors can accumulate over time. More fundamentally, interactive music generation demands a model that treats music not as a fixed object to be rendered once, but as a temporally unfolding process that can be steered, revised, and continued seamlessly during playback. To address these challenges, we formulate music generation as a streaming autoregressive process in latent space, where audio is produced chunk by chunk and can be continuously steered over time. Within this sequential generation framework, we use consistency distillation to compress the teacher’s multi-step prediction for each chunk 
+
+> *
+
+Equal contribution. 
+
+Work done in ZhuoLab. 
+
+1 
+
+> arXiv:2606.24307v1 [cs.SD] 23 Jun 2026 Figure 1. Overview of the proposed data-free streaming consistency distillation framework. Conventional text-to-music models rely on multi-step offline rendering, whereas our method synthesizes target chunks online through prompt-only teacher rollouts and trains a student with chunk-wise streaming consistency and music-aware objectives. The distilled student operates over a continuous latent stream, enabling low-latency human–AI co-creation with uninterrupted playback.
+
+into a low-latency student, ultimately enabling single-step generation during streaming inference. To avoid the cost of paired audio training data, the teacher synthesizes chunk-wise target trajectories online from prompt-only inputs, allowing distillation to proceed without precomputed audio-latent corpora. Because aggressive acceleration can easily damage perceptually important musical attributes, we further introduce music-aware consistency objectives that jointly constrain latent reconstruction, spectral structure, and temporal variation, helping preserve timbral fidelity, transient detail, and rhythmic stability. In this way, the distilled model is not merely faster, but capable of functioning as a continuously playable and steerable instrument for real-time human–AI musical interaction. Our contributions are fourfold: 
+
+• We propose data-free streaming consistency distillation for long-form text-to-music generation with prompt-only online supervision. 
+
+• We distill in a streaming autoregressive latent space with chunk-wise cached context for low-latency, extended-context generation. 
+
+• We introduce music-aware latent, spectral, and temporal-difference objectives to preserve timbre, transients, and rhythmic stability under extreme step reduction. 
+
+• We demonstrate real-time human–AI interaction, reframing the model as a phrase-level, semantically steerable generative instrument. 
+
+# 2 Related Work 
+
+Text-to-music generation has developed through diffusion-based and autoregressive paradigms. Diffusion and latent diffusion models [1, 2] have been adapted to music or audio synthesis in Noise2Music, AudioLDM 2, Moûsai, Stable Audio, and ACE-Step [3 –7], while autoregressive systems such as MusicGen, HeartMuLa, and SongGen use codec-token or transformer-based sequential modeling for controllability and structure [8 –10]. Most of these models target complete-sequence generation rather than low-latency playback. Streaming generation has been explored in StreamFlow [11], with related chunk-wise or causal formulations in singing voice, speech, and motion generation [12–14]; our method brings this perspective into latent-space text-to-music generation. 
+
+Diffusion acceleration is commonly achieved with fast samplers or distillation [15, 16]. Consistency models learn mappings from noisy trajectory points to clean samples for few-step or single-step generation [17], and audio variants such as ConsistencyTTA and MusicCM apply this idea to text-to-audio and music synthesis [18, 19]. Because extreme acceleration can compromise acoustic fidelity, we further incorporate spectral and temporal-domain constraints motivated by audio generation and vocoding studies [20].  
+
+> 2Figure 2. Detailed illustration of the proposed data-free streaming consistency distillation method. (1) The frozen teacher generates chunk-wise latent trajectories via multi-step sampling. (2) The student learns to predict the same latent chunk in a single step, conditioned on the teacher’s streaming context (KV cache). (3) The decoupled system architecture supports real-time interactive generation. (4) Music-aware consistency objectives combine latent reconstruction, spectral matching, and temporal-difference losses to preserve acoustic fidelity.
+
+Interactive AI music systems increasingly emphasize human-in-the-loop control, including preference-based search [21], gesture- or expression-driven steering [22], and high-level or time-varying musical controls [23, 24]. Unlike these works, which mainly address interfaces, control representations, or post-generation search, our framework targets the generative backbone by converting an offline renderer into a low-latency continuous stream. 
+
+# 3 Method 
+
+## 3.1 Problem Formulation 
+
+We formulate long-form text-to-music generation as a streaming process in latent space. Given a text prompt 𝑝 ,a continuous latent trajectory Z = [𝑧 (0) , 𝑧 (1) , . . . , 𝑧 (𝐾 ) ] is partitioned into an initial warm-up segment 𝑧 (0) and a sequence of autoregressive prediction chunks 𝑧 (𝑘 ) for 𝑘 ≥ 1.Our distillation framework operates in a data-free regime with respect to paired audio–latent supervision: rather than retrieving ground-truth audio latents, supervision is synthesized online by rolling out a frozen teacher model. At chunk 𝑘 , the teacher 𝑓 𝑇 carries forward a historical context state 𝑐 (𝑘 −1) 
+
+> 𝑇
+
+, which contains the streaming context accumulated from previous chunks, such as transformer KV-cache states. Starting from Gaussian noise 𝜖 ∼ N ( 0, I),the teacher executes an 𝑁 -step ODE solver to produce a target latent chunk: 
+
+ˆ𝑧 (𝑘 ) 
+
+> 𝑇
+
+= 𝑓 𝑇 
+
+
+
+𝜖, 𝑝, 𝑐 (𝑘 −1) 
+
+> 𝑇
+
+; 𝑁 
+
+
+
+. (1) The student model 𝑓 𝑆 is trained to reproduce the same target using a much smaller sampling budget of 𝑀 steps, where 𝑀 ≪ 𝑁 and typically 𝑀 = 1:
+
+ˆ𝑧 (𝑘 ) 
+
+> 𝑆
+
+= 𝑓 𝑆 
+
+
+
+𝜖, 𝑝, 𝑐 (𝑘 −1) 
+
+> 𝑇
+
+; 𝑀 
+
+
+
+. (2) Conditioning the student on the teacher-generated streaming context exposes it to long-context dependencies that arise during sequential generation. This teacher-guided formulation encourages cross-chunk continuity and mitigates boundary artifacts during streaming inference. The overall objective is to minimize the chunk-wise discrepancy between teacher and student predictions: 
+
+min 
+
+> 𝜃 𝑆
+> 𝐾
+
+∑︁ 
+
+> 𝑘 =1
+
+L
+
+
+
+ˆ𝑧 (𝑘 ) 
+
+> 𝑇
+
+, ˆ𝑧 (𝑘 )
+
+> 𝑆
+
+
+
+, (3) 
+
+> 3
+
+where L denotes the proposed music-aware consistency objective. This formulation unifies prompt-only supervision, streaming context propagation, and extreme sampling acceleration within a single training framework. 
+
+## 3.2 Data-Free Teacher Rollout via Online Synthesis 
+
+A central goal of our framework is to eliminate reliance on paired audio data and precomputed latent trajectories. We therefore introduce a prompt-only training regime in which supervision is synthesized online by a frozen teacher model. Given a text prompt 𝑝 , we compute its conditioning embeddings and initialize a streaming generation process directly in latent space. Instead of retrieving ground-truth audio latents from a static dataset, the teacher constructs the supervision trajectory through its own rollout. For each training instance, the teacher first synthesizes a warm-up segment 𝑧 (0) to establish the contextual state 𝑐 (0) 
+
+> 𝑇
+
+(i.e., the KV-cache) required for long-form continuation. It then proceeds autoregressively, predicting a sequence of target chunks: 
+
+ˆ𝑧 (1) 
+
+> 𝑇
+
+, ˆ𝑧 (2) 
+
+> 𝑇
+
+, . . . , ˆ𝑧 (𝐾 ) 
+
+> 𝑇
+
+. (4) Each chunk ˆ𝑧 (𝑘 ) 
+
+> 𝑇
+
+is conditioned on both the text prompt 𝑝 and the accumulated streaming context 𝑐 (𝑘 −1) 
+
+> 𝑇
+
+. The rollout yields a coherent sequential latent trajectory: 
+
+ˆZ𝑇 = [𝑧 (0) , ˆ𝑧 (1) 
+
+> 𝑇
+
+, ˆ𝑧 (2) 
+
+> 𝑇
+
+, . . . , ˆ𝑧 (𝐾 ) 
+
+> 𝑇
+
+]. (5) This trajectory matches the autoregressive streaming protocol used by the student during inference. Generating teacher rollouts online , rather than caching them as a static corpus, has two advantages. First, it avoids the storage and preprocessing bottlenecks associated with paired audio–latent datasets, which become especially costly for long-form music. Second, because the teacher starts from newly sampled noise during training, the student observes diverse valid trajectories for the same prompt, providing implicit regularization. For every prediction chunk 𝑘 , the teacher outputs both the target latent ˆ𝑧 (𝑘 ) 
+
+> 𝑇
+
+and the updated context 𝑐 (𝑘 ) 
+
+> 𝑇
+
+required for the next step. Prompt-only online synthesis therefore provides dynamic supervision while preserving the temporal structure required by streaming music generation. 
+
+## 3.3 Streaming Consistency Distillation via Chunk-Wise Cached Trajectories 
+
+Standard consistency distillation typically optimizes isolated segments. When applied directly to long-form audio, this can introduce discontinuities at segment boundaries. To preserve cross-chunk coherence, we distill over the teacher’s chunk-wise cached trajectories , defined as 
+
+n
+
+(𝑐 (𝑘 −1) 
+
+> 𝑇
+
+, ˆ𝑧 (𝑘 ) 
+
+> 𝑇
+
+)
+
+o𝐾 𝑘 =1. By explicitly pairing each target chunk ˆ𝑧 (𝑘 )
+
+> 𝑇
+
+with its corresponding historical KV-cache state 𝑐 (𝑘 −1) 
+
+> 𝑇
+
+, the student learns from the context evolution of a continuous streaming process. As detailed in the center panels of Figure 2 , for each prediction step 𝑘 , the student is conditioned on the teacher-provided context to predict the target in 𝑀 steps ( 𝑀 ≪ 𝑁 ): 
+
+ˆ𝑧 (𝑘 ) 
+
+> 𝑆
+
+= 𝑓 𝑆 
+
+
+
+𝜖, 𝑝, 𝑐 (𝑘 −1) 
+
+> 𝑇
+
+; 𝑀 
+
+
+
+. (6) This teacher-guided mechanism is important for music generation. Rather than autoregressing on its own potentially imperfect history during training, the student remains anchored to the teacher trajectory. This reduces the risk that local prediction errors cascade into rhythmic drift, timbral instability, or audible boundary artifacts. The formulation compresses the multi-step generative process to as few as 𝑀 = 1 step per chunk, enabling low-latency streaming inference. 
+
+## 3.4 Music-Aware Consistency Objectives 
+
+Standard consistency objectives often minimize only latent distance. Under extreme step reduction, however, pure latent MSE may over-smooth the prediction, leading to muffled timbres and smeared rhythmic transients. We therefore augment the basic latent distance with spectral and temporal-difference penalties that operate directly on the latent embeddings. This design encourages musically relevant structure while avoiding the memory and compute overhead of VAE decoding during training. For each chunk 𝑘 , let ˆ𝑧 (𝑘 ) 
+
+> 𝑇
+
+and ˆ𝑧 (𝑘 ) 
+
+> 𝑆
+
+denote the teacher and student latent predictions, respectively. We first define the base latent reconstruction loss: 
+
+L (𝑘 ) 
+
+> latent
+
+= ˆ𝑧 (𝑘 ) 
+
+> 𝑆
+
+− ˆ𝑧 (𝑘 ) 
+
+> 𝑇
+> 22
+
+, (7) which anchors the student to the teacher’s chunk-level trajectory.                        
+
+> 4Method Steps Stream TTFA ↓RTF ↓
+> Original 8No 0.708 0.024 Distilled (forced) 8No 1.213 0.040 Distilled 1No 1.148 0.038
+> Ours 1Yes 0.086 0.009
+> Table 1. Latency comparison under the benchmark protocol. Original denotes ACE-Step XL-Turbo; Distilled denotes the one-step consistency LoRA student. Lower is better.
+
+To retain frequency-domain fidelity, we apply a one-dimensional real fast Fourier transform (RFFT) along the temporal dimension of the latents. The spectral consistency loss penalizes the L1 distance between magnitude spectra: 
+
+L (𝑘 ) 
+
+> spec
+
+= |F ( ˆ𝑧 (𝑘 ) 
+
+> 𝑆
+
+)| − |F ( ˆ𝑧 (𝑘 ) 
+
+> 𝑇
+
+)| 1 , (8) where F (·) denotes the Fourier transform and | · | denotes magnitude. Matching the latent spectral energy distribution encourages the student to preserve the teacher’s acoustic texture and timbral characteristics. Finally, to preserve structural sharpness, including percussive transients and rhythmic boundaries, we apply a first-order temporal-difference operator Δ across adjacent latent frames: 
+
+L (𝑘 ) 
+
+> temp
+
+= Δˆ𝑧 (𝑘 ) 
+
+> 𝑆
+
+− Δˆ𝑧 (𝑘 )  
+
+> 𝑇 1
+
+. (9) We use an L1 penalty to encourage sparse derivative errors, which supports localized transient alignment while discouraging diffuse artifacts introduced by aggressive acceleration. The full music-aware consistency objective is defined as: 
+
+L (𝑘 ) = 𝜆 latent L (𝑘 ) 
+
+> latent
+
++ 𝜆 spec L (𝑘 ) 
+
+> spec
+
++ 𝜆 temp L (𝑘 )
+
+> temp
+
+, (10) resulting in the final streaming distillation loss L = Í𝐾 𝑘 =1 L (𝑘 ) . Together, these objectives encourage the student to track the teacher’s latent predictions while preserving the timbral consistency and rhythmic stability required for high-fidelity streaming generation. 
+
+## 3.5 Real-Time Streaming Inference and Interactive Control 
+
+At inference time, the distilled student mirrors the training protocol in a chunk-wise streaming regime. Given a text prompt 𝑝 , generation begins with an initial warm-up chunk of 𝑇 warm latent frames, followed by an open-ended sequence of prediction chunks of 𝑇 pred frames. The student maintains its own KV-cache state across chunk boundaries, avoiding the need to recompute historical attention. For each prediction chunk 𝑘 , the model receives a fresh Gaussian latent initialization 𝑧 (𝑘 ) 
+
+> 𝑡
+
+(typically sampled at 
+
+𝑡 = 1), the text-conditioned encoder states, and the KV-cache propagated from chunk 𝑘 − 1. Under the velocity parameterization, a single decoder forward pass predicts 𝑣 (𝑘 )
+
+> pred
+
+, from which the clean latent chunk is recovered via a one-step Euler update: 
+
+ˆ𝑧 (𝑘 ) 
+
+> 𝑆
+
+= 𝑧 (𝑘 ) 
+
+> 𝑡
+
+− 𝑡 · 𝑣 (𝑘 )
+
+> pred
+
+. (11) The updated cache is propagated to chunk 𝑘 + 1, enabling continuous long-context generation. Each predicted latent chunk ˆ𝑧 (𝑘 ) 
+
+> 𝑆
+
+is then asynchronously decoded into waveform audio by the VAE. Because the student uses only 𝑀 = 1
+
+step per chunk, latent generation can outpace real-time playback and yield low startup latency. 
+
+## 3.6 Interactive Instrument Paradigm 
+
+The proposed system is designed to be played as a phrase-level generative instrument. Its playability does not arise from note-level actuation, as in a keyboard or drum controller, but from continuous expressive control over an unfolding musical process. During performance, the current audio chunk is played while the next chunk is generated in the background, so performer actions shape forthcoming material without stopping or regenerating the full track. The control vocabulary is semantic rather than symbolic. Performers can trigger scene-level states such as 
+
+intro , build , breakdown , or outro ; adjust musical dimensions such as energy, density, brightness, tension, and rhythmic drive; or steer arrangement by adding or reducing instrumental layers. These controls are compiled into conditioning-state updates, including prompt interpolation, semantic prompt modifiers, and sampling-temperature                    
+
+> 𝐶 sec TTFA ↓RTF ↓Control Latency ↓
+> 0.5 0.085 0.009 0.543 1.0 0.083 0.008 1.042 1.5 0.085 0.008 1.543 2.0 0.084 0.008 2.043
+> Table 2. Streaming chunk-size ablation. Control latency is estimated from the online scheduling model. Lower is better.
+> 5
+
+Mode Loss 𝐾 𝑆 CLAP ↑ KLD ↓ FD ↓
+
+Streaming 
+
+Llatent 1 1 0.329 0.693 304.83 
+
++L spec 1 1 0.348 0.655 298.73 
+
++L temp 1 1 0.344 0.705 295.96 
+
+Lfull 1 1 0.361 0.635 294.66 
+
+Llatent 3 1 0.257 0.324 398.79 
+
++L spec 3 1 0.294 0.322 388.51 
+
++L temp 3 1 0.278 0.319 378.75 
+
+Lfull 3 1 0.300 0.302 349.32 
+
+Llatent 5 1 0.262 0.307 389.13 
+
++L spec 5 1 0.273 0.308 389.59 
+
++L temp 5 1 0.275 0.317 378.17 
+
+Lfull 5 1 0.282 0.308 367.22 Non-stream 
+
+Llatent 1 1 0.319 0.740 308.99 
+
+Llatent 1 4 0.320 0.678 303.17 
+
+Llatent 1 8 0.320 0.722 308.43 
+
++L spec 1 1 0.348 0.655 298.73 
+
++L spec 1 4 0.351 0.613 297.73 
+
++L spec 1 8 0.347 0.616 292.20 
+
++L temp 1 1 0.348 0.665 299.36 
+
++L temp 1 4 0.336 0.674 304.80 
+
++L temp 1 8 0.338 0.699 303.09 
+
+Lfull 1 1 0.361 0.635 294.66 
+
+Lfull 1 4 0.358 0.660 296.55 
+
+Lfull 1 8 0.354 0.633 293.69 
+
+Table 3. Objective quality evaluation across objectives and inference modes. 𝐾 denotes evaluated prediction chunks and 𝑆 
+
+denotes denoising steps; KLD and FD denote PaSST-KLD and OpenL3-FD, respectively. 
+
+adjustment. Because the autoregressive cache is preserved across chunks, interventions bend the continuation from the current trajectory rather than resetting it. Thus, the system functions as a live semantic instrument for shaping structure, timbre, density, and direction, while RTF and control latency respectively characterize playback throughput and the audibility of performer intent. 
+
+# 4 Experiments 
+
+## 4.1 Experimental Setup 
+
+We build on ACE-Step 1.5 XL-Turbo [7]. The teacher remains frozen, and the student uses the same backbone with LoRA adaptation [25] on the DiT decoder [26]. The LoRA adapter is applied to the query, key, value, and output projections with rank 64, scaling factor 128, and dropout 0.1. Training uses bfloat16 (bf16) precision, batch size 32, gradient accumulation 1, AdamW [27], cosine learning-rate decay, initial learning rate 1 × 10 −4, 100 warm-up steps, weight decay 0.01, gradient clipping at 1.0, seed 42, and 2,000 optimization steps. For each training sample, the teacher synthesizes a streaming trajectory with a 30-second warm-up segment followed by up to five 30-second prediction chunks. This setting yields a 150-second prediction horizon after warm-up and a 180-second generated trajectory during distillation. Training uses prompt-only supervision from a pool of 125,446 natural-language music descriptions, rather than paired target audio. Unless otherwise stated, 
+
+𝜆 latent = 1, and the auxiliary loss weights are binary according to the ablation: Llatent , +L spec , +L temp , or Lfull .Latency is evaluated on a single NVIDIA H200 GPU with batch size 1, using a filtered SongDescriber benchmark [28] containing 279 instrumental items. We sample 10 prompts and repeat each prompt three times, yielding 30 runs per condition. All prompts use the caption field and lyrics are fixed to [Instrumental] . We follow the benchmark timing protocol: standard latency is measured as the wall-clock time of one generate_music call without disk I/O, while streaming startup latency measures the time to the first streaming rollout; RTF is computed over the full generated duration and includes decoding in the streaming setting. Control latency is estimated from the online scheduling model as the chunk duration plus the average prediction-chunk latency. 
+
+## 4.2 Generation Efficiency and Interactivity 
+
+Table 1 separates sampling acceleration from streaming reformulation. The consistency-trained student is optimized for one-step prediction; applying it in an 8-step non-streaming sampler therefore serves only as a stress-test baseline rather than as the intended inference mode. One-step non-streaming inference reduces the sampling budget but still waits for a full batch output before playback. The streaming formulation reaches 0.086 s startup latency and achieves the lowest RTF, indicating that chunk-wise generation is the primary factor behind the low interactive latency. All                     
+
+> 6𝐶 sec CLAP ↑KLD ↓FD ↓
+> 0.5 0.256 0.352 291.91 1.0 0.268 0.327 283.71 1.5 0.292 0.307 271.70 2.0 0.274 0.302 277.41
+> Table 4. Objective quality under different streaming chunk durations. All rows use one-step streaming with Lfull .
+
+rows use the same prompt set and checkpoint family, while the streaming row uses the chunk-wise inference path required for online playback. Table 2 varies the prediction chunk duration 𝐶 sec . TTFA and RTF remain nearly unchanged from 0.5 to 2.0 s, while estimated control latency follows the expected chunk-boundary scheduling cost. Thus, 𝐶 sec directly controls the responsiveness–scheduling tradeoff; we use 1.0 s as the default setting. 
+
+## 4.3 Objective Audio Quality Evaluation 
+
+We evaluate quality on the same SongDescriber-derived benchmark, using all 279 generated files per condition rather than the 30-run latency subset. We report CLAP score for text–audio alignment [29], PaSST-KLD for music-tagging distributional divergence [30, 31], and OpenL3-FD for acoustic/perceptual fidelity [32]. The evaluation uses fixed preprocessing and metric settings, including peak normalization, CLAP at 48 kHz, PaSST-KLD with 10 s windows and 5 s overlap, and OpenL3-FD over full-audio embeddings. Table 3 compares loss objectives, rollout lengths, and denoising budgets under streaming and non-streaming inference. The results show that the full music-aware objective improves the one-step streaming model. At 𝐾 = 1, the full objective outperforms the latent-only objective on all three metrics, increasing CLAP from 0.329 to 0.361 while reducing PaSST-KLD from 0.693 to 0.635 and OpenL3-FD from 304.83 to 294.66. The advantage is more pronounced over longer rollouts: at 𝐾 = 3 and 𝐾 = 5, the full objective yields the lowest OpenL3-FD among the streaming variants and the strongest CLAP score, suggesting better preservation of both prompt alignment and acoustic fidelity during autoregressive continuation. In the non-streaming setting, reducing 𝑆 from 8 to 1 does not cause severe degradation for the measured objectives, which supports the use of one-step inference as the computational basis for the streaming system. These quality results complement the latency analysis: step reduction preserves acceptable objective quality, while the streaming formulation is responsible for the reduced startup latency. Table 4 evaluates whether the latency–responsiveness tradeoff in Table 2 affects objective quality. Very short chunks ( 𝐶 sec = 0.5) yield the weakest CLAP, PaSST-KLD, and OpenL3-FD scores, suggesting that overly frequent autoregressive boundaries can degrade musical continuity. Quality improves as the chunk duration increases to 1.5 s, which achieves the best CLAP and OpenL3-FD, while 2.0 s gives the best PaSST-KLD but slightly lower CLAP and OpenL3-FD. We therefore use 1.0 s as a responsiveness-oriented default and view 1.5 s as a quality-oriented operating point when additional control latency is acceptable. 
+
+## 4.4 Subjective Evaluation 
+
+Because objective metrics do not capture interaction quality, we conduct a two-phase subjective evaluation with 
+
+𝑁 = 20 participants. Phase 1 uses a 5-point MOS listening test over five static audio clips per condition to evaluate overall quality (O-MOS) and prompt relevance (R-MOS). Phase 2 asks participants to steer a generated track between genres using an interactive interface, and rates responsiveness, steerability, and co-creation experience. We report MOS scores with 95% confidence intervals. Ground-truth audio is included only in the passive listening phase because interaction metrics are not applicable to non-generative reference audio. The subjective results are consistent with the quantitative latency and quality trends. Offline generation obtains relatively strong passive-listening scores but low interaction scores, reflecting the delay imposed by wait-and-listen rendering. In contrast, streaming variants substantially improve responsiveness, steerability, and co-creation scores. Among the streaming systems, the full objective achieves the strongest overall balance between passive quality and interactive usability.                                                                                                                   
+
+> Configuration O-MOS ↑R-MOS ↑Resp. ↑Steer. ↑Co-create ↑
+> Ground Truth 4.66 ±0.09 4.70 ±0.09 N/A N/A N/A Teacher Offline 4.18 ±0.08 4.24 ±0.09 1.82 ±0.12 2.35 ±0.13 2.12 ±0.13
+> Non-stream ( 𝑆 =1)3.86 ±0.09 3.90 ±0.09 2.18 ±0.12 2.50 ±0.13 2.42 ±0.13
+> Stream Latent 3.54 ±0.11 3.62 ±0.10 4.52 ±0.10 3.88 ±0.12 3.95 ±0.12
+> Stream +Spec 3.74 ±0.10 3.79 ±0.10 4.50 ±0.10 4.03 ±0.11 4.10 ±0.11
+> Stream +Temp 3.68 ±0.10 3.73 ±0.10 4.50 ±0.10 4.08 ±0.11 4.13 ±0.11
+> Ours Full 3.92 ±0.09 4.02 ±0.09 4.55 ±0.10 4.32 ±0.10 4.38 ±0.10
+> Table 5. Subjective evaluation results reported as MOS ±95% confidence intervals. Ground-truth audio is evaluated only in passive listening.
+> 7
+
+# 5 Conclusion 
+
+We presented a data-free streaming consistency distillation framework for real-time interactive music generation. The method synthesizes teacher trajectories from prompt-only inputs and trains a one-step student in a chunk-wise autoregressive latent space, enabling low-latency generation with cached streaming context, asynchronous decoding, and phrase-level user control. To preserve quality under strong acceleration, we introduced music-aware consistency objectives combining latent, spectral, and temporal-difference constraints. Experiments show that streaming reformulation is key to low startup latency and real-time throughput, while the full objective improves text–audio alignment, acoustic fidelity, responsiveness, and steerability over offline baselines. Overall, this work moves text-to-music generation from prompt-and-wait rendering toward a semantically steerable generative instrument. Future work will reduce control-to-audio latency and explore richer interfaces for fine-grained musical interaction. 
+
+# 6 References 
+
+[1] J. Ho, A. Jain, and P. Abbeel, “Denoising diffusion probabilistic models,” in NeurIPS , 2020. [2] R. Rombach, A. Blattmann, D. Lorenz, P. Esser, and B. Ommer, “High-resolution image synthesis with latent diffusion models,” in CVPR , 2022. [3] Q. Huang, D. S. Park, T. Wang, T. I. Denk, A. Ly, N. Chen, Z. Zhang, Z. Zhang, J. Yu, C. Frank et al. ,“Noise2music: Text-conditioned music generation with diffusion models,” arXiv preprint arXiv:2302.03917 ,2023. [4] H. Liu, Y. Yuan, X. Liu, X. Mei, Q. Kong, Q. Tian, Y. Wang, W. Wang, Y. Wang, and M. D. Plumbley, “Audioldm 2: Learning holistic audio generation with self-supervised pretraining,” IEEE/ACM Transactions on Audio, Speech, and Language Processing , 2024. [5] F. Schneider, O. Kamal, Z. Jin, and B. Schölkopf, “Mo \ˆ usai: Text-to-music generation with long-context latent diffusion,” arXiv preprint arXiv:2301.11757 , 2023. [6] Z. Evans, J. D. Parker, C. Carr, Z. Zukowski, J. Taylor, and J. Pons, “Stable audio open,” arXiv preprint arXiv:2407.14358 , 2024. [7] J. Gong, Y. Song, W. Zhao, S. Wang, S. Xu, and J. Guo, “Ace-step 1.5: Pushing the boundaries of open-source music generation,” https://github.com/ace-step/ACE-Step-1.5, 2026, gitHub repository. [8] J. Copet, F. Kreuk, I. Gat, T. Remez, D. Kant, G. Synnaeve, Y. Adi, and A. Défossez, “Simple and controllable music generation,” Advances in Neural Information Processing Systems , vol. 36, 2024. [9] D. Yang, Y. Xie, Y. Yin, Z. Wang, X. Yi, G. Zhu, X. Weng, Z. Xiong, Y. Ma, D. Cong et al. , “Heartmula: A family of open sourced music foundation models,” arXiv preprint arXiv:2601.10547 , 2026. [10] Z. Liu, S. Ding, Z. Zhang, X. Dong, P. Zhang, Y. Zang, Y. Cao, D. Lin, and J. Wang, “Songgen: A single stage auto-regressive transformer for text-to-song generation,” arXiv preprint arXiv:2502.13128 , 2025. [11] H.-Y. Choi and S.-H. Lee, “Streamflow: Streaming audio generation from discrete tokens via streaming flow matching,” in The Thirty-ninth Annual Conference on Neural Information Processing Systems .[12] J. Cui, Y. Gu, S. Chen, J. Zhang, L. Chen, and L. Dai, “Cssinger: End-to-end chunkwise streaming singing voice synthesis system based on conditional variational autoencoder,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 39, no. 22, 2025, pp. 23 704–23 714. [13] B. Li, Z. Li, H. Wang, H. Zhang, Y. Guo, H. Wang, and K. Yu, “Robust and efficient autoregressive speech synthesis with dynamic chunk-wise prediction policy,” in ICASSP 2026-2026 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2026, pp. 18 632–18 636. [14] L. Xiao, S. Lu, H. Pi, K. Fan, L. Pan, Y. Zhou, Z. Feng, X. Zhou, S. Peng, and J. Wang, “Motionstreamer: Streaming motion generation via diffusion-based autoregressive model in causal latent space,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2025, pp. 10 086–10 096. [15] C. Lu, Y. Zhou, F. Bao, J. Chen, C. Li, and J. Zhu, “Dpm-solver++: Fast solver for guided sampling of diffusion probabilistic models,” arXiv preprint arXiv:2211.01095 , 2022. 
+
+> 8
+
+[16] T. Salimans and J. Ho, “Progressive distillation for fast sampling of diffusion models,” arXiv preprint arXiv:2202.00512 , 2022. [17] Y. Song, P. Dhariwal, M. Chen, and I. Sutskever, “Consistency models,” 2023. [18] Y. Bai, T. Dang, D. Tran, K. Koishida, and S. Sojoudi, “Consistencytta: Accelerating diffusion-based text-to-audio generation with consistency distillation,” arXiv preprint arXiv:2309.10740 , 2023. [19] Z. Fei, M. Fan, and J. Huang, “Music consistency models,” arXiv preprint arXiv:2404.13358 , 2024. [20] T. Park, M. Jeong, M. Park, N. Kim, J. Kim, M. Kim, J. Yoo, H. Lee, S. Kim, and S. Kwon, “Bemaganv2: A tutorial and comparative survey of gan-based vocoders for long-term audio generation,” arXiv preprint arXiv:2506.09487 , 2025. [21] M. Marcos, L. Mur-Labadia, and R. Martinez-Cantin, “Random rotational embedding bayesian optimization for human-in-the-loop personalized music generation,” PLoS One , vol. 20, no. 11, p. e0335853, 2025. [22] M. Ma, S. Ni-Hahn, S. Mak, Y. Jiang, and C. Rudin, “E-motion baton: Human-in-the-loop music generation via expression and gesture,” in AI for Music Workshop .[23] H. H. Tan and D. Herremans, “Music fadernets: Controllable music generation based on high-level features via low-level feature modelling,” arXiv preprint arXiv:2007.15474 , 2020. [24] S.-L. Wu, C. Donahue, S. Watanabe, and N. J. Bryan, “Music controlnet: Multiple time-varying controls for music generation,” IEEE/ACM Transactions on Audio, Speech, and Language Processing , vol. 32, pp. 2692–2703, 2024. [25] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, and W. Chen, “Lora: Low-rank adaptation of large language models,” in ICLR , 2022. [26] W. Peebles and S. Xie, “Scalable diffusion models with transformers,” in CVPR , 2023, pp. 4195–4205. [27] I. Loshchilov, “Decoupled weight decay regularization,” arXiv preprint arXiv:1711.05101 , 2017. [28] I. Manco, B. Weck, S. Doh, M. Won, Y. Zhang, D. Bogdanov, Y. Wu, K. Chen, P. Tovstogan, E. Benetos et al. ,“The song describer dataset: a corpus of audio captions for music-and-language evaluation,” arXiv preprint arXiv:2311.10057 , 2023. [29] B. Elizalde, S. Deshmukh, M. Al Ismail, and H. Wang, “Clap learning audio concepts from natural language supervision,” in ICASSP 2023-2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2023, pp. 1–5. [30] K. Koutini, J. Schlüter, H. Eghbal-Zadeh, and G. Widmer, “Efficient training of audio transformers with patchout,” 
+
+arXiv preprint arXiv:2110.05069 , 2021. [31] M. Won, K. Choi, and X. Serra, “Semi-supervised music tagging transformer,” in ISMIR , 2021. [32] A. L. Cramer, H.-H. Wu, J. Salamon, and J. P. Bello, “Look, listen, and learn more: Design choices for deep audio embeddings,” in ICASSP . IEEE, 2019, pp. 3852–3856.

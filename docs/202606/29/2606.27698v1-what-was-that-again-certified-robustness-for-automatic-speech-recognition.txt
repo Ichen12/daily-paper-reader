@@ -1,0 +1,623 @@
+Title: What Was That Again? Certified Robustness for Automatic Speech Recognition
+
+URL Source: https://arxiv.org/pdf/2606.27698v1
+
+Published Time: Mon, 29 Jun 2026 00:22:10 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# What Was That Again? Certified Robustness for Automatic Speech Recognition 
+
+Andrew C. Cullen 
+
+University of Melbourne 
+
+andrew.cullen@unimelb.edu.au 
+
+Neil Marchant 
+
+University of Melbourne 
+
+Jiani Xie 
+
+University of Melbourne 
+
+Paul Montague 
+
+DST Group, Adelaide 
+
+Benjamin I. P. Rubinstein 
+
+University of Melbourne 
+
+## Abstract 
+
+Automatic Speech Recognition systems are notoriously both sensitive to adversarial and benign perturbations. While this has been repeatedly demonstrated using reference datasets, detecting such behaviors in deployed systems is incredibly challenging, due to the absence of oracle knowledge of the true transcription. We demonstrate that employing a certification-inspired mechanism can significantly decrease WER, increase recall, and decrease the Spearman correlation between confidence and WER. We achieve this through a dual-gate diagnostic pipeline: a Two-Sided Atomic Audit that accumulates statistical wealth to certify both token existence and adversarial exclusion, and a Rank-Based Tournament that selects the winning sequence. Our evaluations across four diverse architectures demonstrate up to a 55% relative reduction in Word Error Rate, while also providing granular word- and sentence-level certifications to enhance acoustic security. 
+
+## 1 Introduction 
+
+For all their transformative utility, neural networks in speech processing remain notoriously sen-sitive to infinitesimal input perturbations. These perturbations—known as adversarial examples —demonstrate that model decision boundaries often lack the semantic alignment required for safety-critical deployments. While many approaches have been proposed to mitigate the risk associated with these adversarial examples, the most conceptually promising solution is a family of guarantees producing Certified Robustness (Lecuyer et al., 2019; Cohen et al., 2019; Cullen et al., 2022). These robustness mechanisms are rigorous frameworks for mathematically guaranteeing that a model’s prediction remains invariant to perturbations. In the case of a classifier F , the guarantee is oftentimes a radius r such that we can guarantee F (x) = F (x′) for all x′ in the ℓp-ball Bp(x, r ) = 
+
+{x′ : ∥x′ − x∥p ≤ r}. While several approaches have been proposed, Randomised Smoothing (RS) has proven particularly effective, as it introduces no additional architectural or infrastructure burdens on the model F (Cohen et al., 2019). However, extending the guarantees of CR to non-categorical, high-dimensional sequence outputs— such as those encountered in Natural Language Processing or Automatic Speech Recognition (ASR)— presents a combinatorial challenge (Huang et al., 2023, 2024). In ASR, if sentences are treated as discrete classes, then the output space explodes in size as noise levels increase. Traditional RS workflows, which rely upon finding a sentence representing the majority class fail, because the probability mass of any single transcription collapses under such conditions (Olivier, 2023). Resolving this limitation as crucial, as it is incredibly difficult to audit deployed acoustic models to ensure that they are producing safe outputs when exposed to untrusted inputs. 
+
+> Preprint.
+> arXiv:2606.27698v1 [cs.LG] 26 Jun 2026
+
+This failure mode reveals a fundamental dual-layer opportunity for sequence certification, in that one must not only certify the atomic content , the specific words present in the signal, but also their 
+
+structural arrangement , representing the relative ordering and grammatical coherence of these atomic elements. Prior works in this space have attempted to address this through numerically expensive sequence alignment; however the resulting outputs have typically focused upon either providing high-confidence word inclusions at the cost of structural fragmentation, or attempting holistic sequence certification that is hamstrung by the problem space’s inherent combinatorial scaling. In this work, we propose a novel framework to address both forms of certification through E-value tournaments to produce Rank-Based Sentence Certification (Shafer & Vovk, 2019; Ramdas et al., 2023). Our approach bridges the gap between atomic and structural guarantees through the use of a dual-gate certification pipeline, that eschews the need for sentence alignment, resulting in a stable certification recall ( 40.5%–90.3% ) even at high noise levels, where alternate baselines collapse to 
+
+< 1% . Our new approach yields non-vacuous safety radii, and significant WER improvements on standard benchmarks, where traditional smoothing fails to certify. Our contributions are: 1. Anytime-valid Certification for Sequence-to-Sequence tasks : We demonstrate how Ville’s Inequality and E-values can be deployed to provide valid safety radii at any point in the sampling process. This provides a framework for reducing the computational cost of certifications. 2. Dual Gate and Two-Sided Adversarial Certifications : We introduce a dual-gate pipeline that performs a two-sided audit—simultaneously proving the existence of safe tokens and the rigorous exclusion of adversarial hallucinations. This mechanism allows the system to prune the search space before the final rank-based tournament, which supplements the final certification with a measure of robustness to sentence-level changes. 3. Dynamic ASR Auditing : Demonstrating how our dual-phase certifications can be employed to audit the performance of ASR models on a Part-of-Speech framework on LibriSpeech and Common Voice, even in extreme noise. 
+
+## 2 Related Work 
+
+ASR Modern Automatic Speech Recognition (ASR) systems can be categorized in terms of their architecture. The most commonly employed approaches include CTC-based architectures such as DeepSpeech Hannun et al. (2014); self-supervised Transformer models such as Wav2Vec 2.0 Baevski et al. (2020a); and large-scale encoder-decoders such as Whisper Radford et al. (2023a). However, in each of these, the model is susceptible to adversarial perturbations that can substantially degrade transcription accuracy Carlini & Wagner (2018); Qin et al. (2019); Olivier & Raj (2022). While these perturbations exist within the long, established, mature history of adversarial manip-ulations against computer vision tasks (Goodfellow et al., 2014; Madry et al., 2018; Cullen et al., 2024)—manipulating models to change predictions—the audio domain presents distinct challenges. Speech is a time-varying physical signal in which small waveform changes do not necessarily cor-respond to small changes in perceived sound, and commonly used ℓp-norm distances can correlate poorly with human judgment of audibility Qin et al. (2019); Schönherr et al. (2019). With this said, the most common metrics for assessing acoustic systems are the Signal-to-Noise Ratio (SNR) and the Word Error Rate (WER). The SNR serves as the fundamental measure of input perturbation, representing the log-ratio of signal amplitude to noise amplitude by 
+
+SN R dB = 20 log 10 
+
+ ∥x∥p
+
+∥ϵ∥p
+
+
+
+(1) where x is the clean audio signal, ϵ is the additive perturbation, and p is the norm, which is typi-cally p ∈ { 2, ∞} . In adversarial contexts, attackers seek to minimize the perturbation magnitude (maximizing SNR) while inducing catastrophic failures in the model’s output. Conversely, the WER serves as the standard metric for transcription quality, calculated as the normalized Levenshtein distance 
+
+W ER = S + D + IN (2) where S, D, and I represent the number of substitutions, deletions, and insertions required to align the hypothesis with a ground truth of length N . While it is ubiquitous in acoustic (and textual) contexts, it must be emphasized that the WER can often be distorted by the failure modes commonly seen 2within such systems. In recognition of the issues inherent to these metrics, alternative approaches have considered acoustic performance through a psychoacoustic lens Szurley & Kolter (2019); Sun et al. (2024), although it has been noted that it is fundamentally difficult to define consistent notions of imperceptibility Hussain et al. (2021). 
+
+Certified Robustness While originally built upon foundations of Differential Privacy, the current state of the art in RS applies the Neyman-Pearson lemma. At their core, all RS based certifications transform a model f into a smoothed counterpart g, subject to provable ℓp margin guarantees. As established by Cohen et al. (2019), for a noise level σ, the radius r is a function of the probability 
+
+pA of the most likely class 1. To achieve this, such certifications employ an independent two-phase approach, where Phase I employs an initial batch to establish the target class, while Phase II repeatedly samples under noise by way of pA = Pϵ∼N (0 ,σ 2I)[f (x + ϵ) = cA]. This probability denotes the probability that the smoothed classifier predicts the target class cA under additive Gaussian noise. This ultimately yields a certification formulation of r = σΦ−1(pA).
+
+While pA represents the theoretical expectation over the noise distribution, practical calculation of this quantity is impossible. While this can be practically estimated through Monte-Carlo sampling, the need to construct a conservative certification—to control the risk of the certification being violated— requires obtaining a high-probability lower bound pA such that P (pA < p A) ≤ α, which is typically estimated through the Clopper-Pearson mechanism (Clopper & Pearson, 1934). The need to produce tight lower bounds is the primary driver of RS’s temporal cost, which typically requires tens of thousands of samples.This is not to say that all inputs require such a volume of samples, but the frequentist approach of Clopper-Pearson introduces a peeking problem : if a practitioner monitors the empirical mean and stops sampling once an online estimate looks appropriate for certification, the Type-I error rate is no longer bounded by α (Johari et al., 2017) as peeking introduces a multiple comparison problem. Thus setting the number of samples n is an important-but-wasteful part of RS—setting it too high results in inputs far from the decision boundary requiring thousands of redundant model calls; while setting it too low it may lead to a total failure to certify. As an alternative to the computational limitations of frequentist frameworks, E-values provide an expectation-constrained hypothesis testing measure that is immune to the peeking problem. An E-value for the null hypothesis H0 is a non-negative random variable E such that EH0 [E] ≤ 1. For the purposes of controlling the Type-I error associated with certifications, E can be viewed as a multiplier on wealth in a fair game. While such a context renders wealth a martingale, expected wealth cannot grow under the null hypothesis. Define the accumulated wealth Wt = Qti=1 Ei.Crucially, this wealth-testing tramework is inherently anytime-valid by Ville’s inequality (Ville, 1939; Doob, 1940), which states that 
+
+P
+
+
+
+∃t : Wt ≥ 1
+
+α
+
+
+
+≤ α , (3) thus allowing for optimal stopping with zero penalty. As long as the accumulated wealth Wt surpasses 
+
+1/α , we can be confident that the probability of a Type-I error is strictly bounded by α.The application of E-values to RS was pioneered by Voráˇ cek (2024); however, their approach is rooted in classical hypothesis testing, rather than standard certification practices. Under the Voracek approach—as defined in their Definition 3.1—the tested null hypothesis is restricted to a pre-defined radius r0, leading to evaluation of the null hypothesis 
+
+H0 : pA ≤ Φ
+
+ r0
+
+σ
+
+
+
+. (4) While this yields a binary certification of whether a sample is robust to a radius of r0, it fails to identify the maximum certified radius . Naively extending this framework would require running an infinite number of independent hypothesis tests, for each possible r0 ∈ [0 , ∞). As such testing is impossible, we instead will employ the Method of Mixtures to provide E-value based certifications, allowing infinite hypothesis testing in finite computational time. 
+
+Certifications Beyond Classifiers The baseline for sequence certifications, as pioneered by Olivier & Raj (2021), relies on performing a task known as multiple sequence alignment to reduce the     
+
+> 1The original formulation of Cohen et al. (2019) was derived in terms of the two most likely class probabilities pAand pB,however nearly all implementations reduce to the variant described in this paper.
+
+3high-dimensional transcription space into a structured voting network. To achieve this, the system maintains a consensus backbone B = {S1, S 2, . . . , S L}, where each element Si is a dictionary that acts as a frequency counter of words observed at that relative temporal position. For each new sample drawn under noise ϵ, the algorithm performs a string-to-graph alignment via a Word Transition Network to find the optimal mapping between the new tokens and the existing dictionaries. If a token cannot be aligned to an existing slot within a defined similarity threshold, the backbone is expanded, creating a new slot to represent this new element. However, as we will show within this work, such an approach is fragile to the very kinds of low SNR regimes that would likely be seen within an adversarial ASR context. Under these conditions, ASR models produce high variance outputs typified by small but frequent structural changes (manifesting as repeated syllables, misspellings, or substituted words), which rapidly induce failures within the sequence alignment algorithm. When the alignment matcher fails to recognize two semantically identical tokens as the same slot, it defaults to creating a new insertion slot. This creates a catastrophic feedback loop: as the number of slots L increases, the Bonferroni-corrected budget α/L becomes increasingly stringent, making it statistically impossible to certify any individual slot. Under testing, 18 ground-truth words expanded to over thousands of slots after only a few thousand samples. The resulting sequence becomes an interleaved concatenation of fragments from different samples—e.g., if Sample 1 is A B C and Sample 2 is D E F , the misaligned output becomes A D B E C F ). This structural collapse leads to rapid growth in the WER and vacuous certifications. 
+
+## 3 Problem Definition 
+
+We aim to extend certified robustness to sequence-valued predictions by constructing a certified transcription ˆY of an audio signal x, such that ˆY is invariant to adversarial perturbations within an ℓ2
+
+radius R in the input space. Formally, let X denote the global universe of tokens, corresponding to the model’s vocabulary, and let X ⋆ = S∞ 
+
+> L=0
+
+X L denote the set of all finite-length sequences over X ,where X 0 = {∅} . The base ASR model f : Rd → X ⋆ thus maps an input signal to a transcription sequence y = ( w1, . . . , w L) where wi ∈ X . Following Cohen et al. (2019), a standard smoothed predictor F : Rd → X ⋆ would ideally select the most probable transcription under Gaussian noise: 
+
+F (x) = arg max   
+
+> y∈X ⋆
+
+P f (x + ϵ) = y, ϵ ∼ N (0 , σ 2I) . (5) However, in practice, the sequence space is so fragmented that the probability of any single transcrip-tion collapses toward zero under significant noise. As such, we define the smoothed predictor through a generalized hierarchical aggregator G(·)
+
+F (x) = G f (x + ϵ), ϵ ∼ N (0 , σ 2I) , (6) the form of which we will now introduce, with the aim of constructing the pair ( ˆY , R ) such that 
+
+P
+
+
+
+∃ δ ∈ Rd s.t. ∥δ∥2 < R and F (x + δ)̸ = ˆY
+
+
+
+≤ α , (7) given some global error budget α ∈ (0 , 1) . To achieve this, we decompose G(·) into two distinct stages with a partitioned error budget α = αatomic + αtourn .1. Token-Level Atomic Certification : We first identify a finite Candidate Vocabulary V ⊂ X 
+
+through an initial discovery phase, and then certify words based upon this Candidate Vocabulary. Specifically, if w ∈ V , then with probability at least 1 − αatomic , the true probability of w
+
+appearing in a noisy transcription p(w) > 0.5. Conversely, if w / ∈ V and w is not ambiguous, we certify p(w) < 0.5.2. Sentence-Level Structural Certificate : A sequential tournament is conducted among a set of candidate transcriptions C ⊂ V ⋆, which have been filtered by the atomic gate to ensure structural and statistical validity. The final system radius R = min( Ratomic , R tourn ) is the minimum radius required to violate either of these hierarchical guarantees. 
+
+3.1 Atomic Certifications 
+
+The atomic gate identifies and verifies constituent tokens in two phases: discovery, in which the candidate vocabulary V is identified; and audit, in which certifications are performed. 4Discovery Phase We draw N1 i.i.d. samples Yi = f (x + ϵi), where ϵi ∼ N (0 , σ 2I) to identify the Candidate Vocabulary V ⊂ X by V = SN1
+
+> i=1
+
+{w : w ∈ Yi}. The intent of this stage is to prune the search space to tokens with non-trivial support in the local noise distribution. These samples are subsequently discarded to ensure statistical independence. However, it must be noted that any word that is not present in the first N1 samples will be unable to be verified—even if it would otherwise present as a high frequency inclusion—and as such will be filtered out from all subsequent stages. 
+
+Audit Phase Following the discovery of the candidate vocabulary V, we verify the existence of each token using a fresh stream of NC samples. For any token w ∈ V , let pw = P(w ∈ f (x + ϵ)) 
+
+denote its marginal probability of appearance. We accumulate two-sided wealth via non-negative martingales Epos (w) and Eneg (w) to test the null hypotheses Hpos : pw ≤ 0.5 and Hneg : pw ≥ 0.5
+
+respectively. These hypotheses will allow us to comprehensively certify the inclusion or exclusion within the observation set. To achieve this, for each noisy sample t, let Ww,t ∈ { 0, 1} be the indicator that token w is present in the transcription. To ensure numerical stability and support high-throughput GPU vectorization, we perform wealth compounding in log-space. For a betting parameter λ ∈ (0 , 2] , the accumulated wealth at time T is defined as 
+
+ln Epos,T (w) = 
+
+> T
+
+X
+
+> t=1
+
+ln  1 + λ(Ww,t − 0.5)  lnE neg,T (w) = 
+
+> T
+
+X
+
+> t=1
+
+ln  1 + λ(0 .5 − Ww,t ) , (8) where Ei, 0 = 1 for i ∈ { pos, neg }. Under the null hypothesis pw = 0 .5, the expectation of the multiplier Et = 1 + λ(Ww,t − 0.5) should be exactly 1, rendering ET a martingale. As was discussed in Section 2, by Ville’s inequality (Ville, 1939; Doob, 1940), the probability that the wealth ever exceeds the safety threshold is bounded through P (∃T : ET ≥ 1/α ) ≤ α. We thus define the Certified Vocabulary Vcert and Excluded Vocabulary Vexcl as the sets of tokens whose wealth crosses the significance threshold 1/α atomic .
+
+Confidence Sequences and Certifications To translate these measures of statistical wealth into certified radii, we must identify the set of success probabilities p that are consistent with the observed evidence. Under the framework of Confidence Sequences (Ramdas et al., 2023), we obtain anytime-valid bounds by inverting the E-value process. For tokens in Vcert or Vexcl , the anytime-valid bounds are the extrame probabilities consistent with the wealth 
+
+pw,T = inf {p ≥ 0.5 : LT (p) < α −1
+
+> atomic
+
+}, pw,T = sup {p ≤ 0.5 : LT (p) < α −1
+
+> atomic
+
+} (9) where LT (p) = QTt=1  
+
+> Bernoulli (Ww,t ;p)
+> Bernoulli (Ww,t ;0 .5)
+
+is the likelihood ratio martingale, and pw and pw are the anytime-valid lower and upper bounds respectively. Following Cohen et al. (2019), we map these probability bounds to a a safety radius rw in the input ℓ2 space. This radius represents the minimum perturbation required to alter the inclusion or exclusion of token w by way of 
+
+rw =
+
+(σΦ−1(pw,T ) for w ∈ V cert σΦ−1(1 − pw,T ) for w ∈ V excl . (10) The global radius Ratomic = min w∈V cert ∪V excl rw represents the smallest perturbation required to alter the inclusion or exclusion of any token in the atomic gate. This ensures that any perturbation δ
+
+with ∥δ∥2 < R atomic is guaranteed, with probability 1 − αatomic , to leave the certified and excluded vocabularies unchanged, preserving the downstream structural tournaments candidate pool. 
+
+Limitations: Multiplicity and Global Control It may be notable that our process applies a fixed threshold of 1/α atomic to each token independently. This provides a rigorous local guarantee for each word but does not strictly control the Family-Wise Error Rate over the entire vocabulary. The true Type I error rate associated with the atomic gate is not αatomic , but rather it scales with the size of the vocabulary, to having a true confidence of |V| αatomic . As such, it is possible that an adversary may be able to insert or remove a word into the certified vocabulary Vcert with a smaller perturbation than the one calculated—which would be required to survive tournament certification. While more conservative global control can be achieved via the e-Benjamini-Hochberg (e-BH, Benjamini & Hochberg (1995); Wang & Ramdas (2022)) procedure or Bonferroni corrections, we 5emphasize that the subsequent Sentence Tournament acts as a robust secondary gate. Even if a low-probability hallucination passes the atomic certification, it must still prove its structural and statistical validity in the tournament to appear in the final output. For reference, the e-BH procedure would offer a more sophisticated mechanism for managing the global False Discovery Rate. By sorting the E-values {E(1) ≥ E(2) · · · ≥ E(|V| )} and finding the largest k such that 1
+
+> |V|
+
+Pki=1 E(i) ≥ 1/α atomic , e-BH provides a rigorous guarantee that is robust to the unknown dependence structures common in ASR output distributions. We exclude e-BH from our implementation because its dynamic, data-dependent threshold is difficult to map back to stable safety radii, and the sort-and-sum operation introduces a GPU synchronization bottleneck. 
+
+3.2 Tournament Certification 
+
+Up to this point, we have a certified vocabulary Vcert , which can be used to understand the compo-nents of a sentence that may be more (or less) vulnerable to adversarial manipulation. While this can provide valuable security insights in high stakes transcription environments, it still represents a bag-of-words that is unable to recreate the desired output of an ASR model: a clean, certified transcription. We bridge this gap by constructing a set of candidate transcriptions C restricted to the certified vocabulary Vcert .
+
+Nomination via Filtered Mapping To achieve this, we draw a new set of N3 samples under the same gaussian noise distribution as above, and apply a filtering mapping ΠVcert : X ⋆ → V ⋆cert , which converts any Yi = ( wi, 1, . . . , w i,L i ) to 
+
+˜Yi =  wi,j ∈ Yi s.t. wi,j ∈ V cert 
+
+, i = 1 , . . . , N T . (11) By removing tokens that were unable to be verified by the atomic gate, we prune hallucinations and temporal jitter. The top-K most frequent unique cleaned sequences form the Structural Candidate Pool C = {C1, . . . , C K }.
+
+The Competitive Structural Tournament Following the filtered sampling stage, our goal is to estimate the most likely transcription under the induced distribution over filtered sequences 
+
+ˆY = arg max 
+
+> y∈V ⋆cert
+
+P ΠVcert (f (x + ϵ)) = y . (12) Accordingly, the tournament procedure constructs a Monte Carlo estimator ˆY of the smoothed pre-dictor F (x) by approximating the maximizer of the induced distribution over filtered sequences. The tournament stage maintains competing hypotheses over C and performs an anytime-valid sequential test. For a fresh batch of NT transcriptions Yt, we update K parallel E-values using a competitive betting function 
+
+Ei,t = Ei,t −1 ×
+
+
+
+1 + λ
+
+
+
+I(i = arg min  
+
+> j
+
+WER (Cj , Y t)) − 1
+
+K
+
+ 
+
+, (13) where WER (·, ·) denotes the word error rate. Under the null hypothesis that no candidate is dominant, each Ei is a martingale. 
+
+Lemma 1 (The Structural Multiplicity Subsidy) The average wealth ¯Etourn = 1
+
+> K
+
+P i = 1 K Ei
+
+is a non-negative martingale. We stop the tournament at any time τ where ¯Eτ ≥ 1/α tourn . This allows the winning candidate’s wealth to subsidize the testing debt of other elements, enabling sequence-level certification with O(1) multiplicity scaling relative to the candidate pool size. 
+
+The structural radius is one again produced through a Cohen et al. (2019) style certification. However, as the tournament exists over K-classes (corresponding to the K highest frequency observations), the associated certified radius—expressed in terms of the probability bounds p and p—becomes 
+
+Rtour = σ
+
+2 (Φ −1(pwinner ) − Φ−1(prunner −up )) . (14) 
+
+Theorem 1 (End-to-End Certified Transcription) Let ˆY be the output of the hierarchical aggre-gation procedure described above, with error budget α = αatomic + αtourn . Then, with probability at least 1 − α, the prediction ˆY is invariant under all perturbations δ satisfying ∥δ∥2 < R , where 
+
+R = min( Ratomic , R tourn ). (15) 6Discussion: Avoidance of Alignment The traditional approach to sequence certification relies on reassembling transcriptions via sequence alignment algorithms such as Recognizer Output Voting Error Reduction (ROVER) (Fiscus, 1997; Haihua et al., 2009) or confusion network lattices (Mangu et al., 2000), and applying union bounds over the resulting paths (Olivier & Raj, 2021). However, this reassembly introduces a fundamental Multiplicity Bottleneck . To certify a sequence of N tokens, one must implicitly or explicitly prove the correctness of the underlying total order. Because a total order is uniquely defined by the set of all  N
+
+> 2
+
+ pairwise relations, maintaining a global confidence level 1 − α under a standard union bound requires each pairwise test to satisfy an error probability of 
+
+O(α/N 2). This quadratic decay in statistical power rapidly results in vacuous radii. Moreover, alignment based mechanisms have the potential to produce transcriptions that are locally robust, but globally incoherent based upon the combination of words from multiple exclusive linguistic paths. By contrast, our framework treats the sequence as the fundamental unit of competition. By restricting the candidate pool C to model-generated sequences passing through the Atomic Gate, we ensure that the tournament is over linguistically coherent sentences grounded in certified evidence. Our categorical tournament approach transforms the sequence certification problem from a com-binatorial search over an alignment lattice into a competitive wealth redistribution task. A key property of E-values is that the statistical evidence required to crown a structural winner does not scale with the number of possible word orderings, but rather with the relative dominance of the winning candidate over its primary competitors. This allows us to produce rigorous, sentence-level certificates in high-noise environments. 
+
+## 4 Analysis 
+
+To assess the performance our approach, we considered experiments using LibriSpeech and Common Voice exposed to the Whisper-v3-Large, Whisper-Small, wav2vec 2.0 Large and HuBERT architec-tures (further detailed in Appendix A. At a high level, the empirical results contained within Tables 1 and 2 provide strong evidence for the effectiveness of our hierarchical E-value framework to produce diagnostic markers of robustness. Perhaps most crucially, Figure 1 demonstrates that there is a clear correlation between the constructed Certifications and the measured WER. For the purposes of a system in production, the WER requires knowing the ground truth transcription—something that is not possible in practice. That the Certified Radius correlates with this, without requiring access to the ground truth transcription, highlights how our approach can be used to guide a confident view of the performance of an ASR system exposed to untrusted data. Figure 3 further expands on this, demonstrating that there is a notable performance advantage induced by our mechanism. This is achieved through establishing consensus through an alignment lattice–a process that becomes statistically and computationally prohibitive as noise increases, due to the growth in hallucinated textual observations—we instead focus upon realizable computational utility through our approach. Through our atomic gate, we prune the hypothesis space before reassembly occurs, reducing sentence diversity to a managable level. As we noted in the Limitations section of Section 3.1, it is important to consider these certifications as a diagnostic marker, rather than a measure of true robustness, as the atomic certifications underestimate the true Type I error rate associated with the individual word certifications. However, even with this limitation, our two phase approach provides significant utility, in that it allows granular word-by-word certifications to be produced, analyzed, and used in concert with broader sentence level certifications. These have the potential to provide significant downstream utility, as it provides a mechanism for analyzing the stability of the ultimate utterance, as well as all its components. These results are expanded upon in Table 1, which demonstrates that our certified pipeline induces a significant reduction in the WER across all tested SNRs. In the highest-noise regimes, OVER (Olivier) recall collapses to 0.0–2.1% in extreme noise. In contrast, our framework maintains a stable certification recall of 40.5–74.0% at the same noise level. Furthermore, for the SOTA Whisper-Large-v3 model, our framework repairs the raw prediction from 0.273 to 0.126 WER —a 54% relative improvement in robust ASR. Notably, the observed Average Radius is inversely correlated with the SNR, validating that our anytime-valid bonds adapt to the underlying quality of the signal. That our aggregate consistently reduces the raw WER demonstrates that our approach is not merely a filter, but a robust aggregator that extracts semantic coherence from noisy model outputs. 7Table 1: Comprehensive Evaluation over all SNR levels. Recall is 99% confidence certification success. Corr (ρ) is the Spearman correlation between the method’s confidence metric and the resulting WER. Note that baselines vanish in noise while our framework remains informative. Models are Hubert (H), Whisper-Large (W.L), wav2vec Large (W2.L) and Whisper-Small (W.S).                                                                                                                                                                                     
+
+> Word Error Rate (WER ↓)Recall (% ↑)Correlation ( ρ↓)Model SNR Raw Cohen ROV Ours Cohen ROV Ours Cohen ROV Ours H10.0 0.161 0.162 17.927 0.145 51.3 48.0 60.1 -0.747 -0.845 -0.774 5.0 0.231 0.217 41.904 0.205 37.2 21.0 58.7 -0.756 -0.626 -0.731 0.0 0.476 0.436 258.566 0.417 7.7 2.3 80.9 -0.700 -0.258 -0.270 -5.0 0.940 0.925 249.886 0.895 0.7 0.0 40.5 -0.298 –-0.198 W.L 10.0 0.085 0.087 0.970 0.087 11.0 44.3 38.2 -0.392 -0.844 -0.811 5.0 0.072 0.052 1.632 0.051 8.2 32.5 90.3 -0.348 -0.739 -0.574 0.0 0.081 0.064 4.317 0.064 3.5 15.8 84.0 -0.313 -0.524 -0.315 -5.0 0.273 0.125 52.577 0.126 0.5 2.1 74.0 -0.154 -0.242 -0.123 W2 10.0 0.265 0.272 51.548 0.229 43.3 29.0 72.7 -0.710 -0.708 -0.697 5.0 0.378 0.348 155.165 0.338 20.7 10.3 71.3 -0.752 -0.509 -0.476 0.0 0.749 0.710 296.782 0.708 2.0 0.3 70.3 -0.617 -0.099 0.393 -5.0 0.948 0.929 110.595 0.930 0.0 0.0 45.2 -0.221 –0.008 W.S 10.0 0.071 0.058 1.532 0.058 0.0 37.5 56.7 0.009 -0.711 -0.600 5.0 0.088 0.061 3.917 0.061 0.0 26.2 87.3 -0.096 -0.613 -0.608 0.0 0.213 0.110 28.143 0.127 0.0 6.7 76.3 –-0.372 -0.456
+> -5.0 0.595 0.669 258.181 0.443 0.0 0.0 44.2 ––-0.320
+
+The comparison between our Tournament framework, ROVER (Olivier), and Naive Cohen random-ized smoothing reveals two critical statistical phenomena that justify the utility of anytime-valid sequence certification. As shown in Table 1, baseline methods (ROVER and Cohen) occasionally exhibit more negative Spearman correlation coefficients ( ρ) than our approach at high SNR levels (e.g., ROVER’s -0.825 for Whisper-Large at 10dB). However, correlation is meaningless in the presence of low recall. For example, at 10dB SNR, our framework achieves significantly higher Recall ( 73% ) than ROVER ( 59% ) while maintaining a highly informative radius ( ρ = −0.310 ). Crucially, our Certified Radius provides a trust score for every sample, not just the certified subset, providing actionable information across the entire dataset. We also stress that as the level of induced noise increases to SNR -5.0, the utility of baseline certificates collapses entirely. That baseline recall collapses towards 0% in noise (e.g., 0% for HuBERT and Wav2Vec2), their certificates become a constant vector of zeros. In contrast, our Tournament maintains stable, non-zero variance and significant informative power even at -5dB, proving it is the only viable path for trust-scoring in extreme environments. Even relative to the raw WER, our tournament approach yields a 55 .1% reduction in the WER. 
+
+Content Fragility One advantage of considering ASR transcriptions on both a sentence level and as an assembly of vocabularies is that we can consider the performance of specific textual components within the overall robustness framework. To achieve this, we employed the spaCy Natural Language Processing framework (Honnibal et al., 2020) to perform Part-of-Speech (POS) tagging over the transcription corpus. Table 2’s audit reveals a crucial linguistic insight: robustness is not uniformly distributed across word classes . Content-heavy tokens such as nouns (NOUN) and verbs (VERB) exhibit significantly lower raw accuracy and smaller certification margins, as compared to more functional tokens (like coordinating conjunctions CCONJ and determiners DET). This is an important insight for ASR validation, that is likely explained by the relative paucity of specific nouns and proper nouns (PROPN) in the ASR training corpora. The Certified Accuracy column demonstrates the utility of our tournament stage, in that the system can successfully recover these forms of content words with high accuracy—including reaching 92 .2% 
+
+accuracy for nouns, a relative improvement of 20 .5% . This demonstrates that anchoring the structural selection to a robust functional skeleton can significantly improve the performance of ASR systems within complex acoustic environments. Further results can be found in Appendix C, covering computational efficiency and generalization. 8Table 2: Linguistic Fragility and Accuracy by POS (see Appendix B for details). Comparison of raw model recall vs. Certified System Recall. Word Type (POS) Raw Acc. Cert. Acc. Prop. Accepted Prop. Rejected Prop. Ambiguous CCONJ 0.97 0.994 0.835 0.141 0.0236 DET 0.96 0.986 0.444 0.5 0.0556 SCONJ 0.919 0.986 0.74 0.231 0.029 ADP 0.932 0.982 0.747 0.229 0.0242 ADV 0.903 0.971 0.695 0.282 0.0231 PRON 0.931 0.967 0.775 0.201 0.0235 VERB 0.832 0.96 0.554 0.412 0.0341 ADJ 0.839 0.947 0.594 0.379 0.0268 NOUN 0.765 0.922 0.455 0.508 0.0365 INTJ 0.889 0.903 0.72 0.257 0.0228 AUX 0.841 0.899 0.704 0.268 0.0273 PART 0.784 0.795 0.83 0.148 0.0221 PROPN 0.539 0.662 0.296 0.67 0.0338 NUM 0.561 0.639 0.603 0.347 0.0494 0.08 0.10 0.12 0.14 0.16 0.18        
+
+> Certified Radius ( )
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Empirical Mean WER
+> Model Name
+> facebook/hubert-large-ls960-ft
+> facebook/wav2vec2-large-960h
+> openai/whisper-large-v3
+> openai/whisper-small
+> 0.06 0.08 0.10 0.12 0.14 0.16 0.18 0.20
+> Certified Radius ( )
+> Model Name
+> facebook/hubert-large-ls960-ft
+> facebook/wav2vec2-large-960h
+> openai/whisper-large-v3
+> openai/whisper-small
+
+Figure 1: Observed WER as a function of Certified Radius : demonstrating the broad correlation between these two quantities. Left: LibriSpeech. Right: Common Voice. 
+
+## 5 Conclusion 
+
+In this work, we have demonstrated that acoustic robustness for sequence-to-sequence systems can be achieved through flexible, computationally efficient statistical mechanisms. By replacing combinatorial sequence alignment with a hierarchy of E-value tournaments, we demonstrate that it is possible to achieve superior performance as compared to alternate approaches, maintaining a stable Precision-Recall balance even as environmental noise increases. Rather than strictly optimizing for mathematically rigorous, worst-case certifications—which of-ten scale poorly—our Tournament approach leverages these statistical mechanics to repair model transcriptions and generate dynamic safety markers. Crucially, we demonstrate that these markers strongly correlate with Word Error Rate. This correlation is invaluable for deployed systems, as ground-truth transcripts are unavailable at runtime. This observation effectively nullifies the utility of the WER as a live diagnostic tool. By instead producing a product for transcription accuracy, our framework bridges this gap. Ultimately, this work provides the foundations for anytime-valid safety evaluations of high-dimensional discrete outputs, ith potential for extension to machine translation, code generation, and autonomous command-and-control ecosystems where reliability is paramount. 9Acknowledgments 
+
+This work was supported by the Australian Defence Science and Technology (DST) Group via the Advanced Strategic Capabilities Accelerator (ASCA) program. 
+
+## Impact Statement 
+
+This work explores the potential for enhancing robustness in adversarially exposed acoustic systems, specifically Automatic Speech Recognition models, and exists within the oeuvre of Adversarial Machine Learning. While defensive works in this space are typically assessed as eliciting no harms, we feel it is important to emphasize two key societal concerns which may be of note. The first of which is that there are some applications where a lack of robustness in a model may be positive. In a world where broad scale surveillance is increasingly normalized, it may well be the case that adversarial attacks may induce privacy, creating a net public good. The second relates to how works like this position risk and harm. A common precept within the Adversarial Machine Learning community is to assume a particular threat model, with the nature of academic comparisons often incentivizing us to then follow in the footsteps of those who came before us. However, in doing so, we inadvertently create—and, crucially, present—-a myopic view of the risk landscape. In essence, we portray to practitioners that risk is concentrated within the areas in which we act as a community, when our investigations may be more motivated by historic alignment to academic norms and mathematical convenience. This work considers ℓ2 perturbations, which, while aligned with classical acoustic threat models, still represent a restriction relative to the overall threat landscape. Such a consideration is especially important, given the limitations associated with 
+
+αatomic , as discussed within the work. We emphasize the above points not just for the risks of erroneous portrayals of risk to practitioners, but also because our focus on these spaces inherently biases real attacker behavior away from these threat models. After all, if an attacker understands that an ℓ2 threat model is likely defended against, they’re naturally incentivized to consider an alternative pathway for model manipulation. With these points made, we still believe that research into defences, and in particular certified defences, induce a net societal gain. Improving robustness to natural or adversarial perturbations will improve the performance of systems that are already one of the dominant access portals for AI within the community. Moreover, voice-based systems provide significant accessibility dividends to members of the community who do not have the ability to employ textual impacts, presenting an additional accessibility dividend. 
+
+## References 
+
+Ardila, R., Branson, M., Davis, K., Kohler, M., Meyer, J., Henretty, M., Morais, R., Saunders, L., Tyers, F., and Weber, G. Common Voice: A Massively-Multilingual Speech Corpus. In 
+
+Proceedings of the twelfth language resources and evaluation conference , pp. 4218–4222, 2020. Baevski, A., Zhou, H., Mohamed, A., and Auli, M. Wav2Vec 2.0: A Framework for Self-Supervised Learning of Speech Representations. In Advances in Neural Information Processing Systems (NeurIPS) , 2020a. Baevski, A., Zhou, Y., Mohamed, A., and Auli, M. wav2vec 2.0: A Framework for Self-Supervised Learning of Speech Representations. Advances in neural information processing systems , 33: 12449–12460, 2020b. Benjamini, Y. and Hochberg, Y. Controlling the false discovery rate: a practical and powerful approach to multiple testing. Journal of the Royal Statistical Society: Series B (Methodological) ,57(1):289–300, 1995. Carlini, N. and Wagner, D. Audio Adversarial Examples: Targeted Attacks on Speech-to-Text. In 
+
+IEEE Security and Privacy Workshops (SPW) , 2018. Clopper, C. J. and Pearson, E. S. The Use of Confidence or Fiducial Limits Illustrated in the case of the Binomial. Biometrika , 26(4):404–413, 1934. 10 Cohen, J., Rosenfeld, E., and Kolter, Z. Certified Adversarial Robustness via Randomized Smoothing. In International Conference on Machine Learning , pp. 1310–1320. PMLR, 2019. Cullen, A. C., Montague, P., Liu, S., Erfani, S. M., and Rubinstein, B. I. Double Bubble, Toil and Trouble: Enhancing Certified Robustness through Transitivity. Advances in Neural Information Processing Systems , 35:19099–19112, 2022. Cullen, A. C., Liu, S., Montague, P., Erfani, S. M., and Rubinstein, B. I. Et Tu Certifications: Robustness Certificates Yield Better Adversarial Examples. In Proceedings of the 41st International Conference on Machine Learning , pp. 9745–9761, 2024. Doob, J. L. Regularity Properties of Certain Families of Chance Variables. Transactions of the American Mathematical Society , 47(3):455–486, 1940. Fiscus, J. G. A Post-Processing System to Yield Reduced Word Error Rates: Recognizer Output Voting Error Reduction (ROVER). In 1997 IEEE workshop on automatic speech recognition and understanding proceedings , pp. 347–354. IEEE, 1997. Goodfellow, I. J., Shlens, J., and Szegedy, C. Explaining and Harnessing Adversarial Examples. 
+
+arXiv preprint arXiv:1412.6572 , 2014. Haihua, X., Jie, Z., and Wu, G. An efficient multistage ROVER Method for Automatic Speech Recognition. In 2009 IEEE International Conference on Multimedia and Expo , pp. 894–897. IEEE, 2009. Hannun, A., Case, C., Casper, J., Catanzaro, B., Diamos, G., Elsen, E., Prenger, R., Satheesh, S., Sengupta, S., Coates, A., and Ng, A. Y. Deep Speech: Scaling up End-to-End Speech Recognition. 
+
+arXiv preprint , 2014. Honnibal, M., Montani, I., Van Landeghem, S., Boyd, A., et al. spaCy: Industrial-strength Natural Language Processing in Python. 2020. Hsu, W.-N., Bolte, B., Tsai, Y.-H. H., Lakhotia, K., Salakhutdinov, R., and Mohamed, A. Hu-BERT: Self-Supervised Speech Representation Learning by Masked Prediction of Hidden Units. 
+
+IEEE/ACM transactions on audio, speech, and language processing , 29:3451–3460, 2021. Huang, Z., Marchant, N. G., Lucas, K., Bauer, L., Ohrimenko, O., and Rubinstein, B. RS-Del: Edit Distance Robustness Certificates for Sequence Classifiers via Randomized Deletion. Advances in Neural Information Processing Systems , 36:18676–18711, 2023. Huang, Z., Marchant, N. G., Ohrimenko, O., and Rubinstein, B. I. CERT-ED: Certifiably Robust Text Classification for Edit Distance. In Findings of the Association for Computational Linguistics: EMNLP 2024 , pp. 10813–10835, 2024. Hussain, S., Neekhara, P., Dubnov, S., McAuley, J., and Koushanfar, F. WaveGuard: Understanding and Mitigating Audio Adversarial Examples. In 30th USENIX Security Symposium (USENIX Security 21) , pp. 2273–2290. USENIX Association, 2021. Johari, R., Koomen, P., Pekelis, L., and Walsh, D. Peeking at A/B Tests: Why it matters, and what to do about it. In Proceedings of the 23rd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining , pp. 1517–1525, 2017. Lecuyer, M., Atlidakis, V., Geambasu, R., Hsu, D., and Jana, S. Certified Robustness to Adversarial Examples with Differential Privacy. In 2019 IEEE Symposium on Security and Privacy (SP) , pp. 656–672. IEEE Computer Society, 2019. Madry, A., Makelov, A., Schmidt, L., Tsipras, D., and Vladu, A. Towards Deep Learning Models Resistant to Adversarial Attacks. In International Conference on Learning Representations , 2018. Mangu, L., Brill, E., and Stolcke, A. Finding Consensus in Speech Recognition: Word Error Minimization and Other Applications of Confusion Networks. Computer Speech & Language , 14 (4):373–400, 2000. Olivier, R. Assessing and Enhancing Adversarial Robustness in Context and Applications to Speech Security . PhD thesis, Carnegie Mellon University, USA, 2023. 11 Olivier, R. and Raj, B. Sequential Randomized Smoothing for Adversarially Robust Speech Recog-nition. In Proceedings of the 2021 Conference on Empirical Methods in Natural Language Processing , pp. 6372–6386, 2021. Olivier, R. and Raj, B. Fooling Whisper with Adversarial Examples. arXiv preprint , 2022. Panayotov, V., Chen, G., Povey, D., and Khudanpur, S. Librispeech: An ASR Corpus based on Public Domain Audio Books. In 2015 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pp. 5206–5210. IEEE, 2015. Qin, Y., Carlini, N., Goodfellow, I., Cottrell, G., and Raffel, C. Imperceptible, Robust, and Targeted Adversarial Examples for Automatic Speech Recognition. In Proceedings of the 36th International Conference on Machine Learning (ICML) , 2019. Radford, A., Kim, J. W., Xu, T., Brockman, G., McLeavey, C., and Sutskever, I. Robust Speech Recog-nition via Large-Scale Weak Supervision. In Proceedings of the 40th International Conference on Machine Learning (ICML) , pp. 28448–28493. PMLR, 2023a. Radford, A., Kim, J. W., Xu, T., Brockman, G., McLeavey, C., and Sutskever, I. Robust speech recognition via large-scale weak supervision. In International conference on machine learning , pp. 28492–28518. PMLR, 2023b. Ramdas, A., Grünwald, P., Vovk, V., and Shafer, G. Game-Theoretic Statistics and Safe Anytime-Valid Inference. Statistical Science , 38(4):576–601, 2023. Schönherr, L., Kohls, K., Zeiler, S., Holz, T., and Kolossa, D. Adversarial Attacks against Automatic Speech Recognition Systems via Psychoacoustic Hiding. In Network and Distributed System Security Symposium (NDSS) , 2019. doi: 10.14722/ndss.2019.23288. Shafer, G. and Vovk, V. Game-Theoretic Foundations for Probability and Finance . John Wiley & Sons, 2019. Sun, Q., Chen, S., Zhai, Y., Liu, Y., and Zhong, Z. CommanderUAP: Practical and Transferable Universal Adversarial Perturbations on ASR Systems. Cybersecurity , 2024. Szurley, J. and Kolter, J. Z. Perceptual Based Adversarial Audio Attacks. arXiv preprint , 2019. Ville, J. Etude Critique de la Notion de Collectif , volume 3. Gauthier-Villars Paris, 1939. Voráˇ cek, V. Treatment of Statistical Estimation Problems in Randomized Smoothing for Adversarial Robustness. Advances in Neural Information Processing Systems , 37:133464–133486, 2024. Wang, R. and Ramdas, A. False discovery rate control with e-values. Journal of the Royal Statistical Society Series B: Statistical Methodology , 84(3):822–852, 2022. 
+
+## A Algorithm 
+
+We present our full ASR certification pipeline in Algorithm 1. In practice, we set τ = 0 .5, corre-sponding to majority occurrence under the smoothing distribution. 
+
+A.1 Configuration 
+
+Our evaluation was performed across four ASR architectures, to demonstrate the model-agnostic utility of our approach. These include Whisper (Large-v3 & Small, MIT License, Radford et al. (2023b)), HuBERT-Large (MIT License, Hsu et al. (2021)) and Wav2Vec2-Large (MIT License, Baevski et al. (2020b)). Of these, the Whisper is a transformer-based encoder-decoded model; HuBERT is a self-supervised hidden unit BERT model fine-tuned for CTC-based ASR; and Wav2Vec is a self-supervised framework. Evaluations are performed zero-shot (inference-only) using the 
+
+test-clean and test-other subsets of the LibriSpeech dataset (Panayotov et al., 2015) (licensed under Creative Commons Attribution 4.0 International) and the English test split of the Common Voice 17.0 
+
+variant (Ardila et al., 2020), which employs the Mozilla Public License 2.0. For each permutation, 12 Algorithm 1 Certified ASR Pipeline  
+
+> 1:
+
+Input: Audio signal x, target SNR (dB), confidence level α = αatomic + αtourn , base model f ,threshold τ ∈ (0 , 1) , step size λ ∈ (0 , 1]  
+
+> 2:
+
+S0 (Noise Calibration):  
+
+> 3:
+
+Compute signal power Ps = 1
+
+> d
+
+Pdi=1 x2 
+
+> i
+
+, noise power Pϵ = Ps/10 SNR /10 , and set σ = √Pϵ. 
+
+> 4:
+
+S1 (Candidate Vocabulary Construction):  
+
+> 5:
+
+for i = 1 to N1 do  
+
+> 6:
+
+Sample ϵi ∼ N (0 , σ 2I) 
+
+> 7:
+
+Yi ← f (x + ϵi) // Yi ∈ V ⋆ 
+
+> 8:
+
+end for  
+
+> 9:
+
+V ← SN1
+
+> i=1
+
+{w : w ∈ Yi} 
+
+> 10:
+
+S2 (Atomic Certification):  
+
+> 11:
+
+for t = 1 to NC do  
+
+> 12:
+
+Sample ϵt ∼ N (0 , σ 2I) 
+
+> 13:
+
+Yt ← f (x + ϵt) 
+
+> 14:
+
+for each w ∈ V do  
+
+> 15:
+
+Zw,t ← I{w ∈ Yt} 
+
+> 16:
+
+Epos (w) ← Epos (w) · (1 + λ(Zw,t − τ ))  
+
+> 17:
+
+Eneg (w) ← Eneg (w) · (1 + λ(τ − Zw,t ))  
+
+> 18:
+
+end for  
+
+> 19:
+
+end for  
+
+> 20:
+
+Vcert ← { w ∈ V : Epos (w) ≥ 1/α atomic } 
+
+> 21:
+
+Vexcl ← { w ∈ V : Eneg (w) ≥ 1/α atomic } 
+
+> 22:
+
+S3 (Filtered Transcription Sampling):  
+
+> 23:
+
+for i = 1 to N3 do  
+
+> 24:
+
+Sample ϵi ∼ N (0 , σ 2I) 
+
+> 25:
+
+Yi ← f (x + ϵi) 
+
+> 26:
+
+˜Yi ← (w ∈ Yi s.t. w ∈ V cert ) 
+
+> 27:
+
+end for  
+
+> 28:
+
+Select top-K most frequent unique sequences from { ˜Yi} as candidates C 
+
+> 29:
+
+S4 (Tournament Certification):  
+
+> 30:
+
+Initialize wealth Ei ← 1 for each Ci ∈ C  
+
+> 31:
+
+while max i Ei < 1/α tourn and t < N 3 do  
+
+> 32:
+
+Sample ϵt ∼ N (0 , σ 2I) 
+
+> 33:
+
+Yt ← f (x + ϵt) 
+
+> 34:
+
+˜Yt ← (w ∈ Yt s.t. w ∈ V cert ) 
+
+> 35:
+
+i∗ ← arg min i WER (Ci, ˜Yt) 
+
+> 36:
+
+for i = 1 to K do  
+
+> 37:
+
+Ei ← Ei · (1 + λ(I(i = i∗) − 1/K ))  
+
+> 38:
+
+end for  
+
+> 39:
+
+end while  
+
+> 40:
+
+Output: ˆY = arg max i Ei, R = min {Ratomic , R tourn }
+
+13 we process 100 random sentences, resulting in a comprehensive matrix of 3,200 unique certification trials. All experiments were conducted using the parameters outlined in Table 3, on a H100 Tensor Core GPU with 80GB VRAM, using 16-bit precision for Whisper-Large-v3. Total experimental time was 
+
+8 GPU-days. Table 3: Hyperparameter Configuration for Tournament Framework. Stage Parameter Value Discovery (S1) Sample Count ( NS1) 50 Certification (S2) Sample Count ( NS2) 1000 Nomination (S3) Candidate Count ( K) 5Tournament (S4) Max Sample Budget ( NS4) 250 Martingale Confidence Level ( α) 0.01 Betting Instance Count Parameter ( λinst ) 0.50 Betting Tournament Parameter ( λtourney ) 0.20 
+
+Noise Augmentation Our certification framework is built upon Additive White Gaussian Noise (AWGN) at four Signal-to-Noise Ratio (SNR) levels: {10 , 5, 0, −5} dB. Given a clean audio signal x,the noisy realization x′ is generated as x′ = x + η, where η ∼ N (0 , σ 2) and σ2 is scaled to achieve the target SNR. All audio is standardized to a single-channel 16kHz format before transcription. 
+
+## B Linguistic Fragility 
+
+In a linguistic context, robustness of the final transcription may not be the only goal. In fact, in security conscious environments, it may also be important to audit the robustness of individual words. Such an audit framework also provides key information to those developing and deploying ASR models, as the results can be leveraged to understand weak points in systemic performance. Table 4: Definitions and examples for Part-of-Speech (POS) categories used in the linguistic fragility audit.                       
+
+> Tag Category Examples PRON Pronoun I, you, he, she, they, it CCONJ Coordinating Conjunction and, or, but, so, yet ADP Adposition (Preposition) in, on, at, by, with, from AUX Auxiliary Verb is, are, was, were, has, have ADV Adverb quickly, very, well, yesterday ADJ Adjective big, blue, happy, loud VERB Verb run, jump, think, speak NOUN Common Noun dog, house, table, idea PROPN Proper Noun London, Alice, Google, Monday PART Particle ’s, not, to (infinitive)
+
+To achieve this audit, we employed spaCy Natural Language Processing framework (Honnibal et al., 2020), where each word was tagged to a Part-of-Speech (POS) category (see Table 4) using spaCy’s 
+
+en_core_web_sm model. We then calculated the Certification Recall —defined as the percentage of tokens within a given linguistic class that successfully accumulated enough statistical wealth to be formally certified. Our audit indicates that robustness is not uniformly distributed across word classes. Functional tokens, such as Pronouns (PRON, 21.7% recall), Conjunctions (CCONJ, 16.7%), and Adpositions (ADP, 13.1%), are significantly easier to certify in noise. In stark contrast, content-heavy tokens, such as Nouns (NOUN, 2.8% recall), Verbs (VERB, 3.8%), and Proper Nouns (PROPN, 1.2%), exhibit extreme fragility, with recall rates falling drastically. This discrepancy likely stems from the relative semantic density of these content words in the training corpora for these models. In noisy environments, an ASR model may hallucinate numerous 14 -5.0 0.0 5.0 10.0 
+
+> SNR (dB)
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Successfully Certified (%)
+> Method
+> Tournament (Ours)
+> Olivier (ROVER)
+> Naive Cohen
+
+Figure 2: Relative Certification performance across all approaches phonetically similar but semantically distinct nouns (e.g., "cat", "cap", "bat"). This high entropy disperses the probability mass, preventing any single content token from accumulating the statistical wealth required for certification under a strict E-value martingale. Functional words, however, belong to smaller, more closed linguistic classes and are often highly predictable given the surrounding context, allowing them to rapidly gain consensus. This audit highlights the need for "linguistically-aware" certification frameworks that can prioritize or differentially weight evidence accumulation for critical content words to improve system-level trust. 
+
+## C Additional Results 
+
+The performance deltas visualized in Figures 3 and 2 confirm that the utility of the Tournament framework extends beyond mere certification. By aggregating evidence across a massive search space, the system consistently produces a certified transcription that is significantly more accurate than any individual transcription under noise. As detailed in Table 1, this multiplicity subsidy is most pronounced in high-noise environments, where our framework achieves an absolute WER reduction of up to 10.6% at SNR -5dB on the LibriSpeech dataset, and 8.1% on Common Voice. This indicates that the aggregation mechanism is particularly valuable precisely when the underlying model begins to fail catastrophically. We note that the relative performance differences seen between the CTC-based architectures (HuBERT, wav2vec) and the auto-regressive models of Whisper are not distributed evenly (see Figure 4). We believe that this is a product of both the relative balance of the models computational cost to the certifications, and, perhaps more importantly, a decreased sensitivity to noise, which manifests as significantly smaller transcription sets for the ROVER based mechanism to aggregate ov A critical requirement for practical ASR safety is real-time or near real-time feasibility. Table 5 demonstrates that for CTC-based architectures (HuBERT, Wav2Vec2), our anytime-valid framework is 17–20% faster than traditional ROVER alignment. While auto-regressive models like Whisper-Large incur a higher absolute cost due to their decoding mechanisms, the anytime-stopping rule provides a 28% compute saving relative to a fixed-budget approach, exiting the tournament as soon as statistical confidence is reached. This proves that martingale-based certification is a practical path for sequence-level guarantees. 15 Figure 3: Relationship between SNR and WER. Solid lines: Certified Transcriptions, Dashed lines: Uncertified Transcriptions Under Noise Table 5: Computational Efficiency (RTF). Tournament anytime-stopping maintain competitive scaling even under heavy noise.                
+
+> Architecture Naive Cohen ROVER Ours (EE)
+> HuBERT-large 0.05x 0.07x 0.06x
+> wav2vec2-large 0.05x 0.06x 0.05x
+> Whisper-large-v3 2.20x 2.12x 2.37x
+> Whisper-small 0.90x 0.83x 0.96x
+
+16 -5.0 0.0 5.0 10.0 
+
+SNR (dB) 
+
+10 0
+
+> Real-Time Factor (RTF)
+
+Architecture: Hubert Large Ls960 Ft 
+
+Method 
+
+Tourney-Early 
+
+Tourney-Full 
+
+Olivier (ROVER) 
+
+-5.0 0.0 5.0 10.0 
+
+SNR (dB) 
+
+10 2
+
+> Real-Time Factor (RTF)
+
+Architecture: Whisper Large V3 
+
+Method 
+
+Tourney-Early 
+
+Tourney-Full 
+
+Olivier (ROVER) 
+
+-5.0 0.0 5.0 10.0 
+
+SNR (dB) 
+
+10 0
+
+6 × 10 1
+
+2 × 10 0
+
+> Real-Time Factor (RTF)
+
+Architecture: Wav2Vec2 Large 960H 
+
+Method 
+
+Tourney-Early 
+
+Tourney-Full 
+
+Olivier (ROVER) 
+
+-5.0 0.0 5.0 10.0 
+
+SNR (dB) 
+
+10 1
+
+10 2
+
+> Real-Time Factor (RTF)
+
+Architecture: Whisper Small 
+
+Method 
+
+Tourney-Early 
+
+Tourney-Full 
+
+Olivier (ROVER) Figure 4: Relationship between SNR and the Real Time Factor (RTF) for different models. 17

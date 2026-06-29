@@ -1,0 +1,186 @@
+Title: HybridCodec: Modeling Discrete and Continuous Representations for Efficient Speech Language Models
+
+URL Source: https://arxiv.org/pdf/2606.27627v1
+
+Published Time: Mon, 29 Jun 2026 00:15:48 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# HybridCodec: Modeling Discrete and Continuous Representations For Efficient Speech Language Models 
+
+# Artem Ploujnikov 1,2,∗, Francesco Verdini 3,∗, Samir Sadok 4, Mirco Ravanelli 1,21Mila, Quebec AI Institute, Canada; 2Concordia University, Canada; 
+
+> 3
+
+# Sapienza University of Rome, Italy; 4Inria, Universit´ e Grenoble Alpes CNRS, LJK, France 
+
+artem.ploujnikov@mail.concordia.ca, francesco.verdini@uniroma1.it, samir.sadok@inria.fr, mirco.ravanelli@mail.concordia.ca 
+
+# Abstract 
+
+Discrete audio representations have become increasingly popu-lar for building multimodal text-audio systems and integrating audio capabilities into Large Language Models (LLMs). How-ever, numerous studies report performance degradation on vari-ous downstream tasks due to information loss during discretiza-tion. To address this, we propose a novel approach combin-ing temporally compressed discrete tokens with dimensionality-reduced continuous residuals. Our framework consists of a hy-bridized discrete-continuous focal modulation codec and a hy-brid Transformer. This architecture performs autoregressive in-ference in the discrete domain, coupled with non-autoregressive prediction and continuous residual upsampling. Experimental results show that our approach significantly improves the reten-tion of speaker characteristics compared to discrete-only meth-ods, while simultaneously reducing the number of required au-toregressive steps. 
+
+Index Terms : speech recognition, speech synthesis, text-to-speech, audio representations, neural audio codecs. 
+
+# 1. Introduction 
+
+The human mind processes the world through a complex inter-play of discrete categories and continuous spectra [1,2]. Human language perfectly illustrates this duality. It imposes a clear 
+
+discrete hierarchy (sequences of phonemes forming words and sentences captured in alphabets or logographic systems) onto a rich modulation of continuous characteristics, such as pitch, tone, emotion, and prosody. The advent of the Transformer architecture [3] established discrete token sequences as the de facto medium for modern artificial intelligence. This paradigm, which drives autoregres-sive generation and Large Language Models (LLMs) [4–6], was subsequently adapted for the audio domain. Pioneering ar-chitectures like the Vector Quantized Variational Autoencoder (VQ-VAE) [7] demonstrated that continuous information can be effectively compressed into a discrete latent space, motivating the development of neural audio codecs (NACs) [8–11]. Funda-mentally, a NAC comprises an encoder, a vector quantizer, and a decoder that map continuous audio into low-bitrate discrete to-kens and back to the waveform. Unlike traditional codecs such as MP3 that rely on algorithmic signal processing and psychoa-coustics, NACs learn a finite or variable data-driven vocabulary 
+
+of sounds. This allows them to achieve extreme compression rates while preserving rich semantic and acoustic features, ef-fectively bridging the gap between raw signal processing and natural language modeling by enabling LLMs to process speech 
+
+> *These authors contributed equally.
+
+as natively as text. Models like AudioLM (semantic and acous-tic modeling) [12], VALL-E (zero-shot voice cloning) [13], and SpeechGPT (cross-model speech-text LLM) [14] have suc-cessfully leveraged these discrete audio tokens to drive signif-icant breakthroughs in zero-shot speech synthesis and end-to-end multimodal dialogue. Despite their advantages, fully discrete representations in-troduce an inherent quantization penalty. As evidenced by Benchmarks (e.g., SUPERB [15], DASB [16]) and recent com-parative surveys [8, 17, 18] highlight a fundamental trade-off: while discrete tokens facilitate stable convergence and seam-less LLM integration, the quantization process irreversibly dis-cards fine-grained acoustic details. Fundamentally, this loss stems from the classic rate-distortion trade-off [19, 20]. At low bit-rates, NACs prioritize semantic content intelligibility over acoustic richness, lacking the bandwidth to encode micro-prosody and speaker timbre [8]. To mitigate this limitation, we propose a novel hybrid paradigm in which the codec supports optional refinements through high-frame-rate continuous resid-uals, and an LM can start with a lossy, low-resolution approx-imation and then compute a one-step continuous refinement, vastly reducing the total number of forward passes required in inference. Our main contributions are as follows: (1) HybridCodec , a novel NAC framework extending FocalCodec [21, 22], which jointly extracts time-reduced discrete tokens and models the remaining information as dimensionality-reduced continuous residuals; (2) HybridLM , a decoder-only Transformer [3] de-signed to process these hybrid representations. It unifies effi-cient, low-frame rate autoregressive (AR) prediction for discrete tokens with a single-step non-autoregressive (NAR) prediction and continuous residual upsampling; (3) A unified framework that leverages the HybridLM architecture to effectively han-dle major downstream speech tasks, including ASR and TTS, within a single framework. This hybrid paradigm restores the fine-grained information lost in discrete LMs. Experimental re-sults on LibriTTS [23] dataset showed that our approach signif-icantly outperforms discrete baselines, especially at extremely low frame rates such as 6.25 Hz, while substantially reducing AR steps. 
+
+# 2. Related Work 
+
+Recent work has been responding to the discrete-continuous performance gap with further task-specific analysis and a va-riety of adaptations. Studies in ASR [24] confirm the gap, showing that such an information bottleneck directly degrades downstream performance by stripping the signal of its prosodic nuance and speaker identity. To overcome this limitation, re-cent literature has explored re-integrating continuous features 
+
+> arXiv:2606.27627v1 [cs.LG] 26 Jun 2026
+
+Figure 1: Overview of the proposed architecture: HybridCodec (left) provides dual-path discrete-continuous compression, and Hy-bridLM (right) unifies these representations through interleaved autoregressive and non-autoregressive decoding. 
+
+through diffusion mechanisms, continuous autoregressive mod-eling, or masked modeling [25–27]. However, these approaches remain highly task-specific, sacrificing the unified, generaliz-able framework that discrete LLMs provide. This limits their ability to handle diverse speech applications (like generation and recognition) within a single model. Discrete-continuous hybridization has been successfully explored in other domains, such as RL and robotics [28–30], text diffusion [31], and oth-ers. This raises a critical question: is it possible to design a unified language model that leverages the efficiency of discrete tokens while restoring the rich acoustic nuances of continuous speech? To the best of our knowledge, our approach is the first to unify discrete and continuous refinement within a single Transformer architecture. By leveraging these two domains, we achieve high-fidelity speech synthesis at ultra-low frame rates. 
+
+# 3. Model Architecture 
+
+3.1. Preliminaries: The FocalCodec Architecture 
+
+FocalCodec [21] employs an asymmetric VQ-VAE architecture centered around a compressor-quantizer-decompressor bottle-neck. It uses the first six layers of a pretrained WavLM as a base encoder to extract jointly acoustic and semantic features. Its core pipeline relies on focal modulation : a Focal Encoder (FE) (compressor) downsamples these continuous features into a compact latent space in linear time by aggregating multi-scale global and local contexts (noted as xbase ). The represen-tations are then discretized using Binary Spherical Quantiza-tion (BSQ) [32], a lookup-free approach that enforces bounded quantization errors and maximizes codebook utilization. Then, a Focal Decoder (FD) (decompressor) mirrors the downscaling process to upsample the discrete tokens, and explicitly recon-struct the original continuous WavLM representations. Finally, a lightweight Vocos decoder [33] synthesizes the audio wave-form directly from these restored continuous features. 
+
+3.2. HybridCodec: Extracting Hybrid Representations 
+
+The HybridCodec, shown in Figure 1 (left), extends Focal-Codec [21] by adding a secondary pathway. This branch, con-sisting of an additional focal encoder and decoder, captures and compresses the continuous residual information lost during dis-cretization. 
+
+Encoding: Dual-Path Feature Extraction. The encoding process maps the base representations, xbase ∈ RT ×d , into a dual discrete-continuous latent space. First, the discrete path-way (highlighted in red in Fig. 1) extracts the quantized in-dices zq = FQ θ (xbase ). From these indices, we derive the quantized approximation ˆxquant = BSQ −1 
+
+> θ
+
+(zq ). Second, the 
+
+continuous pathway (highlighted in green in Fig. 1) captures the fine-grained acoustic details lost to quantization by com-puting the residual error: xres = xbase − ˆxquant . This contin-uous residual is compressed by a dedicated residual focal en-coder, FE res , which applies a temporal down-sampling stride 
+
+r to yield a dimensionality-reduced bottleneck representation: 
+
+¯xres = FE res (xres ). To control the temporal resolution, we ad-just the strides of FE res : (1 , 1, 1) for 50 Hz, (2 , 1, 1) for 25 Hz, 
+
+(2 , 2, 1) for 12 .5 Hz, and (2 , 2, 2) for 6.25 Hz. 
+
+Decoding: Feature Fusion and Reconstruction. The decod-ing process perfectly mirrors the encoding stages to reconstruct the full hybrid signal. First, the discrete pathway projects the indices zq back into the continuous embedding space via the inverse quantizer: ˆxquant = FQ −1 
+
+> θ
+
+(zq ). Second, the continuous pathway passes the bottleneck residual ¯xres through a residual focal decoder, FD res . This module upsamples the representa-tion by the factor r to restore the original temporal resolution: 
+
+ˆxres = FD res (¯ xres ) ∈ RT ×d . Finally, the full representation is synthesized by adding both streams together before passing them to the Vocos decoder: ˆxbase = ˆ xquant + ˆ xres .
+
+3.3. HybridLM Architecture 
+
+HybridLM is a GPT-style [4] decoder-only Transformer, illus-trated in Figure 1 (right), tailored to process the dual represen-tations of HybridCodec (Section 3.2). It unifies autoregressive (AR) and non-autoregressive (NAR) decoding within a single network: discrete tokens drive the AR phase to establish seman-tic structure, while continuous residuals are predicted in a NAR pass to recover high-fidelity acoustic details. Unlike VALL-E [13], our model supports mixed discrete-continuous prompts at different temporal scales. The model was designed to fully exploit HybridCodec features, including both semantic indices (in AR mode) and continuous residuals (single-pass NAR). 
+
+Unified AR and NAR Modeling via AdaLN. Combining AR classification (token generation) and NAR regression (residual prediction) risks objective interference in deeper layers if re-lying on simple prefix conditioning. To mitigate this, we em-ploy Adaptive Layer Normalization (AdaLN) to multiplex both operational modes. By injecting a mode-specific embedding (imode ∈ { AR , NAR }) at every layer, AdaLN provides deep conditioning that dynamically adapts internal representations. This effectively creates two specialized, interference-free sub-models within a shared backbone [13, 35]. We train models with 12 layers, 4 attention heads, dmodel = demb = 512 , and Table 1: Resynthesis performance between baseline codecs and our hybrid codec. ↑ / ↓ indicates higher/lower is better. bold and second denote the best and second-best results, respectively.                                                                        
+
+> NAC Frame rate UTMOS (↑)dWER (↓)SpkSim (↑)Code Usage (↑)Norm Entropy (↑)Reference —4.09 0.00 100.0 ——DAC [34] 50 Hz 1.29 20.04 89.2 100.0 91.7 Mimi [9] 12.5 Hz 3.29 5.73 96.0 95.6 91.8 BigCodec [10] 50 Hz 4.11 2.55 98.5 100.0 98.6
+> FocalCodec [21] 12.5 Hz 4.22 7.94 93.9 98.2 97.4 FocalCodec [21] 25 Hz 4.14 3.30 96.3 99.8 98.4 HybridCodec 50 Hz 4.07 1.47 97.2 99.9 96.3 HybridCodec 25 Hz 4.07 1.48 96.7 98.8 96.8 HybridCodec 12.5 Hz 4.09 1.47 96.2 97.1 96.7 HybridCodec 6.25 Hz 3.98 1.50 97.1 97.4 98.2
+
+dffn = 2048 (inner dimension of the feed-forward layers). Given a decoding mode identifier imode , the AdaLN modu-lation parameters are computed as follows: 
+
+e = Emb( imode ) (Mode embedding) 
+
+γ = Wγ e + bγ (Scaling vector) 
+
+β = Wβ e + bβ (Bias vector) 
+
+¯z = LayerNorm( z) (Standard LN) 
+
+zcond = γ ⊙ ¯z + β (Affine transform) 
+
+where Emb( ·) is a learned embedding layer mapping the dis-crete mode identifier to a continuous vector e, Wγ and Wβ are learnable weight matrices, bγ and bβ are bias terms, z denotes a latent variable (usually the output of the previous layer or of attention/FFN) and ⊙ denotes the Hadamard product. 
+
+Speaker Embeddings. To condition the generation on a spe-cific voice, we inject pretrained ECAPA-TDNN [36] speaker embeddings, extracted using the SpeechBrain [37] toolkit. These embeddings are integrated via a simple linear projection and addition to all token embeddings in the source sequence. 
+
+Training Procedure. Both the discrete and continuous paths are trained conventionally with teacher forcing, as in the orig-inal Transformer [3] and the two losses (NLL for discrete and MSE for continuous) are combined. 
+
+Cascaded Inference. During the inference phase, the genera-tion proceeds in a cascaded manner. Given a task-specific con-ditioning sequence c (e.g. text, phonemes or an acoustic prefix), the discrete tokens are first generated autoregressively. Subse-quently, the continuous residuals are predicted in a single non-autoregressive forward pass: 
+
+ˆzq = AR( c) (AR generation) 
+
+hNAR = c ∥ Up(ˆ zq , r ) (Upsample & Concat) 
+
+ˆzres = f −1 
+
+> SLT
+
+(NAR( hNAR )) (NAR prediction) 
+
+ˆs = Decoder(ˆ zq , ˆzres ) (Waveform synthesis) 
+
+where AR denotes the autoregressive decoding of the discrete tokens, and NAR represents the non-autoregressive prediction of the continuous residuals. The operator ∥ denotes sequence concatenation along the temporal dimension. The Up function aligns the temporal resolution of the generated discrete tokens 
+
+ˆzq with the continuous space using the defined up-sampling rate r. Finally, the Decoder module synthesizes the final au-dio waveform ˆs by combining both the discrete and contin-uous representations. The signed-log transform fSLT (x) =
+
+sign (x) log( |x| + 1) [38] is used to improve training dynamics. With a downsampled discrete track, the generation time is significantly reduced: ncascade = nfull /r + 1 , where ncascade is the number of Transformer steps required with cascading in-ference, nfull is the number of full autoregressive steps, and 
+
+r = fbase /f model is the scaling factor. For instance, generating a 10-second sample at 50 Hz traditionally takes 500 steps, but using a 12.5 Hz residual-enhanced model 500 /4 + 1 = 126 
+
+steps without the significant quality loss of the discrete-only model. 
+
+# 4. Experimental Setup 
+
+We use the 960-hour LibriTTS [23] dataset, an extension of Lib-riSpeech [39] specifically optimized for TTS. While we train on both the clean and other (distorted) subsets for training, we strictly limit our evaluation to the clean test set to maintain con-sistency. To align with the original FocalCodec setup and avoid out-of-distribution artifacts, we exclude any audio samples ex-ceeding 20 seconds. During evaluation, ASR performance is computed on the full test set. For TTS, we uniformly sample a single subset of 1,000 utterances. We implement our frame-work using the SpeechBrain [37] toolkit. For reproducibility and to support the community, all source code and models will be made publicly available within the SpeechBrain project 1.
+
+4.1. Metrics 
+
+We use the objective evaluation metrics listed below: • Audio quality and naturalness: We report UTMOS [40] and NISQA [41], neural estimators of the Mean Opinion Score (MOS, ranging from 1.0 to 5.0, where higher is bet-ter). While UTMOS evaluates perceived overall naturalness, NISQA specifically targets signal transmission quality. • Intelligibility: We measure robustness against mispronunci-ations and acoustic artifacts using the differential Word Er-ror Rate ( dWER ). It is computed as the word-level edit dis-tance between ASR transcriptions of the synthesized audio and the ground truth. Following standard benchmarks like DASB [16], we intentionally employ Whisper Small [42] with greedy decoding; a weaker ASR model is strictly prefer-able here, as it is less capable of implicitly compensating for underlying codec or synthesis flaws. • Speaker identity preservation: We quantify voice fidelity via SpkSim (ranging from 0.0 to 1.0, higher is better). This metric calculates the cosine similarity between latent embed-dings extracted from a pretrained WavLM model fine-tuned 
+
+> 1https://speechbrain.github.io/
+
+Table 2: Comparison of downstream task (TTS/ASR) performance (best results in bold)                                                             
+
+> TTS (generative task) ASR (discriminative task) Representation Frame rate (Hz) UTMOS (↑)dWER (↓)SpkSim (↑)WER (↓)CER (↓)Discrete-Only 50.0 4.07 16.10 0.924 28.11 14.48 Hybrid (Ours) 50.0 4.14 11.67 0.926 23.36 12.36
+> Discrete-Only 25.0 3.98 10.09 0.866 31.48 16.76 Hybrid (Ours) 25.0 4.22 10.33 0.914 28.36 14.99
+> Discrete-Only 12.5 1.99 32.97 0.853 28.50 14.19 Hybrid (Ours) 12.5 4.10 14.79 0.905 25.94 12.86
+> Discrete-Only 6.25 1.44 121.00 0.707 29.13 15.45 Hybrid (Ours) 6.25 3.08 48.00 0.834 27.36 13.62
+
+for speaker verification (WavLM-SV), ensuring the synthe-sized vocal characteristics strongly match the original target. • Quantization efficiency: To evaluate the effectiveness of discrete codebook use, we report Code Usage (percentage of active codebook vectors) and Normalized Entropy (token uni-formity). High values indicate optimal vocabulary exploita-tion, preventing the index collapse typical of extreme low-bitrate compression. 
+
+4.2. Tasks 
+
+We evaluate our approach across three tasks. For TTS and ASR, input prompts and targets are combined into a single sequence using [BOS] , [EOP] (which separates the prompt from the generated target), and [EOS] control tokens. 1. Resynthesis: Evaluates the standalone reconstruction quality of the WavLM-based HybridCodec by decoding ground-truth discrete tokens and continuous residuals directly through the vocoder, without a language model. 2. Text-To-Speech (TTS): The model generates audio from a text prompt ( [BOS][Chars][EOP] ). The target consists of AR-generated discrete tokens followed by a NAR residual prediction pass. Quality is assessed via UTMOS, dWER, and SpkSim. 3. Automatic Speech Recognition (ASR): The model maps audio prompts (discrete tokens and residuals) to text ([Text][EOS] ). To isolate the impact of hybrid represen-tations, we use simple greedy search, focusing on relative performance (Word Error Rate–WER and Character Error Rate–CER) rather than state-of-the-art benchmarking. 
+
+# 5. Results 
+
+We first evaluate the reconstruction capabilities of our codec through resynthesis, before assessing its performance on down-stream tasks. In both scenarios, we compare our hybrid ap-proach against discrete-only baselines. 
+
+Resynthesis: Table 1 compares HybridCodec against state-of-the-art NACs [9–11, 21]. To our knowledge, ours is the first approach to maintain such high semantic and speaker preser-vation at ultra-low frame rates (6.25 Hz). While baselines like FocalCodec [21] degrade at lower frame rates, our approach re-mains remarkably robust and stable. At 12 .5 Hz, HybridCodec achieves the best intelligibility with dWER of 1.47 , a signifi-cant improvement over the 7.94 dWER of the discrete-only Fo-calCodec baseline. Speaker similarity also remains high (97.1) compared to other 12 .5 Hz models like Mimi [9] ( 96 .0). Even at an extreme 6.25 Hz, performance remains nearly identical (3.98 UTMOS, 1.50 dWER). This shows that our residual informa-tion effectively mitigates the quantization penalty, offering an efficient alternative to high-frequency NACs. 
+
+TTS: Table 2 summarizes the results of discrete and hybrid TTS and ASR using HybridCodec within the HybridLM frame-work. Note that the discrete, non-finetuned version is identical to the publicly available, frame-rate-matched FocalCodec [21]. For TTS, these results empirically validate our initial hypothe-sis: introducing a single non-autoregressive residual prediction step at the end of inference effectively mitigates the severe per-formance degradation typical of low-token-rate, discrete-only codecs. For instance, in the zero-shot setting at 12.5 Hz, our hybrid method more than doubles the UTMOS score ( 4.10 
+
+vs. 1.99 ) and reduces the dWER by more than half ( 14 .79 
+
+vs. 32 .97 ) compared to the discrete baseline. Similarly to our resynthesis findings, the performance gap between the hybrid and discrete representations widens as the operating frequency decreases. At an extremely low rate of 6.25 Hz, the hybrid ap-proach still achieves a UTMOS of 3.08 and a dWER of 48 ,vastly outperforming the discrete-only representation ( 1.44 UT-MOS and 121 dWER). This demonstrates that as strict quanti-zation discards acoustic details, our continuous refinement be-comes important for recovering signal fidelity. 
+
+ASR: The inclusion of continuous residuals not only maintains semantic integrity but consistently improves transcription accu-racy across all frame rates. While discrete tokens capture core semantics, continuous residuals provide acoustic cues that di-rectly improve recognition. As shown in Table 2, the hybrid approach lowers the WER at 50 Hz from 28.11 to 23.36, and the CER from 14.48 to 12.36. This performance gain holds even at higher compression levels: at 12.5 Hz, the hybrid model achieves a 25.94 WER (vs. 28.50 for the baseline), and at the extreme 6.25 Hz rate, it reduces the WER from 29.13 to 27.36. This is a critical success for our unified framework, confirming that the continuous acoustic information improves rather than interferes with the underlying semantic representations used by HybridLM. 
+
+# 6. Conclusion 
+
+This work introduced HybridCodec, a novel framework that bridges discrete efficiency and continuous acoustic fidelity at remarkably low frame rates. By combining discrete tokens with a non-autoregressive residual pathway, we recovered high-fidelity speech details at an ultra-low temporal resolution of 6.25 Hz. Our results show that this hybrid approach outper-forms a discrete-only baseline in TTS quality and intelligibil-ity, while simultaneously reducing error rates in discriminative ASR tasks. The HybridLM architecture further shows that these dual representations can be unified within a single Transformer via AdaLN. By operating at such extreme compression levels, our method significantly reduces the number of inference steps, offering a highly efficient alternative for long-form synthesis. 7. Generative AI Use Disclosure 
+
+LLMs [6, 43–46] have been used for advanced search, for boil-erplate automation, and as a technical reference. LLMs have not been used to author text for the paper, except BibTeX formatting and grammar/wording revisions. LLM outputs were manually reviewed. 
+
+# 8. Acknowledgments 
+
+We gratefully acknowledge the support of NSERC, the Dig-ital Research Alliance of Canada (alliancecan.ca), Translated (Imminent Program), and Apple (Seed Grant) through research funding, computing resources, and donations. Samir Sadok was supported by the VisaSpeech Inria Associated Team initiative. 
+
+# 9. References 
+
+[1] T. Parr and K. J. Friston, “The discrete and continuous brain: From decisions to movement—and back again,” Neural Computation , vol. 30, no. 9, p. 2319–2347, Sep. 2018. [Online]. Available: http://dx.doi.org/10.1162/neco a 01102 [2] M. Khona and I. R. Fiete, “Attractor and integrator networks in the brain,” Nature Reviews Neuroscience , vol. 23, no. 12, p. 744–766, Nov. 2022. [Online]. Available: http://dx.doi.org/10. 1038/s41583-022-00642-0 [3] A. Vaswani et al. , “Attention is all you need,” in Advances in Neural Information Processing Systems 30: Annual Conference on Neural Information Processing Systems 2017 , 2017, pp. 5998– 6008. [Online]. Available: https://proceedings.neurips.cc/paper/ 2017/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html [4] T. Brown, B. Mann, N. Ryder, M. Subbiah, J. D. Kaplan, P. Dhari-wal, A. Neelakantan, P. Shyam, G. Sastry, A. Askell et al. , “Lan-guage models are few-shot learners,” Advances in neural informa-tion processing systems , vol. 33, pp. 1877–1901, 2020. [5] H. T. et al, “LLaMA: Open and efficient foundation language models,” CoRR , vol. abs/2302.13971, 2023. [Online]. Available: https://doi.org/10.48550/arXiv.2302.13971 [6] R. Anil and G. Team, “Gemini: A family of highly capable multi-modal models,” arXiv preprint arXiv:2312.11805 , 2023. [7] A. Van Den Oord, O. Vinyals et al. , “Neural discrete represen-tation learning,” Advances in neural information processing sys-tems , vol. 30, 2017. [8] P. Mousavi, G. Maimon, A. Moumen, D. Petermann, J. Shi, H. Wu, H. Yang, A. Kuznetsova, A. Ploujnikov, R. Marxer et al. ,“Discrete audio tokens: More than a survey!” Transactions on Machine Learning Research , 2025. [9] A. D´ efossez, L. Mazar´ e, M. Orsini, A. Royer, P. P´ erez, H. J´ egou, E. Grave, and N. Zeghidour, “Moshi: a speech-text foundation model for real-time dialogue,” Kyutai, Tech. Rep., September 2024. [Online]. Available: http://kyutai.org/Moshi.pdf [10] D. Xin, X. Tan, S. Takamichi, and H. Saruwatari, “Bigcodec: Pushing the limits of low-bitrate neural speech codec,” arXiv preprint arXiv:2409.05377 , 2024. [11] R. Kumar, P. Seetharaman, A. Luebs, I. Kumar, and K. Kumar, “High-fidelity audio compression with improved rvqgan,” 2023. [Online]. Available: https://arxiv.org/abs/2306.06546 [12] Z. Borsos, R. Marinier, D. Vincent, E. Kharitonov, O. Pietquin, M. Sharifi, D. Roblek, O. Teboul, D. Grangier, M. Tagliasacchi 
+
+et al. , “Audiolm: a language modeling approach to audio gener-ation,” IEEE/ACM transactions on audio, speech, and language processing , vol. 31, pp. 2523–2533, 2023. [13] C. Wang, Y. Wu, Z. Zhang, L. Zhou, S. Liu, Z. Chen, Y. Liu, H. Wang, J. Li, L. He, S. Zhao, and F. Wei, “Neural codec lan-guage models are zero-shot text to speech synthesizers,” IEEE Transactions on Audio, Speech and Language Processing , vol. PP, pp. 1–15, 01 2025. [14] D. Zhang et al. , “SpeechGPT: Empowering large language models with intrinsic cross-modal conversational abilities,” 2023. [Online]. Available: https://arxiv.org/abs/2305.11000 [15] S. wen Yang et al. , “SUPERB: Speech Processing Universal PER-formance Benchmark,” in Interspeech 2021 , 2021, pp. 1194– 1198. [16] P. Mousavi et al. , “DASB - discrete audio and speech benchmark,” 2024. [Online]. Available: https://arxiv.org/abs/2406.14294 [17] D. Wang et al. , “Speech discrete tokens or continuous features? a comparative analysis for spoken language understanding in SpeechLLMs,” ArXiv , vol. abs/2508.17863, 2025. [Online]. Available: https://api.semanticscholar.org/CorpusID:280711311 [18] S. Kammoun, X. Alameda-Pineda, and S. Leglaive, “Modeling strategies for speech enhancement in the latent space of a neural audio codec,” arXiv preprint arXiv:2510.26299 , 2025. [19] T. M. Cover, Elements of information theory . John Wiley & Sons, 1999. [20] C. E. Shannon et al. , “Coding theorems for a discrete source with a fidelity criterion,” IRE Nat. Conv. Rec , vol. 4, no. 142-163, p. 1, 1959. [21] L. D. Libera et al. , “FocalCodec: Low-bitrate speech coding via focal modulation networks,” in The Thirty-ninth Annual Confer-ence on Neural Information Processing Systems , 2025. [22] L. Della Libera, C. Subakan, and M. Ravanelli, “Focalcodec-stream: Streaming low-bitrate speech coding via causal distilla-tion,” arXiv preprint arXiv:2509.16195 , 2025. [23] H. Zen et al. , “LibriTTS: A Corpus Derived from LibriSpeech for Text-to-Speech,” in Interspeech 2019 , 2019, pp. 1526–1530. [24] Y. Xu, S.-X. Zhang, J. Yu, Z. Wu, and D. Yu, “Comparing Dis-crete and Continuous Space LLMs for Speech Recognition,” in 
+
+Interspeech 2024 , 2024, pp. 2509–2513. [25] C. Y. Wu et al. , “Clear: Continuous latent autoregressive mod-eling for high-quality and low-latency speech synthesis,” 2025. [Online]. Available: https://api.semanticscholar.org/CorpusID: 280870588 [26] A. Turetzky and Dothers, “Speech synthesis from continuous features using per-token latent diffusion,” in Proceedings of the IEEE Automatic Speech Recognition and Understanding Work-shop (ASRU) , 2025. [27] S. Sadok, S. Lathuili` ere, and X. Alameda-Pineda, “Residual to-kens enhance masked autoencoders for speech modeling,” in 
+
+ICASSP 2026 - 2026 IEEE International Conference on Acous-tics, Speech and Signal Processing (ICASSP) , 2026, pp. 14 447– 14 451. [28] B. Li et al. , “HyAR: Addressing discrete-continuous action rein-forcement learning via hybrid action representation,” in Interna-tional Conference on Learning Representations , 2022. [29] C. Huang et al. , “Mixed deep reinforcement learning considering discrete-continuous hybrid action space for smart home energy management,” Journal of Modern Power Systems and Clean En-ergy , vol. 10, no. 3, pp. 743–754, 2022. [30] X. Zhang et al. , “Learning insertion primitives with discrete-continuous hybrid action space for robotic assembly tasks,” in 2022 International Conference on Robotics and Automation (ICRA) , 2022, pp. 9881–9887. [31] P. Pynadath, J. Shi, and R. Zhang, “Candi: Hybrid discrete-continuous diffusion models,” 2025. [Online]. Available: https: //arxiv.org/abs/2510.22510 [32] Y. Zhao et al. , “Image and video tokenization with binary spher-ical quantization,” in International Conference on Learning Rep-resentations (ICLR) , 2024. [33] H. Siuzdak, “Vocos: Closing the gap between time-domain and fourier-based neural vocoders for high-quality audio synthesis,” in The Twelfth International Conference on Learning Representa-tions , 2024. [34] R. Kumar, P. Seetharaman, A. Luebs, I. Kumar, and K. Kumar, “High-fidelity audio compression with improved rvqgan,” Ad-vances in Neural Information Processing Systems , vol. 36, pp. 27 980–27 993, 2023. [35] M. Chen et al. , “AdaSpeech: Adaptive text to speech for custom voice,” in International Conference on Learning Representations (ICLR) 2021 , 2021. [36] N. Dawalatabad et al. , “ECAPA-TDNN Embeddings for Speaker Diarization,” in Interspeech 2021 , 2021, pp. 3560–3564. [37] M. Ravanelli et al. , “Open-source conversational AI with SpeechBrain 1.0,” Journal of Machine Learning Research ,vol. 25, no. 333, 2024. [Online]. Available: http://jmlr.org/papers/ v25/24-0991.html [38] J. A. John and N. R. Draper, “An alternative family of transformations,” Journal of the Royal Statistical Society: Series C (Applied Statistics) , vol. 29, no. 2, pp. 190–197, 1980. [Online]. Available: https://doi.org/10.2307/2986305 [39] V. Panayotov et al. , “Librispeech: An ASR corpus based on pub-lic domain audio books,” in 2015 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2015, pp. 5206–5210. [40] T. Saeki, D. Xin, W. Nakata, T. Koriyama, S. Takamichi, and H. Saruwatari, “UTMOS: UTokyo-SaruLab System for Voice-MOS Challenge 2022,” in Interspeech 2022 , 2022, pp. 4521– 4525. [41] G. Mittag et al. , “NISQA: A deep CNN-Self-Attention model for multidimensional speech quality prediction with crowdsourced datasets,” in Interspeech 2021 , ser. interspeech 2021. ISCA, Aug. 2021, pp. 2127–2131. [Online]. Available: http://dx.doi.org/ 10.21437/Interspeech.2021-299 [42] A. Radford et al. , “Robust speech recognition via large-scale weak supervision,” in International Conference on Machine Learning , 2022. [Online]. Available: https://api.semanticscholar. org/CorpusID:252923993 [43] OpenAI, “ChatGPT: Optimizing language models for dialogue,” https://openai.com/blog/chatgpt, 2022. [44] Microsoft, “Microsoft Copilot,” https://www.microsoft.com/ copilot, 2023, artificial intelligence assistant developed by Mi-crosoft. [45] Anthropic, “Claude 3 model family technical report,” https:// www.anthropic.com/research/claude-3, 2024. [46] Allen Institute for Artificial Intelligence, “Asta: Ai research assis-tant for scientific discovery,” https://asta.allen.ai, 2025.

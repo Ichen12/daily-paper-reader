@@ -1,0 +1,409 @@
+Title: EmotionAI: A Privacy-Preserving Computational Intelligence Pipeline for Speech-Emotion-Grounded Conversational Analysis
+
+URL Source: https://arxiv.org/pdf/2606.24941v1
+
+Published Time: Thu, 25 Jun 2026 00:01:53 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# EmotionAI: A Privacy-Preserving Computational Intelligence Pipeline for Speech-Emotion-Grounded Conversational Analysis 
+
+Wai Laam Mak *, Isibor Kennedy Ihianle , and Pedro Machado *
+
+School of Science and Technology, Nottingham Trent University, Nottingham, UK 
+
+N1183564@my.ntu.ac.uk; isibor.ihianle@ntu.ac.uk; pedro.machado@ntu.ac.uk  
+
+> *
+
+Corresponding authors 
+
+Abstract. Reviewing recorded interviews for affective cues such as com-posure, hesitation and agitation is slow and subjective, and cloud ser-vices that could automate it require sensitive audio to leave the device. EmotionAI is a fully local Computational Intelligence (CI) pipeline that couples Speech Emotion Recognition (SER) with generative reasoning. Speaker diarisation, Whisper Automatic Speech Recognition (ASR) and a wav2vec2 emotion classifier produce per-segment affective evidence, which is then passed to an adversarial three-model local Large Language Model (LLM) panel for timestamp-grounded and citation-constrained question answering. Zero-shot evaluation on the RAVDESS four-class English subset (n = 672) exposes cross-corpus fragility rather than clas-sifier superiority: the deployed classifier scores 48.8% accuracy, above random (24.9%) and majority (28.6%) baselines but below an in-domain MFCC + logistic-regression comparator (71.0%). The complete pipeline runs in a mean 157 s on CPU (real-time factor ≈1.33) with zero ex-ternal calls. The contribution is not state-of-the-art SER but an au-ditable, privacy-preserving integration of imperfect affective evidence into grounded conversational analysis, together with an honest empiri-cal account of where cross-corpus transfer and human-centred validation still fall short. 
+
+Keywords: computational intelligence, speech emotion recognition, lo-cal generative AI, explainable affective analysis, privacy-preserving CI 
+
+## 1 Introduction 
+
+Interviews, panels and question-and-answer sessions carry affective information in the voice (composure under pressure, hesitation, agitation, shifts in tone) that the transcript alone discards. Prosodic cues convey affective meaning ab-sent from lexical content [20], and reviewers working from transcripts re-listen to recordings to recover that context [12], making manual review slow, subjec-tive and hard to audit. Cloud multimodal services that could automate the task upload audio to third-party infrastructure, unacceptable in many journalistic,  
+
+> arXiv:2606.24941v1 [cs.SD] 22 Jun 2026 2W. L. Mak, I. K. Ihianle, P. Machado
+
+clinical and academic settings [1,2]. A tool that extracts, visualises and reasons over affective content alongside the transcript while keeping all processing on the user’s own machine is therefore needed, and because no single model can classify affect, aggregate it over time and explain it in language, the requirement is CI integration rather than any one classifier. The contribution is a modular CI architecture that integrates acoustic classification, affect modelling, local gener-ative reasoning, and evidence-constrained explanation under privacy-preserving deployment. The present work treats that gap as a CI problem, combining a learned acoustic emotion model, a psychologically grounded affect representation and local generative reasoning into one system. The language of “credibility” or “truthfulness” is deliberately avoided: the system supports affective review and 
+
+speaker-state analysis , and affect inference is explicitly not deception detection (Section 7). The work contributes an audio-emotion-to-language pipeline fusing diari-sation, ASR and wav2vec2 SER with an adversarial three-model local LLM panel served via Ollama, a timestamp-grounded question-answering mode whose citation-constrained prompt forces the generator to cite segment timestamps and emotion evidence, and an empirical evaluation of cross-corpus SER robustness and local CPU runtime that frames the system’s value honestly given an imper-fect classifier. Three evaluation questions map to the three results subsections: EQ1 (SER robustness) how a pre-trained SER model transfers zero-shot to an unseen cor-pus relative to in-domain and classical baselines, EQ2 (Q&A utility) whether grounding the LLM panel in per-segment emotion evidence yields more traceable answers than a transcript-only baseline, and EQ3 (deployment feasibility) 
+
+whether the complete pipeline runs on commodity CPU hardware with no ex-ternal calls, and at what latency. Sections 3–8 present the system, setup, results, discussion, ethics and conclusion. 
+
+## 2 Related Work 
+
+Speech emotion recognition. Classical SER pairs hand-crafted spectral descrip-tors, typically Mel-Frequency Cepstral Coefficients (MFCCs), with a shallow classifier [15], whereas self-supervised models such as wav2vec2 learn latent rep-resentations directly from raw waveforms, capturing prosodic, spectral and tem-poral variation without manual feature engineering [3]. Laboratory accuracy does not transfer unchanged across corpora: emotion taxonomies and acous-tic realisations differ between datasets such as IEMOCAP and RAVDESS, and cross-corpus transfer degrades sharply without in-domain adaptation [11]. An MFCC + logistic-regression baseline and an Echo State Network (ESN) [8] iso-late the contributions of hand-crafted features and explicit temporal dynamics from those of pre-trained transformer embeddings. 
+
+Local and multimodal LLM pipelines. Open-weight LLMs (Llama 3, Qwen2.5, Gemma 3) now run capably on consumer hardware [7,16,6] but are text-only: a Privacy-Preserving CI for Emotion-Grounded Conversational Analysis 3
+
+confident utterance cannot be distinguished from a hesitant one when the words are identical. Native audio LLMs (Qwen2-Audio, SALMONN) ingest waveforms directly but are heavier and couple classifier and generator tightly. A fused model is therefore not evaluated experimentally: it cannot be ablated into the transcript-only and emotion-informed conditions EQ2 compares, and its foot-print conflicts with the commodity-CPU target of EQ3. Alternatively, struc-tured emotion metadata can be injected into a text LLM as prompt context rather than via full multimodal fine-tuning [13,21], keeping classifier and gener-ator independently replaceable, the pattern adopted here. Affective computing has shifted from treating affect as textual polarity to analysing paralinguistic signals, and explainability for interview review means tracing each assertion back to a specific segment and emotion score. Russell’s valence–arousal circumplex [18] grounds per-speaker indicators in psychological theory rather than ad-hoc arithmetic. On-device speech processing removes the dominant risk in handling biometric-adjacent audio [1,2], and the ethics litera-ture stresses that emotion recognition carries bias and dual-use risks demanding honest reporting and advisory-only framing [10,19]. EmotionAI sits at this inter-section: few published systems close the loop between a locally deployed emotion classifier and a locally hosted LLM in a single pipeline. 
+
+## 3 Method 
+
+EmotionAI runs two sequential phases (Fig. 1). The audio phase ingests raw audio, diarises and verifies speakers, transcribes each turn and classifies per-segment emotion, after which the LLM phase loads three local analysts in turn to synthesise a citation-constrained verdict and Q&A response. A memory-cleanup step between the phases releases every audio-stage model before any LLM loads, bounding peak memory by the largest single model rather than their sum (Al-gorithm 1). Table 1 summarises the six stages, which build on pyannote 3.1, Whisper medium and wav2vec2-large-superb-er [4,22,17,3]. The WeSpeaker override threshold (cosine similarity 0.12) was tuned empirically on recordings with ground-truth speaker labels, maximising correct re-attributions without intro-ducing false overrides. Fixed output schemas at every stage boundary let a different diariser, transcriber or emotion classifier substitute by changing one function and one constant, and keep a malformed output isolated to its own stage rather than propagating downstream. Prompt conditioning on structured emotion metadata, rather than a native-audio LLM, keeps the acoustic classifier and language generator decoupled and independently replaceable, at far lower memory cost than a tightly coupled multimodal model [13,21]. The assembled prompt pairs each diarised, emotion-annotated segment with its per-class probabilities, and three independently prompted local models receive it (Fig. 2): Llama 3.2:3B as a Positive Analyst, Qwen 2.5:3B as a Negative An-alyst, and Gemma 3:4B as a Moderator that also receives the raw per-segment emotion distribution and issues the final verdict and any Q&A answer. The 4 W. L. Mak, I. K. Ihianle, P. Machado Audio input 
+
+> Audio-processing phase
+
+Speaker 
+
+diarisation Speech-to-text Emotion 
+
+classification 
+
+Structured transcript 
+
+> speaker + text + timestamps + emotions
+> (Happy, Angry, Sad, Neutral)
+> Adversarial LLM panel (local, Ollama)
+
+Positive 
+
+Analyst 
+
+Negative 
+
+Analyst Moderator 
+
+Verdict + Q&A 
+
+> citation-constrained
+
+Affect graphs 
+
+> timeline, bars, radar
+
+Fig. 1. System architecture. The audio phase (top) runs pyannote 3.1 diarisation with WeSpeaker verification, Whisper-medium ASR and wav2vec2-large-superb-er emotion classification. A cleanup step then frees all audio models before the LLM phase (bot-tom) loads Llama 3.2:3B, Qwen 2.5:3B and Gemma 3:4B in sequence to produce a citation-constrained verdict and Q&A answer. The two dashed regions mark the audio and LLM phases, both executing on the local host, and unloading each audio model before the LLM phase loads bounds peak memory to the largest single model. 
+
+Table 1. The six-stage EmotionAI pipeline. Stages communicate only through the listed outputs. 
+
+Stage Library / model Output handed to next stage 
+
+1. Ingestion librosa (resample to 16 kHz) 16 kHz mono float32 waveform 2. Diarisation pyannote 3.1 + WeSpeaker (start, end, speaker) turns 3. ASR Whisper medium per-turn {speaker, start, end, text }
+
+with word-level timestamps 4. Emotion wav2vec2-large SER per-segment 4-class softmax {Hap, Ang, Sad, Neu }
+
+5. Assembly internal JSON transcript + structured emotion-annotated prompt 6. LLM panel Ollama local LLM panel per-speaker positive / negative /moderator verdict Privacy-Preserving CI for Emotion-Grounded Conversational Analysis 5
+
+prompts forbid quoting raw probability strings, instead requiring the panel to translate emotion distributions into natural language and cite segment times-tamps, making the Q&A timestamp-grounded and auditable. Emotion-annotated transcript 
+
+> per segment: speaker + text + timestamps
+> + Happy / Angry / Sad / Neutral scores
+
+Positive Analyst 
+
+> Llama 3.2:3B
+
+Negative Analyst 
+
+> Qwen 2.5:3B
+
+Moderator 
+
+> Gemma 3:4B
+
+Final emotional verdict 
+
+> citation-constrained + Q&A answers
+> + emotion probabilities
+
+Fig. 2. Adversarial three-model panel and prompt-assembly flow. All three local models receive the same emotion-annotated transcript. The Moderator additionally receives the per-segment emotion probabilities and produces the citation-constrained verdict and answers. Pairing a Positive and a Negative Analyst before moderation is intended to reduce the single-model interpretive bias of a lone summariser. 
+
+Per-speaker indicators aggregate the segment-level emotion probabil-ities for each speaker, bounded to a 0–100 scale from Russell’s circum-plex [18]. For a speaker u with segment set Su and per-segment softmax 
+
+ps = (phap  
+
+> s
+
+, p ang  
+
+> s
+
+, p sad  
+
+> s
+
+, p neu  
+
+> s
+
+), the mean affect vector ¯pu and the Composure indicator Cu are ¯pu = 1
+
+|Su|
+
+X
+
+> s∈Su
+
+ps, Cu = 100  ¯p hap  
+
+> u
+
++ ¯ p neu 
+
+> u
+
+ ∈ [0 , 100] . (1) Composure is the mean positive-affect probability mass, rising with Neutral and Happy and falling with Angry and Sad, while Valence and Arousal are analogous affine projections of ¯ pu onto Russell’s axes, likewise bounded to [0 , 100]. Each indicator is explainable by construction, tracing back to specific segments, and frames an emotional-state summary, not a judgement of honesty. 
+
+## 4 Experimental Setup 
+
+The three evaluation questions are addressed on separate evidence, as sum-marised in Fig. 3. 6 W. L. Mak, I. K. Ihianle, P. Machado 
+
+Algorithm 1 EmotionAI two-phase local inference with bounded peak memory 
+
+Require: raw audio a; ordered LLM panel M = ⟨Llama, Qwen, Gemma ⟩
+
+1: x ← resample( a, 16 kHz) 2: T ← diarise( x); verify and relabel turns with WeSpeaker 3: for each turn t ∈ T do 
+
+4: t. text ← ASR( x, t ) ▷ Whisper, word-level timestamps 5: t. p ← SER( x, t ) ▷ wav2vec2 four-class softmax 6: end for 
+
+7: free audio-stage models; empty CUDA cache; run garbage collection ▷ bound peak memory 8: prompt ← assemble( T ) ▷ emotion-annotated, timestamped 9: for each model m ∈ M do ▷ sequential, keep alive=0 
+
+10: load m; run on prompt; unload m
+
+11: end for 
+
+12: return citation-constrained verdict and Q&A responses EmotionAI evaluation protocol 
+
+> one acted corpus, one recorded interview,
+> all processing on the local host
+
+EQ1 
+
+> SER robustness
+
+EQ2 
+
+> Q&A utility
+
+EQ3 
+
+> deployment
+> feasibility
+
+RAVDESS 
+
+> 672 clips
+> four classes
+
+Interview 
+
+> interview.wav
+> 118 s, 2 speakers
+
+Pipeline run 
+
+> same audio, CPU
+> 3 runs
+
+Classifiers 
+
+> chance baselines
+> MFCC ×3, ESN
+> wav2vec2 ×2
+
+Rubric study 
+
+> 12 questions
+> 3 conditions
+> 4 raters, 1–5
+
+Runtime 
+
+> per-stage timing
+> 3 CPU runs
+
+Accuracy, F1 
+
+> confusion matrix
+
+Refusal rate 
+
+> + rubric scores
+
+Latency, RTF 
+
+> no external calls
+
+Reported evidence 
+
+> cross-corpus SER fragility, panel epistemic
+> dependency, real-time-factor deployment cost
+
+Fig. 3. Evaluation protocol for the three evaluation questions. EQ1 (SER robustness) compares eight classifiers on the RAVDESS four-class subset, EQ2 (Q&A utility) runs a twelve-question, three-condition rubric study scored by four raters on one recorded interview, and EQ3 (deployment feasibility) benchmarks CPU runtime over three runs. All evaluation runs on the local host. Privacy-Preserving CI for Emotion-Grounded Conversational Analysis 7
+
+Dataset. The SER benchmark is RAVDESS [14]: 1,440 utterances by 24 North-American actors (12 female, 12 male) at 48 kHz, fitting the pipeline’s English interview target and the deployed classifier’s English IEMOCAP fine-tuning. Filtering to the four classes shared with the classifier’s label set yields 672 utter-ances, unevenly distributed (Happy 192, Angry 192, Sad 192, Neutral 96) and resampled to 16 kHz mono before inference. Eight SER methods are compared on the same 672-clip subset: uniform-random and majority-class baselines, MFCC + ℓ2 logistic regression at nmfcc ∈{13 , 20 , 40 } under stratified five-fold cross-validation, an ESN (500-neuron reser-voir, spectral radius 0.9, leak rate 0.3, ridge readout, same five-fold protocol), and the zero-shot wav2vec2-base/large-superb-er checkpoints fine-tuned on IEMO-CAP. Accuracy, macro-averaged and weighted F1, and per-class F1 are reported with row-normalised confusion matrices retaining raw counts. As a limitation, a text-only sentiment baseline and an acoustic-vs-fused comparison were not run, and emotion-informed versus transcript-only is compared at the LLM level (below). 
+
+Q&A evaluation protocol. EQ2 is assessed with a five-dimension 1–5 rubric (higher = better) covering traceability, faithfulness, timestamp accuracy, emo-tional specificity, and groundedness. To separate the contribution of emotion grounding from the citation policy of the deployed system prompt, three con-ditions are compared on 12 questions about a two-speaker English interview: (i) emotion-informed – the deployed system prompt with the per-segment four-class softmax in natural-language form (e.g. “Happy 89%, Angry 0%, Sad 0%, Neutral 11%”). (ii) transcript-deployed – the same deployed prompt with the emotion fields removed from the transcript. And (iii) transcript-softened 
+
+– emotion fields removed and Rule 6 of the deployed prompt (which mandates citing emotion scores) relaxed to “cite specific timestamps and quoted text as evidence”. The 36 answers were blinded, shuffled, and scored independently by four raters. Templated model refusals were detected automatically and excluded from rubric scoring (refusal rate is reported as a separate condition-level met-ric). Reported quantities are the mean rater score per condition, Krippendorff’s 
+
+α for inter-rater reliability, and pairwise Wilcoxon signed-rank tests paired by question for (i) vs (ii) ( deployed-system A/B ) and (i) vs (iii) ( Rule-6 control ). 
+
+Hardware, runtime and reproducibility. EQ3 measures the complete pipeline (diarisation, verification, ASR, emotion classification, three-LLM panel and synthesis) entirely on CPU over a two-minute (117.9 s) two-speaker interview across three independent runs, reporting the mean and min–max range per stage. Experiments were run on an AMD Ryzen 7 7800X3D (8 cores) with 64 GB RAM under Windows 11, with GPU acceleration disabled. All models are pre-trained and publicly available (pyannote 3.1, WeSpeaker ResNet34-LM, openai/whisper-medium, superb/wav2vec2-large-superb-er, and Ollama Llama 3.2:3B / Qwen 2.5:3B / Gemma 3:4B). The RAVDESS filtering rule (four classes, 16 kHz mono), the seeded five-fold protocol, the random-baseline seed (42), the evaluation scripts and the raw per-clip predictions are retained 8 W. L. Mak, I. K. Ihianle, P. Machado 
+
+in the project repository, so every quoted number regenerates from the source audio. Code is available on request. 
+
+## 5 Results 
+
+5.1 SER robustness (EQ1) 
+
+Across the eight methods (Table 2), the in-domain MFCC + logistic-regression model peaks at nmfcc = 20 (71.0% accuracy, macro-F1 0.688) and the ESN reaches 68.3% (macro-F1 0.676), while the deployed wav2vec2-large check-point trails at 48.8% (macro-F1 0.394). The decisive result is per-class collapse: wav2vec2-large scores F1 = 0.010 on Sad, against 0.677 for the in-domain MFCC model. The gap reflects protocol , not capacity: the classical models are trained on RAVDESS under cross-validation while the transformers transfer zero-shot from IEMOCAP, so cross-corpus shift is the bottleneck and small in-domain fine-tuning on interview-style audio is the highest-leverage improvement [11]. 
+
+Table 2. Emotion classification on the RAVDESS four-class subset (n = 672, English). MFCC and ESN methods use stratified five-fold cross-validation. Transformer methods are zero-shot. Best values are shown in bold ⋆, and worst values are marked †. Cell shading is supplementary.                                                                                  
+
+> Method Feat. Acc Mac-P Mac-R Mac-F1 Wt-F1 F1-Hap F1-Ang F1-Sad F1-Neu
+> Random (uniform) n/a 24.9% †0.249 0.243 †0.242 0.255 0.307 0.268 0.242 0.150 Majority-class n/a 28.6% 0.071 †0.250 0.111 †0.127 †0.444 0.000 †0.000 †0.000 †
+> MFCC + LogReg (n=13) 26-dim 66.8% 0.650 0.643 0.646 0.666 0.665 0.818 0.599 0.503 MFCC + LogReg (n=20) 40-dim 71.0% ⋆0.690 ⋆0.686 ⋆0.688 ⋆0.708 ⋆0.703 ⋆0.828 ⋆0.677 ⋆0.543 MFCC + LogReg (n=40) 80-dim 69.0% 0.686 0.685 0.685 0.692 0.646 0.800 0.653 0.642 ⋆
+> wav2vec2-base-superb-er 768-dim 43.3% 0.544 0.456 0.366 0.351 0.236 †0.618 0.136 0.474 wav2vec2-large-superb-er 1024-dim 48.8% 0.642 0.458 0.394 0.400 0.491 0.726 0.010 0.348 ESN + Ridge (n res=500) 1000-dim 68.3% 0.673 0.681 0.676 0.683 0.703 ⋆0.768 0.607 0.624
+
+The confusion matrix (Fig. 4) localises the failure: Angry recall reaches 87.5% and Happy precision 37.7%, but Sad collapses to 0.5% recall, most Sad clips landing as Happy or Angry. RAVDESS’s acted-intensity Sad style carries higher arousal than the IEMOCAP-fine-tuned model expects, a concrete cross-corpus bias against one emotion class. The ESN’s comparatively balanced profile (Sad F1 = 0.607) indicates that slow prosodic dynamics carry much of the Sad signal that frame-pooled transformer embeddings average out [8]. 
+
+5.2 Emotion-grounded Q&A utility (EQ2) 
+
+Removing emotion evidence triggers refusal in 8/12 (67%) of transcript-deployed answers against 1/12 (8%) emotion-informed (Table 3), so the model treats emotion-keyed questions as unanswerable without it. Softening Rule 6 (the man-date to cite emotion scores) leaves the refusal rate unchanged at 67%, so the col-lapse reflects a genuine epistemic dependency rather than a citation-policy arte-fact. On the four questions where all conditions answered substantively, rubric Privacy-Preserving CI for Emotion-Grounded Conversational Analysis 9Happy Angry Sad Neutral 
+
+Predicted label 
+
+Happy 
+
+Angry 
+
+Sad 
+
+Neutral 
+
+> Actual label
+
+70.3% 
+
+n=135 
+
+29.2% 
+
+n=56 
+
+0.0% 
+
+n=0 
+
+0.5% 
+
+n=1 
+
+12.0% 
+
+n=23 
+
+87.5% 
+
+n=168 
+
+0.0% 
+
+n=0 
+
+0.5% 
+
+n=1 
+
+80.2% 
+
+n=154 
+
+10.9% 
+
+n=21 
+
+0.5% 
+
+n=1 
+
+8.3% 
+
+n=16 
+
+47.9% 
+
+n=46 
+
+27.1% 
+
+n=26 
+
+0.0% 
+
+n=0 
+
+25.0% 
+
+n=24 
+
+0
+
+20 
+
+40 
+
+60 
+
+80 
+
+100 
+
+> Row-normalised rate (%)
+
+Overall accuracy: 48.8% (n = 672) 
+
+Fig. 4. Confusion matrix for wav2vec2-large-superb-er on RAVDESS (n = 672). Rows are actual labels, columns predicted. Values are row-normalised classification rates (%) with per-cell counts. Sad recall collapses to 0.5% under zero-shot transfer. 
+
+scores are essentially tied (all p > 0.25 on paired Wilcoxon tests, Krippendorff’s 
+
+α near zero). Emotion grounding therefore enables answers to emotion-keyed questions, not improving answers the model could already give from text alone. Given the single-recording design and the small overlap subset, EQ2 should be in-terpreted as an exploratory utility test rather than a definitive human-evaluation study. 
+
+Table 3. Q&A annotation study (4 questions overlapping across conditions, 4 raters). Mean rater score per condition. The deployed variant uses the verbatim deployed system prompt, while softened relaxes Rule 6 so the baseline can answer. Krippendorff’s α
+
+measures inter-rater reliability, and pdep and piso are Wilcoxon signed-rank tests paired by question. Numerical maxima and minima are shown only for orientation, and no statistically reliable differences were detected. Refusal rates: emotion-informed 8%, transcript-deployed 67%, transcript-softened 67%.                                                         
+
+> Dimension Emotion-inf. Transcript dep. Transcript soft. αpdep /piso
+> Traceability 4.16 ±0.91 4.25 ±0.68 4.12 ±0.89 −0.21 1.000 / 0.250 Faithfulness 3.89 ±0.72 3.94 ±0.77 4.00 ±0.63 −0.05 1.000 / 0.750 Timestamp accuracy 4.22 ±1.14 4.31 ±0.70 4.38 ±0.72 −0.08 1.000 / 0.625 Emotional specificity 3.89 ±0.99 3.69 ±0.70 3.75 ±0.93 0.11 0.500 / 0.500 Groundedness 4.14 ±0.90 4.06 ±0.93 4.19 ±0.91 −0.12 0.500 / 1.000 10 W. L. Mak, I. K. Ihianle, P. Machado
+
+5.3 Local deployment feasibility (EQ3) 
+
+End-to-end CPU runtime over three runs ranged 142–165 s (mean 157 s), a Real-Time Factor (RTF) of ≈1.33. Whisper transcription dominates (mean 86 s, 
+
+≈55%), followed by pyannote diarisation (34 s, ≈22%), the three LLM calls (27 s, 
+
+≈17%) and the emotion classifier (9 s, ≈6%). ASR, not LLM inference, is the latency bottleneck on CPU. Every run made zero outbound network calls, with checkpoints downloaded once at install time and all inference local, making the pipeline suitable for offline review but not yet for live analysis without streaming ASR. 
+
+## 6 Discussion 
+
+Why cross-corpus transfer failed. The deployed classifier loses to an in-domain MFCC model because it was fine-tuned on spontaneous IEMOCAP speech and evaluated zero-shot on acted RAVDESS, with failure concentrated on Sad, whose acoustic realisation differs most between corpora. The pattern is the expected signature of corpus shift, not insufficient capacity, and cannot be fixed at infer-ence time without light in-domain fine-tuning. The affective indicators likewise remain qualitatively rather than experimentally validated, and the rubric study is small, so in-domain adaptation and broader human-judgement validation are the key missing pieces. 
+
+Why local deployment matters. The privacy guarantee is the system’s strongest, most measurable property: keeping biometric-adjacent audio on the device re-moves the dominant data-protection risk of cloud SER [1,2], at the accepted cost of throughput bounded by the user’s hardware, acceptable for the offline review setting of EQ3. 
+
+How emotion metadata changes LLM output. Injecting per-segment emotion ev-idence shifts the panel from generic summarisation toward specific, timestamp-anchored, evidence-cited analysis when the prompt forces interpretation rather than number-quoting, supporting prompt-level conditioning as a practical alter-native to multimodal fine-tuning [13,21]. 
+
+## 7 Ethics and Limitations 
+
+Privacy. Vocal recordings are personal data under UK GDPR Art. 4(1) and emo-tion scores may attract special-category treatment under Art. 9 [9]. Local-only processing removes outbound transfer of biometric-adjacent data but does not replace a Data Protection Impact Assessment (DPIA): production deployment must still document lawful basis, consent, retention and erasure, and re-validate as the EU AI Act [5] and related standards evolve. Privacy-Preserving CI for Emotion-Grounded Conversational Analysis 11 
+
+Affective-inference risk, terminology and bias. Affect is not deception detec-tion, so the terms “credibility” and “truthfulness” are avoided and Composure is reported as bounded emotional stability, enforced in the interface for direct in-spection. Bias is measured, not hypothetical: the Sad-class collapse (F1 = 0.010) is a concrete cross-corpus bias, and because RAVDESS is dominated by North-American professional actors, accent, age and gender bias remain unmeasured and must be validated before use [19]. 
+
+Limitations. Evaluation uses an acted English corpus, so ecological validity for spontaneous field audio is unestablished. Dual-use risk means EmotionAI is re-leased as a post-hoc, advisory-not-diagnostic tool with guardrails against inter-ventional framing, and a clinician sign-off layer would be required before any mental-health application [10]. The four-class taxonomy omits surprise, con-tempt and sarcasm, and small (3–4 B) models occasionally drift from the output schema. The Q&A rubric study used four raters on a single 117.9 s recording with comparisons restricted to the four questions answered in all three conditions. 
+
+## 8 Conclusion 
+
+EmotionAI demonstrates fully local computational intelligence for emotion-grounded conversational analysis. A self-supervised SER classifier, a psycholog-ically grounded affect representation and an adversarial local LLM panel turn imperfect per-segment evidence into timestamp-grounded, citation-constrained analysis. The empirical contribution is deliberately honest: the deployed classi-fier transfers zero-shot well below an in-domain MFCC comparator, evidencing cross-corpus fragility rather than classifier superiority. Taken together, the results show that the main value of EmotionAI is not improved SER accuracy, but the ability to preserve data locality while making affective evidence inspectable, timestamped and usable by a local reasoning layer. Future work prioritises small in-domain fine-tuning to recover Sad recall, a broader Q&A study, streaming ASR, and bias auditing across accent, age and gender. 
+
+## References                                           
+
+> 1. Aloufi, R., Haddadi, H., Boyle, D.: Configurable privacy-preserving au-tomatic speech recognition. In: Interspeech 2021. pp. 861–865 (2021). https://doi.org/10.21437/Interspeech.2021-1783 2. B¨ ackstr¨ om, T.: Privacy in speech technology. Proceedings of the IEEE 113 (7), 668–692 (2025). https://doi.org/10.1109/JPROC.2025.3632102 3. Baevski, A., et al.: wav2vec 2.0: A framework for self-supervised learning of speech representations. In: Advances in Neural Information Processing Systems 33 (NeurIPS 2020). pp. 12449–12460 (2020) 4. Bredin, H., et al.: pyannote.audio: Neural building blocks for speaker diarization. In: ICASSP 2020 –2020 IEEE International Conference on Acoustics, Speech and Signal Processing. pp. 7124–7128 (2020). https://doi.org/10.1109/ICASSP40776.2020.9052974
+
+12 W. L. Mak, I. K. Ihianle, P. Machado 5. European Parliament and Council: Regulation (EU) 2024/1689 laying down har-monised rules on artificial intelligence (Artificial Intelligence Act). Official Jour-nal of the European Union, OJ L, 2024/1689, 12 July 2024 (2024), ELI: http: //data.europa.eu/eli/reg/2024/1689/oj 6. Gemma Team: Gemma 3 technical report. arXiv preprint arXiv:2503.19786 (2025) 7. Grattafiori, A., et al.: The Llama 3 herd of models. arXiv preprint arXiv:2407.21783 (2024) 8. Ibrahim, H., et al.: Bidirectional parallel echo state network for speech emo-tion recognition. Neural Computing and Applications 34 (20), 17581–17599 (2022). https://doi.org/10.1007/s00521-022-07410-2 9. Information Commissioner’s Office: UK General Data Protection Regula-tion (UK GDPR) guidance and resources. https://ico.org.uk/for-organisations/ uk-gdpr-guidance-and-resources/ (2021), accessed: 2026-05-29 10. Katirai, A.: Ethical considerations in emotion recognition technologies: A review of the literature. AI and Ethics 4(4), 927–948 (2024). https://doi.org/10.1007/s43681-023-00307-3 11. Lashkarashvili, N., et al.: Parameter efficient finetuning for speech emotion recog-nition and domain adaptation. In: ICASSP 2024 – IEEE International Con-ference on Acoustics, Speech and Signal Processing. pp. 10986–10990 (2024). https://doi.org/10.1109/ICASSP48485.2024.10446272 12. Li, Y., Bell, P., Lai, C.: Speech emotion recognition with ASR transcripts: A comprehensive study on word error rate and fusion techniques. In: 2024 IEEE Spoken Language Technology Workshop (SLT). pp. 518–525 (2024). https://doi.org/10.1109/SLT61566.2024.10832143 13. Lin, G.T., et al.: Paralinguistics-enhanced large language modeling of spoken dialogue. In: ICASSP 2024 – IEEE International Conference on Acoustics, Speech and Signal Processing. pp. 10316–10320 (2024). https://doi.org/10.1109/ICASSP48485.2024.10446933 14. Livingstone, S.R., Russo, F.A.: The Ryerson audio-visual database of emo-tional speech and song (RAVDESS). PLOS ONE 13 (5), e0196391 (2018). https://doi.org/10.1371/journal.pone.0196391 15. O’Shaughnessy, D.: Review of automatic estimation of emotions in speech. Applied Sciences 15 (10), 5731 (2025). https://doi.org/10.3390/app15105731 16. Qwen Team: Qwen2.5 technical report. arXiv preprint arXiv:2412.15115 (2025) 17. Radford, A., et al.: Robust speech recognition via large-scale weak supervision. In: Proceedings of the 40th International Conference on Machine Learning (ICML). Proceedings of Machine Learning Research, vol. 202, pp. 28492–28518 (2023) 18. Russell, J.A.: A circumplex model of affect. Journal of Personality and Social Psychology 39 (6), 1161–1178 (1980). https://doi.org/10.1037/h0077714 19. Sedenberg, E., Chuang, J.: Smile for the camera: Privacy and policy implications of emotion AI. arXiv preprint arXiv:1709.00396 (2017) 20. Ten Bosch, L.: Emotions, speech and the ASR framework. Speech Communication 
+
+40 (1–2), 213–225 (2003). https://doi.org/10.1016/S0167-6393(02)00083-3 21. Thimonier, H., Perzo, A., Seguier, R.: EmoSLLM: Parameter-efficient adaptation of LLMs for speech emotion recognition. arXiv preprint arXiv:2508.14130 (2025) 22. Wang, H., et al.: WeSpeaker: A research and production oriented speaker embedding learning toolkit. In: ICASSP 2023 – IEEE International Con-ference on Acoustics, Speech and Signal Processing. pp. 1–5 (2023). https://doi.org/10.1109/ICASSP49357.2023.10096626

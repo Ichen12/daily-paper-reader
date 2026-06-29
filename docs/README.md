@@ -6,56 +6,71 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-06-28
-- 运行时间：2026-06-28 20:19:20 UTC
+- 最新运行日期：2026-06-29
+- 运行时间：2026-06-29 20:42:23 UTC
 - 运行状态：成功
-- 本次总论文数：12
-- 精读区：4
-- 速读区：8
+- 本次总论文数：17
+- 精读区：6
+- 速读区：11
 
 ### 今日简报（AI）
-今日处理12篇论文，精读4篇、速读8篇，重点剖析CTC声学耗尽与实时交互基础模型。最值得关注的是CTC oracle gap机制（揭示语音识别中的语言恢复）和Wan-Streamer端到端实时交互框架，二者均获9.0高分。建议普通读者后续关注音频问答中的模型混淆模式与CAAD对比蒸馏方法，实用性强。
-- 详情：[/202606/28/README](/202606/28/README)
+今日精读2篇、速读3篇，聚焦ASR幻觉检测与实时交互模型。最值得关注Whisper幻觉检测的文本度量与模型内部机制，以及ZONOS2技术报告。建议优先阅读Whisper幻觉检测论文以理解ASR输出可靠性，并关注Wan-Streamer的实时交互框架。
+- 详情：[/202606/29/README](/202606/29/README)
 
 ### 精读区论文标签
-1. [The Anatomy of the CTC Oracle Gap: Acoustic Exhaustion and Linguistic Recovery](/202606/28/2606.23306v1-the-anatomy-of-the-ctc-oracle-gap-acoustic-exhaustion-and-linguistic-recovery)  
+1. [From Text Metrics to Model Internals: A Study of Whisper ASR Hallucination Detection](/202606/29/2606.23060v1-from-text-metrics-to-model-internals-a-study-of-whisper-asr-hallucination-detection)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：CTC oracle间隙的声学耗尽与语言恢复分析
-2. [Wan-Streamer v0.1: End-to-end Real-time Interactive Foundation Models](/202606/28/2606.25041v2-wan-streamer-v01-end-to-end-real-time-interactive-foundation-models)  
+   evidence：Whisper模型的ASR幻觉检测
+2. [ZONOS2 Technical Report](/202606/29/2606.24320v2-zonos2-technical-report)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：端到端模型集成了ASR和TTS能力
-3. [A Large-Scale Database and Predictive Model of Listener-Rated Ease of Speech Understanding in Commercial Hearing Aids](/202606/28/2606.26342v1-a-large-scale-database-and-predictive-model-of-listener-rated-ease-of-speech-understanding-in-commercial-hearing-aids)  
+   evidence：基于MoE骨干和大规模训练的最先进TTS模型
+3. [CN-NewsTTS Bench: a target-level automatic benchmark for raw-input Chinese news TTS pronunciation](/202606/29/2606.24714v1-cn-newstts-bench-a-target-level-automatic-benchmark-for-raw-input-chinese-news-tts-pronunciation)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：听众评分的语音理解难易度大规模数据库
-4. [Wan-Streamer v0.1: End-to-end Real-time Interactive Foundation Models](/202606/28/2606.25041v1-wan-streamer-v01-end-to-end-real-time-interactive-foundation-models)  
+   evidence：中文新闻TTS发音目标级基准
+4. [What Was That Again? Certified Robustness for Automatic Speech Recognition](/202606/29/2606.27698v1-what-was-that-again-certified-robustness-for-automatic-speech-recognition)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：自动语音识别的认证鲁棒性方法
+5. [HPRO: Hierarchical Progressive Reward Optimization via Preference Extraction for Emotional Text-to-Speech](/202606/29/2606.28249v1-hpro-hierarchical-progressive-reward-optimization-via-preference-extraction-for-emotional-text-to-speech)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：基于层次化偏好优化的情感语音合成
+6. [Do Speech Emphasis Models Generalize across Languages and Emotions?](/202606/29/2606.27717v1-do-speech-emphasis-models-generalize-across-languages-and-emotions)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：包含ASR和TTS的端到端实时交互模型
+   evidence：多语言多情感强调语料库与基准测试
 
 ### 速读区论文标签
-1. [Learning from Audio-Dependency Errors: Data Curation Strategies Based on Model Confusion Patterns in Audio Question Answering](/202606/28/2606.22276v1-learning-from-audio-dependency-errors-data-curation-strategies-based-on-model-confusion-patterns-in-audio-question-answering)  
+1. [Wan-Streamer v0.1: End-to-end Real-time Interactive Foundation Models](/202606/29/2606.25041v1-wan-streamer-v01-end-to-end-real-time-interactive-foundation-models)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：端到端语音-文本-视频交互，涵盖语音识别与合成
+2. [READ More than What You See: Reinforcement Learning for Accurate and Coherent Audio Description Generations](/202606/29/2606.22766v1-read-more-than-what-you-see-reinforcement-learning-for-accurate-and-coherent-audio-description-generations)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：基于音频依赖模式的音频语言模型数据策展
-2. [CAAD: Contrastive Audio-Aware Distillation for Efficient Speech Language Models](/202606/28/2606.23052v1-caad-contrastive-audio-aware-distillation-for-efficient-speech-language-models)  
+   evidence：用于音频描述生成的强化学习框架
+3. [Real-Time Interactive Music Generation via Data-Free Streaming Consistency Distillation](/202606/29/2606.24307v1-real-time-interactive-music-generation-via-data-free-streaming-consistency-distillation)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：语音语言模型；对比蒸馏；高效语音建模
-3. [STAR-VAE: Structured Topology-Aware Regularization for Audio Reconstruction and Generation](/202606/28/2606.23064v1-star-vae-structured-topology-aware-regularization-for-audio-reconstruction-and-generation)  
+   evidence：通过流式蒸馏从文本提示实时交互生成音乐
+4. [Probing in the Wild: A Case Study of Self-Supervised Speech Representations on Mandarin Sub-dialects with Unsupervised Articulatory Analysis](/202606/29/2606.25459v1-probing-in-the-wild-a-case-study-of-self-supervised-speech-representations-on-mandarin-sub-dialects-with-unsupervised-articulatory-analysis)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：用于音频重建与生成的VAE正则化
-4. [Neural Speaker Diarization via Multilingual Training: Evaluation on Low-Resource Nepali-Hindi Speech](/202606/28/2606.26144v1-neural-speaker-diarization-via-multilingual-training-evaluation-on-low-resource-nepali-hindi-speech)  
+   evidence：对普通话次方言的语音表示探测
+5. [Learning from Annotation Uncertainty: Entropy-Aware Curriculum for Speech Emotion Recognition](/202606/29/2606.27536v1-learning-from-annotation-uncertainty-entropy-aware-curriculum-for-speech-emotion-recognition)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：说话人分离，语音任务，多语言训练
-5. [WQ-Fusion: Dynamic Gated Attention for Cross-Domain Audio Representation](/202606/28/2606.26556v1-wq-fusion-dynamic-gated-attention-for-cross-domain-audio-representation)  
+   evidence：利用标注不确定性的基于分布监督的语音情感识别
+6. [HybridCodec: Modeling Discrete and Continuous Representations for Efficient Speech Language Models](/202606/29/2606.27627v1-hybridcodec-modeling-discrete-and-continuous-representations-for-efficient-speech-language-models)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：跨域音频表示学习，双编码器框架
-6. [wav2tok 2.0: Scalable Audio Tokenization Maintaining Explicit Pairwise Token Alignment for Efficient Audio Retrieval](/202606/28/2606.26824v1-wav2tok-20-scalable-audio-tokenization-maintaining-explicit-pairwise-token-alignment-for-efficient-audio-retrieval)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：可扩展的语音分词器用于音频检索
-7. [Comparative Reasoning: Making an Audio Language Model Better at Comparing Emotions](/202606/28/2606.24082v1-comparative-reasoning-making-an-audio-language-model-better-at-comparing-emotions)  
+   evidence：混合离散-连续编解码器用于高效语音语言模型
+7. [Cross-lingual Retrieval-Augmented Classification for Dysarthria Severity Assessment](/202606/29/2606.22910v1-cross-lingual-retrieval-augmented-classification-for-dysarthria-severity-assessment)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：语音情感比较；音频语言模型推理；复合语音分析
-8. [NeuroSonic: Conditional Flow Matching for EEG-to-Speech Reconstruction](/202606/28/2606.24087v1-neurosonic-conditional-flow-matching-for-eeg-to-speech-reconstruction)  
+   evidence：跨语言检索的构音障碍严重程度评估
+8. [Don't Listen to Me: A Lightweight, Low-Latency Model for Own-Voice Cancellation in Far-Field Speech Enhancement](/202606/29/2606.23332v1-dont-listen-to-me-a-lightweight-low-latency-model-for-own-voice-cancellation-in-far-field-speech-enhancement)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：基于条件流匹配的脑电图到语音重建
+   evidence：自我语音取消语音增强
+9. [Comparative Reasoning: Making an Audio Language Model Better at Comparing Emotions](/202606/29/2606.24082v1-comparative-reasoning-making-an-audio-language-model-better-at-comparing-emotions)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：语音情感比较推理
+10. [Poster: Exploring the Limits of Audio-Based Detection of Turkish Phone Call Scams](/202606/29/2606.24523v1-poster-exploring-the-limits-of-audio-based-detection-of-turkish-phone-call-scams)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：使用ASR进行土耳其语音频诈骗检测
+11. [EmotionAI: A Privacy-Preserving Computational Intelligence Pipeline for Speech-Emotion-Grounded Conversational Analysis](/202606/29/2606.24941v1-emotionai-a-privacy-preserving-computational-intelligence-pipeline-for-speech-emotion-grounded-conversational-analysis)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：使用ASR进行语音情感分析的流水线
 
 
 <div class="dpr-home-promo-card">
