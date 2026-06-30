@@ -1,0 +1,389 @@
+Title: CTC-Seeded Token Edit Refinement for Non-Autoregressive Speech Recognition
+
+URL Source: https://arxiv.org/pdf/2606.28732v1
+
+Published Time: Tue, 30 Jun 2026 00:25:27 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# CTC-Seeded Token Edit Refinement for Non-Autoregressive Speech Recognition 
+
+Wanting Huang 
+
+Department of Computer Science University of Iowa 
+
+Iowa City, IA, USA wanting-huang@uiowa.edu 
+
+Weiran Wang 
+
+Department of Computer Science University of Iowa 
+
+Iowa City, IA, USA weiran-wang@uiowa.edu 
+
+Abstract —Non-autoregressive automatic speech recognition (ASR) enables parallel decoding, but many refinement-based methods begin from random, fully masked, or fixed-length token sequences, requiring multiple iterations to reconstruct the complete transcript. We instead formulate ASR decoding as a variable-length edit refinement of a greedy connectionist tempo-ral classification (CTC) hypothesis. An acoustic-conditioned Edit Flow decoder operates directly on the collapsed CTC hypothesis, predicting insertion, deletion, and substitution operations in parallel. The Edit Flow decoder is jointly trained with a CTC model using a continuous-time discrete diffusion loss. During inference, we find that just two edit steps yield substantial Word Error Rate (WER) reductions, and classifier-free guidance (CFG) further enhances recognition quality by focusing the model on audio features. We also constrain edit proposals using CTC confi-dence to improve accuracy. Finally, ablation studies validate our design choices, while decoder pretraining and pretrained encoder integration yield significant additional performance gains. 
+
+Index Terms —Non-autoregressive decoding, diffusion model, edit flow, confidence-guided refinement 
+
+I. I NTRODUCTION 
+
+End-to-end automatic speech recognition (ASR) systems are typically based on connectionist temporal classification (CTC [1]), recurrent neural network transducers (RNN-T [2]), or attention-based encoder–decoders (AED [3]). While RNN-T and AED models successfully capture dependencies among output tokens using a decoder that acts as an implicit lan-guage model, their autoregressive generation inherently limits inference speed. In contrast, CTC imposes a strict conditional independence assumption on the label sequence. Although this degrades accuracy, it permits highly efficient parallel greedy decoding, making CTC an ideal foundation for non-autoregressive (NAR) ASR. To mitigate the accuracy tradeoff, prior NAR ASR methods rely on iterative masked predic-tion, latent-position imputation, or iterative alignment refine-ment [4]–[6] to gradually reconstruct label dependencies and enhance overall recognition quality. Diffusion models provide a powerful alternative to classical NAR methods by using a principled objective that couples all generation steps together. They update all token positions in parallel and offer an accuracy–efficiency trade-off con-trolled by the number of decoding steps. In typical sequence generation, these iterative decoders start from uninformative states—such as fully random tokens, fully masked sequences, or fixed-length latents [7]–[9]. However, this from-scratch approach is inefficient for ASR, where greedy CTC already provides an inexpensive and informative first-pass hypothesis. Starting from an uninformative state forces the model to waste evaluations reconstructing tokens that CTC has already predicted correctly. To address this, we adopt a correction-oriented view of NAR decoding. Rather than generating a transcript from scratch, we formulate ASR as a CTC hypothesis-to-transcript edit refinement. The collapsed greedy CTC output supplies a strong initial token sequence. Because this collapsed sequence is completely free of blanks, it is substantially shorter than a frame-level hypothesis, making our method significantly more efficient than alignment-level refinement [5], [6], [10]. Starting from this shorter sequence allows the decoder to focus solely on correcting residual errors—which we naturally represent as insertion, deletion, and substitution operations. Furthermore, when the initial CTC hypothesis is already close to the reference in edit distance, a small number of parallel correction rounds can effectively replace full-sequence reconstruction. We implement this approach using an acoustic-conditioned Edit Flow decoder [11]. By operating directly on the collapsed CTC token sequence, our variable-length edit formulation ele-gantly avoids padded sequences and separate length predictors. To ensure the decoder makes targeted corrections rather than freely rewriting the hypothesis, we introduce inference strate-gies designed to strongly condition the refinement process on the underlying acoustic evidence. In summary, our main contributions are:  
+
+> •
+
+We frame non-autoregressive ASR decoding as a token-level, variable-length refinement of a greedy CTC hypoth-esis. To achieve this, we train an acoustic-conditioned Edit Flow decoder to recover the ground-truth transcript from a noisy CTC baseline using a principled discrete diffusion objective.  
+
+> •
+
+We introduce a novel inference strategy that gates model-proposed edits based on the CTC model’s acoustic confidence. When combined with audio classifier-free guidance (CFG), this targeted approach yields significant accuracy gains and achieves optimal performance in just two parallel editing iterations.  
+
+> arXiv:2606.28732v1 [eess.AS] 27 Jun 2026 •
+
+We design an Edit Flow-specific text pretraining scheme that utilizes deletion, substitution, and insertion corrup-tions. Furthermore, we conduct extensive ablation studies on the LibriSpeech dataset to analyze the impact of model scale, pretraining effects, and decoding strategies. Our system delivers substantial improvements over the first-pass CTC baseline. Specifically, on test-clean/test-other, it reduces the WER from 3.5/7.9 to 2.6/5.8 with the ESPnet encoder (relative reductions of 25.7% and 26.6%), and from 2.6/6.1 to 2.0/4.7 with the Whisper medium encoder (relative reductions of 23.1% and 23.0%). II. R ELATED WORK 
+
+A. Token-level NAR 
+
+Non-autoregressive (NAR) ASR replaces token-by-token generation with parallel prediction. While CTC provides the most direct realization of this paradigm, its framewise con-ditional independence assumption inherently limits its ability to model dependencies among output tokens. To address this, several methods iteratively refine an initial CTC output. For example, Mask-CTC [4] starts with a greedy CTC hypoth-esis, masks low-confidence tokens, and reconstructs those positions using bidirectional context. Its extension, Improved Mask-CTC [12], introduces partial-target length prediction, allowing the model to explicitly handle insertion and deletion errors during refinement. Beyond masking, other approaches explore alternative formulations: Insertion-based ASR [13] constructs transcripts iteratively through insertion operations, while CASS-NAT [14] extracts token-level acoustic embed-dings from CTC alignment spans to predict the final output sequence in parallel. [15] incorporates phonetic information in token-level masked prediction. 
+
+B. Alignment-level refinement 
+
+Another class of NAR methods performs iterative refine-ment based on the CTC alignment, which includes blank tokens to indicate non-emission. For instance, Imputer [5] iteratively fills alignment positions, using dynamic program-ming to approximately marginalize over monotonic alignments and generation orders. Similarly, Align-Refine [6] repeatedly updates a frame-level CTC alignment before collapsing it into a final transcript. In this framework, changes in output length naturally arise through updates to blanks and repeated labels, but the evolving generation state remains a com-plete, frame-level alignment. Building on these concepts, non-autoregressive deliberation [10] applies a related alignment-refinement strategy to first-pass streaming RNN-T outputs, while Streaming Align-Refine [16] restricts the available con-text to support low-latency recognition. 
+
+C. Diffusion-based ASR 
+
+Diffusion-based ASR models update all token positions in parallel within each denoising step, naturally exposing an accuracy–efficiency trade-off determined by the number of sequential refinement steps. Early approaches like Trans-Fusion [17] progressively transform a random character se-quence into a transcript conditioned on pretrained speech representations. Similarly, cross-modality diffusion conditions a discrete denoising process on acoustic features, leveraging fast sampling to reduce inference costs [18]. dLLM-ASR [19] utilizes masked diffusion [20] with a confidence-based, vari-able number of denoising steps and an optional CTC prior initialization. MDM-ASR [21] performs masked diffusion [22] initialized from a strong pretrained encoder–decoder model, incorporating iterative self-correction training and confidence-based sampling. Audio-conditioned diffusion LLMs [23] fur-ther explore diffusion-based decoding for ASR and deliber-ation, employing random masking, low-confidence masking, and semi-autoregressive strategies. Drax defines an audio-conditioned probability path to be learned by discrete flow matching whose trajectories resemble acoustically plausible intermediate hypotheses [24]. Finally, diffusion language mod-els have been applied to ASR hypothesis rescoring and CTC hypothesis denoising [25]. However, because these models are trained to begin decoding from fully masked or completely random sequences, applying them to CTC outputs requires carefully tuning the optimal diffusion starting time to match the “noise level” of the initial CTC hypothesis. 
+
+D. Edit-based sequence generation 
+
+Edit-distance-based generation methods have been widely explored for text sequences [26]–[29]. Adapting these concepts to ASR, FastCorrect [30] aligns an ASR hypothesis with its reference using edit distance, predicts the number of target tokens associated with each source token, and generates the corrected sequence in parallel. To improve robustness, it is pretrained on pseudo-pairs generated via deletion, insertion, and substitution noise, where the overall corruption rate and operation distribution are estimated directly from empirical ASR errors. Building on this, SoftCorrect [31] extends the framework by introducing soft error detection and a con-strained CTC objective, which focuses the parallel correction process specifically on likely error positions. Finally, [32] aug-ment edit-based paradigm by incorporating explicit phonetic information from the initial hypothesis. III. NAR REFINEMENT BY EDIT FLOW 
+
+Given an input acoustic sequence A and a token-level transcript Y = ( y1, . . . , y N ), we cast the recognition process as an iterative refinement of a first-pass CTC hypothesis. Fig-ure 1 gives an overview of the proposed Edit Flow modeling procedure, which we detail below. 
+
+A. First-pass CTC 
+
+CTC uses an acoustic encoder to map the input to a high-level representation 
+
+H = Enc( A) = ( h1, . . . , h T ).
+
+On top of H, a softmax layer produces frame-level posteriors 
+
+pctc (v | ht) over the vocabulary V and the blank symbol ∅.Fig. 1. Overview of the proposed CTC-seeded Edit Flow training procedure. 
+
+We obtain the greedy CTC alignment by selecting the most likely symbol at each frame, 
+
+at = arg max  
+
+> v∈V∪{ ∅}
+
+pctc (v | ht), t = 1 , . . . , T 
+
+and then removing repetitions and blanks, denoted by the collapsing operator B:
+
+ˆY (0) = B(a1: T ).
+
+The collapsed hypothesis supplies the initial token sequence, while the frame-level posteriors provide acoustic evidence for guiding later edits. 
+
+B. NAR refinement by Edit Flow 1) Variable-length edit path: We adapt Edit Flows [11] to model the transformation from the erroneous CTC hypothesis 
+
+ˆY (0) to the ground truth token sequence Y . Let V+ = V ∪ {⟨ bos ⟩} and define 
+
+x0 = [ ⟨bos ⟩; ˆY (0) ], x1 = [ ⟨bos ⟩; Y ].
+
+Because x0 and x1 may have different lengths, we compute a Levenshtein alignment in an auxiliary space containing a gap symbol ϵ. The aligned sequences satisfy 
+
+z0, z 1 ∈ (V+ ∪ { ϵ})M .
+
+Below is an example of this gap-augmented alignment.         
+
+> z0:WE SEES ϵKAT
+> z1:WE SEE ACAT
+
+Each aligned pair corresponds to an identity if the two symbols match, an insertion if z0,m = ϵ and z1,m ̸ = ϵ, a deletion if z0,m ̸ = ϵ and z1,m = ϵ, and a substitution if both symbols are non-empty but distinct. For continuous refinement time t ∈ [0 , 1] , let κ(t) be a monotonic noise scheduler with κ(0) = 0 , κ(1) = 1 , and 
+
+˙κ(t) ≥ 0 for t ∈ (0 , 1) . We sample an intermediate aligned state as 
+
+zt,m =
+
+(
+
+z1,m , with probability κ(t),z0,m , with probability 1 − κ(t).
+
+The Edit Flow decoder receives as input the token sequence obtained after removing ϵ from zt:
+
+xt = RemoveGap( zt).
+
+In other words, gaps help define the transformation path but never enter the decoder computation. 
+
+2) Acoustic-conditioned edit field: We instantiate the Edit Flow decoder as a bidirectional transformer. Conditioned on the current token sequence xt, the flow time t, and the acoustic memory H, it predicts the a few quantities to materialize the edit operations. Let Pt denote all positions in xt, including the protected 
+
+⟨bos ⟩ position, and let It = {i ∈ P t : xt,i ̸ = ⟨bos ⟩} denote transcript-token positions. Insertion is defined for i ∈ Pt,while deletion and substitution are defined only for i ∈ I t.The decoder predicts 
+
+λins  
+
+> i
+
+, for i ∈ P t, λsub  
+
+> i
+
+, λ del  
+
+> i
+
+, for i ∈ I t,
+
+and token distributions 
+
+qins  
+
+> i
+
+(v), v ∈ V , qsub  
+
+> i
+
+(v), v ∈ V \ { xt,i }.
+
+Deletion and substitution act on token xt,i , while insertion acts on the boundary after that token. The rate of a concrete edit proposal is 
+
+uθ (ei | xt, H, x 0, t ) = 
+
+
+
+λins  
+
+> i
+
+qins  
+
+> i
+
+(v), ei = Ins( v), i ∈ P t,λsub  
+
+> i
+
+qsub  
+
+> i
+
+(v), ei = Sub( v), i ∈ I t,λdel  
+
+> i
+
+, ei = Del , i ∈ I t.
+
+Thus, the decoder edits directly in token space and changes sequence length without refining a frame-level alignment or expanding the sequence with editable padding positions. 
+
+3) Edit Flow diffusion objective: Let 
+
+Mt = {m ∈ { 1, . . . , M } : zt,m ̸ = z1,m }
+
+index the remaining target edits in the aligned auxiliary space. Each m ∈ M t induces a target edit e⋆m at the corresponding visible token or boundary under RemoveGap . Let 
+
+Uθ (xt, H, x 0, t ) = X
+
+> i∈P t
+
+λins  
+
+> i
+
++ X
+
+> i∈I t
+
+ λsub  
+
+> i
+
++ λdel 
+
+> i
+
+be the total edit intensity. The Edit Flow loss is 
+
+LEF = Et,z t
+
+
+
+Uθ (xt, H, x 0, t )
+
+− ˙κ(t)1 − κ(t)
+
+X
+
+> m∈M t
+
+log uθ (e⋆m | xt, H, x 0, t )
+
+
+
+.
+
+For supervised ASR, we linear combine both CTC and the Edit Flow losses to train all components end-to-end: 
+
+L = αLCTC + (1 − α)LEF 
+
+where α is set to 0.3 in this work. 
+
+4) Edit-aware text pretraining: Before supervised ASR training, we optionally pretrain the Edit Flow decoder on text-only data. Given a clean transcript Y , we construct a noisy source eY by independently applying deletion, substitution, and insertion corruptions to each token with probabilities 
+
+ρdel , ρsub , and ρins , respectively. The pair ( eY , Y ) is aligned using the same Levenshtein auxiliary alignment and optimized with the standard Edit Flow objective. Unlike the acoustic-conditioned setting, the acoustic memory H is set to 0 during this pretraining stage. The purpose of this step is to provide a strong initialization for the large Edit Flow decoder, better equipping it to correct ASR-type errors. Empirically, we identify an optimal range for these noising probabilities that maximizes the model’s performance. IV. I NFERENCE STRATEGIES 
+
+A. Multi-step iterative refinement 
+
+Operating as a diffusion model, Edit Flow utilizes K steps to generate the final token sequence x1 from the ( ⟨bos ⟩-extended) initial CTC hypothesis x0. At any given step k,with a step size hk, we apply a parallel Poisson tau-leaping approximation to the continuous-time edit field [33]. This yields the insertion and delete-or-substitute event probabilities at every token position i:
+
+pins  
+
+> i,k
+
+= 1 − exp( −hkλins  
+
+> i,k
+
+), (1) 
+
+pd/s 
+
+> i,k
+
+= 1 − exp −hk
+
+ λdel  
+
+> i,k
+
++ λsub 
+
+> i,k
+
+ . (2) For deterministic decoding, we accept an edit event if its probability exceeds an operation-specific threshold ( 0.1 in our experiments), subsequently applying the highest-scoring token edits at the accepted positions. Insertion and substitu-tion tokens are selected by taking the argmax of the token distributions ( qins  
+
+> i
+
+(v) and qsub  
+
+> i
+
+(v)). In the stochastic decoding ablation, operation types and edit tokens are instead sampled according to their respective rates. Empirically, deterministic decoding achieves superior performance, and we adopt it for all reported results. In this work, we find that K = 2 (with hk = 0 .5) works best for our experiments. That is, inference applies two parallel refinement rounds: ˆY (0) −→ ˆY (1) −→ ˆY (2) where ˆY (2) is returned as the final hypothesis. 
+
+B. Audio classifier-free guidance (CFG) 
+
+Classifier-free guidance (CFG, [34]) is a standard technique used to ensure that diffusion model generations strictly adhere to the conditioning signal. We use CFG on the acoustic condition. During training, with a probability of 0.1 the acoustic memory H is replaced by 0, while the current sequence xt and initial sequence x0
+
+are kept unchanged. At inference, the audio-conditioned and audio-dropped edit fields are combined with guidance scale 
+
+w. For operation o ∈ { ins , sub , del },
+
+eλoi = exp  (1 + w) log λoi, audio − w log λoi, drop 
+
+ .
+
+Insertion and substitution distributions are combined analo-gously: for r ∈ { ins , sub },
+
+eqri (v) ∝ exp  (1 + w) log qri, audio (v) − w log qri, drop (v) ,
+
+followed by normalization over the token vocabulary. These quantities are used in place of their counterparts in (1) and (2) for generation. 
+
+C. CTC confidence guidance 
+
+When the initial CTC hypothesis is close to the reference transcript, unconstrained edit proposals risk rewriting tokens that already possess strong acoustic support. To mitigate this, we strictly limit edits to acoustically uncertain regions. Because deletions and substitutions modify existing hypoth-esis tokens, these operations are gated by their correspond-ing token-level CTC confidence. Conversely, since insertions introduce new tokens between adjacent hypothesis tokens, they are gated by boundary-level CTC confidence. In both scenarios, low CTC confidence highlights locations where corrections are most likely to be beneficial. During each refinement step, confidence scores are derived directly from a CTC alignment of the hypothesis. Let Ri
+
+denote the set of contiguous frames in the alignment corre-sponding to the repetitions of a non-blank token ˆyi. We define the confidence of this token as 
+
+ci = 1
+
+|R i|
+
+X
+
+> t∈R i
+
+pctc (ˆ yi | ht).
+
+For a hypothesis of N tokens, the boundary confidence is approximated by 
+
+bj =
+
+
+
+c1, j = 0 ,
+
+min( cj , c j+1 ), 0 < j < N, cN , j = N. 
+
+During the initial refinement step, confidence scores are de-rived directly from the greedy hypothesis alignment. However, because the evolving hypothesis diverges from the original CTC output in subsequent iterations, we instead compute the forced alignment of the current hypothesis using the original CTC model’s posteriors: 
+
+a⋆ = arg max   
+
+> a∈(V∪{ ∅})T:B(a)= ˆY(1)
+> T
+
+X
+
+> t=1
+
+log pctc (at | ht).TABLE I WER S (%) OBTAINED BY DIFFERENT MODEL SIZES ON THE LIBRI SPEECH DEV SETS . R ESULTS ARE BASED ON ESPN ET ENCODER , WITHOUT EDIT -AWARE PRETRAINING . T WO REFINEMENT STEPS ARE USED FOR INFERENCE , WITHOUT AUDIO CFG OR CTC CONFIDENCE .Model Size Inference dev-clean dev-other Small CTC 4.0 9.3 (125M) Edit Flow 3.8 9.0 Medium CTC 3.8 8.8 (221M) Edit Flow 3.5 8.2 Large CTC 3.6 8.3 (403M) Edit Flow 3.4 7.9 
+
+Regardless of the iteration, these alignments supply the to-ken confidence ci and boundary confidence bj necessary for the subsequent refinement. Guided by these metrics, an edit proposal is accepted only if it satisfies two criteria: its event probability (defined in (1) and (2)) must exceed the operation threshold ( 0.1 in our experiments), and the CTC confidence at the target position must fall below a designated threshold (0.7 in our experiments). V. E XPERIMENTS 
+
+We evaluate our method on LibriSpeech [35], a standard benchmark of read English speech. We use the full 960-hour training set for ASR modeling, and the text-only (LM-training) data for pretraining the Edit Flow decoder. All models are evaluated on the standard LibriSpeech development and test sets, using word error rate (WER). We implement our hybrid CTC/Edit Flow model within ESPNet [36]. For the acoustic encoder, we consider two configurations: an ESPNet transformer encoder trained on LibriSpeech from scratch, and a frozen pretrained Whisper encoder [37]. We train our model for 35 epochs and average models of the last 5 epochs as the final model for evaluation. 
+
+A. Ablation Study 
+
+We organize the ablation study around four factors that determine the behavior of our model. 
+
+1) Model Capacity: In Table I, we evaluate how scaling the model capacity affects recognition performance. The small, medium, and large models are compared under identical settings: they are jointly trained with an ESPNet transformer encoder without edit-aware pretraining, and inference utilizes two basic refinement steps without audio CFG or CTC confi-dence. The decoder sizes are 40M, 84M, and 155M parame-ters, paired with ESPNet encoders of 83M, 134M, and 244M parameters, respectively. Including the CTC head, the corre-sponding models contain 125M, 221M, and 403M parameters. We observe that increasing the model capacity consistently improves the development-set WER. The small model obtains a 3.8/9.0 WER on dev-clean/dev-other, which the medium model reduces to 3.5/8.2. The large model achieves the best result at 3.4/7.9. With the basic decoding strategy, edit flow consistently yields moderate WER improvements over jointly trained CTC.                                                
+
+> TABLE II EFFECT OF EDIT -AWARE PRETRAINING STRENGTH . W E USE THE LARGE MODEL AND THE SAME BASIC INFERENCE STRATEGY AS IN TABLE I. Edit-noise ρdev-clean dev-other No Pretrain 3.4 7.9 0.01 3.5 8.1 0.03 3.3 7.5
+> 0.05 3.3 7.6 0.07 3.4 7.7 TABLE III WER S BY LARGE EDIT -AWARE PRETRAINED DECODER USING CTC
+> CONFIDENCE (“G” DENOTES CONFIDENCE COMPUTED WITH GREEDY CTC
+> ALIGNMENT AND “F” FORCED ALIGNMENT ). N O AUDIO CFG IS USED .Setting Value dev-clean dev-other
+> Number of refinement steps, with G confidence in step 1
+> Steps 0 (CTC) 3.6 8.3 Steps 13.1 7.3 Steps 22.7 6.8
+> Steps 42.8 7.0
+> CTC confidence guide, with 2 refinement steps
+> Guide Off 3.3 7.5 Guide F to F 3.0 7.3 Guide G to F 2.7 6.8
+
+2) Edit-Aware Text Pretraining: From now on, we focus our evaluation on the large decoder. Table II investigates the impact of the corruption strength ρ = ρdel = ρsub = ρins 
+
+during text-only Edit Flow pretraining (see Sec. III-B4 for details). For this ablation, we employ the large model and follow the same inference strategies as in Table I. Without decoder pretraining, the model achieves a WER of 3.4/7.9. A noise strength of ρ = 0 .03 yields the best performance, improving the WERs to 3.3/7.5 with sizable improvement on dev-other. We hypothesize that the optimal corruption level depends heavily on the accuracy of the baseline CTC hypotheses, as matching this noise level tightly aligns the pretraining distribution with the actual fine-tuning conditions. Therefore, we adopt ρ = 0 .03 for edit-aware pretraining below. 
+
+3) CTC confidence: Table III investigates the inference-time behavior of the large decoder equipped with edit-aware pretraining. The first block of the table evaluates the impact of varying the number of refinement steps, where the initial step utilizes CTC’s greedy confidence and subsequent steps rely on forced-alignment confidence. We observe that performance peaks at two refinement steps. The second block compares different confidence-guidance strategies under this optimal two-step setting, specifically evaluating whether the first step should employ greedy (“G”) or forced-alignment (“F”) confi-dence. The results demonstrate that the greedy-to-forced (“G to F”) schedule is the most effective strategy. Consequently, we adopt this as our default inference configuration. Notably, the combination of edit-aware pretraining and CTC confidence guidance improves the large model’s WERs of 3.4/7.9 (see Table I) to 2.7/6.8. 
+
+4) Audio Classifier-Free Guidance: Table IV evaluates the impact of audio classifier-free guidance (CFG) using both the Example 1 Example 2 Example 3 CTC no it is that from curiositythes from love i ohll hang it uncle why can’t you let me alone but his mother huggged them close Step 1 no it is not from curiosity it from love ohll hang it uncle why can’t you let me alone but his mother hugged hem 
+
+close Step 2 no it is not from curiosity it is 
+
+from love 
+
+oh hang it uncle why can’t you let me alone but his mother hugged him 
+
+close                                 
+
+> Fig. 2. Examples of two-steps edit flow refinement. For all examples, step 2 decoding results match ground truth transcripts. TABLE IV EFFECT OF AUDIO CFG SCALE ON DEV WER S. W E USE PRETRAINED LARGE DECODER WITH THE OPTIMAL CTC CONFIDENCE SETUP .Scale ESPNet Encoder Whisper Base Enc. (25M)
+> wdev-clean dev-other dev-clean dev-other 0.00 2.7 6.8 2.3 5.6 0.10 2.5 6.1 2.3 5.2 0.30 2.3 5.5 2.1 4.8
+> 0.50 2.5 5.8 2.1 4.9 0.70 2.6 6.4 2.2 5.1
+
+ESPNet and Whisper Base (21M) encoders. For these experi-ments, we pair the pretrained large decoder with the optimal CTC confidence setup established above. During inference, the conditioned and unconditioned predictions are combined using an audio-CFG scale w, where w = 0 corresponds to disabled guidance. For the ESPNet encoder, increasing w from 0.00 to 0.30 reduces the WER from 2.7/6.8 to 2.3/5.5 on dev-clean/dev-other. However, applying larger scales diminishes these gains. A similar trend is observed with the Whisper Base encoder, where w = 0 .30 yields the best overall WER of 2.1/4.8. Thus we adopt w = 0 .30 for final evaluations. 
+
+B. Final Test Results 
+
+Finally, Table V presents the test-set WERs using the infer-ence hyperparameters optimized on the development sets. For each acoustic encoder, we report Edit Flow results using the large decoder, evaluating performance both with and without edit-aware pretraining. For the ESPNet encoder, the CTC baseline yields 3.5/8.1 WER on test-clean/test-other. Edit Flow refinement without pretraining drops this to 2.9/6.6, and edit-aware pretraining further reduces it to 2.6/5.8. This confirms that the CTC-seeded variable-length editing actively corrects first-pass resid-ual errors, rather than simply relying on a stronger encoder. The frozen Whisper Base encoder follows an identical trend: the 3.1/6.9 CTC baseline improves to 2.4/5.7 without pretrain-ing, and reaches 2.2/5.1 with the pretrained decoder. Using a frozen Whisper Medium encoder (308M) further drives the test WERs down to 2.0/4.7. Across all configurations, our method significantly outperforms the CTC baselines, with decoder pretraining yielding further relative WER reductions compared to non-pretrained models. In Figure 2 we provide examples of our decoding process. We also compare our approach against prior non-autoregressive and diffusion-based ASR systems under com-                                                   
+
+> TABLE V WER S(%) ON THE LIBRI SPEECH TEST SETS .Method test-clean test-other TransFusion [17] 6.7 8.8 CASS-NAT [14] 3.8 9.1 FDDM [18] 4.0 7.2 Whisper-LLaDA [23] (non deliberation) 2.8 5.8 Drax [24] (NFE=16, w.o. ensemble) 2.6 5.7 dLLM-ASR [19] 2.3 5.2 MDM-ASR [21] 1.8 3.6
+> Ours Inference Pretraining ESPNet Encoder (model size: 403M) CTC No 3.5 8.1 Edit Flow 2.9 6.6 CTC Yes 3.5 7.9 Edit Flow 2.6 5.8
+> Whisper Base (model size: 179M) CTC No 3.1 6.9 Edit Flow 2.4 5.7 CTC Yes 2.9 6.7 Edit Flow 2.2 5.1
+> Whisper Medium (model size: 467M) CTC No 2.7 6.5 Edit Flow 2.1 5.4 CTC Yes 2.6 6.1 Edit Flow 2.0 4.7
+
+parable settings. Our best system achieves competitive per-formance while requiring only a moderate model size and two parallel refinement steps. Crucially, it accomplishes this without relying on strong supervised initialization or massive external datasets (e.g., MDM-ASR [21] is initialized from a large supervised AED model, and Drax [24] leverages 15K hours of multilingual training data). VI. C ONCLUSION 
+
+In this work, we have introduced a non-autoregressive ASR model that frames decoding as a token-level edit re-finement of an initial CTC hypothesis, departing from tra-ditional generation-from-noise approaches. Our decoder ex-ecutes parallel insertions, deletions, and substitutions through an acoustic-conditioned Edit Flow, guided by a two-stage confidence mechanism based on the greedy CTC path and subsequent forced alignment. Additionally, we designed an edit-aware pretraining scheme to learn correction behaviors from text-only data, validating the entire framework on both ESPnet and frozen Whisper encoders. Ultimately, our findings demonstrate that CTC-seeded, variable-length editing is apowerful and efficient alternative to fully masked generation, requiring minimal parallel correction steps. Moving forward, we plan to expand its application to multilingual speech recognition. ACKNOWLEDGMENTS 
+
+Parts of this manuscript were drafted with assistance from AI. The entire codebase and the paper were reviewed and edited by the authors. REFERENCES [1] A. Graves, S. Fern´ andez, F. Gomez, and J. Schmidhuber, “Connection-ist temporal classification: labelling unsegmented sequence data with recurrent neural networks,” in Proceedings of the 23rd international conference on Machine learning , 2006. [2] A. Graves, “Sequence transduction with recurrent neural networks,” 2012. [3] W. Chan, N. Jaitly, Q. V. Le, and O. Vinyals, “Listen, attend and spell: A neural network for large vocabulary conversational speech recognition,” in 2016 IEEE International Conference on Acoustics, Speech and Signal Processing , 2016, pp. 4960–4964. [4] Y. Higuchi, S. Watanabe, N. Chen, T. Ogawa, and T. Kobayashi, “Mask CTC: Non-Autoregressive End-to-End ASR with CTC and Mask Predict,” in Proceedings of Interspeech 2020 , 2020, pp. 3655–3659. [5] W. Chan, C. Saharia, G. Hinton, M. Norouzi, and N. Jaitly, “Imputer: Sequence modelling via imputation and dynamic programming,” in 
+
+Proceedings of the 37th International Conference on Machine Learning ,vol. 119. PMLR, 2020, pp. 1403–1413. [6] E. A. Chi, J. Salazar, and K. Kirchhoff, “Align-refine: Non-autoregressive speech recognition via iterative realignment,” in Pro-ceedings of the 2021 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies , 2021, pp. 1920–1927. [7] J. Austin, D. D. Johnson, J. Ho, D. Tarlow, and R. Van Den Berg, “Struc-tured denoising diffusion models in discrete state-spaces,” Advances in neural information processing systems , vol. 34, pp. 17 981–17 993, 2021. [8] M. Ghazvininejad, O. Levy, Y. Liu, and L. Zettlemoyer, “Mask-predict: Parallel decoding of conditional masked language models,” in EMNLP-IJCNLP , 2019. [9] X. Li, J. Thickstun, I. Gulrajani, P. S. Liang, and T. B. Hashimoto, “Diffusion-lm improves controllable text generation,” Advances in neu-ral information processing systems , vol. 35, pp. 4328–4343, 2022. [10] W. Wang, K. Hu, and T. N. Sainath, “Deliberation of stream-ing rnn-transducer by non-autoregressive decoding,” arXiv preprint arXiv:2112.11442 , 2021. [11] M. Havasi, B. Karrer, I. Gat, and R. T. Chen, “Edit flows: Flow matching with edit operations,” arXiv preprint arXiv:2506.09018 , 2025. [12] Y. Higuchi, H. Inaguma, S. Watanabe, T. Ogawa, and T. Kobayashi, “Improved mask-CTC for non-autoregressive end-to-end ASR,” in 2021 IEEE International Conference on Acoustics, Speech and Signal Pro-cessing , 2021. [13] Y. Fujita, S. Watanabe, M. Omachi, and X. Chang, “Insertion-based modeling for end-to-end automatic speech recognition,” in Interspeech 2020 , 2020, pp. 3660–3664. [14] R. Fan, W. Chu, P. Chang, and A. Alwan, “A ctc alignment-based non-autoregressive transformer for end-to-end automatic speech recognition,” 
+
+IEEE/ACM Transactions on Audio, Speech, and Language Processing ,2023. [15] H. Futami, H. Inaguma, S. Ueno, M. Mimura, S. Sakai, and T. Kawahara, “Non-autoregressive error correction for CTC-based ASR with phone-conditioned masked LM,” in Interspeech 2022 , 2022, pp. 3889–3893. [16] W. Wang, K. Hu, and T. N. Sainath, “Streaming align-refine for non-autoregressive deliberation,” in Interspeech , 2022. [17] M. Baas, K. Eloff, and H. Kamper, “Transfusion: Transcribing speech with multinomial diffusion,” 2022. [18] C.-K. Yeh, C.-C. Chen, C.-H. Hsu, and J.-T. Chien, “Cross-modality diffusion modeling and sampling for speech recognition.” in INTER-SPEECH , 2024. [19] W. Tian, B. Mu, G. Ma, X. Geng, Z. Zhao, and L. Xie, “dLLM-ASR: A faster diffusion LLM-based framework for speech recognition,” 2026. [20] S. Nie, F. Zhu, Z. You, X. Zhang, J. Ou, J. Hu, J. Zhou, Y. Lin, J.-R. Wen, and C. Li, “Large language diffusion models,” Advances in Neural Information Processing Systems , vol. 38, pp. 50 608–50 646, 2026. [21] H. Yen, P.-J. Ku, A. Jukic, and S. M. Siniscalchi, “MDM-ASR: Bridging accuracy and efficiency in ASR with diffusion-based non-autoregressive decoding,” 2026. [22] K. C. Puvvada, P. ˙ Zelasko, H. Huang, O. Hrinchuk, N. R. Koluguri, K. Dhawan, S. Majumdar, E. Rastorgueva, Z. Chen, V. Lavrukhin et al. ,“Less is more: Accurate speech recognition & translation without web-scale data,” arXiv preprint arXiv:2406.19674 , 2024. [23] M. Wang, Z. Liu, Z. Jin, G. Sun, C. Zhang, and P. C. Woodland, “Audio-conditioned diffusion llms for asr and deliberation processing,” arXiv preprint arXiv:2509.16622 , 2025. [24] A. Navon, A. Shamsian, N. Glazer, Y. Segal-Feldman, G. Hetz, J. Keshet, and E. Fetaya, “Drax: Speech recognition with discrete flow matching,” 2025. [25] D. Naveriani, A. Zeyer, R. Schluter, and H. Ney, “Diffusion language models for speech recognition,” arXiv preprint arXiv:2604.14001 , 2026. [26] M. Stern, W. Chan, J. Kiros, and J. Uszkoreit, “Insertion transformer: Flexible sequence generation via insertion operations,” in Proceedings of the 36th International Conference on Machine Learning , ser. Pro-ceedings of Machine Learning Research, vol. 97. PMLR, 2019, pp. 5976–5985. [27] J. Gu, C. Wang, and J. Zhao, “Levenshtein transformer,” in Advances in Neural Information Processing Systems , vol. 32, 2019. [28] E. Malmi, S. Krause, S. Rothe, D. Mirylenka, and A. Severyn, “Encode, tag, realize: High-precision text editing,” in Proceedings of EMNLP-IJCNLP , 2019, pp. 5054–5065. [29] J. Mallinson, A. Severyn, E. Malmi, and G. Garrido, “FELIX: Flexible text editing through tagging and insertion,” in Findings of the Association for Computational Linguistics: EMNLP 2020 , 2020, pp. 1244–1255. [30] Y. Leng, X. Tan, L. Zhu, J. Xu, R. Luo, L. Liu, T. Qin, X.-Y. Li, E. Lin, and T.-Y. Liu, “Fastcorrect: Fast error correction with edit alignment for automatic speech recognition,” in Advances in Neural Information Processing Systems , vol. 34, 2021, pp. 21 708–21 719. [31] Y. Leng, X. Tan, W. Liu, K. Song, R. Wang, X.-Y. Li, T. Qin, E. Lin, and T.-Y. Liu, “Softcorrect: Error correction with soft detection for automatic speech recognition,” Proceedings of the AAAI Conference on Artificial Intelligence , vol. 37, no. 11, pp. 13 034–13 042, 2023. [32] Z. Zhang, Z. Wang, R. Kamma, S. Eswaran, and N. Sadagopan, “PATCorrect: Non-autoregressive phoneme-augmented transformer for ASR error correction,” in Interspeech 2023 , 2023, pp. 3904–3908. [33] D. T. Gillespie, “Approximate accelerated stochastic simulation of chemically reacting systems,” The Journal of Chemical Physics , vol. 115, no. 4, pp. 1716–1733, 2001. [34] J. Ho and T. Salimans, “Classifier-free diffusion guidance,” arXiv preprint arXiv:2207.12598 , 2022. [35] V. Panayotov, G. Chen, D. Povey, and S. Khudanpur, “LibriSpeech: An ASR corpus based on public domain audio books,” in ICASSP , 2015. [36] S. Watanabe, T. Hori, S. Karita, T. Hayashi, J. Nishitoba, Y. Unno, N. E. Y. Soplin, J. Heymann, M. Wiesner, N. Chen, A. Renduchintala, and T. Ochiai, “ESPnet: End-to-end speech processing toolkit,” in 
+
+Interspeech , 2018. [37] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak supervi-sion,” in Proceedings of the 40th International Conference on Machine Learning , ser. Proceedings of Machine Learning Research, vol. 202, 2023, pp. 28 492–28 518.

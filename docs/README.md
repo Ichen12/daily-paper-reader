@@ -6,71 +6,65 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-06-29
-- 运行时间：2026-06-29 20:42:23 UTC
+- 最新运行日期：2026-06-30
+- 运行时间：2026-06-30 22:09:52 UTC
 - 运行状态：成功
-- 本次总论文数：17
-- 精读区：6
-- 速读区：11
+- 本次总论文数：15
+- 精读区：7
+- 速读区：8
 
 ### 今日简报（AI）
-今日精读2篇、速读3篇，聚焦ASR幻觉检测与实时交互模型。最值得关注Whisper幻觉检测的文本度量与模型内部机制，以及ZONOS2技术报告。建议优先阅读Whisper幻觉检测论文以理解ASR输出可靠性，并关注Wan-Streamer的实时交互框架。
-- 详情：[/202606/29/README](/202606/29/README)
+今日共推荐15篇论文，精读7篇、速读8篇，聚焦语音识别与对话系统前沿。最值得关注的是满分论文《VIB-AVSR》的噪声鲁棒视听语音识别方法，以及9分论文《Dziri Voicebot》面向阿尔及利亚方言的低资源端到端对话系统。建议后续深入关注低资源方言场景下的语音技术应用，以及多模态融合的鲁棒性提升方案。
+- 详情：[/202606/30/README](/202606/30/README)
 
 ### 精读区论文标签
-1. [From Text Metrics to Model Internals: A Study of Whisper ASR Hallucination Detection](/202606/29/2606.23060v1-from-text-metrics-to-model-internals-a-study-of-whisper-asr-hallucination-detection)  
+1. [VIB-AVSR: Variational Information Bottleneck for Noise-Robust LLM-Based Audio-Visual Speech Recognition](/202606/30/2606.29632v1-vib-avsr-variational-information-bottleneck-for-noise-robust-llm-based-audio-visual-speech-recognition)  
+   标签：评分：10.0/10、query:speech-audio
+   evidence：使用变分信息瓶颈的噪声鲁棒视听语音识别
+2. [Dziri Voicebot: An End-to-End Low-Resource Speech-to-Speech Conversational System for Algerian Dialect](/202606/30/2606.26003v2-dziri-voicebot-an-end-to-end-low-resource-speech-to-speech-conversational-system-for-algerian-dialect)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：Whisper模型的ASR幻觉检测
-2. [ZONOS2 Technical Report](/202606/29/2606.24320v2-zonos2-technical-report)  
+   evidence：端到端语音到语音系统，结合ASR和TTS处理低资源方言
+3. [Improving Large-Scale Weakly Supervised ASR by Filtering and Selection](/202606/30/2606.28728v1-improving-large-scale-weakly-supervised-asr-by-filtering-and-selection)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：基于MoE骨干和大规模训练的最先进TTS模型
-3. [CN-NewsTTS Bench: a target-level automatic benchmark for raw-input Chinese news TTS pronunciation](/202606/29/2606.24714v1-cn-newstts-bench-a-target-level-automatic-benchmark-for-raw-input-chinese-news-tts-pronunciation)  
+   evidence：基于数据过滤和选择的弱监督自动语音识别
+4. [CTC-Seeded Token Edit Refinement for Non-Autoregressive Speech Recognition](/202606/30/2606.28732v1-ctc-seeded-token-edit-refinement-for-non-autoregressive-speech-recognition)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：中文新闻TTS发音目标级基准
-4. [What Was That Again? Certified Robustness for Automatic Speech Recognition](/202606/29/2606.27698v1-what-was-that-again-certified-robustness-for-automatic-speech-recognition)  
+   evidence：基于CTC的非自回归语音识别
+5. [GigaSpeechBench: A Real-World Multilingual Speech-to-Text Benchmark](/202606/30/2606.28884v1-gigaspeechbench-a-real-world-multilingual-speech-to-text-benchmark)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：自动语音识别的认证鲁棒性方法
-5. [HPRO: Hierarchical Progressive Reward Optimization via Preference Extraction for Emotional Text-to-Speech](/202606/29/2606.28249v1-hpro-hierarchical-progressive-reward-optimization-via-preference-extraction-for-emotional-text-to-speech)  
+   evidence：针对真实世界鲁棒性的多语言语音转文本基准
+6. [How to Leverage Synthetic Speech for LLM-Based ASR Systems?](/202606/30/2606.29031v1-how-to-leverage-synthetic-speech-for-llm-based-asr-systems)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：基于层次化偏好优化的情感语音合成
-6. [Do Speech Emphasis Models Generalize across Languages and Emotions?](/202606/29/2606.27717v1-do-speech-emphasis-models-generalize-across-languages-and-emotions)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：多语言多情感强调语料库与基准测试
+   evidence：使用合成语音训练基于LLM的ASR
+7. [Preference-ASR: A Preference-Aware Test Set for Benchmarking ASR in the Era of Speech LLMs](/202606/30/2606.29534v1-preference-asr-a-preference-aware-test-set-for-benchmarking-asr-in-the-era-of-speech-llms)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：引入一个新的ASR基准测试集，关注用户偏好遵循
 
 ### 速读区论文标签
-1. [Wan-Streamer v0.1: End-to-end Real-time Interactive Foundation Models](/202606/29/2606.25041v1-wan-streamer-v01-end-to-end-real-time-interactive-foundation-models)  
+1. [Joint Residual Reweighting for Classifier Free Guidance in Flow-Matching Zero-Shot TTS](/202606/30/2606.25672v2-joint-residual-reweighting-for-classifier-free-guidance-in-flow-matching-zero-shot-tts)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：端到端语音-文本-视频交互，涵盖语音识别与合成
-2. [READ More than What You See: Reinforcement Learning for Accurate and Coherent Audio Description Generations](/202606/29/2606.22766v1-read-more-than-what-you-see-reinforcement-learning-for-accurate-and-coherent-audio-description-generations)  
+   evidence：流匹配零样本TTS指导方法
+2. [Position-Aware Target Speaker Extraction for Long-Form Multi-Party Conversations: A Diarization-Free Framework for ASR](/202606/30/2606.29497v1-position-aware-target-speaker-extraction-for-long-form-multi-party-conversations-a-diarization-free-framework-for-asr)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：用于ASR的目标说话人提取
+3. [HybridCodec: Modeling Discrete and Continuous Representations for Efficient Speech Language Models](/202606/30/2606.27627v1-hybridcodec-modeling-discrete-and-continuous-representations-for-efficient-speech-language-models)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：用于音频描述生成的强化学习框架
-3. [Real-Time Interactive Music Generation via Data-Free Streaming Consistency Distillation](/202606/29/2606.24307v1-real-time-interactive-music-generation-via-data-free-streaming-consistency-distillation)  
+   evidence：提出混合编码器结合离散和连续表示用于语音语言模型，与语音合成相关
+4. [Comparing Human and Automatic Recognition of Dutch Dysarthric Continuous Speech: A Case Study](/202606/30/2606.30237v1-comparing-human-and-automatic-recognition-of-dutch-dysarthric-continuous-speech-a-case-study)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：通过流式蒸馏从文本提示实时交互生成音乐
-4. [Probing in the Wild: A Case Study of Self-Supervised Speech Representations on Mandarin Sub-dialects with Unsupervised Articulatory Analysis](/202606/29/2606.25459v1-probing-in-the-wild-a-case-study-of-self-supervised-speech-representations-on-mandarin-sub-dialects-with-unsupervised-articulatory-analysis)  
+   evidence：构音障碍语音识别研究
+5. [DialogPII: A multilingual dataset of synthetic dialog transcripts to detect personal information](/202606/30/2606.30312v1-dialogpii-a-multilingual-dataset-of-synthetic-dialog-transcripts-to-detect-personal-information)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：对普通话次方言的语音表示探测
-5. [Learning from Annotation Uncertainty: Entropy-Aware Curriculum for Speech Emotion Recognition](/202606/29/2606.27536v1-learning-from-annotation-uncertainty-entropy-aware-curriculum-for-speech-emotion-recognition)  
+   evidence：用于个人信息检测的合成对话转录数据集
+6. [OLIVE: View-Augmented Latent Prediction with Waveform Reconstruction for Speech SSL](/202606/30/2606.30356v1-olive-view-augmented-latent-prediction-with-waveform-reconstruction-for-speech-ssl)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：利用标注不确定性的基于分布监督的语音情感识别
-6. [HybridCodec: Modeling Discrete and Continuous Representations for Efficient Speech Language Models](/202606/29/2606.27627v1-hybridcodec-modeling-discrete-and-continuous-representations-for-efficient-speech-language-models)  
+   evidence：自监督语音学习同时提升识别与生成任务
+7. [MeloDISinger: Melody-Aware & Duration-Preserving Singing Voice Editing with Audio Infilling](/202606/30/2606.30580v1-melodisinger-melody-aware--duration-preserving-singing-voice-editing-with-audio-infilling)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：混合离散-连续编解码器用于高效语音语言模型
-7. [Cross-lingual Retrieval-Augmented Classification for Dysarthria Severity Assessment](/202606/29/2606.22910v1-cross-lingual-retrieval-augmented-classification-for-dysarthria-severity-assessment)  
+   evidence：基于文本的歌声编辑与音频填充
+8. [wav2VOT: Automatic estimation of voice onset time, closure duration, and burst realisation with wav2vec2](/202606/30/2606.28857v1-wav2vot-automatic-estimation-of-voice-onset-time-closure-duration-and-burst-realisation-with-wav2vec2)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：跨语言检索的构音障碍严重程度评估
-8. [Don't Listen to Me: A Lightweight, Low-Latency Model for Own-Voice Cancellation in Far-Field Speech Enhancement](/202606/29/2606.23332v1-dont-listen-to-me-a-lightweight-low-latency-model-for-own-voice-cancellation-in-far-field-speech-enhancement)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：自我语音取消语音增强
-9. [Comparative Reasoning: Making an Audio Language Model Better at Comparing Emotions](/202606/29/2606.24082v1-comparative-reasoning-making-an-audio-language-model-better-at-comparing-emotions)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：语音情感比较推理
-10. [Poster: Exploring the Limits of Audio-Based Detection of Turkish Phone Call Scams](/202606/29/2606.24523v1-poster-exploring-the-limits-of-audio-based-detection-of-turkish-phone-call-scams)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：使用ASR进行土耳其语音频诈骗检测
-11. [EmotionAI: A Privacy-Preserving Computational Intelligence Pipeline for Speech-Emotion-Grounded Conversational Analysis](/202606/29/2606.24941v1-emotionai-a-privacy-preserving-computational-intelligence-pipeline-for-speech-emotion-grounded-conversational-analysis)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：使用ASR进行语音情感分析的流水线
+   evidence：使用wav2vec2的语音标注工具，用于语音学分析
 
 
 <div class="dpr-home-promo-card">

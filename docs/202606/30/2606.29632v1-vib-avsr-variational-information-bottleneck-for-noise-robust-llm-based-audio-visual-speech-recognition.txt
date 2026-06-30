@@ -1,0 +1,303 @@
+Title: VIB-AVSR: Variational Information Bottleneck for Noise-Robust LLM-Based Audio-Visual Speech Recognition
+
+URL Source: https://arxiv.org/pdf/2606.29632v1
+
+Published Time: Tue, 30 Jun 2026 01:48:03 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# VIB-AVSR: Variational Information Bottleneck for Noise-Robust LLM-Based Audio-Visual Speech Recognition 
+
+# Piyush Arora ♡,∗, Navlika Singh ♡,∗, Umberto Cappellazzo ♡, Stavros Petridis ♡,♠, Maja Pantic ♡,♠♡ Imperial College London, UK 
+
+♠ NatWest AI Research, UK 
+
+pa524@ic.ac.uk, ns1324@ic.ac.uk 
+
+# Abstract 
+
+Audio-Visual Speech Recognition takes two input modalities, acoustic and visual streams, where visual information from lip movements aids recognition when audio is noisy. Re-cently, LLM-based AVSR models have emerged as a promising paradigm by connecting pre-trained audio-visual encoders to an LLM, achieving strong results in clean conditions. However, these models are predominantly optimized for clean acoustic conditions, with limited attention to making the LLM back-bone robust to noise. No explicit mechanism is employed to produce stable representations under corrupted audio, leading to performance degradation in noisy environments. To address this, we propose VIB-AVSR, which integrates Variational In-formation Bottleneck layers at targeted positions within the LLM backbone to regularize representations. VIB-AVSR re-duces degradation under noisy conditions across multiple SNR levels and noise types, without requiring architectural modifi-cations or additional training data. Our code is available at https://github.com/PiyushArora1010/VIB-AVSR. 
+
+Index Terms : Audio-Visual Speech Recognition, LLMs, Vari-ational Information Bottleneck, Noise Robustness 
+
+# 1. Introduction 
+
+Audio-Visual Speech Recognition (AVSR) improves transcrip-tion accuracy by jointly processing acoustic and visual streams, where lip movements provide a complement to the audio sig-nal. The field has progressed through a series of end-to-end deep learning approaches based on Conformer and Trans-former backbones [1–4], self-supervised pre-training methods such as AV-HuBERT [5, 6] and large-scale automatic labeling pipelines such as Auto-AVSR [7], which have driven consis-tent improvements on standard benchmarks. More recently, ap-proaches leveraging large-scale pre-trained ASR models, such as Whisper-Flamingo [8–10], have demonstrated strong noise robustness by injecting visual features into a pre-trained speech encoder and the decoder. Building on these advances, LLM-based AVSR models [11–19] have emerged as a promising paradigm, connecting pre-trained audio and video encoders to a Large Language Model (LLM) via lightweight adapters, achiev-ing state-of-the-art performance. Despite these advances, noise robustness remains an largely overlooked challenge in the LLM-based AVSR paradigm. LLM-based AVSR models are predominantly optimized for clean acoustic conditions, and prior work has noted a non-trivial performance gap when these models are evaluated under noisy conditions [11, 13, 15]. This stands in contrast to traditional encoder-decoder AVSR models, which are trained end-to-end 
+
+* denotes equal contribution. 
+
+from scratch and can therefore develop noise-robust representa-tions throughout the entire architecture [5, 20–22]. In LLM-based AVSR, the backbone is a pre-trained language model whose parameters have been optimized purely on text, it has never been exposed to noisy audio-visual speech, and only a small number of its parameters are updated during fine-tuning via LoRA [23]. As a result, no explicit mechanism exists within the LLM backbone to produce stable representations when the input audio is corrupted, and the burden of noise robustness falls entirely on the encoders, leaving the LLM itself ill-equipped to handle the domain shift induced by acoustic noise. We argue that addressing this requires a principled approach to regulariz-ing the LLM’s internal representations directly, rather than rely-ing solely on data augmentation or encoder-only modifications. Motivated by this, we propose VIB-AVSR, a novel frame-work that inserts Variational Information Bottleneck (VIB) [24] layers at targeted positions within the LLM backbone. The VIB objective encourages the model to learn representations that are maximally informative about the transcription target while dis-carding noise-induced variance, directly addressing the vulner-ability at its source. Crucially, VIB-AVSR requires no major ar-chitectural changes, no additional training data, and introduces only negligible computational overhead, making it a lightweight and practical addition to existing LLM-based AVSR pipelines. In summary, our contributions are as follows: • We propose VIB-AVSR, a lightweight method that integrates VIB layers into the LLM backbone of an AVSR model to improve noise robustness at the representation level, without requiring architectural redesign or additional training data. • We demonstrate that VIB-AVSR improves noise robustness under both noisy and clean training paradigms, showing that variational compression promotes generalisation to noisy conditions. • We conduct extensive ablation studies on VIB layer place-ment, regularisation strength β, and interpolation coefficient 
+
+α, providing empirical evidence that supports each design choice and identifying the most effective configuration. • VIB-AVSR achieves WER reductions over Llama-AVSR across multiple noise types and SNR levels, with gains that widen under extreme noise conditions, while preserving recognition performance on clean speech. 
+
+# 2. Background 
+
+Llama-AVSR: Cappellazzo et al. [11] proposed Llama-AVSR, which is a Multimodal Large Language Model (MLLM) for au-dio, visual, and audio-visual speech recognition. It consists of three components: modality-specific pre-trained encoders, lightweight linear projectors, and a pre-trained LLM backbone. 
+
+> arXiv:2606.29632v1 [eess.AS] 28 Jun 2026
+
+Figure 1: Architecture overview of VIB-AVSR. (a) Audio and video inputs are encoded and projected into a shared represen-tation that conditions an LLM augmented with LoRA adapters and variational information bottleneck (VIB) module. (b) The bottleneck layer compresses intermediate representations, per-forms latent sampling, and interpolates features before passing them to the next LLM layer. 
+
+An audio encoder and a video encoder independently process their respective input streams, producing feature sequences that are downsampled and projected into the LLM’s embedding space via modality-specific linear projectors. The resulting au-dio tokens Ha, video tokens Hv , and text tokens Ht are con-catenated and processed by the LLM, which generates a tran-scription of the audio auto-regressively. Let X = ( Xa, X v , X t) denote the multimodal input and 
+
+Y the target transcription, the model is trained with a standard autoregressive objective: 
+
+arg min  
+
+> θ
+
+EX,Y 
+
+" MX
+
+> m=1
+
+− log fθ (Ym | Xa, X v , X t, Y <m )
+
+#
+
+where θ denotes the trainable parameters, i.e. projection lay-ers and LoRA modules, M is the transcription length, Y<m =
+
+{Y1, . . . , Y m−1} denotes generated transcript up to token m −
+
+1, and fθ (·) is the model’s predicted probability distribution. Although this formulation achieves strong performance under clean acoustic conditions, the audio representations are sensi-tive to acoustic noise, as the model does not explicitly regularize against noise-induced variation in the audio hidden states. 
+
+Information Bottleneck (IB) principle: Tishby et al. [25] in-troduces a framework for learning representations that retain task-relevant information while discarding redundant variation. For an input variable X, it’s learned representation Z parame-terized by ϕ, and a target Y , the IB objective is defined as: 
+
+max  
+
+> ϕ
+
+I(Z; Y ) − βI (Z; X) (1) where I(· ; ·) represents mutual information and β ≥ 0 controls the compression-prediction trade-off. Maximising I(Z; Y ) pre-serves information predictive of the output, while minimising 
+
+I(Z; X) discards redundancy in input, such as acoustic noise. In the AVSR setting, noise corrupts the audio input Xa, causing the audio hidden states Ha to encode noise-specific features that degrade transcription. We apply the IB objective selectively to 
+
+Ha to compress noise-related variation while retaining speech-discriminative content. The video and text hidden states Hv
+
+and Ht are not bottlenecked, as they are not directly corrupted by acoustic noise and should be preserved to provide comple-mentary lip-movement and linguistic context to the LLM. 
+
+# 3. VIB-AVSR 
+
+Now, a direct optimisation of the IB objective is intractable due to the difficulty of estimating mutual information in high-dimensional spaces. Following the variational formulation [24, 26], we derive a tractable lower bound tailored to the audio hid-den states in Llama-AVSR. The audio encoder and the respective projector presents the initial audio representations H0 
+
+> a
+
+, which are passed into the LLM. The LLM backbone consists of L transformer layers, and the audio hidden states at the output of layer l are denoted 
+
+Hla ∈ RT ×d, where T is the number of audio tokens and d is the hidden dimension. Without loss of generality, we derive the bottleneck formulation for a single layer l, where the variational information bottleneck (VIB) module glϕ takes Hla as input and produces a compressed representation Zla.For the compression term I(Zla; Hla), we introduce a fac-torizable variational prior r(Zla) and apply the non-negativity of KL divergence to obtain: 
+
+I(Zla; Hla) ≤ EHla
+
+DKL (p(Zla | Hla) || r(Zla))  (2) For the predictive term I(Zla; Y ), we substitute the true posterior p(Y |Zla) with a variational approximation 
+
+qϕ(Y |Zla, X v , X t), parameterised by the LLM decoder. Omitting the constant H(Y ) with respect to model parameters, this gives the lower bound: 
+
+I(Zla; Y ) ≥ EX,Y 
+
+h
+
+EZla|Hla
+
+h
+
+log qϕ(Y | Zla, X v , X t)
+
+ii 
+
+(3) Combining both bounds yields the variational IB objective at layer l, which is maximised with respect to the model parame-ters: 
+
+Ll 
+
+> VIB
+
+= EX,Y 
+
+h
+
+EZla|Hla
+
+h
+
+log qϕ(Y | Zla, X v , X t)
+
+ii 
+
+− β EHla
+
+h
+
+DKL (p(Zla | Hla) || r(Zla)) 
+
+i
+
+(4) The first term is the autoregressive transcription likelihood and the second term regularises the audio hidden states by penalis-ing deviation from the prior. The hyperparameter β controls the compression-prediction trade-off. 
+
+Practical Implementation: Using a Monte Carlo approxima-tion of the expectations over data and negating Eq. (4) to form a minimisation objective, the empirical estimate over a mini-batch of N samples is derived as: 
+
+Lβ = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+"
+
+EZl,i a |Hl,i a
+
+h
+
+− log qϕ
+
+
+
+Y i | Zl,i a , X v,i , X t,i i 
+
++ β D KL 
+
+
+
+p
+
+
+
+Zl,i a | Hl,i a
+
+
+
+|| r
+
+
+
+Zla
+
+ #
+
+(5) where Zla denotes the bottlenecked audio representation at layer 
+
+l. The first term maximises the likelihood of the target transcrip-tion under the compressed representation, while the KL term Table 1: WER (%) of Llama-AVSR and VIB-AVSR under babble and speech noise at five SNR levels, evaluated under both noisy and clean training paradigms. Avg ( N >S ) denotes the average WER over conditions where noise dominates the signal ( −10 , −5, −2 dB). 
+
+∞ denotes noise-free evaluation. Bold indicates the best result per configuration.                                                                               
+
+> Training Method Babble Speech -10 -5 -2 05Avg Avg ( N >S )-10 -5 -2 05Avg Avg ( N >S )∞
+> Noisy Llama-AVSR 34.87 27.55 18.09 8.00 5.74 18.85 26.84 27.66 14.94 9.14 5.21 3.84 12.16 17.24 2.72 VIB-AVSR 32.52 25.63 15.63 7.82 5.35 17.39 24.59 27.52 13.23 8.90 5.08 3.98 11.74 16.55 2.38
+> Clean Llama-AVSR 47.03 34.32 20.20 8.61 5.19 23.07 33.85 42.13 18.44 10.78 5.30 4.32 16.20 23.78 2.34
+> VIB-AVSR 40.97 31.50 19.45 8.55 5.00 21.09 30.64 37.44 17.37 10.69 5.36 4.39 15.05 21.83 2.42
+
+regularises the posterior p(Zla | Hla) towards the prior r(Zla).Both distributions are modelled as diagonal Gaussians [27]. 
+
+Prior distribution. The prior is a learnable diagonal Gaussian, 
+
+r(Zla) = N
+
+
+
+Zla; μlr , (σlr )2 · I
+
+
+
+(6) where μlr ∈ Rd and σlr ∈ Rd 
+
+> +
+
+are per-layer parameters shared across all samples, admitting a closed-form KL divergence. 
+
+Posterior distribution. We parameterise the posterior using a position-wise two-layer MLP gϕ : Rd → R2d, applied in-dependently to each audio token embedding, analogously to the feed-forward sublayer of a Transformer [28]. Given Hla at layer 
+
+l: p(Zla | Hla) := N (Zla; μl, (σl)2 · I) where [μl, (σl)2] = 
+
+gϕ(Hla), with mean and variance partitioned along the output dimension. The MLP is applied exclusively to audio token posi-tions, leaving visual and text representations unchanged. Sam-ples from the posterior are obtained via the reparameterisation trick [27]: 
+
+˜Zla = μl + σl ⊙ ϵ, ϵ ∼ N (0, I ) (7) During inference, we follow the standard practice [27] and in-stead of reparameterization trick, only μl is used. To bal-ance compression with the retention of speech-discriminative content, the bottleneck output is interpolated with the pre-bottleneck representation [26]: ˆZla = αH la + (1 − α) ˜Zla where, 
+
+α is set to 0.5 for our experiments. This interpolated repre-sentation ˆZla replaces Hla and is propagated to the subsequent LLM layers. In practice, we experiment with inserting bottle-neck modules after multiple layers [26] in the LLM, with each layer maintaining its own independent prior. Early experiments with α = 0 and with scheduling α from 0 to 0.5 following [26] both resulted in higher WERs, which we speculate is due to the sampled representation being too lossy for the LLM to generate. 
+
+# 4. Experiments and Discussion 
+
+4.1. Implementation Details Dataset. We train and evaluate on the LRS2 [29] dataset, con-sisting of BBC program clips with transcribed English speech. 
+
+Model Architecture. Following Llama-AVSR [11], we adopt a multimodal LLM framework consisting of three components: a pre-trained audio encoder, a pre-trained video encoder, and an LLM backbone. We use Whisper-medium [30] as the audio encoder and AV-HuBERT [6] as the video encoder. Modality-specific linear projectors are trained to map audio and video features to the LLM embedding space. Llama-3.2-1B [31] is incorporated as the LLM backbone. The compression rates for audio and video tokens is set to 3 each. The same configuration is used to train Llama-AVSR for fair comparison. 
+
+Training Details. The LLM and video encoder are fine-tuned using LoRA [23], with rank 64 for the LLM and rank 16 for the video encoder. The audio encoder is kept frozen throughout the training. VIB modules are inserted after selected LLM layers and trained jointly with the LoRA modules. The insertion points and the value of β are chosen based on ablation studies over layer placement, bottleneck count, and regularization strength (Section 4.3), which identify layers 4 and 8 with β = 0.1 
+
+> H
+
+as the most effective configuration, where H denotes the LLM’s hid-den dimension size. Each VIB module glϕ is implemented as a two-layer MLP: a linear layer followed by GeLU activation and a second linear layer with 2H output neurons, from which the mean and log-variance of the variational posterior are obtained. 
+
+Training Paradigms. For the experiments, we mainly evalu-ate two training paradigms. In the Clean Paradigm, no noise is added to the audio during training. In the Noisy Paradigm, a random noise is added to the training audio, with the SNR level sampled uniformly at random per instance. Evaluating VIB-AVSR under both paradigms allows us to assess whether the variational bottleneck improves robustness when noise is seen during training, and whether its regularisation effect generalises to noisy conditions even when trained on clean conditions. 
+
+4.2. Main Results 
+
+Table 1 reports WER for Llama-AVSR and VIB-AVSR across babble and speech noise, sampled from the MUSAN [32] dataset at five SNR levels, under both noisy and clean train-ing paradigms. We additionally report extreme noise average Avg ( N >S ), the average WER over SNR levels where noise substantially dominates the signal ( −10 , −5, −2 dB), as a mea-sure of robustness under extreme acoustic degradation. 
+
+Noisy Training. Under noisy training, VIB-AVSR almost al-ways reduces WER relative to Llama-AVSR, with the largest gains observed at lower SNRs, particularly under babble noise. This trend is further reflected in the Avg ( N >S ) metric. These results suggest that the compression objective becomes increas-ingly beneficial as acoustic interference dominates the speech signal. While improvements under speech noise are smaller than those observed for babble noise, VIB-AVSR still re-duces WER across all SNR conditions except 5 dB. Notably, VIB-AVSR also achieves lower WER than Llama-AVSR un-der noise-free evaluation ( ∞). This indicates that the bottle-neck acts as an effective regularizer, encouraging representa-tions that retain task-relevant information while suppressing nuisance variability beyond the noisy conditions. 
+
+Clean Training. When trained without noise augmentation, VIB-AVSR still yields substantial WER reductions. Under bab-ble noise, improvements are across all SNR levels, while under speech noise VIB-AVSR provides consistent gains in the low-SNR regime. Notably, the bottleneck is never exposed to noisy samples during training, yet the learned representations gener-alise more effectively to unseen noisy conditions. This sug-gests that variational compression promotes robustness through Table 2: WER (%) under babble for VIB insertions. The best results are in bold and the second-best are underlined.                                                                                     
+
+> SNR (dB) Layer(s) −10 −5−205∞Avg
+> Single
+> -1 33.25 25.27 16.29 7.33 5.59 2.37 15.03 234.76 25.59 16.95 7.12 5.20 2.43 15.32 434.73 25.50 16.95 8.17 5.18 2.61 15.52 634.59 26.32 16.85 7.48 5.36 2.76 15.56 834.53 26.44 17.67 7.55 5.09 2.46 15.63 12 34.29 25.92 17.66 8.59 5.39 2.31 15.69
+> Dual
+> 2,6 35.11 25.93 17.76 7.48 5.62 2.70 15.77 4,8 33.14 24.61 16.24 7.42 5.38 2.38 14.86
+> 8,12 33.45 25.71 16.26 7.73 5.26 2.54 15.16
+> Triple
+> -1,4,8 34.56 25.66 16.38 8.03 6.68 2.81 15.68 4,8,12 33.27 26.61 17.55 7.85 6.31 2.90 15.75
+
+a mechanism distinct from data augmentation. The effect is es-pecially evident in the Avg ( N >S ) metric. As expected, mod-els trained on clean data degrade more sharply under extreme noise than their noisy-trained counterparts, reflecting the im-pact of train-test domain mismatch. However, VIB-AVSR con-sistently narrows this gap relative to Llama-AVSR, particularly in the lowest-SNR conditions where the baseline is most vulner-able, indicating that the bottleneck partially compensates for the absence of noise augmentation. Finally, performance on clean speech ( ∞) remains comparable, demonstrating that the robust-ness gains do not come at the cost of clean-conditions. 
+
+4.3. Ablation Studies Effect of VIB Layer Placement: The placement of VIB mod-ules within the LLM determines at which depth noise-corrupted representations are compressed. Inserting bottlenecks too early may interfere with low-level features, while inserting them too late leaves noise unmitigated. We evaluate single, dual, and triple bottleneck configurations at various layer positions, where each index refers to the transformer layer after which the VIB is applied. For these experiments, we reports results in noisy training paradigm and set β = 0.1 
+
+> H
+
+. Layer index −1 denotes placement immediately after the audio encoder, where the pro-jection layer serves as the VIB module with β = 10 −7 follow-ing [33]. Moreover, due to shape mismatch between the output of the audio encoder and LLM hidden dimension size, we don’t do the interpolation in this case. Results under babble noise are reported in Table 2. Single-layer configurations perform comparably across po-sitions, with no placement offering a consistent advantage over the others. This suggests that a single bottleneck lacks suffi-cient capacity to suppress noise reliably, regardless of where it is placed. Notably, the −1 configuration, which places the bot-tleneck at the audio encoder output, achieves the best average WER among all single-layer configurations at 15 .03% , suggest-ing that early compression at the encoder-LLM interface is more effective than any single LLM-layer insertion. However, it still falls short of the best dual configuration. Among dual configu-rations, layers (4, 8) yields the best overall performance, achiev-ing the lowest average WER and the strongest gains under ex-treme noise, while remaining competitive at higher SNR levels. The (8, 12) configuration is a close second, but the advantage of (4, 8) at low SNR suggests that compressing representations at Table 3: WER (%) under babble for β values, which are nor-malized by H, hidden dimension of LLM backbone. The best results are in bold and the second-best are underlined.                                    
+
+> SNR (dB)
+> β−10 −5−205∞Avg
+> 0.05 33.84 25.42 16.52 7.63 5.48 2.84 15.29
+> 0.133.14 24.61 16.24 7.42 5.38 2.38 14.86
+> 0.234.40 24.80 16.66 7.63 5.53 2.49 15.25
+> 135.86 27.73 19.49 10.72 8.03 4.25 17.68
+
+Table 4: WER (%) under babble for interpolation α values. The best results are in bold and the second- best are underlined.                               
+
+> SNR (dB)
+> α−10 −5−205∞Avg
+> 037.62 31.13 22.41 13.23 8.32 4.58 19.54
+> 0→0.533.54 26.75 18.45 9.05 6.56 3.43 16.29
+> 0.533.14 24.61 16.24 7.42 5.38 2.38 14.86
+
+an earlier intermediate layer is beneficial when noise is most se-vere. Adding a third bottleneck degrades performance across all conditions, including clean speech. This indicates that stacking too many compression stages leads to over-regularisation. 
+
+Effect of β: The β hyperparameter controls the strength of the KL regularisation term, trading off compression of noisy representations against retention of task-relevant content. Too small values reduces the regularisation effect, while too large values risk discarding task-relevant features. We ablate over four values normalised by the LLM hidden dimension H:
+
+{0.05 , 0.1, 0.2, 1}, using the (4, 8) dual configuration identi-fied above. Results are reported in Table 3. At β = 1 , per-formance degrades sharply across all SNR levels with average WER rising to 17 .68% , confirming that excessive compression is harmful. Among the remaining values, β = 0 .1 achieves the best average WER of 14 .86% and is the most consistent across SNR levels, and is therefore used in all other experiments. 
+
+Role of Interpolation Coefficient α. We compare three config-urations using the (4, 8) dual setup with β = 0.1 
+
+> H
+
+: setting α = 0 ,cosine scheduling α from 0 to 0.5 following [26], and fixing 
+
+α = 0 .5 throughout training. Setting α = 0 replaces the hid-den state entirely with the sampled representation and leads to the worst performance across conditions, consistent with over-regularisation. The scheduled variant improves over α = 0 but still shows higher WER across SNR levels relative to the fixed setting, which we attribute to the period of near-complete com-pression early in training that the LLM must recover from. 
+
+# 5. Conclusion 
+
+We introduce VIB-AVSR, a method for improving noise robust-ness in audio-visual speech recognition by inserting Variational Information Bottleneck modules into intermediate layers of the LLM backbone. The VIB bottleneck applies compression to audio representations during training, encouraging the model to retain acoustically relevant content while discarding noise-correlated features. Experiments under babble and speech noise show consistent WER reductions over the Llama-AVSR base-line across SNR levels and training paradigms. Notably, the gains hold even when no noise augmentation is used during training, suggesting that the compression term promotes rep-resentations that generalise better to noisy conditions. 6. Generative AI Use Disclosure 
+
+Generative AI tools were used solely for language editing and manuscript polishing. All research ideas, methodology, experi-ments, and conclusions were developed and are the responsibil-ity of the authors. 
+
+# 7. Acknowledgements 
+
+All data processing and experiments were conducted at Imperial College London. 
+
+# 8. References 
+
+[1] S. Petridis, T. Stafylakis, P. Ma, G. Tzimiropoulos, and M. Pan-tic, “Audio-visual speech recognition with a hybrid ctc/attention architecture,” in 2018 IEEE Spoken Language Technology Work-shop (SLT) . IEEE, 2018, pp. 513–520. [2] P. Ma, S. Petridis, and M. Pantic, “End-to-end audio-visual speech recognition with conformers,” in ICASSP 2021-2021 IEEE Inter-national Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2021, pp. 7613–7617. [3] D. Serdyuk, O. Braga, and O. Siohan, “Transformer-based video front-ends for audio-visual speech recognition for single and multi-person video,” in Interspeech , 2022. [4] M. Burchi and R. Timofte, “Audio-visual efficient conformer for robust speech recognition,” in Proceedings of the IEEE/CVF winter conference on applications of computer vision , 2023, pp. 2258–2267. [5] B. Shi, W.-N. Hsu, and A. Mohamed, “Robust self-supervised audio-visual speech recognition,” in Proc. Interspeech 2022 ,2022, pp. 2118–2122. [6] B. Shi, W.-N. Hsu, K. Lakhotia, and A. Mohamed, “Learning audio-visual speech representation by masked multimodal cluster prediction,” in International Conference on Learning Representa-tions .[7] P. Ma, A. Haliassos, A. Fernandez-Lopez, H. Chen, S. Petridis, and M. Pantic, “Auto-avsr: Audio-visual speech recognition with automatic labels,” in ICASSP 2023-2023 IEEE International Con-ference on Acoustics, Speech and Signal Processing (ICASSP) .IEEE, 2023, pp. 1–5. [8] A. Rouditchenko, Y. Gong, S. Thomas, L. Karlinsky, H. Kuehne, R. Feris, and J. Glass, “Whisper-flamingo: Integrating visual fea-tures into whisper for audio-visual speech recognition and trans-lation,” in Interspeech , 2024. [9] Z. Li, T. Graave, B. M¨ oller, Z. Wu, M. Franz, and T. Fingscheidt, “Noise-robust av-asr using visual features both in the whisper en-coder and decoder,” arXiv preprint arXiv:2601.18396 , 2026. [10] A. Rouditchenko, S. Thomas, H. Kuehne, R. Feris, and J. Glass, “mwhisper-flamingo for multilingual audio-visual noise-robust speech recognition,” IEEE Signal Processing Letters , 2025. [11] U. Cappellazzo, M. Kim, H. Chen, P. Ma, S. Petridis, D. Falavi-gna, A. Brutti, and M. Pantic, “Large language models are strong audio-visual speech recognition learners,” in ICASSP 2025-2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2025, pp. 1–5. [12] J. Yeo, S. Han, M. Kim, and Y. M. Ro, “Where visual speech meets language: Vsp-llm framework for efficient and context-aware visual speech processing,” in Findings of the Association for Computational Linguistics: EMNLP 2024 , 2024, pp. 11 391– 11 406. [13] U. Cappellazzo, M. Kim, S. Petridis, D. Falavigna, and A. Brutti, “Scaling and enhancing llm-based avsr: A sparse mixture of pro-jectors approach,” in Proc. Interspeech 2025 , 2025, pp. 1823– 1827. [14] U. Cappellazzo, M. Kim, P. Ma, H. Chen, X. Liu, S. Petridis, and M. Pantic, “Mome: Mixture of matryoshka experts for audio-visual speech recognition,” arXiv preprint arXiv:2510.04136 ,2025. [15] J. H. Yeo, H. Rha, S. J. Park, and Y. M. Ro, “Mms-llama: Efficient llm-based audio-visual speech recognition with minimal multi-modal speech tokens,” in Findings of the Association for Com-putational Linguistics: ACL 2025 , 2025, pp. 20 724–20 735. [16] U. Cappellazzo, X. Liu, P. Ma, S. Petridis, and M. Pantic, “Omni-avsr: Towards unified multimodal speech recognition with large language models,” arXiv preprint arXiv:2511.07253 , 2025. [17] U. Cappellazzo, M. Kim, and S. Petridis, “Adaptive audio-visual speech recognition via matryoshka-based multimodal llms,” in 
+
+2025 IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) . IEEE, 2025, pp. 1–8. [18] A. Anand, U. Cappellazzo, S. Petridis, and M. Pantic, “Mit-igating attention sinks and massive activations in audio-visual speech recognition with llms,” in ICASSP 2026-2026 IEEE Inter-national Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2026, pp. 17 942–17 946. [19] U. Cappellazzo, S. Petridis, and M. Pantic, “Dr. shap-av: Decoding relative modality contributions via shapley at-tribution in audio-visual speech recognition,” arXiv preprint arXiv:2603.12046 , 2026. [20] J. Hong, M. Kim, J. Choi, and Y. M. Ro, “Watch or listen: Robust audio-visual speech recognition with visual corruption modeling and reliability scoring,” in Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition , 2023, pp. 18 783–18 794. [21] S. Kim, K. Jang, S. Bae, S. Cho, and S.-Y. Yun, “Mohave: mix-ture of hierarchical audio-visual experts for robust speech recog-nition,” arXiv preprint arXiv:2502.10447 , 2025. [22] S. Kim, S. Cho, S. Bae, K. Jang, and S.-Y. Yun, “Multi-task cor-rupted prediction for learning robust audio-visual speech repre-sentation,” in ICLR , 2025. [23] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, W. Chen et al. , “Lora: Low-rank adaptation of large language models.” Iclr , vol. 1, no. 2, p. 3, 2022. [24] A. A. Alemi, I. Fischer, J. V. Dillon, and K. Murphy, “Deep vari-ational information bottleneck,” in International Conference on Learning Representations , 2017. [25] N. Tishby, F. C. Pereira, and W. Bialek, “The information bottle-neck method,” arXiv preprint physics/0004057 , 2000. [26] C. Oh, J. Li, S. Im, and S. Li, “Visual instruction bottleneck tun-ing,” in The Thirty-ninth Annual Conference on Neural Informa-tion Processing Systems , 2025. [27] D. P. Kingma and M. Welling, “Auto-encoding variational bayes,” in International Conference on Learning Representations (ICLR) ,2014. [28] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, Ł. Kaiser, and I. Polosukhin, “Attention is all you need,” 
+
+Advances in neural information processing systems , vol. 30, 2017. [29] J. Son Chung, A. Senior, O. Vinyals, and A. Zisserman, “Lip read-ing sentences in the wild,” in Proceedings of the IEEE confer-ence on computer vision and pattern recognition , 2017, pp. 6447– 6456. [30] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak supervision,” in International conference on machine learning .PMLR, 2023, pp. 28 492–28 518. [31] A. Grattafiori, A. Dubey, A. Jauhri, A. Pandey, A. Kadian, A. Al-Dahle, A. Letman, A. Mathur, A. Schelten, A. Vaughan et al. ,“The llama 3 herd of models,” in Neural Information Processing Systems . Curran Associates, 2024. [32] D. Snyder, G. Chen, and D. Povey, “Musan: A music, speech, and noise corpus,” arXiv preprint arXiv:1510.08484 , 2015. [33] J. Bai, H. Guo, Z. Peng, J. Yang, Z. Li, M. Li, and Z. Tian, “Mit-igating hallucinations in large vision-language models by adap-tively constraining information flow,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 39, no. 22, 2025, pp. 23 442–23 450.
