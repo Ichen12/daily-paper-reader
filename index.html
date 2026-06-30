@@ -170,8 +170,16 @@
         return candidateBase + '/' + normalizePath(path);
       }
 
-      function shouldLoadStylesheetFromCdn(path, useCdn) {
+      function shouldLoadAssetFromCdn(path, useCdn) {
         if (!useCdn) return false;
+        var normalized = normalizePath(path);
+        // Keep the site shell tied to the current GitHub Pages deployment.
+        // The CDN can lag behind repo changes and hide freshly deployed UI fixes.
+        return !/^app\/(?:app\.css|docsify-plugin\.js)$/i.test(normalized);
+      }
+
+      function shouldLoadStylesheetFromCdn(path, useCdn) {
+        if (!shouldLoadAssetFromCdn(path, useCdn)) return false;
         // KaTeX CSS 会继续请求 fonts/*.woff2。EdgeOne Pages 当前未给字体返回
         // Access-Control-Allow-Origin，本地/GitHub Pages 跨域引用会被浏览器拦截。
         return !/\/katex\.min\.css$/i.test(normalizePath(path));
@@ -219,21 +227,23 @@
 
       function preloadScript(path, useCdn) {
         var link = document.createElement('link');
+        var useRemoteScript = shouldLoadAssetFromCdn(path, useCdn);
         link.rel = 'preload';
         link.as = 'script';
-        link.href = useCdn ? cdnUrl(path) : localUrl(path);
+        link.href = useRemoteScript ? cdnUrl(path) : localUrl(path);
         document.head.appendChild(link);
       }
 
       function appendScript(path, useCdn) {
         return new Promise(function (resolve, reject) {
           var finished = false;
+          var useRemoteScript = shouldLoadAssetFromCdn(path, useCdn);
           var script = document.createElement('script');
           var timer = window.setTimeout(function () {
             if (finished) return;
             finished = true;
             script.remove();
-            if (useCdn) {
+            if (useRemoteScript) {
               console.warn('[DPR] CDN JS 加载超时，回退本地：' + path);
               appendScript(path, false).then(resolve, reject);
             } else {
@@ -241,7 +251,7 @@
             }
           }, ASSET_TIMEOUT_MS);
           script.async = false;
-          script.src = useCdn ? cdnUrl(path) : localUrl(path);
+          script.src = useRemoteScript ? cdnUrl(path) : localUrl(path);
           script.onload = function () {
             if (finished) return;
             finished = true;
@@ -253,7 +263,7 @@
             finished = true;
             window.clearTimeout(timer);
             script.remove();
-            if (useCdn) {
+            if (useRemoteScript) {
               console.warn('[DPR] CDN JS 加载失败，回退本地：' + path);
               appendScript(path, false).then(resolve, reject);
             } else {
