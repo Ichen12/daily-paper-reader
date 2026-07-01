@@ -1,0 +1,935 @@
+Title: OLIVE: View-Augmented Latent Prediction with Waveform Reconstruction for Speech SSL
+
+URL Source: https://arxiv.org/pdf/2606.30356v1
+
+Published Time: Tue, 30 Jun 2026 02:23:53 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# OLIVE: View-Augmented Latent Prediction with Waveform Reconstruction for Speech SSL 
+
+Karl El Hajal 1,2 , Mathew Magimai.-Doss 1
+
+> 1
+
+Idiap Research Institute, Switzerland 
+
+> 2
+
+EPFL, Switzerland 
+
+{karl.elhajal, mathew}@idiap.ch 
+
+Abstract 
+
+We propose Online Latent prediction with Invariant Views and r Econstruction (OLIVE), a self-supervised speech representation learning framework that jointly optimizes analysis and synthesis objectives. OLIVE combines view-augmented masked latent prediction with waveform reconstruction under a unified objective. Reconstruction constrains early encoder features to retain signal-level information, while masked latent prediction shapes later contextual representations toward in-variance for robust downstream performance. We show that these objectives enable representations that support a broad range of tasks. In particular, OLIVE improves results on generation and speaker tasks, maintains competitive performance on recognition and semantic tasks, and improves waveform reconstruction. 
+
+1 Introduction 
+
+Recent advances in speech representation learning have been largely driven by self-supervised learn-ing (SSL) on large-scale unlabeled audio [ 1 , 2]. Models such as wav2vec 2.0 [ 3 ], HuBERT [ 4], WavLM [ 5 ], and data2vec [ 6, 7] learn contextual representations that serve as general-purpose feature extractors, supporting both linguistic tasks such as automatic speech recognition [ 3, 4 ] and paralin-guistic tasks including speaker and other non-linguistic acoustic attributes such as diarization and speech emotion recognition [ 8– 12 ]. These methods inherit ideas from contrastive prediction [ 13 , 14 ], masked modeling [ 15 –17 ], quantization and discrete target discovery [ 16 , 18 , 19 ], and teacher–student distillation [ 20 –22 ]. Existing approaches are nevertheless predominantly focused on discriminative tasks: they aim to extract representations that are maximally informative for downstream predictive tasks, without explicitly preserving the information required for speech signal generation. In contrast, speech communication fundamentally arises from two tightly coupled phenomena: 
+
+perception (hearing) and production (speaking). Classical speech processing has long embraced this duality through the analysis–synthesis paradigm, where signals are decomposed into structured components and subsequently reconstructed [ 23 –25 ]. This framework leverages the fact that speech production is governed by a well-defined physical and physiological process, making it amenable to explicit modeling [ 26 – 28 ]. Recent neural work has revisited this perspective by training decoders on frozen self-supervised representations, effectively forming a neural analysis–synthesis pipeline [ 29 –32 ]. This has enabled a range of synthesis approaches for tasks such as voice conversion [ 33 ], text-to-speech [ 34 ], and speech enhancement [ 35 ] that leverage the structured information encoded in intermediate self-supervised representations. Despite this motivation, synthesis remains peripheral in most modern speech SSL systems. Recent efforts have begun to incorporate generative objectives, for example through auxiliary reconstruction losses or jointly trained encoder–decoder models [ 36 , 37 ]. These developments suggest that analysis and synthesis can be coupled during pre-training, but leave open how to model waveform-to-waveform 
+
+> Preprint.
+> arXiv:2606.30356v1 [cs.CL] 29 Jun 2026
+
+reconstruction directly, while retaining a functional decoder within the pre-trained model, and preserving the discriminative strength of speech SSL. In this work, we propose OLIVE (Online Latent prediction with Invariant Views and r Econstruction), a self-supervised speech representation learning framework that jointly optimizes analysis and synthesis objectives. OLIVE combines view-augmented masked prediction in the latent space with waveform reconstruction under a unified objective. OLIVE therefore explicitly balances two training goals: the synthesis branch constrains early encoder features to preserve information for waveform reconstruction, while the analysis branch shapes later contextual representations toward invariance for robust downstream analysis. This stands in contrast to purely discriminative models, which may discard information critical for generation, and purely generative approaches, which may underperform on discriminative tasks. We validate our method against established SSL baselines and demonstrate that jointly modeling analysis and synthesis yields competitive downstream performance while enabling high-quality waveform reconstruction. Code and model weights will be made publicly available upon publication. 
+
+Contributions. 
+
+• We introduce OLIVE , a speech SSL framework that jointly optimizes analysis and synthesis in a single pre-training stage. • We propose a design in which waveform reconstruction acts on early encoder features, while later contextual representations are shaped primarily by view-augmented masked prediction in the latent space. • We demonstrate that this design improves waveform reconstruction and downstream per-formance on generative and speaker-related tasks while maintaining competitive results on recognition and semantic tasks. 
+
+2 Related Work 
+
+Self-supervised speech representation learning. Early speech SSL methods learned from raw waveforms using contrastive objectives that predict latent representations of future or masked inputs from past context [ 13 , 14 , 38 – 40 ]. Wav2vec 2.0 introduced masked latent prediction with quantized targets and a contrastive loss at masked time steps [ 3]. HuBERT replaced online quantization with masked prediction of offline clustered units [ 4], while WavLM extended this line with denoising and large-scale pre-training for a broader set of speech tasks [ 5]. Data2vec instead predicts continuous contextualized teacher representations, avoiding discrete targets [ 6]. Data2vec 2.0 improves the efficiency of this masked self-distillation setup by reusing teacher targets across masked views, encoding only unmasked steps, and using a lightweight convolutional decoder [ 7 ]. OLIVE builds on this family of latent masked prediction methods, but adds view augmentation and a waveform reconstruction objective during pre-training for joint analysis and synthesis modeling. 
+
+View-based self-distillation. View-based self-supervised learning trains representations to agree across stochastic views of the same input [ 41 ]. BYOL showed that an online network can predict the representation of a slowly updated target network without explicit negative pairs, learning invariances through data augmentations [ 20 ]. In audio, BYOL-A adapts this principle using mixup and time–frequency transformations on log-mel spectrograms [ 21 ], and BYOL-S further studies bootstrapped speech representations across encoder architectures and pre-training data choices [ 42 ]. WaveBYOL extends this approach to raw waveforms using time-domain augmentations, primarily targeting general audio tasks [ 43 ]. Similar to data2vec, WavJEPA predicts latent targets from raw waveforms [ 44 ], following the broader JEPA framework [ 45 ]. OLIVE builds on this line of view-based self-distillation methods by combining masked latent prediction with time-domain waveform augmentations to explicitly induce invariances, while jointly optimizing a synthesis objective. 
+
+Speech reconstruction and analysis–synthesis. Recent work trains neural vocoders [ 46 –49 ] such as HiFi-GAN [ 50 ] on frozen self-supervised features, effectively forming neural analysis–synthesis pipelines [ 29 – 32 ], enabling synthesis methods that leverage self-supervised representations. Such methods typically treat synthesis as a downstream process, rather than integrating it into representation learning during pre-training. Neural audio codecs further explore this analysis–synthesis interface 2Analysis Branch: 
+
+> View-Augmented Masked Distillation
+> Input
+> Waveform
+> Student View
+> Teacher View
+> Local
+> Feature
+> Extractor
+> Teacher
+> Local Features
+> Student
+> Local Features
+> Student
+> Encoder
+> Teacher
+> Encoder
+> Prediction
+> Head
+> Synthesis Branch:
+> Waveform Reconstruction
+> mask
+> Neural
+> Vocoder
+> stop
+> gradient
+> //
+> EMA
+
+Figure 1: OLIVE pre-training framework. Two independently augmented waveform views are passed through a shared local feature extractor. The analysis branch performs view-augmented masked distillation: the student predicts contextual teacher targets from masked input features. The synthesis branch performs waveform reconstruction by conditioning a neural vocoder on the local student features. The final objective combines the analysis loss with a weighted synthesis loss. by learning compact latent representations that can be decoded back to waveforms [ 51 –54 ]. These works primarily target efficient storage, transmission, or speech language model inference, whereas OLIVE uses reconstruction as a training objective for speech representation learning. Closer to speech SSL pre-training, data2vec-SG augments data2vec with a reconstruction objective for generation-oriented tasks, but discards the decoder after pre-training [ 36 ]. UniWav jointly trains an encoder–decoder architecture, but operates on intermediate acoustic features rather than generating waveforms directly [ 37 ]. Related two-stage approaches first learn latent representations and then train a separate reconstruction pathway [55], while masked generative pre-training methods such as Metis operate on SSL features for downstream speech generation [ 56 ]. OLIVE differs along three axes: it reconstructs waveforms directly rather than through intermediate acoustic features, keeps the decoder as part of the pre-trained model rather than discarding it after pre-training, and conditions reconstruction on earlier encoder features while later contextual representations are shaped primarily by the masked distillation objective. Both objectives are optimized in a single pre-training stage. 
+
+3 Method 
+
+OLIVE learns speech representations by jointly solving two self-supervised tasks, which we term 
+
+analysis and synthesis . The framework is illustrated in Fig. 1. The analysis task encourages the encoder to produce contextual representations that are invariant to augmentation-induced variability, while the synthesis task encourages intermediate encoder features to preserve acoustic information relevant to waveform reconstruction. 
+
+3.1 Analysis: View-Augmented Masked Distillation 
+
+The analysis branch follows the data2vec 2.0 teacher–student masked prediction objective [ 7], with the addition of independently sampled waveform augmentations for the student and teacher views. These augmentations define the variability to which the representation should become invariant. More generally, the augmentation family acts as an explicit prior over the invariances learned by OLIVE, and can be adapted to applications with different requirements. Augmentations can be used to induce variations related to dimensions such as environment, speaker, pitch, time, or gain. We use ′ to denote student views and ′′ to denote teacher views. Given an input waveform x, we sample two stochastic augmentations a′ and a′′ and form two views 
+
+x′ = a′(x), x′′ = a′′ (x). (1) The student processes a masked view of x′, while the teacher processes the unmasked view x′′ . The student is trained to predict contextual latent targets provided by the teacher at masked positions. We 3decompose the student and teacher encoders into a local feature extractor followed by a contextual encoder, and masking is applied to local latent features before contextualization. Let eθ denote the student local feature extractor with parameters θ, fθ the student contextual encoder, and e¯θ , f ¯θ their teacher counterparts. Let m(·) denote the masking operation applied in latent space to the student local features. The student and teacher local feature sequences over T time frames are: 
+
+r′ 
+
+> 1: T
+
+= eθ (x′), ¯r′′  
+
+> 1: T
+
+= e¯θ (x′′ ), (2) the corresponding contextual representations are then 
+
+h′ 
+
+> 1: T
+
+= fθ (m(r′ 
+
+> 1: T
+
+)) , ¯h′′  
+
+> 1: T
+
+= f¯θ (¯ r′′  
+
+> 1: T
+
+). (3) The teacher parameters are updated as an exponential moving average (EMA) of the student parame-ters: ¯θ ← τ ¯θ + (1 − τ )θ, (4) where τ ∈ [0 , 1] is the target decay rate controlling the EMA update. Teacher targets are constructed by instance-normalizing the top K teacher layer outputs and averaging them. If ¯h′′ ,ℓ t denotes the teacher representation at layer ℓ and time step t, the target is: 
+
+z′′  
+
+> t
+
+= 1
+
+K
+
+> L
+
+X
+
+> ℓ=L−K+1
+
+IN 
+
+¯h′′ ,ℓ t
+
+
+
+, (5) where L is the number of encoder layers and IN denotes instance normalization. The student predicts these targets at masked time steps using a mean-squared error objective: 
+
+Lanalysis = 1
+
+|M| 
+
+X
+
+> t∈M
+
+∥pθ (h′
+
+> t
+
+) − sg( z′′  
+
+> t
+
+)∥22 · d−1/2, (6) where M is the set of masked frames, pθ is a prediction decoder, d is the representation dimension, and sg( ·) denotes stop-gradient. 
+
+3.2 Synthesis: Waveform Reconstruction 
+
+To incorporate synthesis as a pre-training objective, OLIVE adds a neural vocoder trained to re-construct waveforms from intermediate encoder features. Accordingly, the synthesis branch acts on earlier encoder features, leaving later contextual representations to be shaped primarily by the analysis objective. The decoder follows the HiFi-GAN vocoder architecture [ 50 ]. HiFi-GAN is adversarially trained, consisting of a generator that synthesizes the waveform and a set of waveform discriminators that distinguish real from generated audio. In OLIVE, we retain this architecture, but replace the usual mel-spectrogram conditioning with learned OLIVE encoder representations. The generator must therefore synthesize the waveform from the representation learned by the shared speech encoder, making reconstruction a direct constraint on the representation itself. Using the unmasked student local feature sequence r′ 
+
+> 1: T
+
+extracted from the waveform view x′, the generator Gψ with parameters ψ produces a waveform reconstruction: 
+
+ˆx′ = Gψ (r′ 
+
+> 1: T
+
+) . (7) The adversarial component uses two discriminator families. The multi-period discriminator (MPD) contains sub-discriminators with different periods, making it sensitive to harmonic and pitch-period structure. The multi-scale discriminator (MSD) contains sub-discriminators that operate at different temporal resolutions, encouraging realistic waveform structure across scales [ 48 , 50 ]. The synthesis objective combines mel-spectrogram reconstruction, adversarial training, and feature matching. The mel reconstruction loss, where mel( ·) denotes the log-mel spectrogram transform, is: 
+
+Lmel = ∥mel( x′) − mel(ˆ x′)∥1 . (8) Let Dϕ = {Djϕ}Jj=1 denote the set of discriminators. The adversarial losses are: 
+
+Lgen =
+
+> J
+
+X
+
+> j=1
+
+
+
+Djϕ(ˆ x′) − 1
+
+2
+
+, Ldisc =
+
+> J
+
+X
+
+> j=1
+
+
+
+Djϕ(x′) − 1
+
+2
+
++
+
+
+
+Djϕ(sg(ˆ x′)) 
+
+2
+
+. (9) 4Feature matching compares intermediate discriminator activations: 
+
+Lfm =
+
+> J
+
+X
+
+> j=1
+> Tj
+
+X
+
+> i=1
+
+1
+
+Nj,i 
+
+Djϕ,i (x′) − Djϕ,i (ˆ x′) 1
+
+, (10) where Djϕ,i (·) is the activation of layer i in sub-discriminator j, Tj is the number of feature layers, and Nj,i is the number of elements in that activation. The mel-spectrogram term anchors the reconstruction to the reference signal in a stable time-frequency space, while the adversarial and feature-matching terms encourage perceptually realistic details, with λfm and λmel weighting the corresponding terms. The generator and discriminator objectives are: 
+
+LG 
+
+> synthesis
+
+= Lgen + λfm Lfm + λmel Lmel , LD 
+
+> synthesis
+
+= Ldisc . (11) 
+
+3.3 Joint Optimization 
+
+The final objective balances invariant representation learning with waveform reconstruction: 
+
+LOLIVE = Lanalysis + λsynthesis LG
+
+> synthesis
+
+, (12) where λsynthesis controls the analysis–synthesis trade-off. This objective updates the student encoder, prediction head, and generator, while the teacher is updated by EMA and the discriminator parameters are updated separately. Thus, the analysis branch supplies an invariant contextual prediction signal, while the synthesis branch supplies a waveform-level reconstruction signal that constrains earlier encoder features, leaving later contextual representations to be shaped primarily by the analysis objective. 
+
+4 Experiments 
+
+We validate OLIVE in two ways. First, we evaluate learned representations on a broad suite of downstream speech tasks. Second, we evaluate waveform reconstruction quality. Section 4.1 presents implementation and pre-training details, Section 4.2 presents the downstream evaluation, and Section 4.3 presents the waveform reconstruction results. 
+
+4.1 Implementation and Pre-training Details 
+
+All OLIVE models are implemented in fairseq 1, extending the data2vec 2.0 speech codebase with paired view augmentation and waveform reconstruction. We pre-train on the 960-hour LibriSpeech dataset [ 57 ] and focus on Base -sized models due to computational constraints. We train and evaluate three variants: OLIVE-A (Mix) is an analysis-only variant using waveform mixup, OLIVE-A (Mix+Gain) additionally applies gain perturbation, and OLIVE-J combines mixup augmentation with the joint waveform reconstruction objective. All three variants share the same 93.8M-parameter analysis backbone; OLIVE-J adds the synthesis branch for joint training. To select which analysis-only variants to train, we first trained Small -sized models with hidden size d = 384 and evaluated their performance on a representative subset of downstream tasks (Appendix B.2). We describe the OLIVE pre-training setup in three parts: (i) the shared encoder and masked distillation objective, (ii) the waveform view augmentations used, and (iii) the synthesis branch in the joint model. 
+
+Encoder and masked distillation. OLIVE uses a raw-waveform speech encoder architecture following prior SSL models [ 3 , 7], with a 7-layer convolutional waveform encoder, a convolutional positional encoder, and a 12-layer Transformer [ 58 ] with hidden size d = 768 . The waveform encoder has an overall stride of 320 samples, corresponding to 20 ms at 16 kHz. It is shared between the student and teacher networks. Teacher targets are formed by instance-normalizing and averaging the top K = 8 teacher layers, and the student predicts these targets with a convolutional prediction head. Similarly to data2vec 2.0, we use inverse-block masking and eight masked views per sample. Final models are trained for 400k updates with Adam and cosine learning-rate decay. The teacher EMA decay τ is annealed from 0.999 to 0.99999 over the first 75k updates. We use mixed precision for the analysis branch, and FP32 for the waveform reconstruction branch to ensure numerical stability. We train on 2 NVIDIA H100 GPUs, and total training time is 123 hours for the analysis-only models and 206 hours for the joint model. Further details are provided in Appendix A. 
+
+> 1https://github.com/facebookresearch/fairseq
+
+5Waveform view augmentations. We use waveform-level augmentations to define invariances for the analysis objective. We focus on perturbations related to acoustic environment and recording conditions, while avoiding transformations such as pitch shifting or time-scale modification that may remove information relevant to speaker identity, prosody, and paralinguistic tasks. Mixup mixes the input waveform with an utterance sampled from a memory bank using linear interpolation with a mixing ratio uniformly sampled from [0 , 0.4] , encouraging robustness to background acoustic interference and following the general regularization principle of mixup-style training [ 59 , 21 ]. Gain 
+
+applies a random global gain followed by clamping to [−1, 1] , encouraging invariance to recording gain and mild clipping artifacts. For joint analysis–synthesis training, we use mixup without gain perturbation, since large gain changes can introduce clipping artifacts that may adversely affect waveform reconstruction. 
+
+Synthesis branch. For OLIVE-J, the synthesis branch reconstructs the student waveform view using a compact HiFi-GAN V2 neural vocoder [ 50 ] conditioned on local encoder features. We use the student view x′ as the waveform source for both vocoder input and reconstruction target. Synthesis training uses 7040-sample waveform segments ( 0.44 s at 16 kHz) randomly sampled from the full extracted waveform. In the final OLIVE-J model, we set λsynthesis = 25 , chosen after ablations (Appendix B.1). A key design choice is which encoder representation conditions the vocoder. Earlier layers typically preserve the fine-grained acoustic detail needed for waveform reconstruction; prior work on synthesis-based speech enhancement found that vocoders conditioned on SSL local features can benefit from the acoustic detail available before deeper contextual abstraction [ 35 ]. Our ablations follow the same trend, with local encoder features performing best under matched separate-vocoder training (Appendix B.3), so we condition the vocoder on the local encoder features. This lets the synthesis branch shape the shared local representation while the later contextual layers are primarily governed by the masked distillation objective. During training, OLIVE-J optimizes 165.6M parameters, including a 71.8M HiFi-GAN branch with a 70.7M-parameter discriminator stack used only for adversarial training. After pre-training, the discriminators are discarded, so waveform reconstruction uses only the shared waveform CNN feature extractor (4.2M parameters) together with the HiFi-GAN V2 generator (1.1M parameters). The analysis branch optimizes 93.8M parameters. Exact parameter counts are reported in Appendix A. 
+
+4.2 Downstream Evaluation 
+
+For representation evaluation, we use the Speech Processing Universal PERformance Benchmark (SUPERB) [ 8, 60 ], using the official S3PRL implementation. 2 SUPERB evaluates frozen SSL models as general-purpose feature extractors. For each task, representations from all encoder layers are combined using learned layer weights, and the resulting features are passed to a lightweight task head. Only the layer weights and task head are trained with labeled data. 
+
+Tasks. We evaluate OLIVE across the five SUPERB task categories: content, speaker, paralinguis-tic, semantic, and generation. The downstream tasks are phoneme recognition (PR), automatic speech recognition (ASR), keyword spotting (KS), query-by-example spoken term detection (QBE), speaker identification (SID), automatic speaker verification (ASV), speaker diarization (SD), emotion recog-nition (ER), intent classification (IC), slot filling (SF), speech translation (ST), speech enhancement (SE), source separation (SS), and voice conversion (VC). Unlike some prior work [ 5], we do not perform task-specific hyperparameter search due to compute constraints; all models are evaluated with the same default task configurations in S3PRL. 
+
+Baselines. All SSL baselines in the main comparison are Base-sized models trained on LibriSpeech 960h and have similar encoder architectures. Therefore, the comparison primarily isolates differences in pre-training objectives rather than data, architecture, or model capacity. We compare OLIVE with handcrafted log Mel-filterbank acoustic features (FBANK) and widely used speech SSL baselines: wav2vec 2.0 [ 3], HuBERT [ 4 ], WavLM [ 5], data2vec [ 6 ], and data2vec 2.0 [ 7]. We use official public checkpoints and implementations from S3PRL. For data2vec-SG [ 36 ] and UniWav [ 37 ], no public checkpoints are provided. For completeness, we include paper-reported data2vec-SG results on the overlapping generation tasks. We do not include UniWav in the main comparison because it differs substantially in model scale and pre-training data. 
+
+> 2https://github.com/s3prl/s3prl
+
+6Table 1: SUPERB downstream results on content, speaker, paralinguistic, and semantic tasks. Bold 
+
+marks the best result, underlining the second-best.                                                                                                                                                
+
+> Content Speaker Paraling. Semantics Model Params PR ASR KS QbE SID ASV SD ER IC SF ST PER ↓WER ↓Acc. ↑MTWV ↑Acc. ↑EER ↓DER ↓Acc. ↑Acc. ↑F1 ↑CER ↓BLEU ↑
+> FBANK –82.1 23.1 8.3 0.0043 0.1 10.7 11.3 28.4 4.6 63.0 59.5 2.6 wav2vec 2.0 Base [3] 95.04M 6.4 6.5 96.0 0.0634 66.5 5.8 6.6 62.5 92.6 87.0 26.5 14.9 HuBERT Base [4] 94.70M 5.8 6.4 96.4 0.0748 67.3 5.6 6.2 65.1 98.2 88.0 25.1 15.8 WavLM Base [5] 94.38M 5.6 6.2 97.0 0.0813 62.3 5.8 5.4 64.9 98.5 89.0 24.2 16.3 data2vec Base [6] 93.16M 3.8 5.0 95.9 0.0609 54.9 7.0 7.0 65.4 98.6 89.0 23.4 17.5 data2vec 2.0 Base [7] 93.16M 4.6 4.8 96.8 0.0556 45.5 5.5 6.3 63.9 99.0 89.0 23.4 17.8
+> OLIVE-A (Mix) 93.16M 6.4 6.4 97.0 0.0390 66.9 6.0 4.6 67.1 99.1 88.0 25.2 16.5 OLIVE-A (Mix+Gain) 93.16M 5.2 6.1 97.3 0.0459 63.0 5.5 4.3 67.8 98.9 88.0 24.4 16.8 OLIVE-J 93.16M 6.3 6.4 97.3 0.0445 83.1 5.8 4.6 64.6 98.1 88.0 25.8 15.4
+
+Table 2: SUPERB downstream results on generation tasks, with overall SUPERB s and WavLM s
+
+scores. Bold marks the best result, underlining the second-best.                                                                                            
+
+> Model SE SS VC Overall PESQ ↑STOI ↑SI-SDRi ↑MCD ↓WER ↓ASV ↑SUPERB s↑WavLM s↑
+> FBANK 2.83 94.3 9.2 8.21 41.40 87.0 034.2 data2vec-SG Base [36] 2.59 94.0 10.8 –––––wav2vec 2.0 Base [3] 2.92 94.8 10.3 7.50 11.30 97.8 797 65.5 HuBERT Base [4] 3.00 94.9 9.9 7.48 10.90 98.0 838 66.5 WavLM Base [5] 2.99 94.9 10.8 7.44 8.95 98.2 876 66.6 data2vec Base [6] 2.94 94.8 9.9 7.08 9.65 99.5 807 65.9 data2vec 2.0 Base [7] 2.96 94.9 10.4 7.28 10.40 99.5 837 65.3 OLIVE-A (Mix) 3.05 95.2 12.2 7.71 12.20 95.5 886 66.7 OLIVE-A (Mix+Gain) 3.06 95.2 12.2 7.59 12.10 96.2 911 66.8 OLIVE-J 3.10 95.1 12.3 7.61 11.60 98.2 909 67.6
+
+Scores. We report two aggregate scores. First, we use the SUPERB s metric [ 61 ], which measures the fraction of the gap between the FBANK baseline and a task-specific reference score denoted as SOTA. For model u, task set T , and metric set It for task t, we compute 
+
+SUPERB s(u) = 1000 
+
+|T |
+
+X
+
+> t∈T
+
+1
+
+|It|
+
+X
+
+> i∈It
+
+st,i (u) − st,i (FBANK) 
+
+st,i (SOTA) − st,i (FBANK) .
+
+For tasks with multiple evaluation metrics, normalized metric scores are averaged within the task before averaging across tasks. We also report a WavLM-style aggregate score [ 5], which averages per-task utility scores after simple evaluation-metric normalization: 
+
+WavLM s(u) = 1
+
+|T |
+
+X
+
+> t∈T
+
+˜st(u).
+
+Here, error rates such as WER and EER are converted to utilities using 100 − error , QbE is scaled by 
+
+100 , and higher-is-better metrics are used directly. 
+
+Main results. Task-level results and overall SUPERB s and WavLM s scores are presented in Tables 1 and 2. OLIVE remains competitive on standard downstream analysis tasks while improving the task categories most closely tied to fine-grained acoustic detail. At the aggregate level, OLIVE-A (Mix+Gain) achieves the best SUPERB s score, whereas OLIVE-J achieves the best WavLM s score and the strongest speaker and generation category scores. This is also illustrated in Figure 2 through normalized per-task and aggregate category-level profiles across all models. All three variants also remain competitive on ASR relative to strong baselines such as wav2vec 2.0, HuBERT, and WavLM, indicating that discriminative ability is maintained. Appendix C visualizes layer-combination weights for a representative set of tasks, illustrating the emphasis on earlier layers for speaker and generation tasks and on later layers for content and semantic tasks. Overall, these results suggest that the functional separation in OLIVE, where reconstruction acts on earlier encoder features while analysis acts on later contextual representations, helps preserve information relevant for generation and speaker tasks while maintaining discriminative ability. 7OLIVE variants vs. data2vec 2.0          
+
+> PR ASR
+> KS
+> QbE
+> SID
+> ASV
+> SD
+> ER IC
+> SF
+> ST
+> SE
+> SS
+> VC
+> 500
+> 1000
+> OLIVE-J vs. baselines
+> PR ASR
+> KS
+> QbE
+> SID
+> ASV
+> SD
+> ER IC
+> SF
+> ST
+> SE
+> SS
+> VC
+> 500
+> 1000
+> OLIVE-J vs. baselines
+> Content
+> Speaker
+> Paralinguistics Semantics
+> Generation 500
+> 1000
+> OLIVE-J OLIVE-A (Mix) OLIVE-A (Mix+Gain) data2vec 2.0 wav2vec 2.0 HuBERT WavLM
+
+Figure 2: SUPERB radar comparisons. Left and center: normalized per-task profiles. Right: aggregate category-level comparison. Per-task metrics are normalized so that FBANK is 0 and the best value in Tables 1 and 2 is 1000; multi-metric tasks are averaged within task. 
+
+4.3 Waveform Reconstruction Evaluation Setup. We evaluate waveform reconstruction directly by training feature-conditioned HiFi-GAN V2 vocoders from scratch for each baseline representation and for the analysis-only OLIVE models, then comparing them with the vocoder trained jointly inside OLIVE-J. All separate vocoders use the same HiFi-GAN V2 architecture and training setup as the jointly trained vocoder. They are trained on the LibriSpeech training set and evaluated on LibriSpeech test-clean . Concretely, we train each vocoder for 400k updates with batch size 72, Adam ( β1 = 0 .8, β2 = 0 .99 ), learning rate 
+
+7.5 × 10 −4, and exponential learning-rate decay of 0.999. Training uses 7040-sample waveform segments ( 0.44 s at 16 kHz), 80-bin log-mel spectrograms, a 1024-point FFT, 1024-sample window, and 320-sample hop size. We also standardize the vocoder training data with mixup augmentation, based on the augmentation ablation in Appendix B.4. Accordingly, all separate vocoder results should be interpreted as matched 400k-step comparisons under a common training configuration, rather than as fully converged upper bounds for their respective conditioning inputs. 
+
+Models. The reconstruction baselines include mel-spectrogram, wav2vec 2.0, HuBERT, WavLM, data2vec, and data2vec 2.0 features. For SSL representations, we condition the vocoder on local encoder features, which our ablations (Appendix B.3) and prior work have shown to preserve the most acoustic detail for reconstruction [ 35 ]. This also matches the feature level used by OLIVE-J’s synthesis branch. Among the analysis-only OLIVE variants, we report OLIVE-A (Mix+Gain) 
+
+based on the variant-selection ablation in Appendix B.2. The jointly trained OLIVE-J model is evaluated with the vocoder retained from joint pre-training and is reported in the results as OLIVE-J (integrated vocoder) . We also include OLIVE-J (frozen feat-cond.) , which uses the same separate HiFi-GAN V2 training setup as the other baselines but conditions on frozen features extracted from the jointly pre-trained OLIVE-J encoder to isolate the representation quality. 
+
+Metrics. For waveform reconstruction evaluation, we report a combination of spectral, intrusive, and perceptual metrics to capture complementary aspects of waveform quality. Spectral fidelity is assessed using log-mel spectrogram L1 distance (Mel-L1), log-spectral distance (LSD), and mel-cepstral distortion (MCD). Pitch fidelity is measured with frame-level fundamental-frequency mean absolute error ( F0 MAE). We additionally report intrusive intelligibility and quality metrics, namely STOI [ 62 ] and PESQ [ 63 ], as well as signal-to-distortion ratio (SI-SDR) and signal-to-noise ratio (SNR). We also include UTMOS [ 64 ] and ViSQOL [ 65 ] as learned perceptual metrics. Generated and reference signals are loudness-matched. 
+
+Main results. Results are shown in Tables 3 and 4; Appendix E provides spectrogram visualizations of reconstructed waveforms. OLIVE substantially improves waveform reconstructability. We first observe that the analysis-only OLIVE-A (Mix+Gain) model, trained with waveform augmentations, is competitive with or better than strong analysis-only baselines on most reconstruction metrics. The integrated OLIVE-J vocoder performs strongly on perceptual and signal-level metrics while being less precise on Mel-L1 and LSD, which likely reflects the demands of joint training on the 8Table 3: Waveform reconstruction on LibriSpeech test-clean with matched HiFi-GAN V2 vocoders: spectral and pitch metrics. Values are mean ± margin of error from 95% bootstrap confidence intervals. Bold marks the best result, underlining the second-best.                                                                                                                      
+
+> Model Mel-L1 ↓MCD ↓LSD ↓F0MAE (Hz) ↓
+> Mel Spectrogram 0.677 ±0.004 6.24 ±0.03 0.829 ±0.005 14.4 ±0.3 wav2vec 2.0 Base 0.474 ±0.003 5.18 ±0.03 0.604 ±0.004 11.6 ±0.3 HuBERT Base 0.475 ±0.002 5.05 ±0.02 0.604 ±0.003 13.3 ±0.3 WavLM Base 0.470 ±0.002 5.01 ±0.02 0.599 ±0.003 13.1 ±0.3 data2vec Base 0.467 ±0.002 4.90 ±0.02 0.594 ±0.003 12.8 ±0.3 data2vec 2.0 Base 0.434 ±0.002 4.78 ±0.02 0.558 ±0.003 13.0 ±0.3 OLIVE-A (Mix+Gain) 0.446 ±0.002 4.69 ±0.02 0.566 ±0.003 11.6 ±0.2 OLIVE-J (integrated vocoder) 0.579 ±0.003 4.56 ±0.02 0.688 ±0.003 10.0 ±0.2 OLIVE-J (frozen feat-cond.) 0.421 ±0.002 4.35 ±0.02 0.528 ±0.002 9.6 ±0.2
+
+Table 4: Waveform reconstruction on LibriSpeech test-clean with matched HiFi-GAN V2 vocoders: intelligibility, perceptual, and signal-level metrics. Values are mean ± margin of error from 95% bootstrap confidence intervals. Bold marks the best result, underlining the second-best.                                                                                                                                                                                  
+
+> Model STOI ↑PESQ ↑ViSQOL ↑SI-SDR ↑SNR ↑UTMOS ↑
+> Reference audio 4.09 ±0.01 Mel Spectrogram 0.833 ±0.001 1.42 ±0.01 3.59 ±0.01 -18.02 ±0.15 -2.60 ±0.02 2.98 ±0.02 wav2vec 2.0 Base 0.912 ±0.001 2.19 ±0.01 4.04 ±0.01 -7.53 ±0.21 -0.42 ±0.06 3.58 ±0.02 HuBERT Base 0.914 ±0.001 2.11 ±0.01 4.05 ±0.01 -11.78 ±0.17 -1.57 ±0.04 3.63 ±0.02 WavLM Base 0.917 ±0.001 2.21 ±0.01 4.05 ±0.01 -10.93 ±0.20 -1.31 ±0.04 3.68 ±0.02 data2vec Base 0.902 ±0.001 2.10 ±0.01 4.06 ±0.01 -10.64 ±0.21 -1.15 ±0.04 3.50 ±0.02 data2vec 2.0 Base 0.917 ±0.001 2.21 ±0.01 4.10 ±0.01 -9.67 ±0.18 -1.11 ±0.04 3.63 ±0.02 OLIVE-A (Mix+Gain) 0.929 ±0.001 2.62 ±0.01 4.18 ±0.01 -3.36 ±0.18 1.06 ±0.08 3.70 ±0.02 OLIVE-J (integrated vocoder) 0.921 ±0.001 2.88 ±0.02 4.21 ±0.01 2.50 ±0.14 4.25 ±0.09 3.78 ±0.02 OLIVE-J (frozen feat-cond.) 0.942 ±0.001 3.06 ±0.01 4.34 ±0.01 2.94 ±0.16 4.69 ±0.10 3.83 ±0.02
+
+vocoder. The separately trained frozen feature-conditioned vocoder, meanwhile, is strongest on every reported evaluation metric, implying that the learned representation retains more information for reconstruction. This in turn suggests that modest additional tuning of the integrated vocoder could likely reduce its exact-reconstruction gap. These results indicate that the synthesis objective encourages the representation to retain fine-grained acoustic information beyond what is preserved by analysis-only SSL training. Overall, joint analysis–synthesis pre-training makes the learned representation more informative for reconstruction, while yielding a perceptually effective decoder. 
+
+5 Conclusion 
+
+We introduced OLIVE , a self-supervised speech representation learning framework that jointly optimizes analysis and synthesis during pre-training. OLIVE combines view-augmented masked latent prediction with waveform reconstruction through a functional separation: reconstruction acts on earlier encoder features, while later contextual representations are shaped primarily by the analysis objective. This encourages later contextual representations that are invariant for downstream discrimination and intermediate local representations that retain the acoustic detail required for high-fidelity generation. In downstream task evaluations, OLIVE achieves strong overall performance, with the jointly trained model showing the strongest gains on speaker- and generation-related tasks. In waveform reconstruction, the jointly trained OLIVE-J features enable better reconstruction compared to standard analysis-focused SSL representations, showing that the synthesis objective preserves fine-grained acoustic information otherwise discarded during purely discriminative pre-training, while also yielding a perceptually effective decoder. Overall, this design enables a single pre-trained model to retain more acoustic detail for synthesis while maintaining strong discriminative representations. 
+
+Limitations. Our study is limited to English speech and Base-sized training regimes on LibriSpeech. Future work should examine different model sizes, more diverse pre-training data, and task-specific waveform augmentations. Further evaluation on downstream generation tasks, such as text-to-speech, would also be valuable. 9Acknowledgments and Disclosure of Funding 
+
+This work was partially supported by the Swiss National Science Foundation through the project “Pathological Speech Synthesis (PaSS)”, grant agreement no. 219726. 
+
+References 
+
+[1] Abdelrahman Mohamed, Hung-yi Lee, Lasse Borgholt, Jakob D. Havtorn, Joakim Edin, Christian Igel, Katrin Kirchhoff, Shang-Wen Li, Karen Livescu, Lars Maaløe, et al. Self-supervised speech representation learning: A review. IEEE Journal of Selected Topics in Signal Processing , 16(6):1179–1210, 2022. [2] Shuo Liu, Adria Mallol-Ragolta, Emilia Parada-Cabaleiro, Kun Qian, Xin Jing, Alexander Kathan, Bin Hu, and Bjoern W. Schuller. Audio self-supervised learning: A survey. Patterns , 3(12), 2022. [3] Alexei Baevski, Yuhao Zhou, Abdelrahman Mohamed, and Michael Auli. wav2vec 2.0: A framework for self-supervised learning of speech representations. In NeurIPS , 2020. [4] Wei-Ning Hsu, Benjamin Bolte, Yao-Hung Hubert Tsai, Kushal Lakhotia, Ruslan Salakhutdinov, and Abdelrahman Mohamed. HuBERT: Self-supervised speech representation learning by masked prediction of hidden units. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 29:3451–3460, 2021. [5] Sanyuan Chen, Chengyi Wang, Zhengyang Chen, Yu Wu, Shujie Liu, Zhuo Chen, Jinyu Li, Naoyuki Kanda, Takuya Yoshioka, Xiong Xiao, et al. WavLM: Large-scale self-supervised pre-training for full stack speech processing. IEEE Journal of Selected Topics in Signal Processing , 16(6):1505–1518, 2022. [6] Alexei Baevski, Wei-Ning Hsu, Qiantong Xu, Arun Babu, Jiatao Gu, and Michael Auli. data2vec: A general framework for self-supervised learning in speech, vision and language. In ICML , 2022. [7] Alexei Baevski, Arun Babu, Wei-Ning Hsu, and Michael Auli. Efficient self-supervised learning with contextualized target representations for vision, speech and language. In ICML , 2023. [8] Shu-wen Yang, Po-Han Chi, Yung-Sung Chuang, Cheng-I Jeff Lai, Kushal Lakhotia, Yist Y. Lin, Andy T. Liu, Jiatong Shi, Xuankai Chang, Guan-Ting Lin, Tzu-Hsien Huang, Wei-Cheng Tseng, Ko-tik Lee, Da-Rong Liu, Zili Huang, Shuyan Dong, Shang-Wen Li, Shinji Watanabe, Abdelrahman Mohamed, and Hung-yi Lee. SUPERB: Speech processing universal performance benchmark. In Interspeech , 2021. [9] Séverin Baroudi, Thomas Pellegrini, and Hervé Bredin. Specializing self-supervised speech representations for speaker segmentation. In Interspeech , 2024. [10] Yingzhi Wang, Abdelmoumene Boumadane, and Abdelwahab Heba. A fine-tuned wav2vec 2.0/HuBERT benchmark for speech emotion recognition, speaker verification and spoken language understanding. arXiv preprint arXiv:2111.02735 , 2021. [11] Bagus Tris Atmaja and Akira Sasou. Evaluating self-supervised speech representations for speech emotion recognition. IEEE Access , 10:124396–124407, 2022. [12] Tilak Purohit and Mathew Magimai-Doss. Emotion information recovery potential of a wav2vec 2.0 network fine-tuned for speech recognition. In ICASSP , 2025. [13] Aaron van den Oord, Yazhe Li, and Oriol Vinyals. Representation learning with contrastive predictive coding. arXiv preprint arXiv:1807.03748 , 2018. [14] Steffen Schneider, Alexei Baevski, Ronan Collobert, and Michael Auli. wav2vec: Unsupervised pre-training for speech recognition. In Interspeech , 2019. [15] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. BERT: Pre-training of deep bidirectional transformers for language understanding. In NAACL , 2019. [16] Shaoshi Ling and Yuzong Liu. DeCoAR 2.0: Deep contextualized acoustic representations with vector quantization. arXiv preprint arXiv:2012.06659 , 2020. [17] Andy T. Liu, Shu-wen Yang, Po-Han Chi, Po-chun Hsu, and Hung-yi Lee. Mockingjay: Unsupervised speech representation learning with deep bidirectional transformer encoders. In ICASSP , 2020. [18] Yu-An Chung and James Glass. Generative pre-training for speech with autoregressive predictive coding. In ICASSP , 2020. 
+
+10 [19] Alexander H. Liu, Yu-An Chung, and James Glass. Non-autoregressive predictive coding for learning speech representations from local dependencies. In Interspeech , 2021. [20] Jean-Bastien Grill, Florian Strub, Florent Altché, Corentin Tallec, Pierre H. Richemond, Elena Buchatskaya, Carl Doersch, Bernardo Avila Pires, Zhaohan Daniel Guo, Mohammad Gheshlaghi Azar, et al. Bootstrap your own latent: A new approach to self-supervised learning. In NeurIPS , 2020. [21] Daisuke Niizumi, Daiki Takeuchi, Yasunori Ohishi, Noboru Harada, and Kunio Kashino. BYOL for audio: Self-supervised learning for general-purpose audio representation. In IJCNN , 2021. [22] Mathilde Caron, Hugo Touvron, Ishan Misra, Hervé Jégou, Julien Mairal, Piotr Bojanowski, and Armand Joulin. Emerging properties in self-supervised vision transformers. In ICCV , 2021. [23] Bishnu S. Atal and Suzanne L. Hanauer. Speech analysis and synthesis by linear prediction of the speech wave. Journal of the Acoustical Society of America , 50(2B):637–655, 1971. [24] Robert J. McAulay and Thomas F. Quatieri. Speech analysis/synthesis based on a sinusoidal representation. 
+
+IEEE Transactions on Acoustics, Speech, and Signal Processing , 34(4):744–754, 1986. [25] Oded Ghitza. Speech analysis/synthesis based on matching the synthesized and the original representations in the auditory nerve level. In ICASSP , 1986. [26] Gunnar Fant. Acoustic Theory of Speech Production . Mouton, The Hague, 1960. [27] Ingo R. Titze. Principles of Voice Production . Prentice Hall, Englewood Cliffs, NJ, 1994. [28] Zhaoyan Zhang. Mechanics of human voice production and control. The Journal of the Acoustical Society of America , 140(4):2614–2635, 2016. [29] Hyeong-Seok Choi, Juheon Lee, Wansoo Kim, Jie Hwan Lee, Hoon Heo, and Kyogu Lee. Neural analysis and synthesis: Reconstructing speech from self-supervised representations. In NeurIPS , 2021. [30] Adam Polyak, Yossi Adi, Jade Copet, Eugene Kharitonov, Kushal Lakhotia, Wei-Ning Hsu, Abdelrah-man Mohamed, and Emmanuel Dupoux. Speech resynthesis from discrete disentangled self-supervised representations. In Interspeech , 2021. [31] Hubert Siuzdak, Piotr Dura, Pol van Rijn, and Nori Jacoby. WavThruVec: Latent speech representation as intermediate features for neural speech synthesis. In Interspeech , 2022. [32] Yiwei Guo, Zhihan Li, Junjie Li, Chenpeng Du, Hankun Wang, Shuai Wang, Xie Chen, and Kai Yu. vec2wav 2.0: Advancing voice conversion via discrete token vocoders. arXiv preprint arXiv:2409.01995 ,2024. [33] Matthew Baas, Benjamin van Niekerk, and Herman Kamper. Voice conversion with just nearest neighbors. In Interspeech , 2023. [34] Karl El Hajal, Ajinkya Kulkarni, Enno Hermann, and Mathew Magimai-Doss. kNN retrieval for simple and effective zero-shot multi-speaker text-to-speech. In NAACL , 2025. [35] Bryce Irvin, Marko Stamenovic, Mikolaj Kegler, and Li-Chia Yang. Self-supervised learning for speech enhancement through synthesis. In ICASSP , 2023. [36] Heming Wang, Yao Qian, Hemin Yang, Nauyuki Kanda, Peidong Wang, Takuya Yoshioka, Xiaofei Wang, Yiming Wang, Shujie Liu, Zhuo Chen, et al. data2vec-SG: Improving self-supervised learning representations for speech generation tasks. In ICASSP , 2023. [37] Alexander H. Liu, Sang-gil Lee, Chao-Han Huck Yang, Yuan Gong, Yu-Chiang Frank Wang, James R. Glass, Rafael Valle, and Bryan Catanzaro. UniWav: Towards unified pre-training for speech representation learning and generation. In ICLR , 2025. [38] Aaron van den Oord, Oriol Vinyals, and Koray Kavukcuoglu. Neural discrete representation learning. In 
+
+NIPS , 2017. [39] Alexei Baevski, Steffen Schneider, and Michael Auli. vq-wav2vec: Self-supervised learning of discrete speech representations. In ICLR , 2020. [40] Yu-An Chung, Wei-Ning Hsu, Hao Tang, and James Glass. An unsupervised autoregressive model for speech representation learning. In Interspeech , 2019. 
+
+11 [41] Jürgen Schmidhuber and Daniel Prelinger. Discovering predictable classifications. Neural Computation , 5 (4):625–635, 1993. [42] Gasser Elbanna, Neil Scheidwasser-Clow, Mikolaj Kegler, Pierre Beckmann, Karl El Hajal, and Milos Cernak. BYOL-S: Learning self-supervised speech representations by bootstrapping. In HEAR: Holistic Evaluation of Audio Representations , volume 166 of Proceedings of Machine Learning Research , 2022. [43] Sunghyun Kim and Yong-Hoon Choi. WaveBYOL: Self-supervised learning for audio representation from raw waveforms. IEEE Access , 11:8968–8977, 2023. [44] Goksenin Yuksel, Pierre Guetschel, Michael Tangermann, Marcel van Gerven, and Kiki van der Heijden. WavJEPA: Semantic learning unlocks robust audio foundation models for raw waveforms. arXiv preprint arXiv:2509.23238 , 2025. [45] Mahmoud Assran, Quentin Duval, Ishan Misra, Piotr Bojanowski, Pascal Vincent, Michael Rabbat, Yann LeCun, and Nicolas Ballas. Self-supervised learning from images with a joint-embedding predictive architecture. In CVPR , 2023. [46] Aaron van den Oord, Sander Dieleman, Heiga Zen, Karen Simonyan, Oriol Vinyals, Alex Graves, Nal Kalchbrenner, Andrew W. Senior, and Koray Kavukcuoglu. WaveNet: A generative model for raw audio. 
+
+arXiv preprint arXiv:1609.03499 , 2016. [47] Ryan Prenger, Rafael Valle, and Bryan Catanzaro. WaveGlow: A flow-based generative network for speech synthesis. In ICASSP , 2019. [48] Kundan Kumar, Rithesh Kumar, Thibault de Boissiere, Lucas Gestin, Wei Zhen Teoh, Jose Sotelo, Alexandre de Brébisson, Yoshua Bengio, and Aaron C. Courville. MelGAN: Generative adversarial networks for conditional waveform synthesis. In NeurIPS , 2019. [49] Ryuichi Yamamoto, Eunwoo Song, and Jae-Min Kim. Parallel WaveGAN: A fast waveform generation model based on generative adversarial networks with multi-resolution spectrogram. In ICASSP , 2020. [50] Jungil Kong, Jaehyeon Kim, and Jaekyoung Bae. HiFi-GAN: Generative adversarial networks for efficient and high fidelity speech synthesis. In NeurIPS , 2020. [51] Neil Zeghidour, Alejandro Luebs, Ahmed Omran, Jan Skoglund, and Marco Tagliasacchi. SoundStream: An end-to-end neural audio codec. IEEE/ACM Transactions on Audio, Speech, and Language Processing ,30:495–507, 2021. [52] Alexandre Défossez, Jade Copet, Gabriel Synnaeve, and Yossi Adi. High fidelity neural audio compression. 
+
+Transactions on Machine Learning Research , 2023. [53] Alexander H. Liu, Qirui Wang, Yuan Gong, and James R. Glass. A closer look at neural codec resynthesis: Bridging the gap between codec and waveform generation. In Audio Imagination: NeurIPS 2024 Workshop on AI-Driven Speech, Music, and Sound Generation , 2024. [54] Edresson Casanova, Paarth Neekhara, Ryan Langman, Shehzeen Hussain, Subhankar Ghosh, Xuesong Yang, Ante Jukic, Jason Li, and Boris Ginsburg. NanoCodec: Towards high-quality ultra fast speech LLM inference. In Interspeech , 2025. [55] Georgios Ioannides, Christos Constantinou, Aman Chadha, Aaron Elkins, Linsey Pang, Ravid Shwartz-Ziv, and Yann LeCun. JEPA as a neural tokenizer: Learning robust speech representations with density adaptive attention. In NeurIPS 2025 Workshop UniReps: Unifying Representations in Neural Models , 2025. [56] Yuancheng Wang, Jiachen Zheng, Junan Zhang, Xueyao Zhang, Huan Liao, and Zhizheng Wu. Metis: A foundation speech generation model with masked generative pre-training. In NeurIPS , 2025. [57] Vassil Panayotov, Guoguo Chen, Daniel Povey, and Sanjeev Khudanpur. LibriSpeech: An ASR corpus based on public domain audio books. In ICASSP , 2015. [58] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. In NIPS , 2017. [59] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, and David Lopez-Paz. mixup: Beyond empirical risk minimization. In ICLR , 2018. [60] Hsiang-Sheng Tsai, Heng-Jui Chang, Wen-Chin Huang, Zili Huang, Kushal Lakhotia, Shu-wen Yang, Shuyan Dong, Andy Liu, Cheng-I Lai, Jiatong Shi, et al. SUPERB-SG: Enhanced speech processing universal performance benchmark for semantic and generative capabilities. In ACL , 2022. 
+
+12 [61] Tzu-hsun Feng, Annie Dong, Ching-Feng Yeh, Shu-wen Yang, Tzu-Quan Lin, Jiatong Shi, Kai-Wei Chang, Zili Huang, Haibin Wu, Xuankai Chang, et al. SUPERB@SLT 2022: Challenge on generalization and efficiency of self-supervised speech representation learning. In IEEE SLT , 2023. [62] Cees H. Taal, Richard C. Hendriks, Richard Heusdens, and Jesper Jensen. An algorithm for intelligibility prediction of time–frequency weighted noisy speech. IEEE Transactions on Audio, Speech, and Language Processing , 19(7):2125–2136, 2011. [63] Antony W. Rix, John G. Beerends, Michael P. Hollier, and Andries P. Hekstra. Perceptual evaluation of speech quality (PESQ): A new method for speech quality assessment of telephone networks and codecs. In 
+
+ICASSP , 2001. [64] Takaaki Saeki, Detai Xin, Wataru Nakata, Tomoki Koriyama, Shinnosuke Takamichi, and Hiroshi Saruwatari. UTMOS: UTokyo-SaruLab system for VoiceMOS challenge 2022. arXiv preprint arXiv:2204.02152 , 2022. [65] Andrew Hines, Jan Skoglund, Anil C. Kokaram, and Naomi Harte. ViSQOL: An objective speech quality model. EURASIP Journal on Audio, Speech, and Music Processing , 2015(1):13, 2015. 
+
+13 A Model and Pre-training Details 
+
+Table 5 consolidates the main optimization, encoder, and synthesis-branch configurations used for OLIVE pre-training. 
+
+Table 5: OLIVE model architecture and pre-training configuration. 
+
+Component Setting Optimization and Pre-training Setup 
+
+Implementation fairseq; extended data2vec 2.0 speech codebase Pre-training data LibriSpeech 960h unlabeled training set Sampling rate 16 kHz Model size Base; 12 Transformer layers, hidden size d = 768 
+
+Small ablations Hidden size d = 384 ; 100k updates Optimizer Adam, β1 = 0 .9, β2 = 0 .98 , ϵ = 10 −6
+
+Weight decay 0.01 Peak learning rate 7.5 × 10 −4
+
+Learning-rate schedule cosine decay after 8k warmup updates Training updates 400k Batching 1M raw samples/GPU; gradient accumulation 8 Hardware 2 NVIDIA H100 GPUs Average realized batch size 72.7 utterances/update Gradient clipping disabled Precision FP16 analysis branch; FP32 synthesis branch 
+
+Encoder Architecture 
+
+Waveform encoder [(512 , 10 , 5)] + 4 × [(512 , 3, 2)] + 2 × [(512 , 2, 2)] 
+
+Waveform stride 320 samples / 20 ms Effective receptive field 400 samples / 25 ms Projection 512 → 768 Positional encoder 5-layer convolutional positional encoder (kernel size 19 per layer; effective width 95; 16 groups) Transformer encoder 12 layers, 12 heads, hidden size d = 768 , MLP ratio 4 Dropout encoder 0.1; attention 0.1; post-MLP 0.1; activation 0.0; input 0.0 Layer drop 0.05 Teacher target layers top K = 8 layers after instance normalization Prediction head 4-layer 1D convolutional decoder; dim 384; groups 16; kernel size 7; dropout 0.1 Masking inverse-block masking; mask ratio 0.5; block width 5; adjustment 0.05; noise std. 0.01 Masked views per sample 8EMA schedule 0.999 → 0.99999 over 75k updates 
+
+OLIVE-J Synthesis Branch 
+
+Vocoder HiFi-GAN V2 generator Conditioning representation local encoder output Conditioning dimension 768 Internal bottleneck 128 Upsampling rates / kernels [10 , 8, 2, 2] / [20 , 16 , 4, 4] 
+
+Initial upsampling width 128 Residual block kernels / dilations [3 , 7, 11] / (1 , 3, 5) 
+
+Discriminators HiFi-GAN MPD + MSD MPD periods {2, 3, 5, 7, 11 }
+
+MSD branches 3 sub-discriminators; spectral normalization in first branch Synthesis segment length 7040 samples Mel analysis 80 bins; FFT 1024; window 1024; hop 320 Loss weights λsynthesis = 25 , λfm = 1 , λmel = 45 
+
+Parameter Breakdown 
+
+Table 6 reports the parameter counts for the shared encoder and synthesis components. 
+
+B Ablations 
+
+This section presents ablations used to determine pre-training configuration choices. 
+
+B.1 Joint Loss Weight 
+
+To choose the synthesis loss weight for OLIVE-J, we trained 100k-step joint models with λsynthesis ∈ { 1, 25 , 50 }
+
+and evaluated them on a representative subset of downstream discriminative tasks and waveform reconstruction quality on the LibriSpeech dev-clean set. A non-unit synthesis weight is needed in practice because the analysis and synthesis objectives operate on different numerical scales. The analysis branch implements the 
+
+14 Table 6: Parameter breakdown for OLIVE-J. The HiFi-GAN discriminators are used only during pre-training and are discarded afterwards. Component Parameters 
+
+Shared local encoder 
+
+Convolutional waveform encoder 4.2M Feature projection (512 → 768) 0.4M 
+
+Analysis branch 
+
+Relative positional convolutional encoder 3.5M Transformer encoder 85.1M Prediction decoder 0.6M 
+
+Synthesis branch 
+
+HiFi-GAN generator 1.1M HiFi-GAN multi-period discriminator 41.1M HiFi-GAN multi-scale discriminator 29.6M 
+
+Totals (training-time) 
+
+Shared local encoder 4.6M Analysis branch 89.2M Synthesis branch 71.8M Full joint model 165.6M 
+
+masked regression term from Section 3.1 as a framewise feature loss over the masked set M:
+
+Lanalysis = 1
+
+|M| 
+
+X
+
+> t∈M
+> d
+
+X
+
+> k=1
+
+(pθ (h′
+
+> t
+
+)k − sg( z′′  
+
+> t
+
+)k )2
+
+√d . (13) Although the factor 1/√d stabilizes the magnitude of the regression term, the loss still accumulates errors over the d latent dimensions before averaging over masked frames, so moderate per-dimension errors can produce loss values on the order of several units. By contrast, the HiFi-GAN terms in LG 
+
+> synthesis
+
+are scalar objectives combined into the same joint loss. Since the analysis loss accumulates over d dimensions and masked frames, the two objectives operate at different numerical scales, which motivates a non-unit synthesis weight. Tables 7 and 8 show that λsynthesis = 25 provides the best balance: increasing the weight from 1 to 25 substantially improves reconstruction, while increasing it further to 50 weakens several downstream metrics and yields less consistent reconstruction gains. 
+
+Table 7: Synthesis loss weight ablation on a representative subset of SUPERB downstream tasks. All models are 100k-step OLIVE-J variants trained on LibriSpeech 960h. Bold marks the best result, underlining the second-best.                                 
+
+> λsynthesis ASV EER ↓ER Acc ↑PR PER ↓QbE maxTWV ↑VC MCD ↓VC WER ↓VC F0Corr ↑
+> 10.0536 0.666 0.298 0.0515 7.55 10.6 0.282
+> 25 0.0581 0.673 0.303 0.0535 7.52 10.2 0.284
+> 50 0.0598 0.649 0.430 0.0426 7.63 11.7 0.249
+
+Table 8: Synthesis loss weight ablation on waveform reconstruction quality using the integrated OLIVE-J vocoder, evaluated on the LibriSpeech dev-clean set. All models are 100k-step OLIVE-J variants. Bold marks the best result, underlining the second-best. 
+
+λsynthesis Mel-L1 ↓ MCD ↓ STOI ↑ PESQ ↑ F0 MAE ↓ UTMOS ↑
+
+1 1.149 5.06 0.873 2.27 6.74 3.51 
+
+25 1.086 4.72 0.891 2.66 5.01 3.88 
+
+50 1.007 4.93 0.894 2.79 4.67 3.78 
+
+B.2 Variant Selection 
+
+To select which analysis-only variants to train, we first trained Small -sized models with hidden size d = 384 
+
+for 100k updates and evaluated their performance on a representative subset of content, speaker, paralinguistic, 
+
+15 generation, and reconstruction tasks. Table 9 reports the resulting ablation used to select which variants to train at full Base scale in the main paper. The final column reports a normalized aggregate score across all metrics, under which Mix ranks first and Mix+Gain second among the OLIVE analysis-only variants. 
+
+Table 9: Small-model variant ablation used to select which analysis-only OLIVE augmentations to train at full scale. All models use hidden size d = 384 and are trained for 100k updates. Avg is the mean of all metrics after normalizing each to [0 , 100] across OLIVE variants, with lower-is-better metrics inverted. Bold marks the best result, underlining the second-best. Model PR ASV SID ER VC SE Avg PER ↓ EER ↓ Acc ↑ Acc ↑ WER ↓ MCD ↓ F0 Corr ↑ PESQ ↑ SI-SDR ↑ STOI ↑ ↑                                 
+
+> OLIVE-A (Gain) [small 100k] 0.0898 0.0726 0.4840 0.6270 0.1280 7.3100 0.2780 2.8900 9.8100 0.9460 25.77 OLIVE-A (Mix) [small 100k] 0.0863 0.0661 0.4950 0.6520 0.1210 7.5400 0.2780 3.0100 9.2600 0.9490 57.75
+> OLIVE-A (Mix+Gain) [small 100k] 0.0812 0.0678 0.4730 0.6380 0.1090 7.5000 0.2820 2.8800 9.3600 0.9480 52.01
+
+B.3 HiFi-GAN Layer Ablation 
+
+This section reports how waveform reconstruction changes with the choice of conditioning layer. Table 10 compares separate HiFi-GAN V2 vocoders trained on frozen features from OLIVE-A (Mix) , OLIVE-A (Mix+Gain) , and WavLM Base at different encoder depths. In all cases, the best reconstruction quality is obtained from local encoder features, with quality degrading as conditioning moves deeper into the contextual encoder. Among the OLIVE analysis-only variants at the local encoder level, OLIVE-A (Mix+Gain) is slightly stronger on perceptual metrics and pitch accuracy. It is therefore selected for the final waveform reconstruction comparison. 
+
+Table 10: Layer-wise HiFi-GAN conditioning ablation. Separate HiFi-GAN V2 vocoders were trained for 100k updates on frozen features from OLIVE-A (Mix), OLIVE-A (Mix+Gain), and WavLM Base. “Local encoder features” denotes the output of the shared local encoder before the Transformer, and “Transformer k” denotes the output of the kth Transformer layer. Bold marks the best result per model. Model Conditioning Mel-L1 ↓ MCD ↓ STOI ↑ PESQ ↑ F0 MAE ↓ UTMOS ↑
+
+OLIVE-A (Mix) Local encoder features 0.5556 5.1394 0.9044 2.2269 13.2972 3.4484 
+
+OLIVE-A (Mix) Transformer 1 0.5951 5.5717 0.8759 1.8747 14.4624 3.1674 OLIVE-A (Mix) Transformer 2 0.6323 5.9658 0.8583 1.5139 14.9328 3.0849 OLIVE-A (Mix) Transformer 3 0.6461 5.9678 0.8415 1.4350 16.6105 3.0969 OLIVE-A (Mix) Transformer 4 0.6732 6.0818 0.8262 1.3332 19.4579 3.0786 OLIVE-A (Mix) Transformer 5 0.7036 6.3123 0.8070 1.2558 21.6921 2.9327 OLIVE-A (Mix+Gain) Local encoder features 0.5611 5.1712 0.9070 2.2426 12.6522 3.5567 
+
+OLIVE-A (Mix+Gain) Transformer 1 0.5947 5.5902 0.8802 1.8566 13.8737 3.3040 OLIVE-A (Mix+Gain) Transformer 2 0.6357 5.8769 0.8549 1.4910 16.3225 3.0375 OLIVE-A (Mix+Gain) Transformer 3 0.6316 5.8134 0.8618 1.5785 15.2443 3.2385 OLIVE-A (Mix+Gain) Transformer 4 0.6638 6.1259 0.8465 1.4499 16.6433 3.1341 OLIVE-A (Mix+Gain) Transformer 5 0.7110 6.4318 0.8121 1.3221 19.7228 2.9569 WavLM Base Local encoder features 0.5616 5.1900 0.9070 2.2400 12.6700 3.5300 
+
+WavLM Base Transformer 1 0.5950 5.5900 0.8800 1.8600 13.8700 3.3000 WavLM Base Transformer 2 0.6360 5.8800 0.8550 1.4900 16.3200 3.0400 WavLM Base Transformer 3 0.6320 5.8100 0.8620 1.5800 15.2400 3.2400 WavLM Base Transformer 4 0.6640 6.1300 0.8460 1.4500 16.6400 3.1300 WavLM Base Transformer 5 0.7110 6.4300 0.8120 1.3200 19.7200 2.9600 
+
+B.4 HiFi-GAN Augmentation Ablation 
+
+Table 11 compares matched separate HiFi-GAN V2 vocoders trained on the same frozen OLIVE-A (Mix+Gain) 
+
+local encoder features, with and without waveform mixup augmentation applied during training. Mixup improves all reported reconstruction metrics, so we use it for all separate vocoder training in the main evaluation. 
+
+C SUPERB Layerwise Profiles 
+
+Figure 3 shows representative learned layer combination weights for four SUPERB tasks. ASR and slot filling place most of their weight on later contextual layers, whereas speaker verification and speech enhancement rely more heavily on earlier layers. 
+
+16 Table 11: HiFi-GAN augmentation ablation for separate vocoder training. We compare matched HiFi-GAN V2 vocoders trained on the same frozen OLIVE-A (Mix+Gain) local encoder features, with and without waveform mixup augmentation. Bold marks the better result. Training data Mel-L1 ↓ MCD ↓ STOI ↑ PESQ ↑ F0 MAE ↓ UTMOS ↑
+
+No augmentation 0.8251 6.4177 0.7541 1.2384 16.9843 1.9400 Waveform mixup 0.5297 4.9983 0.9045 2.2566 13.0708 3.3836 0
+
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> 8
+> 9
+> 10
+> 11
+> 12
+
+Layer                         
+
+> wav2vec 2.0
+> HuBERT
+> WavLM
+> data2vec
+> data2vec 2.0
+> OLIVE-A (Mix)
+> OLIVE-A (Mix+Gain)
+> OLIVE-J
+> Task/Model
+> 0.14 0.25 0.41 0.12
+> 0.20 0.30 0.39
+> 0.19 0.41 0.20
+> 0.12 0.16 0.08 0.08 0.13 0.19
+> 0.11 0.13 0.14 0.21 0.17
+> 0.15 0.38 0.33
+> 0.20 0.33 0.28 0.09
+> 0.17 0.36 0.28 0.10
+
+ASR Layer Weights (Model Mean) 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Softmax weight 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> 8
+> 9
+> 10
+> 11
+> 12
+
+Layer                                    
+
+> wav2vec 2.0
+> HuBERT
+> WavLM
+> data2vec
+> data2vec 2.0
+> OLIVE-A (Mix)
+> OLIVE-A (Mix+Gain)
+> OLIVE-J
+> Task/Model
+> 0.12 0.14 0.19 0.09 0.09
+> 0.14 0.08 0.11 0.19 0.11
+> 0.15 0.11 0.17 0.11
+> 0.27 0.23 0.13 0.08
+> 0.19 0.20 0.22 0.12
+> 0.09 0.10 0.10 0.10 0.14 0.17 0.11
+> 0.11 0.12 0.11 0.10 0.14 0.14 0.09
+> 0.09 0.09 0.08 0.10 0.13 0.19 0.15
+
+ASV Layer Weights (Model Mean) 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Softmax weight 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> 8
+> 9
+> 10
+> 11
+> 12
+
+Layer                       
+
+> wav2vec 2.0
+> HuBERT
+> WavLM
+> data2vec
+> data2vec 2.0
+> OLIVE-A (Mix)
+> OLIVE-A (Mix+Gain)
+> OLIVE-J
+> Task/Model
+> 0.19 0.28 0.33
+> 0.19 0.39 0.23
+> 0.21 0.35 0.15 0.08
+> 0.24 0.09 0.20 0.17 0.10
+> 0.09 0.21 0.12 0.18 0.09 0.09 0.08
+> 0.24 0.37 0.11
+> 0.30 0.28
+> 0.23 0.44 0.09
+
+SF Layer Weights (Model Mean) 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Softmax weight 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> 8
+> 9
+> 10
+> 11
+> 12
+
+Layer                         
+
+> wav2vec 2.0
+> HuBERT
+> WavLM
+> data2vec
+> data2vec 2.0
+> OLIVE-A (Mix)
+> OLIVE-A (Mix+Gain)
+> OLIVE-J
+> Task/Model
+> 0.33 0.25 0.16
+> 0.36 0.11 0.11 0.11
+> 0.33 0.16 0.09 0.10
+> 0.70 0.11
+> 0.54 0.16 0.12
+> 0.24 0.17 0.11 0.09 0.12 0.11
+> 0.25 0.14 0.11 0.13 0.12 0.08
+> 0.37 0.14 0.12 0.09
+
+SE Layer Weights (Model Mean) 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Softmax weight
+
+Figure 3: Representative SUPERB layer-combination weights. Automatic speech recognition (ASR) and slot filling (SF) emphasize later contextual layers, while automatic speaker verification (ASV) and speech enhancement (SE) place more weight on earlier layers. 
+
+D ASR Fine-tuning Evaluation 
+
+Table 12: ASR fine-tuning results on LibriSpeech using train-clean-100 as the labeled fine-tuning set. Word error rates (%) are reported with and without a 4-gram language model; lower is better. 
+
+Bold marks the best result, underlining the second-best. 
+
+No LM 4-gram LM Model dev-clean dev-other test-clean test-other dev-clean dev-other test-clean test-other FBANK 22.7 52.1 23.1 53.9 14.4 41.9 15.0 43.7 wav2vec 2.0 Base 6.0 16.3 6.5 16.0 4.1 12.6 4.9 12.6 HuBERT Base 5.9 15.5 6.4 15.6 4.1 12.1 4.7 12.0 WavLM Base 5.6 15.0 6.2 15.0 3.8 11.6 4.6 11.6 data2vec Base 4.7 12.0 5.0 12.3 3.3 9.5 3.9 9.7 data2vec 2.0 Base 4.5 11.0 4.8 11.1 3.2 8.6 3.8 8.8 
+
+OLIVE-A (Mix) 5.9 14.7 6.4 14.4 4.2 11.4 4.7 11.2 OLIVE-A (Mix+Gain) 5.6 14.0 6.1 14.0 3.8 11.0 4.6 11.0 OLIVE-J 6.2 15.6 6.4 15.7 4.3 12.1 5.0 12.2 
+
+We complement the SUPERB ASR evaluation by reporting word error rate on the standard LibriSpeech develop-ment and test splits ( dev-clean , dev-other , test-clean , and test-other ), using train-clean-100 for fine-tuning under the same default task settings, with and without a 4-gram language model; the results are shown 
+
+17 in Table 12. The strongest recognition numbers are obtained by data2vec 2.0, with OLIVE-A (Mix+Gain) 
+
+remaining close to WavLM Base on most splits. OLIVE-J incurs a small ASR trade-off relative to the strongest analysis-only baselines but remains within the range of standard Base-sized SSL systems, consistent with the observation that the reconstruction objective, which acts mainly on earlier encoder features, can enhance the information retained for reconstruction without degrading the discriminative quality of later contextual representations. 
+
+E Waveform Reconstruction Spectrograms 
+
+Figures 4 and 5 show spectrograms that complement Tables 3 and 4. Figure 4 illustrates three reference utterances reconstructed by the frozen feature-conditioned and integrated OLIVE-J vocoders. Figure 5 illustrates one reference utterance reconstructed by all HiFi-GAN V2 vocoders conditioned on local encoder features from the baseline and OLIVE models. 0
+
+2000 
+
+4000 
+
+6000 
+
+8000   
+
+> Hz
+> Reference OLIVE-J (frozen feat-cond.) OLIVE-J (integrated vocoder)
+
+0
+
+2000 
+
+4000 
+
+6000 
+
+8000   
+
+> Hz
+> Reference OLIVE-J (frozen feat-cond.) OLIVE-J (integrated vocoder)
+
+0 0.5 1 1.5 2 2.5 3 3.5 4 4.5 
+
+Time 
+
+0
+
+2000 
+
+4000 
+
+6000 
+
+8000 
+
+> Hz
+> Reference
+
+0 0.5 1 1.5 2 2.5 3 3.5 4 4.5 
+
+Time 
+
+> OLIVE-J (frozen feat-cond.)
+
+0 0.5 1 1.5 2 2.5 3 3.5 4 4.5 
+
+Time 
+
+> OLIVE-J (integrated vocoder)
+
+80 
+
+70 
+
+60 
+
+50 
+
+40 
+
+30 
+
+20 
+
+10 
+
+0
+
+> dB
+
+Figure 4: Spectrograms for three reference utterances and reconstructions from the frozen feature-conditioned OLIVE-J vocoder and the integrated OLIVE-J vocoder. 0 1.5 3 4.5 6 7.5 9                                                      
+
+> Time
+> 0
+> 1000
+> 2000
+> 3000
+> 4000
+> 5000
+> 6000
+> 7000
+> 8000
+> Hz
+> Reference
+> 01.5 34.5 67.5 9
+> Time
+> MelSpec HiFi-GAN
+> 01.5 34.5 67.5 9
+> Time
+> wav2vec 2.0 Base
+> 01.5 34.5 67.5 9
+> Time
+> HuBERT Base
+> 01.5 34.5 67.5 9
+> Time
+> WavLM Base
+> 01.5 34.5 67.5 9
+> Time
+> 0
+> 1000
+> 2000
+> 3000
+> 4000
+> 5000
+> 6000
+> 7000
+> 8000
+> Hz
+> data2vec Base
+> 01.5 34.5 67.5 9
+> Time
+> data2vec 2.0 Base
+> 01.5 34.5 67.5 9
+> Time
+> OLIVE-A (Mix+Gain)
+> 01.5 34.5 67.5 9
+> Time
+> OLIVE-J (integrated vocoder)
+> 01.5 34.5 67.5 9
+> Time
+> OLIVE-J (frozen feat-cond.)
+> 80
+> 70
+> 60
+> 50
+> 40
+> 30
+> 20
+> 10
+> 0
+> dB
+
+Figure 5: Spectrograms for one reference utterance and reconstructions from HiFi-GAN V2 vocoders conditioned on local features from the baseline and OLIVE models. 18 F Compute Details 
+
+All main OLIVE pre-training runs used 2 NVIDIA H100 80GB GPUs. The final analysis-only models required 123 training hours per run, and the final joint model required 206 training hours. Vocoder training and downstream task evaluation used Multi-Instance GPU (MIG) 20GB and 40GB partitions of H100 GPUs. 
+
+19

@@ -1,0 +1,696 @@
+Title: AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation
+
+URL Source: https://arxiv.org/pdf/2606.30811v1
+
+Published Time: Wed, 01 Jul 2026 00:10:30 GMT
+
+Number of Pages: 30
+
+Markdown Content:
+# AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 
+
+Kien T. Pham 1 , I Chieh Chen 1 , Qifeng Chen 1 , and Long Chen 1⋆
+
+The Hong Kong University of Science and Technology 
+
+{tkpham,icchen}@connect.ust.hk, {cqf,longchen}@ust.hk 
+
+Project Page: https://hkust-longgroup.github.io/AVTok/ (a) AVTok Framework  (b) Comparison with unimodal SOTAs 
+
+Unified Codebook 
+
+1 2 24  25  26  K
+
+Holistic Audio -Video Tokens 
+
+1 224 25  26 K
+
+Baby Laughter 
+
+Woodpecker Pecking Tree 
+
+AR Generative Models, MLLMs 
+
+Audio -to -Video Generation 
+
+Fire Truck Siren 
+
+Video -to -Audio Generation  Joint Audio -Video Generation 
+
+(c) Downstream Generation Tasks 
+
+AVTok Dual -Stream Encoder 
+
+AVTok Dual -Stream Decoder 
+
+23  27 
+
+23  27 
+
+Fig. 1: Highlights. (a) We propose AVTok, a novel unified tokenizer with dual-stream transformer-based architecture, capable of jointly encoding an audio-video pair into a single compact 1D latent representation. (b) AVTok achieves competitive performance compared to state-of-the-art unimodal 1D video tokenizers ( top ) and audio codecs (bottom ). (c) From left to right, AVTok can be integrated into AR generative models to achieve audio-to-video, video-to-audio, and joint audio-video generation. 
+
+Abstract. Audio-video generation has recently gained unprecedented research attention, aiming to synthesize high-quality sounding video con-tent with fine-grained synchronization and semantic alignment between the auditory and visual components. The preceding methods predomi-nantly adopt a dual-branch design with separate tokenization and gen-eration modules per modality, neglecting the representation gap while  
+
+> ⋆
+
+Corresponding author.        
+
+> arXiv:2606.30811v1 [cs.CV] 29 Jun 2026 2K. Pham et al. necessitating intensive computational resources for proper training. In-spired by recent advancements in one-dimensional visual tokenization, we present AVTok , a novel unified tokenizer designated for holistic audio-video generation. AVTok features a dual-stream transformer-based architecture with shared encoder-decoder and modal-specific learnable queries to efficiently and effectively encode an audio-video pair into a compact one-dimensional latent representation with a unified codebook. To cope with the heterogeneous information imbalance that hinders AV-Tok from exploiting aligned audio-visual information, we devise a hier-archical training strategy to progressively realize reconstruction capabil-ities for each modality. Extensive experiments demonstrate that AVTok excels both in audio-video reconstruction and when integrated into down-stream pipelines for audio-to-video, video-to-audio, and class-conditional joint audio-video generation. AVTok paves the way for the challenge of joint audio-video tokenization and provides a potential direction to build unified large multimodal models for audio-video generation.
+> Keywords: Unified Audio-Video Tokenization ·1D Latent Representa-tion ·Holistic Audio-Video Generation
+
+## 1 Introduction 
+
+Audio-Visual (AV) content creation has undergone a remarkable transformation in recent years, catalyzing the emergence of innovative creative tasks that were once considered unattainable. This evolution has been largely driven by the de-velopment of powerful generative models, which are capable of Video-to-Audio (V2A) [5,20,31,55,73], Audio-to-Video (A2V) [43,48,63,65,68], and particularly Joint Audio-Video generation (JAVG) [9, 39, 41, 47, 56, 71, 74]. However, their impressive performance comes with a great price. These AV models typically adopt a heavy-weighted dual-branch architecture in which each processes one specific modality separately. In addition, extra auxiliary modules are injected and intertwined for cross-modal interaction. Such a design incurs an intensive computational cost that poses significant challenges to its scalability and acces-sibility for training and deployment. Akin to single-modal predecessors [6,11,18,28,29,67,75], various audio-video generation pipelines [39, 41, 46, 71] tend to employ one pretrained tokenization model per modality to compress their respective input into the compact latent representation, partially alleviating the computational burden. However, such a simple integration neglects the intrinsic representation difference between the embedding spaces of the two modalities learned by those distinctively trained tokenizers, as depicted in Fig. 2. Inherently, their synthesized products often exhibit semantic misalignment between auditory and visual elements. To this end, an intuitive question arises: Q: Is it possible to jointly encode both audio and video components into a shared embedding space instead? We hypothesize that by constructing such a shared tokenization space, not only can it avoid the mentioned representation gap to mitigate the audio-visual semantic discrepancy, but also eliminates the need to maintain an expensive dual-branch architecture AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 3Video      
+
+> Tokenizer
+> Audio
+> Tokenizer
+> Audio -Video Unified
+> Tokenizer
+> Video Only Audio Only Audio -Video
+> Embedding Spaces Class Clusters Video Embeddings Audio Embeddings
+
+Fig. 2: Motivation. Left: Previous audio-video generation models typically adopt a separate pretrained tokenizer per modality and omit the representation gap between their learned embedding spaces. Right: We aim to design a unified tokenizer that jointly encodes both modalities into a shared token space instead. Here, video and audio embeddings are colored by their respective classes. 
+
+for the full generation modeling. This motivates us to design a unified tok-enizer for both modalities that is capable of effectively and efficiently encoding a sounding video sample into a single latent representation, holistically capturing audio-visual information for decent reconstruction and downstream AV genera-tion tasks. To achieve our goal, the first critical challenge that emerges is to deter-mine: C1: Which embedding representation is appropriate to unify and encap-sulate auditory and visual information? On the one hand, as raw video inputs have three-dimensional (3D) formation, the majority of prevailing video tok-enizers [37, 38, 50, 64] inherently employ 3D spatio-temporal latent as represen-tation for compression. On the other hand, audio signals have a one-dimensional (1D) wave structure, hence many previous audio tokenizers, the so-called audio codecs [7, 22, 23, 30], typically encode an audio into the respective 1D tempo-ral embedding. Meanwhile, some methods [32, 34] extract two-dimensional (2D) mel-spectrogram features as intermediate targets for compression and leverage neural vocoders [27, 33] to reconstruct raw signals more efficiently. Neverthe-less, the difference in token organization (3D vs. 1D/2D) still makes it non-trivial to decide which representation is appropriate. Fortunately, some recent works [36, 58] have demonstrated the potential of 1D video tokenization in con-structing a causal-friendly discrete latent space that facilitates autoregressive (AR) video generation, conceptually bridging with audio’s native representation. We therefore select 1D discrete latent to be the desired compact representation for audio-video encoding unification, as shown in Fig. 1(a). Considering the objective 1D latent representation, the final and most im-portant challenge to tackle is C2: How to design a suitable architecture to ac-tualize 1D unified audio-video tokenization? Based on a current state-of-the-art 1D video tokenizer [58], we propose AVTok , which is a novel attempt on this novel challenge. Drawing inspiration from [1, 14] that tackle AV pretraining tasks, we transform the baseline [58] into a dual-stream query-based transformer with shared encoder-decoder and modal-specific queries. This model design has 4 K. Pham et al. 
+
+several characteristics: (1) Unlike [1,14] which utilize patch-wise local-constraint information, AVTok leverages a holistic tokenization scheme with learned queries to capture higher-level, holistic AV information; (2) Dual-stream forward passes allow AVTok to harmoniously exploit auditory and visual specific elements while fusing their information implicitly to enhance reconstruction, maintaining both efficacy and efficiency; (3) AVTok inherits the AR-friendliness of the baseline [58] that is beneficial for downstream AR-based AV generation tasks. Despite possessing the above-mentioned architectural advantages, training AVTok properly is challenging due to several reasons. First, visual data ex-hibit significantly different information density from their corresponding audi-tory companions, causing the model to suppress the learning and deteriorate the performance of one or both modalities. Secondly, the implicitness of information fusing via shared model parameters may lead to insufficient cross-modal inter-action that hinders alignment learning. Therefore, we introduce a hierarchical training strategy: Video-First-Audio-Later (VFAL), to realize respective recon-struction capability for each individual modality in a progressive manner. Addi-tionally, inspired by [17,70], we leverage the features extracted from audio-visual foundational models [1,14] with rich semantic correspondence to enhance model learning via a representation alignment objective. The experimental results high-lighted in Fig. 1(b,c) show that AVTok achieves outstanding performance not only in AV reconstruction but also in downstream generation tasks, including audio-to-video, video-to-audio, and class-conditional joint AV generation. Overall, our contributions are summarized as follows: 
+
+– We propose a novel task of unified audio-video (AV) tokenization, which aims at jointly encoding both auditory and visual components into a single latent representation, facilitating efficient and effective AV reconstruction and downstream generation. 
+
+– We present AVTok, a 1D unified AV tokenizer attempting to fulfill the task by leveraging a multi-stream transformer-based architecture with shared encoder-decoder and modal-specific queries. 
+
+– We introduce VFAL, a hierarchical training paradigm equipped with a rep-resentation alignment learning objective to progressively incorporate video then audio encoding and reconstruction capabilities into AVTok. 
+
+– Extensive experiments highlight that AVTok excels in not only unified AV reconstruction but also downstream tasks, including audio-to-video (A2V), video-to-audio (V2A), and class-conditional joint AV generation (cJAVG). 
+
+## 2 Related Work 
+
+2.1 1D Visual Tokenization 
+
+With the Multimodal Large Language Model (MLLM) for understanding and generation tasks gaining growing popularity in recent years, 1D visual tokeniza-tion has emerged as an indispensable component. Not only does it bridge the AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 5
+
+vision-language representation gap, but it also reduces the computational bur-den incurred when processing visual data, enabling effortless and efficient inte-gration of visual input into well-established LLMs. Early studies mainly focused on the image domain starting with TiTok [69], a transformer-based tokenizer with learnable queries that can encode a 256 × 256 × 3 image using as few as 32 discrete tokens. TA-TiTok [25] then uses rich semantic information from textual input to complement visual features and improve the decoding stage. Subsequent works [2, 57, 62] enforce causality relationships among resulting tokens, making their models autoregressive (AR)-friendly for better adaptation into MLLMs. Recent advances have started to be explored in the video domain. LARP [58] is the pioneer that employs a query-based transformer architecture with a holis-tic tokenization scheme and an autoregressive prior model to tokenize videos into a 1D latent representation with optimal token order for downstream AR generation tasks. It is then followed by Adaptok [36], which attempts to induce an adaptive temporal causality within latent space and dynamically manipu-late token allocation for flexible tokenization, and DeRA [17], which decouples spatial-temporal representation learning to achieve more efficient and effective training. Inspired by these works and their insights, our work aims to extend the concept of 1D unified tokenization for audio and video together. 
+
+2.2 Audio Tokenization 
+
+Unlike image and video domains that inherently involve 2D and 3D spatial struc-tures, audio is naturally a 1D time-varying signal representing the sound wave’s amplitude over time. Audio tokenization, a.k.a neural audio coding, has been a long-standing challenge, aiming to balance high-fidelity reconstruction with low-bitrate discrete representation that facilitates incorporation into LLMs. Some early codecs include EnCodec [7] and DAC [30] that utilize residual vector quantization (RVQ) within a fully convolutional encoder-decoder architecture. Recently, UniCodec [23] focuses on reducing the redundancy inherent in multi-codebook RVQ systems by constructing a unified codebook for universal sound domains. Meanwhile, SpecVQGAN [20], Spectral Codec [32], and MelTok [34] also improve efficiency but alternatively by compressing mel-spectrograms in-stead of raw waveforms. With the aligned 1D discrete representation, we aim to replicate their audio tokenization capability in our unified model. 
+
+2.3 Audio-Video Generation 
+
+Generative tasks involving audio and video modalities, such as audio-to-video (A2V), video-to-audio (V2A), and joint audio-video generation (JAVG) have attracted a lot of research attention in recent years, leading to a proliferation of many models with impressive synthesizing abilities. Some of the representative works for A2V generation include TempoTokens [68] that adapts a pretrained text-to-video diffusion model to support audio conditioning and achieve better synchronization, Seeing-and-Hearing [65] introduces a diffusion latent aligner 6 K. Pham et al. 
+
+to enhance cross-modal semantic coherence, and SpA2V [43] harnesses spatial auditory cues to realize spatial alignment in synthesized videos. Regarding the V2A generation, SpecVQGAN [20] is one of the early studies to train a transformer to sample spectrograms conditioning on video features from a pretrained codebook obtained by a VQGAN-variant tokenizer. Later, V-AURA [55] introduces an autoregressive model with an audio-visual feature fusion strategy to enhance temporal alignment. Recently, FoleyCrafter [73], Vin-TAGe [31], and MMAudio [5] leverage diffusion and flow matching generative models to achieve better audio synthesis fidelity and diversity. By unifying the A2V and V2A goals, the JAVG task enables the joint syn-thesis of high-fidelity video and audio, prioritizing individual modal quality with seamless cross-modal synchronization and semantic alignment. The latest ap-proaches [39,41,60,71] primarily adopt a dual-branch architecture with separate variational autoencoder (VAE) and diffusion transformer (DiT) as tokenization and generation modules, respectively, per modality. Despite showing impressive results, such a design is heavy-weighted and necessitates intensive computing re-sources for adequate training. Besides, using distinct tokenizers also neglects the representation gap between auditory and visual elements, hence they are prone to producing results with semantic misalignment. To address this problem, in this work, we introduce a unified tokenizer to jointly encode both audio and video into a single latent representation. 
+
+## 3 Method 
+
+3.1 Preliminary Query-based 1D Video Tokenization. As discussed in Sec. 1, the prevailing video tokenizers predominantly adopt a 3D patch-wise tokenization scheme of which latent tokens are encoded from the 3D spatio-temporal patches of the input video, limiting them to low-level patch features and hindering the exploitation for higher-level information. To break this local constraint and enable 1D tok-enization, LARP [58] and following works [17, 36] adapt the philosophy of [3, 35] to leverage a set of fixed learnable queries to capture holistic information in the video. Given a video input V ∈ RT ×H×W ×3, it is first processed as: 
+
+Pv = P(V), Ev = F(Pv ),
+
+where P and F are linear patchify and flatten operations, Pv ∈ R TfT × HfH × WfW ×d
+
+and Ev ∈ Rm×d represent the spatiotemporal patches projected onto d dimen-sions and their flattened embeddings. Here, fT , f H , f W correspond to the down-sampling factors for dimensions T, H, W respectively, and m = TfT × HfH × WfW is the total number of tokens. Subsequently, a set of n learnable holistic query em-bedding QvL ∈ Rn×d is introduced to encode and quantize the patch embeddings 
+
+Ev as follows: 
+
+Zv = E(QvL∥Ev ), xv = Q(Zv
+
+> 1: n
+
+),AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 7
+
+in which E and Q are the encoder and quantizer, ∥ denotes the concatenation operation, and Zv is the latent embeddings of length (n+m). Note that only Zv
+
+> 1: n
+
+,
+
+i.e ., the first n ones corresponding to the query embeddings QvL are quantized into xv = ( xv 
+
+> 1
+
+, . . . , x vn) discrete tokens, ensuring each xiv can represent any video patch equally. Eventually, during the decoding stage, another m learnable patch query embeddings QvP ∈ Rm×d are utilized to reconstruct the video as: 
+
+ˆZv = Q−1(xv ), ˆEv = D(QvP ∥ˆZv ), ˆV = R( ˆEv
+
+> 1: m
+
+),
+
+where Q−1 denotes de-quantization operation that maps discrete tokens xv back to the continuous latent embedding ˆZv ∈ Rn×d. Subsequently, they are concate-nated with QvP and go through the decoder D to decode ˆEv , of which only the first m vectors are reshaped via the R operator to reconstruct ˆV ∈ RT ×H×W ×3.
+
+Autoregressive Generative Prior. Although the 1D latent tokens xv ob-tained with the aforementioned query-based tokenizer are now holistic and dis-crete, there is no specific flattening order enforced. This is because of the un-ordered nature of the holistic query set and the parallel processing property of the transformer encoder. To make such a latent space compatible with AR generative models, LARP [58] incorporates a lightweight AR transformer with adjusted input and output layers as prior model MP to provide gradients for structure optimization. It is jointly trained with the tokenizer in an end-to-end manner using negative log-likelihood (NLL) loss Lprior for next token prediction objective (NTP) in synergy with reconstruction loss Lvrec as: 
+
+L = Lvrec + αLprior ,
+
+where α is the loss weight. Notably, this prior model serves the sole purpose of promoting an AR-friendly discrete latent space during training. It is discarded during inference and thus affects neither the speed nor the memory footprint. 
+
+3.2 Holistic Audio-Video Tokenization Patchify. AVTok employs the architecture described in Sec. 3.1 as its video stream of which the patchification remains unchanged that transforms a video input V ∈ RT ×H×W ×3 into a flattened d-dimensional embedding Ev ∈ Rm×d.For audio stream, instead of Araw ∈ RN which is 1D-long continuous data, we opt to use its normalized mel-spectrogram Amel ∈ RM ×L as input. Here, M and 
+
+L denote the number of frequency bins and time frames, respectively. Not only does Amel reduce computation complexity, but it can also be interpreted as a gray-scale image that can be patchified similarly as in video stream. Notably, it can be converted back to the raw waveform with lossless quality using off-the-shelf vocoders [27, 33]. Given Amel , herein referred to as A for brevity, we process it as: 
+
+Pa = P(A), Ea = F(Pa),8 K. Pham et al. AR Generative Model   
+
+> SEP
+> (c) Audio -to -Video
+> Generation
+> AR Generative Model
+> SEP
+> (d) Video -to -Audio
+> Generation
+> CLS
+> AR Generative Model
+> (e) Class -conditional
+> Joint Audio -Video
+> Generation
+> Audio -Visual
+> Foundation Model ℳ𝐹
+> Cross -modal
+> AR Prior Model ℳ𝑃
+
+ℒ𝑟𝑒𝑝  ℒ𝑝𝑟𝑖𝑜𝑟   
+
+> Patch -wise Audio Tokens Holistic Audio Tokens
+> Patch -wise Video Tokens Holistic Video Tokens
+> AVTok Encoder  ℰ𝐿 𝑁 𝑣  𝐿 𝑁 𝑎
+> AVTok Decoder  𝒟 𝐿 𝑁 𝑣  𝐿 𝑁 𝑎
+
+ℒ𝑟𝑒𝑐 
+
+> 𝑣
+
+ℒ𝑟𝑒𝑐    
+
+> 𝑎
+> (a) AVTok Full Dual -stream Architecture and Training Pipeline
+> Input Patches
+> Patch -wise Tokens
+> Reconstructed Patches
+> Patch Queries
+> AVTok Decoder 𝒟
+> Holistic Queries
+> Holistic Tokens
+> Quantizer 𝒬
+> (b) Single -stream Forward Pass
+> AVTok Encoder ℰ
+> 𝒬 −1
+
+Fig. 3: Method illustration. Cubes , squares □, and circles # respectively repre-sent input patches or patch-wise tokens, holistic discrete tokens, and continuous query embeddings. (a) AVTok features a dual-stream transformer-based architecture, of which each stream’s forward pass is demonstrated in (b) , to jointly learns video (Blue stream) and audio (Green stream) reconstructions in a unified holistic scheme. It lever-ages separate sets of learnable queries and normalization layers to gather modal-specific information, while sharing remaining parameters to enable implicit cross-modal inter-action, achieving both efficiency and efficacy. In addition to the standard reconstruction training objectives Lvrec and Larec , we align AVTok’s patch-wise continuous tokens with an audio-visual foundation model MF via Lrep to better capture synergistic features between auditory and visual elements. Lastly, an AR prior model MP is also equipped to encourage an AR-friendly discrete latent space via Lprior , facilitating downstream AR generative tasks including (c) audio-to-video , (d) video-to-audio , and (e) class-conditional joint audio-video generation. 
+
+where Pa ∈ R MfM × LfL ×d and Ea ∈ Rp×d represent the audio patches projected onto d dimensions and their flattened embeddings. Here, fM , f L correspond to downsampling factors for dimension M, L accordingly, and p = MfM × LfL is the total number of audio tokens. 
+
+Dual-stream Transformer. Although transformer-based design has been ap-plied to the context of 1D tokenization for both audio and video modality in-dividually referring to Sec. 2, it has never been explored for the unified setting involving both modalities simultaneously. As the initial attempt for this work, we extend the query-based design in [58] from the video-only modality to audio-video multi-modality and build a single-stream vanilla version of our AVTok AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 9
+
+tokenizer. Given the patchified Ea and Ev embeddings obtained above, we con-catenate them and construct a joint embedding Eav = ( Ev ∥Ea) ∈ R(m+p)×d. It will then be encoded, quantized, and decoded similarly following Sec. 3.1 as: 
+
+xav = Q(E(Qav L ∥Eav )1: n), ˆEav = D(Qav P ∥Q −1(xav )) ,
+
+ˆV = R( ˆEav 
+
+> 1: m
+
+), ˆA = R( ˆEav m:m+p),
+
+where Qav L ∈ Rn×d and Qav P ∈ R(m+p)×d denotes learnable holistic and patch query embeddings respectively. This simple design features cross-modal modeling that may help the model to exploit audio-visual correlation to reconstruct one modality based on the information of the other. However, without explicitly considering the modal-specific features, their significant difference in nature often causes the vanilla model to train inadequately in which the learning of one modality harms that of the other, eventually yielding subpar performance. To alleviate this problem, we adapt the philosophy of [1, 14] to bootstrap the vanilla design into a dual-stream architecture with shared encoder-decoder but separate sets of learnable holistic and patch query embeddings as well as normalization layers for our finalized AVTok tokenizer. Specifically, we input audio and video patch embeddings Ea and Ev in two different forward passes to the encoder E(·; LN 1, LN 2) then decoder D(·; LN 1, LN 2) with each stream leveraging a separate set of normalization layers  LN {a,v } 
+
+> 1
+
+, LN {a,v }
+
+> 2
+
+ as follows: 
+
+Zi = E(QiL∥Ei; LN i
+
+> 1
+
+, LN i
+
+> 2
+
+), xi = Q(Zi 
+
+> 1: j
+
+), ˆEi = D(QiP ∥Q −1(xi); LN i
+
+> 1
+
+, LN i
+
+> 2
+
+),
+
+ˆV = R( ˆEv
+
+> 1: m
+
+), ˆA = R( ˆEa
+
+> 1: p
+
+), (i, j ) ∈ { (v, n ), (a, q )},
+
+where QvL ∈ Rn×d, QvP ∈ Rm×d, QaL ∈ Rq×d, QaP ∈ Rp×d respectively represent the learnable holistic and patch query embeddings of video and audio modality. This design facilitates harnessing modal-specific information by using distinctive learnable components per modality, while still allowing for implicit audio-visual fusion via sharing remaining parameters, thereby achieving both efficiency and effectiveness for reconstruction and downstream generation tasks. The detailed illustration of AVTok is shown in Fig. 3(a, b). 
+
+Reconstruction Objective. Following the composition in [58], the reconstruc-tive training loss for the video stream of AVTok, i.e . Lvrec , is constituted by L1
+
+reconstruction loss, LPIPS perceptual loss [72], GAN adversarial loss [15], and SVQ quantization loss [58]. Meanwhile, for Larec , since the audio stream recon-struction process involves pretrained vocoders [27, 33], we follow them to adopt Multi-Scale Mel-Spectrogram Loss [30] as reconstruction loss, use Multi-Scale Sub-Band CQT Discriminator [16] and Multi-Period Discriminator [27] for ad-versarial components, and reuse SVQ quantization loss from the video stream. 
+
+3.3 Hierarchical Training Paradigm Video-First-Audio-Later (VFAL) Strategy. Despite having several archi-tectural advantages, our experiments reveal that simply training AVTok from 10 K. Pham et al. 
+
+scratch is non-ideal. This is primarily because of the fact that visual information is abundant, which dominates auditory information, causing the learning of the video stream to suppress that of the audio stream. To accommodate this issue, we design the VFAL hierarchical training strategy for optimal and efficient train-ing of AVTok. Specifically, we start with the training of the more challenging modality, i.e ., video stream, while discarding the audio stream in Stage 1, aiming to realize reconstruction ability for visual elements and establish a strong latent token representation space. Subsequently, in Stage 2, we reattach and train only the modules specialized for the audio stream while freezing those of the video stream together with the shared ones, realizing audio reconstruction capability. This is intuitively possible considering that the input mel-spectrogram can be treated as a gray-scale image, as mentioned in Sec. 3.2. Finally, in the last stage, we finetune the decoding modules to attain unified audio-video reconstruction with refined quality. By imposing this explicit training path, VFAL encourages AVTok to optimize the learning of each stream progressively. 
+
+Representation Alignment Learning. During experiments, we also observed an issue in which AVTok does not fully exploit audio-visual correspondent fea-tures to improve the final reconstruction. We hypothesize that this might be be-cause the cross-modal interaction via shared model parameters is implicit, and hence it hinders audio-visual alignment learning. Drawing inspiration from [17, 70], we leverage a pretrained audio-visual foundation model MF [1] that learned an embedding space with rich semantics and strong correspondence between vi-sual and auditory information as the intermediate aligning module to enhance cross-modal alignment between the two streams of AVTok. This can be achieved by incorporating into the training the representation alignment objective Lrep ,which can be computed as follows: 
+
+ZvF = MF (V), ZaF = MF (A), ˜Zv = Zvn:m+n, ˜Za = Zaq:p+q ,
+
+Lrep = −E
+
+h X
+
+> i∈{ a,v }
+
+1
+
+NiNiX
+
+> k=1
+
+sim (ZiF [k], h ϕ(interp (˜Zi)[ k])) 
+
+i
+
+,
+
+where ZvF , ZaF , ˜Zv , ˜Za denote the video and audio patch embeddings of length 
+
+Nv , N a, m, p extracted by MF and our AVTok’s encoder, k is a patch index, sim (·, ·) is a pre-defined similarity function, and hϕ represents a multilayer per-ceptron (MLP). Similarly to [17, 70], we linearly interpolate ˜Zv , ˜Za to the same length of ZvF , ZaF via interp (·) operator for computational compatibility. 
+
+Cross-modal AR Generative Prior. To facilitate the downstream audio-to-video, video-to-audio generation, and class-conditional joint audio-video gener-ation tasks simultaneously, we adapt the autoregressive generative prior of [58] mentioned in Sec. 3.1 by simply computing the NTP objective loss for two token orders xv ∥xa and xa∥xv to compose Lprior . Finally, the overall training objective AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 11 
+
+Table 1: Quantitative comparison of reconstruction results. Results are catego-rized into video-only (VO), audio-only (AO), and joint audio-video (AV) tokenization functionality. W/M denote resolution of waveform/mel-spectrogram used as audio in-put. The best and second best results are in bold and underlined. Type Method Configuration Video Metrics Audio Metrics Resolution #Tokens PSNR ↑ rFVD ↓ LPIPS ↓ SI-SDR ↓ rFAD ↓ MR-STFT ↓                                                                                             
+
+> VO OmniTokenizer [59] 17 ×128 ×128 1280 23.84 90.99 0.203 ---AdapTok [36] 16 ×128 ×128 2048 23.87 22.23 0.180 ---LARP [58] 16 ×128 ×128 1024 24.53 14.24 0.137 ---AO WavTokenizer [22] 98304 ×1(W) 164 ---24.27 6.82 1.589 UniCodec [23] 98304 ×1(W) 308 ---18.25 6.73 1.508
+> SpectralCodec [32] 80 ×384 (M) 384 ---29.30 5.56 1.514 AV Vanilla 16 ×128 ×128 24.50 14.87 0.140 35.45 10.26 2.114 (Ours) AVTok 80 ×384 (M) 1152 25.62 12.80 0.126 23.09 5.93 1.523 Uni
+> Codec
+> Wav
+> Tokenizer
+> Spectral
+> Codec
+> GT
+> AVTok
+> (Ours)
+> GT
+> AVTok
+> (Ours)
+> LARP
+> AdapTok
+> Omni
+> Tokenizer
+
+Fig. 4: Qualitative comparison of reconstruction results. 
+
+for AVTok is formulated as: 
+
+L = λ1Lvrec + λ2Larec + λ3Lrep + λ4Lprior ,
+
+with λ1,2,3,4 are the loss weights for each component. 
+
+## 4 Experiments 
+
+4.1 Setup Dataset. We conduct our experiments on TAVGBench [42] and VGGSound [4] datasets. Both are used in the reconstruction whilst only the latter is used in the downstream generation tasks deliberately for demonstration purposes due to time and resource constraints. The test set of VGGSound is used for all assess-ments. By default, we use 16-frame sounding video clips with spatial resolution 
+
+128 × 128 , frame rate of 3.6fps, single-channel audio with waveform resolution 
+
+98304 ×1, 22 kHz sampling rate, and mel-spectrogram resolution 80 ×384 in both training and evaluation. 12 K. Pham et al. 
+
+Table 2: Comparison of generation results. Results are grouped by tasks including audio-to-video (A2V), video-to-audio (V2A), and class-conditional joint audio-video generation (cJAVG). Diff, AR, and FM respectively denote diffusion, autoregressive, and flow matching generative paradigms. The best and second best results are in bold 
+
+and underlined. Task Method Gen #Param gFVD ↓ gFAD ↓ DeSync ↓ IB-Score ↑                                                                       
+
+> Type Tokenizer Generator TempoTokens [68] Diff 83.7M 1.9B 786.61 -1.359 0.132 A2V AVTok-A2V (Ours) AR 208.4M 632.0M 150.26 -1.317 0.143
+> V2A MMAudio [5] FM 298.5M 1.3B -17.09 0.813 0.291
+> VinTAGe [31] FM 110.6M 1.5B -80.06 1.294 0.044 V-AURA [55] AR 76.7M 816.9M -126.92 0.967 0.231 SpecVQGAN [20] AR 76.4M 332.4M -210.07 1.291 0.100 AVTok-V2A (Ours) AR 208.4M 632.0M -49.47 1.239 0.249 cJAVG JavisDiT [39] FM 448.7M 8.9B 1040.28 268.51 1.330 0.195 Ovi [41] FM 988.6M 17.3B 972.65 129.02 0.814 0.172 AVTok-cJAVG (Ours) AR 208.4M 632.4M 138.80 56.58 1.319 0.206
+
+Implementation Details. For patchification, we first follow [13, 58] to split the input video and audio mel-spectrogram into continuous visual and auditory patch embeddings using (fT , f H , f W ) = (4 , 8, 8) and (fM , f L) = (16 , 16) respec-tively. We then utilize a set of n = 1024 , q = 128 learnable holistic queries to ob-tain 1152 holistic discrete tokens. For decoding, another set of m = 1024 , q = 120 
+
+learnable patch queries are leveraged to reconstruct their corresponding modal-ity. Besides, we use HiFi-GAN [27] to convert the output mel-spectrograms back to waveforms. For the remaining, unless otherwise specified, we maintain the same configuration as [58] by default. Regarding downstream generation tasks, we also follow [58] to adopt Llama-like transformer [49, 51] to be our AR gen-erative model. As shown in Fig. 3(c-e), one class token [CLS] is used in the class-conditional joint audio-video generation task, while one separator token 
+
+[SEP] is employed for cross-modal generation tasks. 
+
+4.2 Reconstruction Evaluation Baselines & Metrics. Due to the novelty of the unified audio-video tokeniza-tion task, there is no open-source baseline available for direct comparison. There-fore, in addition to our vanilla model, we select some state-of-the-art unimodal methods from each side as representatives for comparisons including OmniTo-kenizer [59], AdapTok [36], LARP [58] as video-only baselines, and WavTok-enizer [22], UniCodec [23], SpectralCodec [32] as audio-only baselines. Regarding metrics, we adopt PSNR [61], FVD [53], LPIPS [72] to assess video reconstruc-tion, and employ SI-SDR [45], FAD [24], MR-STFT [66] to evaluate audio side. AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 13 tap dancing motorboat acceleration       
+
+> toilet flushing firework banging playing drum kit playing ukulele
+> train whistling fire crackling
+> (a) Class -conditional Joint Audio -Video Generation
+> (b) Audio -to -Video Generation
+> dog howling people finger snapping pheasant crowing playing cornet
+> (c) Video -to -Audio Generation
+
+Fig. 5: Qualitative results for downstream generation tasks. Note that class conditions are only inputted for (a) class-conditional joint audio-video generation, and displayed here for illustration purposes of (b) audio-to-video and (c) video-to-audio generation. 
+
+Main Results. As shown in Tab. 1 and Fig. 4, AVTok consistently outperforms the vanilla design and selected unimodal baselines in video reconstruction while maintaining competitive performance on the audio side. They not only indicate the feasibility of the unified audio-video tokenization task and the effectiveness of our approach but also infer that leveraging cross-modal information can boost the performance of each modality. 
+
+4.3 Generation Evaluation Baselines & Metrics. For downstream generation tasks, we select and com-pare our AR generative models with several representative baselines, including: (1) TempoTokens [68] for audio-to-video generation (A2V); (2) MMAudio [5], VinTAGe [31], V-AURA [55], SpecVQGAN [20] for video-to-audio generation (V2A); and (3) JavisDiT [39], Ovi [41] for class-conditional joint audio-video generation (cJAVG). Since some of them require textual caption as the condi-tion to control the synthesis, we bypass it by utilizing class labels as an alterna-tive. Regarding metrics, we use FVD [53] and FAD [24] to assess the quality of the video and audio samples generated, DeSync [21] to measure their temporal synchronization, and ImageBind [12] (IB) Score to evaluate semantic alignment. 
+
+Main Results. As demonstrated in Tab. 2, our AR generative models incorpo-rated with the proposed AVTok tokenizer achieve outstanding results in down-stream tasks that surpass the majority of selected baselines whilst having efficient 14 K. Pham et al. 
+
+Table 3: Ablation study on the impact of each component.                                          
+
+> Configuration AV Reconstruction A2V V2A cJAVG rFVD ↓rFAD ↓gFVD ↓gFAD ↓gFVD ↓gFAD ↓
+> Vanilla 14.87 10.26 ----AVTok 12.80 5.93 150.26 49.47 138.80 56.58
+> Without VFAL 13.19 9.38 209.33 61.02 193.28 80.78 Without Lrep 12.90 8.48 182.15 54.16 184.20 75.09 Without Lprior 10.63 3.47 266.82 67.84 249.47 90.11
+
+designs. This can be attributed to the learned unified discrete latent space of AVTok illustrated in Fig. 2 which is suitable for AR audio-video generation, enabling the synthesis of high-fidelity samples as displayed in Fig. 5. 
+
+4.4 Ablation Study 
+
+To evaluate the impact of architecture design and each training component pro-posed in Sec. 3, we conduct an ablation study, of which the results are shown in Tab. 3. 
+
+Architecture Design. We first observe that AVTok’s dual-stream architec-ture attains superior performance compared to the single-stream vanilla version across all tasks. This can be attributed to its capability to harness modal-specific information via distinctive learnable queries per modality while allowing for im-plicit cross-modal interaction via remaining shared parameters. Notably, such a design of AVTok facilitates effortless integration into AR generative models for different downstream generation tasks whereas the vanilla one does not. 
+
+Training Components. It is demonstrated that the hierarchical VFAL strat-egy and the representation alignment training objective Lrep contribute sig-nificantly to the final performance in reconstruction, which eventually benefits downstream generation. This highlights their effectiveness in encouraging AVTok to optimize the learning of each stream progressively and enhance their semantic alignment. Finally, similar to [58], we find that ablating cross-modal AR gener-ative prior Lprior yields the best reconstruction but the worst synthesis results, further validating the advantage of leveraging AR prior to train an AR-friendly tokenizer for downstream generation tasks. 
+
+## 5 Conclusion 
+
+We have presented AVTok , a novel unified audio-video tokenizer capable of jointly encoding an audio-video pair into a single compact one-dimensional la-tent representation with a unified codebook. AVTok features a dual-stream AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 15 
+
+transformer-based architecture with shared encoder-decoder and modal-specific learnable holistic queries to harmoniously exploit auditory and visual specific el-ements while fusing their information implicitly for efficient and effective recon-struction. To train AVTok properly, we devise Video-First-Audio-Later (VFAL), a hierarchical strategy that encourages the model to progressively develop recon-struction capability for each individual modality. Additionally, we incorporate an audio-visual foundation model to enhance cross-modal correspondence learning of AVTok via representation alignment loss, eventually improving the learning of each stream. The experimental results demonstrate not only the feasibility of the proposed unified tokenization goal but also the superiority of our model in both reconstruction and downstream generation tasks. We hope that this work will encourage further exploration in this direction to build unified large multimodal models for audio-video generation in future. 
+
+Acknowledgement. This work was supported by National Natural Science Foundation of China (NSFC) Young Scientists Fund Category B (62522216), National Natural Science Foundation of China (NSFC) Young Scientists Fund Category C (62402408), Hong Kong SAR Research Grants Council (RGC) Early Career Scheme (26208924), Hong Kong SAR Research Grants Council (RGC) General Research Fund (16219025), and HKUST (WEB25EG01). 
+
+## References 
+
+1. Araujo, E., Rouditchenko, A., Gong, Y., Bhati, S., Thomas, S., Kingsbury, B., Kar-linsky, L., Feris, R., Glass, J.R., Kuehne, H.: Cav-mae sync: Improving contrastive audio-visual mask autoencoders via fine-grained alignment. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 18794–18803 (June 2025) 2. Bachmann, R., Allardice, J., Mizrahi, D., Fini, E., Kar, O.F., Amirloo, E., El-Nouby, A., Zamir, A., Dehghan, A.: Flextok: Resampling images into 1d token sequences of flexible length. In: Forty-second International Conference on Machine Learning (2025) 3. Carion, N., Massa, F., Synnaeve, G., Usunier, N., Kirillov, A., Zagoruyko, S.: End-to-end object detection with transformers. In: Computer Vision – ECCV 2020: 16th European Conference, Glasgow, UK, August 23–28, 2020, Proceedings, Part I. p. 213–229. Springer-Verlag, Berlin, Heidelberg (2020). https://doi.org/10. 1007/978-3-030-58452-8_13 
+
+4. Chen, H., Xie, W., Vedaldi, A., Zisserman, A.: Vggsound: A large-scale audio-visual dataset. In: International Conference on Acoustics, Speech, and Signal Processing (ICASSP) (2020) 5. Cheng, H.K., Ishii, M., Hayakawa, A., Shibuya, T., Schwing, A., Mitsufuji, Y.: Mmaudio: Taming multimodal joint training for high-quality video-to-audio syn-thesis. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 28901–28911 (June 2025) 6. Copet, J., Kreuk, F., Gat, I., Remez, T., Kant, D., Synnaeve, G., Adi, Y., Défossez, A.: Simple and controllable music generation. In: Thirty-seventh Conference on Neural Information Processing Systems (2023) 16 K. Pham et al. 7. Défossez, A., Copet, J., Synnaeve, G., Adi, Y.: High fidelity neural audio compres-sion. Transactions on Machine Learning Research (2023), featured Certification, Reproducibility Certification 8. Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J., Houlsby, N.: An image is worth 16x16 words: Transformers for image recognition at scale. In: International Conference on Learning Representations (2021) 9. Ergasti, A., Tarollo, G.G., Botti, F., Fontanini, T., Ferrari, C., Bertozzi, M., Prati, A.: r flav: Rolling flow matching for infinite audio video generation (2025) 10. Esser, P., Rombach, R., Ommer, B.: Taming transformers for high-resolution image synthesis. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 12873–12883 (June 2021) 11. Evans, Z., Parker, J.D., Carr, C., Zukowski, Z., Taylor, J., Pons, J.: Stable audio open (2024) 12. Girdhar, R., El-Nouby, A., Liu, Z., Singh, M., Alwala, K.V., Joulin, A., Misra, I.: Imagebind: One embedding space to bind them all. In: CVPR (2023) 13. Gong, Y., Chung, Y.A., Glass, J.: AST: Audio Spectrogram Transformer. In: Proc. Interspeech 2021. pp. 571–575 (2021). https://doi.org/10.21437/Interspeech. 2021-698 
+
+14. Gong, Y., Rouditchenko, A., Liu, A.H., Harwath, D., Karlinsky, L., Kuehne, H., Glass, J.R.: Contrastive audio-visual masked autoencoder. In: The Eleventh Inter-national Conference on Learning Representations (2023) 15. Goodfellow, I.J., Pouget-Abadie, J., Mirza, M., Xu, B., Warde-Farley, D., Ozair, S., Courville, A., Bengio, Y.: Generative adversarial nets. In: Proceedings of the 28th International Conference on Neural Information Processing Systems - Volume 2. p. 2672–2680. NIPS’14, MIT Press, Cambridge, MA, USA (2014) 16. Gu, Y., Zhang, X., Xue, L., Wu, Z.: Multi-scale sub-band constant-q transform discriminator for high-fidelity vocoder (2023) 17. Guo, P., Wang, J., Xing, Z., Liu, C., Dong, D., Qian, X., Wu, Z.: Dera: Decoupled representation alignment for video tokenization (2025) 18. HaCohen, Y., Chiprut, N., Brazowski, B., Shalem, D., Moshe, D., Richardson, E., Levin, E., Shiran, G., Zabari, N., Gordon, O., Panet, P., Weissbuch, S., Kulikov, V., Bitterman, Y., Melumian, Z., Bibi, O.: Ltx-video: Realtime video latent diffusion. arXiv preprint arXiv:2501.00103 (2024) 19. Ho, J., Salimans, T.: Classifier-free diffusion guidance (2022) 20. Iashin, V., Rahtu, E.: Taming visually guided sound generation. In: British Machine Vision Conference (BMVC) (2021) 21. Iashin, V., Xie, W., Rahtu, E., Zisserman, A.: Synchformer: Efficient synchro-nization from sparse cues. In: ICASSP 2024 - 2024 IEEE International Confer-ence on Acoustics, Speech and Signal Processing (ICASSP). pp. 5325–5329 (2024). 
+
+https://doi.org/10.1109/ICASSP48485.2024.10448489 
+
+22. Ji, S., Jiang, Z., Wang, W., Chen, Y., Fang, M., Zuo, J., Yang, Q., Cheng, X., Wang, Z., Li, R., et al.: Wavtokenizer: an efficient acoustic discrete codec tokenizer for audio language modeling. arXiv preprint arXiv:2408.16532 (2024) 23. Jiang, Y., Chen, Q., Ji, S., Xi, Y., Wang, W., Zhang, C., Yue, X., Zhang, S., Li, H.: UniCodec: Unified audio codec with single domain-adaptive codebook. In: Che, W., Nabende, J., Shutova, E., Pilehvar, M.T. (eds.) Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers). pp. 19112–19124. Association for Computational Linguistics, Vienna, Austria (Jul 2025). https://doi.org/10.18653/v1/2025.acl-long.937 AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 17 24. Kilgour, K., Zuluaga, M., Roblek, D., Sharifi, M.: Fréchet audio distance: A metric for evaluating music enhancement algorithms (2019) 25. Kim, D., He, J., Yu, Q., Yang, C., Shen, X., Kwak, S., Chen, L.C.: Democratizing text-to-image masked generative models with compact text-aware one-dimensional tokens. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV). pp. 18442–18452 (October 2025) 26. Kingma, D.P., Ba, J.: Adam: A method for stochastic optimization. In: Interna-tional Conference on Learning Representations (ICLR) (2015) 27. Kong, J., Kim, J., Bae, J.: Hifi-gan: Generative adversarial networks for efficient and high fidelity speech synthesis. In: Larochelle, H., Ranzato, M., Hadsell, R., Balcan, M., Lin, H. (eds.) Advances in Neural Information Processing Systems. vol. 33, pp. 17022–17033. Curran Associates, Inc. (2020) 28. Kong, W., Tian, Q., Zhang, Z., Min, R., Dai, Z., Zhou, J., Xiong, J., Li, X., Wu, B., Zhang, J., et al.: Hunyuanvideo: A systematic framework for large video generative models. arXiv preprint arXiv:2412.03603 (2024) 29. Kreuk, F., Synnaeve, G., Polyak, A., Singer, U., Défossez, A., Copet, J., Parikh, D., Taigman, Y., Adi, Y.: Audiogen: Textually guided audio generation. In: The Eleventh International Conference on Learning Representations (2023) 30. Kumar, R., Seetharaman, P., Luebs, A., Kumar, I., Kumar, K.: High-fidelity audio compression with improved RVQGAN. In: Thirty-seventh Conference on Neural Information Processing Systems (2023) 31. Kushwaha, S.S., Tian, Y.: Vintage: Joint video and text conditioning for holis-tic audio generation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 13529–13539 (June 2025) 32. Langman, R., Jukić, A., Dhawan, K., Koluguri, N.R., Li, J.: Spectral codecs: Im-proving non-autoregressive speech synthesis with spectrogram-based audio codecs (2025) 33. gil Lee, S., Ping, W., Ginsburg, B., Catanzaro, B., Yoon, S.: BigVGAN: A universal neural vocoder with large-scale training. In: The Eleventh International Conference on Learning Representations (2023) 34. Li, J., Zhao, Z., Zhang, Z., Liu, Y., Lin, L., Zhu, Y., Wu, J., Kong, Q., Li, Y.: Meltok: 2d tokenization for single-codebook audio compression (2025) 35. Li, J., Li, D., Savarese, S., Hoi, S.: BLIP-2: Bootstrapping language-image pre-training with frozen image encoders and large language models. In: Krause, A., Brunskill, E., Cho, K., Engelhardt, B., Sabato, S., Scarlett, J. (eds.) Proceedings of the 40th International Conference on Machine Learning. Proceedings of Machine Learning Research, vol. 202, pp. 19730–19742. PMLR (23–29 Jul 2023) 36. Li, Y., Tian, C., Xia, R., Liao, N., Guo, W., Yan, J., Li, H., Dai, J., Li, H., Yang, X.: Learning adaptive and temporally causal video tokenization in a 1d latent space (2025) 37. Li, Z., Lin, B., Ye, Y., Chen, L., Cheng, X., Yuan, S., Yuan, L.: Wf-vae: En-hancing video vae by wavelet-driven energy flow for latent video diffusion model. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 17778–17788 (June 2025) 38. Lin, B., Ge, Y., Cheng, X., Li, Z., Zhu, B., Wang, S., He, X., Ye, Y., Yuan, S., Chen, L., et al.: Open-sora plan: Open-source large video generation model. arXiv preprint arXiv:2412.00131 (2024) 39. Liu, K., Li, W., Chen, L., Wu, S., Zheng, Y., Ji, J., Zhou, F., Luo, J., Liu, Z., Fei, H., Chua, T.S.: Javisdit: Joint audio-video diffusion transformer with hier-archical spatio-temporal prior synchronization. In: The Fourteenth International Conference on Learning Representations (2026) 18 K. Pham et al. 40. Loshchilov, I., Hutter, F.: Decoupled weight decay regularization. In: International Conference on Learning Representations (2019) 41. Low, C., Wang, W., Katyal, C.: Ovi: Twin backbone cross-modal fusion for audio-video generation (2025) 42. Mao, Y., Shen, X., Zhang, J., Qin, Z., Zhou, J., Xiang, M., Zhong, Y., Dai, Y.: TAVGBench: Benchmarking text to audible-video generation. In: ACM Multimedia 2024 (2024) 43. Pham, K.T., He, Y., Xing, Y., Chen, Q., Chen, L.: Spa2v: Harnessing spatial auditory cues for audio-driven spatially-aware video generation. In: Proceedings of the 33rd ACM International Conference on Multimedia. p. 10476–10485. MM ’25, Association for Computing Machinery, New York, NY, USA (2025). https: //doi.org/10.1145/3746027.3755705 
+
+44. Radford, A., Wu, J., Child, R., Luan, D., Amodei, D., Sutskever, I.: Language models are unsupervised multitask learners (2019) 45. Roux, J.L., Wisdom, S., Erdogan, H., Hershey, J.R.: Sdr - half-baked or well done? (2018) 46. Ruan, L., Ma, Y., Yang, H., He, H., Liu, B., Fu, J., Yuan, N.J., Jin, Q., Guo, B.: Mm-diffusion: Learning multi-modal diffusion models for joint audio and video generation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 10219–10228 (June 2023) 47. Seedance, T.: Seedance 1.5 pro: A native audio-visual joint generation foundation model (2025) 48. Song, J., Kwon, M., Jeong, J., Uh, Y.: Syncphony: Synchronized audio-to-video generation with diffusion transformers. In: The Fourteenth International Confer-ence on Learning Representations (2026) 49. Sun, P., Jiang, Y., Chen, S., Zhang, S., Peng, B., Luo, P., Yuan, Z.: Autoregres-sive model beats diffusion: Llama for scalable image generation. arXiv preprint arXiv:2406.06525 (2024) 50. Tang, A., He, T., Guo, J., Cheng, X., Song, L., Bian, J.: Vidtok: A versatile and open-source video tokenizer. arXiv preprint arXiv:2412.13061 (2024) 51. Touvron, H., Lavril, T., Izacard, G., Martinet, X., Lachaux, M.A., Lacroix, T., Rozière, B., Goyal, N., Hambro, E., Azhar, F., Rodriguez, A., Joulin, A., Grave, E., Lample, G.: Llama: Open and efficient foundation language models (2023) 52. Tseng, H.Y., Jiang, L., Liu, C., Yang, M.H., Yang, W.: Regularizing generative ad-versarial networks under limited data. In: Proceedings of the IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition (CVPR). pp. 7921–7931 (June 2021) 53. Unterthiner, T., van Steenkiste, S., Kurach, K., Marinier, R., Michalski, M., Gelly, S.: Towards accurate generative models of video: A new metric & challenges (2019) 54. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., Gomez, A.N., Kaiser, L.u., Polosukhin, I.: Attention is all you need. In: Guyon, I., Luxburg, U.V., Bengio, S., Wallach, H., Fergus, R., Vishwanathan, S., Garnett, R. (eds.) Advances in Neural Information Processing Systems. vol. 30. Curran Associates, Inc. (2017) 55. Viertola, I., Iashin, V., Rahtu, E.: Temporally aligned audio for video with au-toregression. In: ICASSP 2025-2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP). IEEE (2025) 56. Wan, T.: Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 (2025) 57. Wang, B., Yue, Z., Zhang, F., Chen, S., Bi, L., Zhang, J., Song, X., Chan, K.Y., Pan, J., Wu, W., Zhou, M., Lin, W., Pan, K., Zhang, S., Jia, L., Hu, W., Zhao, AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 19 W., Zhang, H.: Selftok: Discrete visual tokens of autoregression, by diffusion, and for reasoning (2025) 58. Wang, H., Suri, S., Ren, Y., Chen, H., Shrivastava, A.: LARP: Tokenizing videos with a learned autoregressive generative prior. In: The Thirteenth International Conference on Learning Representations (2025) 59. Wang, J., Jiang, Y., Yuan, Z., PENG, B., Wu, Z., Jiang, Y.G.: Omnitokenizer: A joint image-video tokenizer for visual generation. In: The Thirty-eighth Annual Conference on Neural Information Processing Systems (2024) 60. Wang, K., Deng, S., Shi, J., Hatzinakos, D., Tian, Y.: Av-dit: Taming image dif-fusion transformers for efficient joint audio and video generation. In: Proceed-ings of the 33rd ACM International Conference on Multimedia. p. 10486–10495. MM ’25, Association for Computing Machinery, New York, NY, USA (2025). 
+
+https://doi.org/10.1145/3746027.3755713 
+
+61. Wang, Z., Bovik, A., Sheikh, H., Simoncelli, E.: Image quality assessment: from error visibility to structural similarity. IEEE Transactions on Image Processing 
+
+13 (4), 600–612 (2004). https://doi.org/10.1109/TIP.2003.819861 
+
+62. Wen, X., Zhao, B., Elezi, I., Deng, J., Qi, X.: ”principal components” enable a new language of images. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV). pp. 16641–16651 (October 2025) 63. Weng, S., Zheng, H., Chang, Z., Li, S., Shi, B., Wang, X.: Audio-sync video genera-tion with multi-stream temporal control. In: The Thirty-ninth Annual Conference on Neural Information Processing Systems (2026) 64. Xing, Y., Fei, Y., He, Y., Chen, J., Xie, J., Chi, X., Chen, Q.: Videovae+: Large motion video autoencoding with cross-modal video vae. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV). pp. 17951– 17960 (October 2025) 65. Xing, Y., He, Y., Tian, Z., Wang, X., Chen, Q.: Seeing and hearing: Open-domain visual-audio generation with diffusion latent aligners. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR). pp. 7151–7161 (June 2024) 66. Yamamoto, R., Song, E., Kim, J.M.: Parallel wavegan: A fast waveform generation model based on generative adversarial networks with multi-resolution spectrogram (2020) 67. Yang, Z., Teng, J., Zheng, W., Ding, M., Huang, S., Xu, J., Yang, Y., Hong, W., Zhang, X., Feng, G., Yin, D., Yuxuan.Zhang, Wang, W., Cheng, Y., Xu, B., Gu, X., Dong, Y., Tang, J.: Cogvideox: Text-to-video diffusion models with an expert transformer. In: The Thirteenth International Conference on Learning Represen-tations (2025) 68. Yariv, G., Gat, I., Benaim, S., Wolf, L., Schwartz, I., Adi, Y.: Diverse and aligned audio-to-video generation via text-to-video model adaptation. Proceedings of the AAAI Conference on Artificial Intelligence 38 (7), 6639–6647 (Mar 2024). https: //doi.org/10.1609/aaai.v38i7.28486 
+
+69. Yu, Q., Weber, M., Deng, X., Shen, X., Cremers, D., Chen, L.C.: An image is worth 32 tokens for reconstruction and generation. In: The Thirty-eighth Annual Conference on Neural Information Processing Systems (2024) 70. Yu, S., Kwak, S., Jang, H., Jeong, J., Huang, J., Shin, J., Xie, S.: Representation alignment for generation: Training diffusion transformers is easier than you think. In: International Conference on Learning Representations (2025) 71. Zhang, G., Zhou, Z., Hu, T., Peng, Z., Zhang, Y., Chen, Y., Zhou, Y., Lu, Q., Wang, L.: Uniavgen: Unified audio and video generation with asymmetric cross-modal interactions (2025) 20 K. Pham et al. 72. Zhang, R., Isola, P., Efros, A.A., Shechtman, E., Wang, O.: The unreasonable effectiveness of deep features as a perceptual metric. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) (June 2018) 73. Zhang, Y., Gu, Y., Zeng, Y., Xing, Z., Wang, Y., Wu, Z., Liu, B., Chen, K.: Foleycrafter: Bring silent videos to life with lifelike and synchronized sounds. Int. J. Comput. Vision 134 (1) (Jan 2026). https://doi.org/10.1007/s11263-025-02649-3 
+
+74. Zheng, J., Pan, S., Yao, Y., Wang, Z., Wang, D., Liu, T.: Aligning what matters: Masked latent adaptation for text-to-audio-video generation. In: The Thirty-ninth Annual Conference on Neural Information Processing Systems (2026) 75. Zheng, Z., Peng, X., Yang, T., Shen, C., Li, S., Liu, H., Zhou, Y., Li, T., You, Y.: Open-sora: Democratizing efficient video production for all. arXiv preprint arXiv:2412.20404 (2024) AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 21 
+
+## A Additional Experiment Details 
+
+A.1 Datasets Statistics. We conduct our experiments on VGGSound [4] and TAVGBench [42] datasets. VGGSound consists of more than 210K sounding video clips spanning across 310 different classes and is commonly used in various audio-visual under-standing and generation tasks. Due to data corruption, only approximately 200K audio-video pairs are available for our usage, of which the train split contains 180K samples and the remaining samples belong to the test split. Meanwhile, TAVGBench is a larger-scale dataset containing 1.7M samples with better align-ment between auditory and visual elements compared to VGGSound. However, we only utilize a subset of 460K high-quality samples filtered by [39] through a series of filtering strategies to accommodate resource constraints. 
+
+Composition. Eventually, a total of 640K data from both TAVGBench and the train split of VGGSound are used to train the AVTok tokenizer for the re-construction task, while only the 180K VGGSound ones are used to train AR generative models for the downstream generation tasks. The test set of VG-GSound is used for all evaluations. All audio-video pairs are preprocessed fol-lowing the adopted neural vocoder HiFi-GAN [27] and the baseline 1D video tokenizer LARP [58], respectively, to the default input resolutions mentioned in the main text, while ensuring that they are synchronized in the temporal di-mension with the duration deliberately set at around 4 seconds. This facilitates that the audio component is long enough to provide sufficient and meaningful auditory information for model training while maintaining efficiency and com-patibility with the adopted pretrained audio-visual foundation model [1]. 
+
+A.2 Model Implementation AVTok Tokenizer. We follow LARP [58] to adopt fixed sin-cos positional encoding [54] in both the encoder and decoder of AVTok. In the encoder, fixed 3D and 2D positional encodings are applied to each video and audio patch, while in the decoder, fixed 1D positional encodings are added to each holistic video and audio token. Notably, since the patch queries and holistic queries for both modalities are position-wise learnable parameters, they do not necessitate additional positional encodings. The encoder and decoder of AVTok adopt the standard transformer de-sign [54] in which each layer consists of multi-headed self-attention ( M SA ), layer normalization ( LN 1, LN 2), and multilayer perceptron ( M LP ) blocks with residual connections. Specifically, the forward pass of each layer is as follows: 
+
+x′ = M SA (LN 1(x)) + x, y = M LP (LN 2(x′)) + x′,
+
+where x represents the concatenation of learnable holistic queries/patch queries with input patches/holistic tokens described in the main text. We then adapt 22 K. Pham et al. 
+
+the philosophy of [1,14] to use separate sets of (LN a 
+
+> 1
+
+, LN a 
+
+> 2
+
+) and (LN v 
+
+> 1
+
+, LN v 
+
+> 2
+
+) for audio and video streams to efficiently formulate the final dual-stream architec-ture. We employ HiFi-GAN [27], CAV-MAE Sync [1], and GPT-2 [44] to be our neural vocoder, audio-visual foundational model MF , and cross-modal AR gen-erative prior model MP , respectively, with the objectives detailed in the main text. During training, only MP and the small MLP projector hϕ associated with MF are trained while the others are kept frozen. During inference, both the foundational and prior models are discarded. 
+
+AR Generative Models. We adopt Llama-like transformers [49,51] as our AR generative models. Following LARP [58], we leverage absolute learned positional encodings. During training, a dropout rate of 0.1 is applied to token sequences, residual connections, and feedforward layers. Furthermore, the SVQ quantizer of AVTok is configured to be deterministic during the training of AR generative models to encourage a more accurate latent representation learning. 
+
+A.3 Training Details Reconstruction. During the training of the AVTok tokenizer, Larec and Lvrec 
+
+are the two primary objectives for the learning of audio and video streams. For video, Lvrec comprises L1 reconstruction term, LPIPS term [72] for perceptual enhancement, and GAN adversarial term [15] for improved sharpness and fine-grained textual details, with corresponding weights of (1 .0, 1.0, 0.3) following [58]. Similarly for audio, Larec is a combination of Multi-Scale Mel-Spectrogram re-construction term [30], deep feature matching term [27], and GAN adversarial term [33], with respective weights of (15 .0, 2.0, 1.0) according to [33]. Notably, a ViT-based Discriminator [8] is adopted to compute the GAN component of the video stream, while Multi-Scale Sub-Band CQT Discrimina-tor [16] and Multi-Period Discriminator [27] are employed to compute the GAN and feature matching components of the audio stream. These discriminators are updated once per five training iterations of the AVTok tokenizer with a 70% lower learning rate and LeCam regularization [52] applied for training stability. Besides, SVQ quantization loss with total weight of 0.1 is also added, in which we follow [10] to use a commitment and codebook loss weights of (0 .25 , 1.0) .With the final training objective and the component weights λ1,2,3,4 defined in the main text, we then conduct training for AVTok using the proposed VFAL hierarchical strategy. It is decomposed into three progressive stages with the primary target modules set as: (1) Video Reconstruction, when the encoder and decoder with video-specific normalization layers, denoted as E(·; LN v 
+
+> 1
+
+, LN v 
+
+> 2
+
+) and 
+
+D(·; LN v 
+
+> 1
+
+, LN v 
+
+> 2
+
+), and learnable queries (QvL, QvP ) are trained for 75 epochs; (2) Audio Reconstruction, when E, D are frozen and shared between two streams except for audio-specific learnable queries (QaL, QaP ) and normalization layers 
+
+(LN a 
+
+> 1
+
+, LN a 
+
+> 2
+
+){E ,D} , which are trained for 35 epochs; (3) Refinement, when only the decoder with both streams D(·; LN {a,v } 
+
+> 1
+
+, LN {a,v } 
+
+> 2
+
+) is further finetuned for 10 AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 23 
+
+Table 4: Detailed training settings for the three stages of VFAL. Setting Stage 1 Stage 2 Stage 3 
+
+training purpose Video Reconstruction Audio Reconstruction Refinement trainable modules 
+
+E(·; LN v 
+
+> 1
+
+, LN v 
+
+> 2
+
+), (LN a 
+
+> 1
+
+, LN a 
+
+> 2
+
+){E ,D} 
+
+D(·; LN {a,v } 
+
+> 1
+
+, LN {a,v } 
+
+> 2
+
+)D(·; LN v 
+
+> 1
+
+, LN v 
+
+> 2
+
+)
+
+QvL, QvP , Q, MP
+
+QaL, QaP , MP , h ϕ
+
+base learning rate 0.0001 0.0001 0.0001 scheduler cosine cosine cosine 
+
+β1, β 2 0.9, 0.95 0.9, 0.95 0.9, 0.95 warm-up epochs 8 3 1total epochs 75 35 10 batch size 112 112 112 
+
+λ1, λ 2, λ 3, λ 4 1.0, 0.0, 0.0, 0.06 0.1, 1.0, 0.5, 0.06 1.0, 0.01, 0.5, 0.06 AVTok Encoder ℰ                      
+
+> AVTok Decoder 𝒟
+> Video Holistic Queries
+> Video Patch Queries
+> AVTok Encoder ℰ𝐿 𝑁 𝑣 𝐿 𝑁 𝑎
+> AVTok Decoder 𝒟 𝐿 𝑁 𝑣 𝐿 𝑁 𝑎
+> Video Holistic Queries
+> AR Prior
+> Model ℳ𝑃
+> Audio Holistic Queries
+> Video Patch Queries Audio Patch Queries
+> Quantizer 𝒬
+> AR Prior
+> Model ℳ𝑃
+> Quantizer 𝒬 Foundation
+> Model ℳ𝐹
+> Stage 1 Stage 2 Stage 3
+> AVTok Encoder ℰ𝐿 𝑁 𝑣 𝐿 𝑁 𝑎
+> AVTok Decoder 𝒟 𝐿 𝑁 𝑣 𝐿 𝑁 𝑎
+> Video Holistic Queries
+> AR Prior
+> Model ℳ𝑃
+> Audio Holistic Queries
+> Video Patch Queries Audio Patch Queries
+> Quantizer 𝒬
+> Foundation
+> Model ℳ𝐹
+
+Fig. 6: Illustration of trainable parameters at different stages of VFAL. 
+
+epochs. A batch size of 112 and the Adam optimizer [26] with a base lr = 0 .0001 ,
+
+(β1, β 2) = (0 .9, 0.95) , and a warm-up cosine schedule are used for all stages. Additional details on other modules and training settings can be found in Tab. 4 and Fig. 6. Note that in Stage 1, Lprior is computed with holistic video tokens 
+
+xv only. 
+
+Downstream Generation. We train an AR generative model for each down-stream generation task, including audio-to-video (A2V), video-to-audio (V2A), and class-conditional joint audio-video generation (cJAVG). They are all trained on the train split of VGGSound for 75 epochs with a batch size of 128. The AdamW optimizer [40] is used with (β1, β 2) = (0 .9, 0.95) , a weight decay of 0.05 ,and a base learning rate of 0.0006 , following a warm-up cosine learning rate schedule with 4 warm-up epochs. When generating samples, we follow LARP [58] to apply a small Classifier-Free Guidance (CFG) scale of 1.25 [19] for cJAVG while excluding it for V2A and A2V tasks, and do not use top-k or top-p sam-24 K. Pham et al. 
+
+pling methods. Besides, the conditioning video/audio for V2A/A2V is input to the corresponding streaming of AVTok to effortlessly produce the conditioning video/audio holistic tokens, while the vanilla model may struggle. At inference time, the AR models predict the holistic tokens for the respective modality out-come, conditioned on the holistic tokens obtained. 
+
+A.4 Evaluation Details Representative Baselines. For reconstruction, there is no open-source base-line available for direct comparison with our AVTok tokenizer due to the novelty of the proposed unified audio-video tokenization task. Therefore, we select sev-eral state-of-the-art unimodal 1D tokenizers of each modality that are closely relevant to AVTok for reasonable comparisons, as included in the main text. Re-garding downstream generation, the baselines for each task are selected under a similar relevance consideration to ensure that the comparisons are as fair as possible. Since some baselines, such as Ovi [41], JavisDiT [39], or MMAudio [5], require textual captions as conditions to control the generation process, we by-pass them by utilizing class labels available in VGGSound as an alternative. 
+
+Metrics. To evaluate accuracy, realism, and perceptual quality of the recon-structed videos/audios with respect to the ground-truths, we respectively adopt PSNR [61]/SI-SDR [45], FVD [53]/FAD [24], and LPIPS [72]/MR-STFT [66]. For downstream generation, we again use FVD [53]/FAD [24] with additions of DeSync [21] and ImageBind [12] (IB) Score to assess realism, temporal synchro-nization, and semantic alignment accordingly. Notably, for A2V and V2A tasks, FVD/FAD are computed between the generated results and the ground-truths, while the rest are computed between the generated results and input conditions. For cJAVG, FAD and FVD are calculated similarly, whereas DeSync and IB Score are computed between the generated audio-video pairs. 
+
+## B Additional Results 
+
+B.1 Ablation Study Generation Latency. In addition to model capacity measured by the num-ber of parameters, we evaluate the efficiency of our complete generation pipeline comprising AVTok tokenizer and an AR generative model compared to the other baselines. Specifically, we measure the TFLOPs and average latency per sample of all methods in generating 100 samples with a batch size of 1 in the same en-vironment. For other settings of the baselines, we use their default configuration as deemed necessary. The results shown in Tab. 5 highlight the efficiency of our pipelines, complementing their effectiveness to generate high-fidelity samples as demonstrated in the main text. AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 25 
+
+Table 5: Comparison of generation efficiency.                                                         
+
+> Task Method Gen #Param Latency ↓TFLOPs ↓
+> Type Tokenizer Generator (sec) TempoTokens [68] Diff 83.7M 1.9B 21.103 1.62K A2V AVTok-A2V (Ours) AR 208.4M 632.0M 11.058 1.82 V2A MMAudio [5] FM 298.5M 1.3B 1.304 31.77 VinTAGe [31] FM 110.6M 1.5B 23.423 474.69 V-AURA [55] AR 76.7M 816.9M 11.290 191.05 SpecVQGAN [20] AR 76.4M 332.4M 1.307 17.72 AVTok-V2A (Ours) AR 208.4M 632.0M 1.395 1.82 cJAVG JavisDiT [39] FM 448.7M 8.9B 32.240 2.60K Ovi [41] FM 988.6M 17.3B 87.282 14.99K AVTok-cJAVG (Ours) AR 208.4M 632.4M 12.755 3.48
+
+Table 6: Comparison of different model scale.                                     
+
+> Model Configuration Video Reconstruction Audio Reconstruction Hidden Size Depth Num Heads PSNR ↑rFVD ↓LPIPS ↓SI-SDR ↓rFAD ↓MR-STFT ↓
+> AVTok 768 12 12 25.62 12.80 0.126 23.09 5.93 1.523 AVTok-B 768 812 24.65 12.94 0.148 24.99 6.01 1.794 AVTok-S 768 6823.39 19.12 0.193 25.29 8.86 2.333
+
+Tokenizer Scalability. To explore the effect of scaling our AVTok tokenizer, we adjust the model size while maintaining the same number of latent tokens to construct another two smaller variants AVTok-B and AVTok-S, and conduct training for them under identical settings as the default. As shown in Tab. 6, the performance changes most significantly when scaling from AVTok-S up to AVTok-B with 6.18 FVD and 2.85 FAD lower results, but saturates with minor improvements when scaling up to the largest default. Given this indication, we opt not to scale the model further and use the current largest variant as the default choice. In addition, we also examine the model performance when adjusting the num-ber of holistic tokens necessary to encode and reconstruct input audio and video. In particular, we alternately halve the default number of tokens for one modality while keeping that of the other unchanged to quantify the effect they induce. Intuitively, the use of fewer tokens enables a faster AR generation process but trades off with degradation in reconstruction quality, which is reflected in Tab. 7. Interestingly, we find that a decreasing number of video tokens significantly af-fects audio reconstruction, while a marginal impact is observed conversely. This suggests that the model is more susceptible to changes in the video stream, where the information is denser and richer than the audio stream. 
+
+External Models. We also ablate on different selections of external models, including the vocoders and audio-visual foundation models MF . First, we replace CAV-MAE Sync [1] with its predecessor CAV-MAE [14] as our foundational 26 K. Pham et al. 
+
+Table 7: Comparison of different holistic token counts.                                  
+
+> Model Configuration Video Reconstruction Audio Reconstruction #Video Tokens #Audio Tokens PSNR ↑rFVD ↓LPIPS ↓SI-SDR ↓rFAD ↓MR-STFT ↓
+> AVTok 1024 128 25.62 12.80 0.126 23.09 5.93 1.523 AVTok-a64 1024 64 25.37 12.75 0.128 25.35 12.77 2.263 AVTok-v512 512 128 23.94 23.85 0.172 26.10 14.90 2.491
+
+Table 8: Comparison of using different foundational models and vocoders.                               
+
+> Model Configuration Video Reconstruction Audio Reconstruction
+> MFVocoder PSNR ↑rFVD ↓LPIPS ↓SI-SDR ↓rFAD ↓MR-STFT ↓
+> AVTok CAV-MAE Sync [1] HiFi-GAN [27] 25.62 12.80 0.126 23.09 5.93 1.523 AVTok-F CAV-MAE [14] HiFi-GAN [27] 25.50 12.84 0.128 24.19 6.40 1.622 AVTok-V CAV-MAE Sync [1] BigVGAN [33] 25.61 12.59 0.125 22.78 5.72 1.511
+
+model, which results in performance degradation despite having similar model size. Second, we adopt BigVGAN [33], a more robust neural vocoder, as an alternative to HiFi-GAN [27], which only yields slight improvements and has a significantly larger model size. Therefore, we opt to use CAV-MAE Sync [1] and BigVGAN [33] by default, considering the balance of efficiency and effectiveness. 
+
+B.2 Visualization 
+
+We provide additional qualitative results for reconstruction, audio-to-video, video-to-audio, and class-conditional joint audio-video generation tasks in Fig. 7, 8, 9, 10, respectively. These results consistently highlight that the AVTok tokenizer excels in both reconstruction and when incorporated into the downstream AR genera-tive models for generation tasks. Besides, generated sounding video files in MP4 format are also included for subjective inspection. 
+
+## C Discussion 
+
+C.1 Potential Limitations 
+
+Our proposed AVTok unified tokenizer demonstrates outstanding performance in audio-video tokenization, and excels when integrated into our AR generative models for downstream generation tasks. However, certain limitations remain, which open promising directions for future exploration. 
+
+Data Scale and Complexity. Our AVTok tokenizer and AR generative models are trained on approximately 640K and 180K data entries only. Despite main-taining efficacy and efficiency, this may inevitably constrain scalability compared to larger proprietary models and systems. In addition, due to the inherent sim-plicity of the scenes included in the datasets, artifacts may appear in the gener-ated samples when scenes are particularly complex. We believe that larger-scale AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 27 GT 
+
+> AVTok
+> LARP
+> GT
+> AVTok
+> LARP
+> GT
+> AVTok
+> LARP
+> GT
+> AVTok
+> LARP
+> GT
+> AVTok
+> Spectral
+> Codec
+> GT
+> AVTok
+> Spectral
+> Codec
+> GT
+> AVTok
+> Spectral
+> Codec
+> GT
+> AVTok
+> Spectral
+> Codec
+
+Fig. 7: Additional qualitative reconstruction results. 
+
+training with more diverse and high-quality audio-video datasets could enhance the robustness and generalizability of the models. 
+
+Model Design and Training Resource. Similar to other transformer-based unimodal tokenizers, AVTok inherently performs best with fixed-resolution au-dios and videos due to positional encoding constraints. Besides, amid limited training resources, we could only train and evaluate our models’ capabilities on 16-frame short clips with 128 ×128 ×3 low resolution and roughly 4-second audios with a sampling rate of 22kHz. We contemplate that with sufficient resources, scaling up AVTok and the AR generative models can enable reconstructing and synthesizing audio-video pairs with larger resolution, longer duration, and higher quality, meeting user demands nowadays. 
+
+Synchronization Modeling. The current architecture and training setups of AVTok tokenizer and AR generative models only partially exploit synchroniza-tion between auditory and visual elements in an implicit manner by: (1) using synchronized sounding video samples as input; and (2) enabling cross-modal interaction with shared parameters, AR prior and foundation models for AV-Tok, and causal self-attention mechanism in AR generative models. Therefore, the generated audios and videos may lack temporal alignment. We think that 28 K. Pham et al. pl aying drum kit  pl aying ukulele     
+
+> pl aying synthesizer scuba diving
+> engine accelerating, revving, vroom sea waves
+> hail playing erhu
+> hammering nail playing tymbani
+
+Fig. 8: Additional qualitative results for audio-to-video generation task. 
+
+modeling synchronization between the two modalities more explicitly can help mitigate this issue and improve the final performance. 
+
+End-to-end Training. The training of the AVTok tokenizer relies on the pro-posed VFAL hierarchical strategy. Although effective, it requires complicated stage-wise tuning and is prone to cascading errors, which may eventually lead to suboptimal performance. Conversely, a single-stage end-to-end alternative could alleviate these issues by streamlining the training process with a unified objec-tive, albeit with higher optimization sensitivity and computational cost. 
+
+C.2 Statements Ethics. All datasets and models used in this work are publicly accessible online and contain no private or sensitive information. AVTok: 1D Unified Tokenization for Holistic Audio-Video Generation 29 people slurping  zebra braying     
+
+> playing bugle arc welding
+> playing bongo people giggling
+> swimming train whistling
+> playing timbales tapping guitar
+
+Fig. 9: Additional qualitative results for video-to-audio generation task. 
+
+Reproducibility. To ensure full reproducibility, we detail our model’s design, training, and evaluation in the main text and appendix, and will publicly release all code, checkpoints, and datasets. 
+
+LLM Usage. Large Language Models (LLMs) were utilized solely as writing aids to polish the language and refine the presentation. They played no role in developing the core concepts or research design. 30 K. Pham et al. hail  wood thrush calling 
+
+sea waves 
+
+scuba diving 
+
+train wheels squealing 
+
+blowtorch igniting 
+
+driving motorcycle 
+
+playing badminton 
+
+people eating 
+
+missile launch 
+
+Fig. 10: Additional qualitative results for class-conditional joint generation task.
