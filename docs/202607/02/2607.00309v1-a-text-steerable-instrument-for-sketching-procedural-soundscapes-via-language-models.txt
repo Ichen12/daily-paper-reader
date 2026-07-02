@@ -1,0 +1,302 @@
+Title: A Text-Steerable Instrument for Sketching Procedural Soundscapes via Language Models
+
+URL Source: https://arxiv.org/pdf/2607.00309v1
+
+Published Time: Thu, 02 Jul 2026 00:20:23 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# A Text-Steerable Instrument for Sketching Procedural Soundscapes via Language Models 
+
+# Prabal Gupta 
+
+Rama Labs Kitchener, Ontario, Canada prabal@rjeinc.ca 
+
+## Abstract 
+
+We present a real-time musical interface that converts natural-language scene descriptions into evolving procedural sound-scapes. A performer types a prompt such as “warm jazz café at midnight” and steers it through direct parameter adjustments— stepping brightness down, switching a rhythm style—each pro-ducing a predictable, audible shift without re-prompting. Where GPU-bound text-to-audio systems synthesize monolithic wave-forms, our instrument generates human-readable configurations over a categorical schema, enabling fine-grained performer con-trol; most valid combinations are designed to sound musically coherent. Three interchangeable backends—embedding retrieval for sub-second CPU-only use, hosted LLMs via API, and a fine-tuned 270M local model—all emit the same schema. A live gener-ator architecture continuously emits audio while resolving new instructions in the background, crossfading seamlessly when ready; even when an LLM takes 5–12 seconds to respond, the au-dience hears uninterrupted sound—reframing text-to-music as an ongoing performable stream rather than a one-shot generation. We evaluate text–audio semantic alignment using LAION-CLAP on held-out prompts as a technical proxy, finding that retrieval-based configuration outperforms random valid configurations on this metric, while noting that LAION-CLAP also informed retrieval-map construction. We report performance observations, informal listener feedback, and release materials for the SDK, dataset artifacts, model, and audiovisual performance interface. 
+
+## Keywords 
+
+text-to-music, procedural synthesis, real-time performance, lan-guage models, parametric control, live coding 
+
+## 1 Introduction 
+
+In a live coding set, the performer types "neon city at 2am" 
+
+and the ambient drone keeps playing. Five seconds later, the new configuration resolves—bright, electronic, fast—and the sound crossfades into it. The performer nudges brightness down two steps. The city gets darker. They switch rhythm to "heartbeat" .The pulse slows. None of this required stopping the music, wait-ing for a GPU, or understanding DSP. Neural text-to-audio systems such as MusicGen [ 6 ], Musi-cLM [ 1], and Stable Audio [ 7] produce high-quality audio from text. However, such systems typically return generated audio rather than interpretable synthesizer parameters; CTAG explic-itly frames this as a tweakability problem for neural audio sys-tems [ 4 ]. Azimi and Zareei [ 2] fine-tuned Stable Audio Open  
+
+> This work is licensed under a Creative Commons Attribution 4.0 International License.
+> NIME ’26, June 23–26, 2026, London, UK
+> ©2026 Copyright held by the owner/author(s).
+
+for live improvisation, demonstrating that even with GPU accel-eration, generation latency and unpredictable outputs remain challenges. Our SDK addresses this tension by generating interpretable parameter configurations for a procedural synthesizer rather than raw audio. Its live generator architecture decouples instruction resolution from audio emission—the current configuration keeps sounding while the next one resolves in the background. This brings LLM-powered text-to-music into live performance without audible interruption. For the performer, the key affordance is persistent steerabil-ity: a prompt establishes a scene, but the musical work happens through named parameter edits—darkening the spectrum, switch-ing rhythm, widening the space—while the stream continues. Text becomes a playable control surface, not a one-shot trigger. The system is not a neural audio generator: language models resolve prompts into symbolic synthesizer configurations, and a deterministic procedural engine renders the sound—less timbrally general than neural text-to-audio, but inspectable, steerable, and stable during performance. We contribute: (1) a live generator architecture that hides resolution latency behind continuous audio, enabling the SDK to function as an instrument runtime rather than a generation endpoint; (2) a 34-field configuration schema whose categorical labels mean most valid combinations sound musically coherent— a mapping-design contribution in the sense of Hunt and Kirk [ 8]and Magnusson [ 11 ]; and (3) an open-source release. 1 A com-panion ACM SIGGRAPH 2026 talk addresses the broader system architecture and benchmark framing; the present paper focuses on the instrument contribution: the live generator as performance runtime, the configuration schema as mapping design, and the prompt–listen–steer workflow. 
+
+## 2 Related Work 
+
+Text-to-audio instruments. Azimi and Zareei [ 2] fine-tuned Stable Audio Open for improvisation, generating raw audio frag-ments. Shepardson et al. [ 16 ] used text notation to control neural vocal synthesis in Tungnáá. Both systems synthesize neural au-dio directly, with differing compute requirements and limited post-generation editability. Our SDK generates structured pa-rameters instead—trading timbral fidelity for sub-second latency, direct editability, and reproducible output. 
+
+Text-to-synthesizer mapping. CTAG [ 4] maps text to a mod-ular synthesizer with 78 parameters via iterative optimization, but its search runs at generation time. SynthScribe [3] supports synthesizer sound retrieval, creation, and modification through multimodal text/audio tools. Our system front-loads LLM gen-eration into dataset construction and retrieves complete multi-layer configurations at runtime. Latent-space instruments like        
+
+> 1SDK and demo: https://github.com/prabal-rje/latentscore, https://latentscore.com. Supplementary materials: https://zenodo.org/records/19944277.
+> arXiv:2607.00309v1 [cs.SD] 1 Jul 2026 NIME ’26, June 23–26, 2026, London, UK Gupta
+> async def performance():
+> yield "warm␣jazz␣cafe␣at␣midnight" # text -> config await asyncio.sleep(8) # play for 8s
+> yield MusicConfigUpdate( # relative nudge brightness=Step(-2), # two steps darker echo="heavy") # absolute value await asyncio.sleep(8)
+> yield "neon␣rain␣on␣empty␣streets" # new scene # current config keeps playing while backend resolves ... session = live(performance()) session.play(seconds=60)
+> Figure 1: The live generator programming model. The performer yields instructions; audio plays continuously from the current configuration.
+
+Stacco [ 13 ] and Latent Mappings [ 12 ] navigate continuous neural spaces through physical gesture; our SDK navigates a discrete parameter space through language. 
+
+Programming frameworks. ChAI [ 10 ] and ChuMP [ 15 ] added interactive AI tools and modular package management to ChucK. 
+
+## 3 The Instrument 3.1 Design Goals 
+
+Immediacy (G1): sub-second text-to-sound. Controllability (G2): 
+
+all parameters exposed as named fields with human-readable labels. Reproducibility (G3): a given configuration and seed yield identical output. Learnability (G4): a single-line entry point that scales to full programmatic control. Continuity (G5): audio never stops during configuration resolution. 
+
+## 3.2 The Live Generator 
+
+The SDK’s core contribution is the live generator—an async streaming interface where the instrument is always sounding. A performer (or game engine, installation, or MIDI controller) writes a Python generator that yields instructions: text prompts, absolute configurations, or relative parameter adjustments. The SDK continuously emits audio chunks from the current con-figuration. When a new instruction arrives, it resolves in the background—calling an LLM, querying the retrieval index, or applying a parameter update—while audio emission continues uninterrupted. Once resolved, the SDK crossfades into the new configuration. The sleep duration controls how long each configuration plays ,and new instructions can be yielded at any time—including while a previous resolution is still pending. Figures 2 and 3 show the timing relationship between the generator, resolver, and audio output for both backends. The SDK queues instructions and re-solves them in order. Rapid yielding can accumulate pending instructions with slow backends; with the fast backend, rapid yields produce transitions too quick to sound musical. In prac-tice, performers quickly learn to pace yields to the backend’s resolution speed. The SDK supports three backends. The fast mode (default) uses embedding retrieval—sub-second after warm-up, fully re-liable, no network needed. The external mode routes to any LLM via the developer’s API key, with seamless playback de-spite network latency; failed calls fall back to fast mode. A local 
+
+expressive mode runs a 270M fine-tuned model on-device (ex-perimental). A web-based UI demonstrates the SDK as a playable instrument: it displays each configuration’s co-generated title and color palette alongside the parameter editor, with background particle effects responsive to playback state—creating an audio-visual performance surface. 
+
+## 3.3 Configuration Schema as Mapping Design 
+
+The schema contains 34 fields in five groups: global parame-ters (8: tempo , root , mode , brightness , space , density , motion ,
+
+attack ), six orchestration layers ( bass , pad , melody , rhythm ,
+
+texture , accent —each selecting a style from a curated set), spatial/texture (5: stereo , depth , echo , human , grain ), melody generation (10), and harmony (5). All fields use categorical la-bels, designed for both human interpretability and reliable LLM generation—an LLM can produce "bright" far more reliably than a meaningful float like 0.73 .Eight of these fields use ordered labels that support relative stepping: a performer can issue Step(+1) or Step(-1) to move along the label sequence, clamping at boundaries. The remaining fields use style selectors, booleans, or bounded values accept-ing absolute assignments only. Each resolved configuration also includes co-generated metadata—a descriptive title, three color palettes, and a brief justification of the parameter choices. The schema was iteratively refined through an AI-human de-sign loop. Categorical labels make each level perceptually distinct and enable reliable LLM generation. Constrained style sets reduce discordant combinations. The design goal: most valid configu-rations should sound musically coherent. The schema is biased toward coherence to support exploratory play—a decision in Magnusson’s sense [11], not a limitation. 
+
+## 4 Retrieval-Based Configuration 
+
+Given a coherent parameter space, the remaining challenge is mapping text to configurations quickly enough for live use. The default fast backend uses a retrieval map of LLM-generated con-figurations curated offline. We distilled ∼10,500 unique scene descriptions from the Common Pile [ 9], an openly licensed text corpus, prompted Gemini 3 Flash Preview to generate five candi-date configurations per scene as valid schema instances, scored each rendered audio by measuring text–audio semantic simi-larity using LAION-CLAP [ 17 ], a contrastive language–audio model trained on diverse audio–text pairs, and selected the best, embedded each scene with a sentence transformer [ 14 ], and ex-ported the map. At runtime, the nearest neighbor is returned— approximately one second on CPU. 
+
+## 5 Design Observations 
+
+The author used the instrument across multiple composition ses-sions. The live generator excels at gradual scenic evolution: yield-ing "quiet midnight hush" , waiting, then stepping brightness 
+
+down and switching rhythm to "heartbeat" produces a coher-ent ambient environment that evolves naturally. This two-level control—text for macro-level scene changes, parameter stepping for micro-level refinement—emerged as the instrument’s natu-ral performance idiom. When using an external LLM backend, the 5–8 s wait for a new scene to resolve is noticeable but not disruptive—the current soundscape keeps playing, and the cross-fade when it arrives feels like a natural transition rather than A Text-Steerable Instrument for Sketching Procedural Soundscapes via Language Models NIME ’26, June 23–26, 2026, London, UK Embedding Lookup (model="fast")                      
+
+> Generator
+> Resolve
+> Audio Out
+> "warm jazz cafe..." MCU(brightness=Step(-2), echo="heavy") "neon rain..."
+> await sleep(8) await sleep(8)
+> embed
+> ≈5 s (cold) instant ≈1 s
+> silence
+> Config A
+> jazz cafe
+> xfade
+> A→A′
+> Config A ′
+> darker, +echo
+> xfade
+> A′→B
+> Config B
+> neon rain
+> time (s)
+> 0612 18 24 30 5
+> Legend: Text vibe Config update Crossfade Embed lookup Silence
+
+Figure 2: Embedding Lookup ( model="fast" ) backend. The first resolve includes model loading ( ∼5 s cold start); subsequent embed lookups resolve in ∼1 s. Parameter updates ( MusicConfigUpdate ) apply instantly. Audio plays continuously after the first configuration resolves. External LLM (model="gemini-3-flash-preview")                       
+
+> Generator
+> Resolve
+> Audio Out
+> "warm jazz cafe..." MCU(brightness=Step(-2), echo="heavy") "neon rain..."
+> await sleep(8) await sleep(8)
+> LLM
+> ≈5.5 s instant LLM
+> ≈5.5 s
+> silence
+> Config A
+> jazz cafe
+> xfade
+> A→A′
+> Config A ′
+> darker, +echo
+> xfade
+> A′→B
+> Config B
+> neon rain
+> time (s)
+> 0612 18 24 30 36 5.5
+> Legend: Text vibe Config update Crossfade LLM API call Silence
+
+Figure 3: External LLM ( model="gemini-3-flash-preview" ) backend. Each text prompt triggers a ∼5.5 s API call; the current configuration keeps playing uninterrupted while the new one resolves. The time axis extends to 36 s for the same three instructions that the fast backend completes by 30 s—this gap compounds with each text prompt. 
+
+a technical artifact. The instrument struggles with sharp stylis-tic pivots and cannot match timbral specificity for prompts like “upright bass.” Five lay participants each listened to four text-generated sound-scapes paired with author-steered variations in randomized order, without being told which was which, and were asked to describe what they heard and whether changes felt intentional. All five in-dependently described output as sounding musically intentional rather than random, offering informal support for the schema design goal. Limitations identified: no individual layer volume control, restricted stylistic range for culturally specific music, and occasional audio artifacts in dense configurations. These comments are treated as informal design feedback rather than evidence of general audience response: the sample was small, participants were lay listeners, and no statistical claims are made from these remarks. A technical benchmark on 200 held-out prompts showed em-bedding retrieval scoring higher on text–audio semantic similar-ity than a random valid configuration, suggesting that retrieval adds semantic targeting beyond the schema’s baseline coherence NIME ’26, June 23–26, 2026, London, UK Gupta 
+
+under this proxy. This metric is a system-reliability and align-ment proxy, not a perceptual-quality measure. LAION-CLAP also informed retrieval-map construction, so retrieval has an ex-pected advantage on this metric; human perceptual validation is planned. 
+
+## 6 Discussion 
+
+G1 (immediacy) and G3 (reproducibility) are met. G5 (continuity) is met—in a 200-prompt benchmark, the embedding backend resolved all prompts successfully ( ∼0.3 s config generation, ∼1.2 s total with synthesis); the external LLM backend resolved 178/200 (∼5.6 s config generation, 89% success rate), with failed calls falling back to the fast backend to maintain uninterrupted playback. G2 (controllability) is partially met—categorical labels provide precise steering, but retrieval coverage gaps cause occasional semantic mismatches. G4 (learnability) is informally supported but formally unevaluated. The live generator reframes text-to-music from a one-shot generation into an ongoing stream —decoupling resolution from emission generalizes beyond music to any latency-sensitive do-main. The CPU-only, reproducible design responds to Clarke et al.’s [ 5 ] concerns about longevity, reproducibility, documen-tation, and the resource demands of deep generative models in NIME practice—the default backend requires no inference at run-time, amortizing LLM cost into a one-time dataset construction step. The open-source SDK, extensible schema, and shared re-trieval dataset contribute to the NIME 2026 Communities theme: the instrument’s parameter space is a shared vocabulary that other developers can extend with new style sets, new retrieval entries, or new synthesizer backends—and the live generator architecture provides the runtime for any such extension to be performed live. 
+
+Musical outcomes and limitations. The strongest outputs are ambient, cinematic, and loop-adjacent soundscapes where texture and harmonic color matter more than authored melody. It is less successful for genre imitation or timbral specificity. This trade-off privileges predictable steering and live continuity over timbral range. 
+
+## 7 Ethical Standards 
+
+This work follows NIME ethical expectations. Informal listener feedback was solicited from consenting adult participants on co-herence, controllability, and musical character; no personal data was collected, and the feedback is reported as informal design input, not a powered study. The system generates procedural au-dio rather than imitating recordings or performers; the retrieval dataset uses an openly licensed corpus [ 9 ] and releases structured configurations and rendered examples rather than copyrighted music recordings. The CPU-first default backend amortizes LLM cost across all use, addressing NIME’s guidelines on lightweight models and AI environmental impact. AI coding tools assisted with codebase and schema design, and grammatical correction; the open-source release includes an AI_DISCLOSURE.md docu-menting their scope. A supplementary video demonstrates the live generator. 
+
+## References 
+
+[1] Andrea Agostinelli, Timo I. Denk, Zalán Borsos, Jesse Engel, Mauro Verzetti, Antoine Caillon, Qingqing Huang, Aren Jansen, Adam Roberts, Marco Tagliasacchi, Matt Sharifi, Neil Zeghidour, and Christian Frank. 2023. Mu-sicLM: Generating Music from Text. arXiv preprint arXiv:2301.11325 (2023). https://doi.org/10.48550/arXiv.2301.11325 [2] Misagh Azimi and Mo H. Zareei. 2025. Live Improvisation with Fine-Tuned Generative AI: A Musical Metacreation Approach. In Proceedings of the In-ternational Conference on New Interfaces for Musical Expression . Canberra, Australia, Article 54, 389–393 pages. https://doi.org/10.5281/zenodo.15698902 [3] Stephen Brade, Bryan Wang, Mauricio Sousa, Gregory Lee Newsome, Sageev Oore, and Tovi Grossman. 2024. SynthScribe: Deep Multimodal Tools for Synthesizer Sound Retrieval and Exploration. In Proceedings of the 29th Inter-national Conference on Intelligent User Interfaces . https://doi.org/10.1145/3640 543.3645158 [4] Manuel Cherep, Nikhil Singh, and Jessica Shand. 2024. Creative Text-to-Audio Generation via Synthesizer Programming. In Proceedings of the 41st International Conference on Machine Learning (Proceedings of Machine Learning Research, Vol. 235) . PMLR, 8270–8285. https://doi.org/10.48550/arXiv.2406.00 294 [5] Isaac Clarke, Francesco Ardan Dal Rí, and Raul Masu. 2025. Longevity of Deep Generative Models in NIME: Challenges and Practices for Reactivation. In Proceedings of the International Conference on New Interfaces for Musical Expression . Canberra, Australia, Article 32, 224–230 pages. https://doi.org/10 .5281/zenodo.15735662 [6] Jade Copet, Felix Kreuk, Itai Gat, Tal Remez, David Kant, Gabriel Synnaeve, Yossi Adi, and Alexandre Défossez. 2023. Simple and Controllable Music Generation. In Advances in Neural Information Processing Systems 36 . https: //doi.org/10.48550/arXiv.2306.05284 arXiv:2306.05284 [7] Zach Evans, CJ Carr, Josiah Taylor, Scott H. Hawley, and Jordi Pons. 2024. Fast Timing-Conditioned Latent Audio Diffusion. In Proceedings of the 41st International Conference on Machine Learning (Proceedings of Machine Learning Research, Vol. 235) . PMLR, 12652–12665. https://doi.org/10.48550/arXiv.2402. 04825 [8] Andy Hunt and Ross Kirk. 2000. Mapping Strategies for Musical Performance. In Trends in Gestural Control of Music , Marcelo M. Wanderley and Marc Battier (Eds.). IRCAM – Centre Pompidou, Paris, France. https://www-media.idmil. org/media/Trends_Ircam/DOS/P.HunKir.pdf [9] Nikhil Kandpal, Brian Lester, Colin Raffel, Sebastian Majstorovic, Stella Bi-derman, Baber Abbasi, Luca Soldaini, Enrico Shippole, A. Feder Cooper, Aviya Skowron, John Kirchenbauer, Shayne Longpre, Lintang Sutawika, Alon Albalak, Zhenlin Xu, Guilherme Penedo, Loubna Ben Allal, Elie Bak-ouch, John David Pressman, Honglu Fan, Dashiell Stander, Guangyu Song, Aaron Gokaslan, Tom Goldstein, Brian R. Bartoldson, Bhavya Kailkhura, and Tyler Murray. 2025. The Common Pile v0.1: An 8TB Dataset of Pub-lic Domain and Openly Licensed Text. arXiv preprint arXiv:2506.05209 (2025). https://doi.org/10.48550/arXiv.2506.05209 [10] Yikai Li and Ge Wang. 2024. ChAI => Interactive AI Tools in ChucK. In Proceedings of the International Conference on New Interfaces for Musi-cal Expression . Utrecht, Netherlands, Article 81, 553–559 pages. https: //doi.org/10.5281/zenodo.13904949 [11] Thor Magnusson. 2019. Sonic Writing: Technologies of Material, Symbolic, and Signal Inscriptions . Bloomsbury Academic. https://doi.org/10.5040/97815013 13899 [12] Tim Murray-Browne and Panagiotis Tigas. 2021. Latent Mappings: Generating Open-Ended Expressive Mappings Using Variational Autoencoders. In Proceed-ings of the International Conference on New Interfaces for Musical Expression .Shanghai, China, Article 66. https://doi.org/10.21428/92fbeb44.9d4bcd4b [13] Nicola Privato, Victor Shepardson, Giacomo Lepri, and Thor Magnusson. 2024. Stacco: Exploring the Embodied Perception of Latent Representations in Neural Synthesis. In Proceedings of the International Conference on New Inter-faces for Musical Expression . Utrecht, Netherlands, Article 62, 424–431 pages. https://doi.org/10.5281/zenodo.13904899 [14] Nils Reimers and Iryna Gurevych. 2019. Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks. In Proceedings of the 2019 Conference on Em-pirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing . Association for Computational Lin-guistics, Hong Kong, China, 3982–3992. https://doi.org/10.18653/v1/D19-1410 [15] Nicholas Shaheed and Ge Wang. 2025. ChuMP and the Zen of Package Management. In Proceedings of the International Conference on New Interfaces for Musical Expression . Canberra, Australia, Article 90, 610–617 pages. https: //doi.org/10.5281/zenodo.15698984 [16] Victor Shepardson, Jonathan Reus, and Thor Magnusson. 2024. Tungnáá: a Hyper-realistic Voice Synthesis Instrument for Real-Time Exploration of Extended Vocal Expressions. In Proceedings of the International Conference on New Interfaces for Musical Expression . Utrecht, Netherlands, Article 78, 536–540 pages. https://doi.org/10.5281/zenodo.13904943 [17] Yusong Wu, Ke Chen, Tianyu Zhang, Yuchen Hui, Taylor Berg-Kirkpatrick, and Shlomo Dubnov. 2023. Large-Scale Contrastive Language-Audio Pretrain-ing with Feature Fusion and Keyword-to-Caption Augmentation. In ICASSP 2023 – 2023 IEEE International Conference on Acoustics, Speech and Signal Processing . 1–5. https://doi.org/10.1109/ICASSP49357.2023.10095969 A Text-Steerable Instrument for Sketching Procedural Soundscapes via Language Models NIME ’26, June 23–26, 2026, London, UK 
+
+## A Supplementary Material 
+
+This appendix supplements the main paper with additional technical detail and artifact links. The open-source SDK and demo are available at https://github.com/prabal-rje/latentscore and https://latentscore.com. The subsections below cover: §A.1 the full configuration schema including co-generated metadata, §A.2 benchmark results across six named controllers, §A.3 example outputs with color palettes, §A.4 dataset and artifact availability, and §A.5 supplementary figures. 
+
+## A.1 Configuration Schema Reference 
+
+Each output produced by the system is a JSON object with four top-level fields: 
+
+• thinking — a short generated rationale summarizing the model’s parameter choices; used as metadata during dataset construction and omitted from the performer’s direct control surface. 
+
+• title — a short evocative name ( ≤6 words) summarizing the vibe, displayed in the UI as a human-readable label for the current soundscape. 
+
+• config — the 34-field synthesis configuration (Table 1). 
+
+• palettes — three color palettes, each containing five hex colors with size weights ( xs –xxl ). These drive the UI’s visual feedback: background gradients, particle colors, and ambient lighting shift in real time as configurations change. The co-generation of audio parameters and visual palettes from a single text prompt makes the system an audiovisual instrument. The web-based UI displays the title, renders the active palette as a color-shifting background, and overlays particle effects responsive to playback state. Together with the text input and parameter steering buttons, this creates a playable audiovisual performance surface where text prompts produce coordinated shifts in sound, color, and motion. 
+
+Synthesis Configuration Fields. The config object contains 34 fields in five groups. Eight fields marked ★ support ordered stepping: 
+
+Step(+1) or Step(-1) adjustments that clamp at boundaries. 
+
+Table 1: Full configuration schema. Fields marked ★ support relative Step adjustments. 
+
+Field Type Allowed Values Global Parameters (8) 
+
+tempo ★ Ord. label very_slow | slow | medium | fast | very_fast root Enum c | c# | d | d# | e | f | f# | g | g# | a | a# | bmode Enum major | minor | dorian | mixolydian brightness ★ Ord. label very_dark | dark | medium | bright | very_bright space ★ Ord. label dry | small | medium | large | vast density ★ Bnd. int 2 | 3 | 4 | 5 | 6motion ★ Ord. label static | slow | medium | fast | chaotic attack Enum soft | medium | sharp 
+
+Orchestration Layers (6) 
+
+bass Style sel. drone | sustained | pulsing | walking | fifth_drone | sub_pulse |
+
+octave | arp_bass pad Style sel. warm_slow | dark_sustained | cinematic | thin_high | ambient_drift 
+
+| stacked_fifths | bright_open melody Style sel. procedural | contemplative | rising | falling | minimal | ornamental 
+
+| arp_melody | contemplative_minor | call_response | heroic rhythm Style sel. none | minimal | heartbeat | soft_four | hats_only | electronic |
+
+kit_light | kit_medium | military | tabla_essence | brush texture Style sel. none | shimmer | shimmer_slow | vinyl_crackle | breath | stars | glitch 
+
+| noise_wash | crystal | pad_whisper accent Style sel. none | bells | pluck | chime | bells_dense | blip | blip_random |
+
+brass_hit | wind | arp_accent | piano_note 
+
+Spatial / Texture (5) 
+
+stereo ★ Ord. label mono | narrow | medium | wide | ultra_wide depth Boolean true | false echo ★ Ord. label none | subtle | medium | heavy | infinite human ★ Ord. label robotic | tight | natural | loose | drunk grain Enum clean | warm | gritty 
+
+Melody Generation (10) 
+
+melody_engine Enum pattern | procedural phrase_len_bars Bnd. int 2 | 4 | 8NIME ’26, June 23–26, 2026, London, UK Gupta                                                                                              
+
+> Field Type Allowed Values
+> melody_density Ord. label very_sparse |sparse |medium |busy |very_busy syncopation Ord. label straight |light |medium |heavy swing Ord. label none |light |medium |heavy motif_repeat_prob Ord. label rare |sometimes |often step_bias Enum step |balanced |leapy chromatic_prob Ord. label none |light |medium |heavy register_min_oct Bnd. int 1–8register_max_oct Bnd. int 1–8(must exceed min)
+> Harmony (5)
+> cadence_strength Ord. label weak |medium |strong tension_curve Enum arc |ramp |waves harmony_style Enum auto |pop |jazz |cinematic |ambient chord_change_bars Ord. label very_slow |slow |medium |fast chord_extensions Enum triads |sevenths |lush
+
+## A.2 Benchmark Results 
+
+We benchmarked six controllers on 200 held-out test prompts (TEST split), preventing data leakage into the embedding lookup map. 
+
+Controllers. 
+
+(1) Random Baseline — uniformly random valid configuration (ignores prompt). (2) Base Untrained — unsloth/gemma-3-270m-it (Gemma 3, 270M parameters), no fine-tuning, constrained via Outlines grammar-guided decoding. (3) SFT Fine-tuned — same Gemma 3 270M model after supervised fine-tuning on TRAIN split with LoRA, constrained via Outlines. (4) Claude Opus 4.5 — Anthropic’s commercial API, structured output mode. (5) Gemini 3 Flash Preview — Google’s commercial API ( gemini-3-flash-preview ), structured output mode. (6) Embedding Lookup — default fast backend; nearest-neighbor retrieval using all-MiniLM-L6-v2 sentence embeddings (Reimers & Gurevych, 2019).  
+
+> Table 2: Benchmark results across 200 held-out test prompts. CLAP = LAION-CLAP with discordance penalty.
+
+Controller CLAP ↑ Schema Config Synth Total (mean) Valid % Gen (s) (s) (s) 
+
+Random Baseline 0.139 100% <0.01 0.56 0.70 Base Untrained (270M) 0.117 100% 59.1 0.38 59.7 SFT Fine-tuned (270M) 0.140 91% 99.5 0.47 100.2 Claude Opus 4.5 0.137 100% 11.9 0.57 12.6 Gemini 3 Flash Preview 0.158 89% 5.6 0.73 6.5 
+
+Embed. Lookup 0.163 100% 0.3 0.79 1.2 
+
+Results Summary. Key observations: 
+
+• Embedding Lookup achieves the highest CLAP (0.163) with lowest total latency ( ∼1.2 s) and 100% validity. This is the default backend for live performance. 
+
+• Gemini 3 Flash Preview produces competitive CLAP (0.158) on valid outputs but fails schema validation 11% of the time; in live use, such failures trigger automatic fallback to the fast backend. 
+
+• Claude Opus 4.5 achieves 100% validity but scores below random on CLAP (0.137 vs. 0.139) with ∼12.6 s mean latency. 
+
+• The fine-tuned 270M model only marginally exceeds random on CLAP (0.140 vs. 0.139) at ∼100 s mean generation time, suggesting mode collapse at this model scale. 
+
+• Synthesis time is configuration-dependent: richer configs from Embedding Lookup (0.79 s) and Gemini (0.73 s) render slower than simpler ones from Base (0.38 s) and Random (0.56 s). 
+
+CLAP circularity. The retrieval map was constructed with Best-of-5 CLAP-scored selection. The same metric is used for evaluation; the retrieval advantage is partly expected. Human perceptual evaluation is planned. 
+
+## A.3 Example Configurations 
+
+Three complete outputs from the retrieval dataset, each showing the full structure: thinking (the LLM’s justification of its choices), 
+
+title , all 34 config fields, and three co-generated palettes with color swatches. A Text-Steerable Instrument for Sketching Procedural Soundscapes via Language Models NIME ’26, June 23–26, 2026, London, UK 
+
+“Warm, comforting recollection.” Title: Hazy Echoes of a Gentle Memory CLAP: 0.569 Split: SFT-Train 
+
+Thinking: “A warm, comforting recollection calls for slow tempo and soft dynamics—like something remembered through a haze. F major gives a gentle warmth. Dark brightness with large space creates the sense of a memory filling a room. Vinyl crackle as texture reinforces the nostalgic, analog quality. Chime accents suggest fleeting moments surfacing. Ambient drift pad with sustained bass provides the continuous, enveloping foundation. Sparse melody with stepwise motion and weak cadences lets the piece breathe without urgency. Lush chord extensions add harmonic richness without tension.” 
+
+{"tempo": "slow", "root": "f", "mode": "major", "brightness": "dark", "space": "large", "density": 3, "bass": "sustained", "pad": "ambient_drift", "melody": "contemplative", "rhythm": "none", "texture": "vinyl_crackle", "accent": "chime", "motion": "slow", "attack": "soft", "stereo": "wide", "depth": true, "echo": "subtle", "human": "natural", "grain": "warm", "melody_engine": "procedural", "phrase_len_bars": 8, "melody_density": "sparse", "syncopation": "straight", "swing": "none", "motif_repeat_prob": "sometimes", "step_bias": "step", "chromatic_prob": "none", "cadence_strength": "weak", "register_min_oct": 3, "register_max_oct": 5, "tension_curve": "arc", "harmony_style": "ambient", "chord_change_bars": "slow", "chord_extensions": "lush" }
+
+Palette 1: #f4e1d2 (xxl) #e9c46a (xl) #f4a261 (lg) #e76f51 (md) #264653 (sm) 
+
+Palette 2: #fdfcf0 (xxl) #faedcd (xl) #d4a373 (lg) #ccd5ae (md) #e9edc9 (sm) 
+
+Palette 3: #efd3d7 (xxl) #feeafa (xl) #dee2ff (lg) #8e9aaf (md) #cbc0d3 (sm) 
+
+“Need for continual self-examination.” Title: Infinite Internal Reflection CLAP: 0.556 Split: SFT-Train 
+
+Thinking: “Self-examination is inward-looking, contemplative, cyclical. Dorian mode in D gives a modal ambiguity—not quite sad, not resolved. A drone bass anchors the introspection; ambient drift pad creates a sense of floating within one’s own thoughts. No rhythm—this is internal, not measured by external time. Pad whisper texture adds subliminal movement beneath the surface. Piano note accents surface like individual thoughts emerging. Slow motion, soft attack, medium stereo—contained but not claustrophobic. Waves tension curve for the recurring nature of self-questioning. Often-repeating motifs suggest obsessive return to the same themes.” 
+
+{"tempo": "slow", "root": "d", "mode": "dorian", "brightness": "dark", "space": "large", "density": 3, "bass": "drone", "pad": "ambient_drift", "melody": "contemplative", "rhythm": "none", "texture": "pad_whisper", "accent": "piano_note", "motion": "slow", "attack": "soft", "stereo": "medium", "depth": true, "echo": "subtle", "human": "natural", "grain": "warm", "melody_engine": "procedural", "phrase_len_bars": 8, "melody_density": "sparse", "syncopation": "straight", "swing": "none", "motif_repeat_prob": "often", "step_bias": "step", "chromatic_prob": "light", "cadence_strength": "weak", "register_min_oct": 2, "register_max_oct": 4, "tension_curve": "waves", "harmony_style": "ambient", "chord_change_bars": "slow", "chord_extensions": "lush" }
+
+Palette 1: #1a1a2e (xxl) #16213e (xl) #0f3460 (lg) #533483 (md) #e94560 (sm) 
+
+Palette 2: #2c3e50 (xxl) #34495e (xl) #7f8c8d (lg) #95a5a6 (md) #bdc3c7 (sm) 
+
+Palette 3: #000000 (xxl) #141414 (xl) #1f1f1f (lg) #3d3d3d (md) #ffffff (sm) 
+
+“The mood is anticipatory.” Title: The Growing Momentum of Expectation CLAP: 0.554 Split: SFT-Train NIME ’26, June 23–26, 2026, London, UK Gupta 
+
+Thinking: “Anticipation means something is building. Medium tempo with slow motion creates a measured but unstoppable forward movement. Dorian mode for tension without darkness. Bright brightness—anticipation is alert, not gloomy. Sub-pulse bass provides the physical heartbeat of waiting. Heartbeat rhythm reinforces this literally. Rising melody enacts the building expectation; ramp tension curve ensures it never resolves too soon. Cinematic pad and cinematic harmony style for the grand-scale, almost filmic sense of approaching something. Sparse melody density with light syncopation—not rushed, but not metronomic. Wide stereo and large space for the sense of something vast about to happen.” 
+
+> {"tempo": "medium", "root": "d", "mode": "dorian", "brightness": "bright", "space": "large", "density": 4, "bass": "sub_pulse", "pad": "cinematic", "melody": "rising", "rhythm": "heartbeat", "texture": "shimmer_slow", "accent": "blip", "motion": "slow", "attack": "medium", "stereo": "wide", "depth": true, "echo": "subtle", "human": "tight", "grain": "clean", "melody_engine": "procedural", "phrase_len_bars": 4, "melody_density": "sparse", "syncopation": "light", "swing": "none", "motif_repeat_prob": "sometimes", "step_bias": "balanced", "chromatic_prob": "light", "cadence_strength": "medium", "register_min_oct": 3, "register_max_oct": 6, "tension_curve": "ramp", "harmony_style": "cinematic", "chord_change_bars": "slow", "chord_extensions": "lush" }
+
+Palette 1: #2c3e50 (xxl) #34495e (xl) #7f8c8d (lg) #bdc3c7 (md) #ecf0f1 (sm) 
+
+Palette 2: #1a1a2e (xxl) #16213e (xl) #0f3460 (lg) #e94560 (md) #ffffff (sm) 
+
+Palette 3: #000000 (xxl) #14213d (xl) #fca311 (lg) #e5e5e5 (md) #ffffff (sm) 
+
+Note how palette color temperatures correlate with audio parameters: warm/nostalgic vibes produce cream and amber tones; introspective vibes produce deep navy, indigo, and near-black; anticipatory vibes produce cool grays with accent pops. The thinking field is a short generated rationale captured during dataset construction; it is retained as metadata about parameter choices and is not part of the performer’s control surface. 
+
+## A.4 Dataset and Artifact Availability 
+
+The dataset and benchmark artifacts are archived through public Hugging Face repositories; the repository file listings provide the authoritative artifact record rather than the automatically generated dataset preview. 
+
+• Dataset artifacts: https://huggingface.co/datasets/guprab/latentscore-data 
+
+• Benchmark artifacts and audio: https://huggingface.co/datasets/guprab/latentscore-clap-benchmark 
+
+• Model artifacts: https://huggingface.co/guprab/latentscore-gemma3-270m-v5-merged 
+
+Availability. The SDK, retrieval-map dataset artifacts, benchmark outputs, model artifacts, and demo materials are released through the public repository and the Hugging Face file listings linked above. Code and samples are available at https://github.com/prabal-rje/latentscore. A Text-Steerable Instrument for Sketching Procedural Soundscapes via Language Models NIME ’26, June 23–26, 2026, London, UK 
+
+## A.5 Supplementary Figures 
+
+Figure 4: Benchmark comparison across 200 test prompts and 6 controllers. Left: CLAP alignment scores with standard deviation bars and random baseline reference line. Center: Schema validity rates. Right: Config generation latency on log scale, spanning three orders of magnitude from embedding retrieval (0.24 s) to local 270M models ( ∼56 s). 
+
+Figure 5: Best-of-5 CLAP score analysis across 10,555 vibes in the dataset. Left: Overlaid histograms of individual candidate scores (muted) vs. the selected best (green), showing the selected distribution shifted right. Right: Best-of-N selection curve with diminishing returns: N = 1 (0.154) to N = 5 (0.197, +28% cumulative). 
+
+Figure 6: Config generation latency histograms by controller. Gemma 3 270M models (Base and SFT, on H100 GPU) cluster around 56 s with a long tail for SFT. Claude Opus 4.5 clusters tightly at 11.9 s. Gemini 3 Flash Preview at 5.7 s. Embedding Lookup at 0.2 s median. NIME ’26, June 23–26, 2026, London, UK Gupta 
+
+Figure 7: Audio synthesis latency histograms (CPU procedural synthesizer, 30 s renders). Synthesis time is configuration-dependent: richer configurations from Embedding Lookup (0.83 s) and Gemini (0.75 s) render slower than simpler ones from Base untrained (0.33 s) and Random (0.46 s). 
+
+References: Reimers & Gurevych (2019), “Sentence-BERT,” EMNLP. LAION-CLAP: Wu et al. (2023), ICASSP. Common Pile: Kandpal et al. (2025). Gemma 3: Google (2025). Outlines: Willard & Louf (2023). Full references appear in the bibliography above.
