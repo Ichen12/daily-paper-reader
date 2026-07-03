@@ -3131,12 +3131,8 @@ window.$docsify = {
               const setStateAndRefresh = (value) => {
                 const latestState = loadReadState();
                 const current = latestState[paperIdFromHref];
-                if (current === value) {
-                  latestState[paperIdFromHref] = 'read';
-                } else {
-                  latestState[paperIdFromHref] = value;
-                }
-                saveReadState(latestState);
+                const nextStatus = current === value ? 'read' : value;
+                markPaperRead(paperIdFromHref, nextStatus);
                 markSidebarReadState(null);
                 refreshColorBookmarkHub();
                 requestAnimationFrame(() => {
