@@ -1,0 +1,218 @@
+Title: An Efficient vLLM-Based Inference Pipeline for Unified Audio Understanding and Generation
+
+URL Source: https://arxiv.org/pdf/2607.02119v1
+
+Published Time: Fri, 03 Jul 2026 01:31:58 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# An Efficient vLLM-Based Inference Pipeline for Unified Audio Understanding and Generation 
+
+# Haoran Wang 1,2, Jinchuan Tian 1, Siddhant Arora 1, Shinji Watanabe 1,∗∗ 
+
+1 Carnegie Mellon University 
+
+2 Shanghai Jiao Tong University 
+
+haoranw5@andrew.cmu.edu 
+
+# Abstract 
+
+While Large Multimodal Models excel in comprehension, high-throughput inference engines lack native support for multi-modal generation. This is severe in Speech Language Mod-els, where generating multi-layered audio tokens via decoupled AR+NAR or synchronous Multi-Token Prediction (MTP) with delay-pattern interleaving conflicts with standard single-stream loops. We present a vLLM-based inference pipeline for unified speech understanding and generation. We extend autoregres-sive decoding to natively execute delay-pattern de-interleaving and coordinated multi-stream sampling, integrating an on-GPU acoustic decoder for end-to-end waveform synthesis. Crucially, we overcome the shared intuition that Classifier-Free Guidance (CFG) halves throughput. By co-scheduling paired conditional and unconditional requests within a continuous batch, our CFG implementation sustains 80% of non-CFG throughput, absorb-ing dual-request and logit merging overheads. We open-source our framework 1.
+
+Index Terms : Speech Language Models, High-Throughput In-ference, End-to-End Speech Generation 
+
+# 1. Introduction 
+
+The rapid evolution of Large Language Models (LLMs) has transitioned artificial intelligence from text-only interfaces to rich, multimodal interactions. Recently, Speech Language Models (SpeechLMs) [1, 2, 3, 4] have emerged as a piv-otal frontier for unified audio understanding and generation. By modeling continuous audio signals as discrete acoustic to-kens [5, 6, 7], these models bypass traditional cascaded Au-tomatic Speech Recognition (ASR) [8] and Text-to-Speech (TTS) [9, 10] pipelines to achieve strong and expressive acous-tic capabilities. Building upon this end-to-end foundation, ad-vanced interactive features like direct speech-to-speech dia-logue [11, 12] naturally emerge as downstream applications. However, the deployment of SpeechLMs exposes a struc-tural gap in current high-throughput inference engines. While state-of-the-art serving frameworks [13, 14] excel at memory efficiency and dynamic request scheduling (e.g., continuous batching [15] and automatic prefix caching [14]), their underly-ing mechanisms were largely optimized for unimodal, text-only generation. Consequently, extending this text-centric architec-ture to handle the continuous and distinct nature of speech out-puts introduces significant bottlenecks. Generating general audio diverges from standard text au-toregression in two critical aspects: 
+
+> **
+
+indicates the corresponding author. 
+
+> 1
+
+https://github.com/whr-a/vllm/tree/opuslm 
+
+1. Multi-Layered Token Generation and Decoding. Unlike text, continuous speech is typically compressed by neural au-dio codecs [5, 7, 16, 17]. Modern SpeechLMs favor Residual Vector Quantization (RVQ), encoding each temporal frame into multi-layered tokens to support high-fidelity audio at a constant frame rate. To model this multi-codebook grid, current paradigms primarily adopt synchronous Multi-Token Prediction (MTP) [3] and delay-pattern interleaving [1, 18]. While delay-pattern elegantly flattens tokens for training, its inference demands multi-stream sampling and complex de-interleaving. Furthermore, synthesizing the final waveform requires an auxiliary acoustic decoder (vocoder). Coupling MTP with this additional decoding stage inherently conflicts with the standard one-token-per-step serving loop. 2. The Classifier-Free Guidance (CFG) Bottleneck. 
+
+Classifier-Free Guidance (CFG) [19] is essential for high-fidelity audio generation, as evidenced by its widespread adoption in various audio synthesis frameworks [18, 20, 21]. Mechanistically, implementing CFG requires two parallel forward passes per step: one conditioned on the input prompt and one unconditional. This dual-pass requirement inherently doubles computational and memory overheads. Since standard schedulers assume strict request indepen-dence, they lack native mechanisms to coordinate these paired passes. Consequently, naive implementations are forced to process them as separate requests. This disjoint scheduling duplicates KV cache allocations and precludes joint batching. Furthermore, the necessary logit merging must operate across disjoint request contexts with explicit synchronization. The compounding of these dual-request overheads and synchronization costs can severely degrade overall system throughput. To bridge this gap, we present a novel inference implemen-tation engineered for the unified understanding and generation of audio. Built upon vLLM [13] which is a high-performance continuous batching backend, our framework extends the au-toregressive decoding loop to natively support synchronous multi-stream sampling with delay-pattern de-interleaving for multi-codebook audio generation. Furthermore, we fuse a lightweight acoustic decoder directly into the engine’s output pipeline, enabling single-process audio synthesis without an ex-ternal vocoder service To address the CFG overhead, we introduce a Paired Re-quest Co-Scheduling mechanism. By co-scheduling paired con-ditional and unconditional requests within the same continuous batch, our approach ensures them to share a single forward pass through the transformer backbone. This unified execution ele-gantly absorbs the dual-request and logits merging overheads, directly overcoming the shared intuition that CFG inevitably halves system throughput.  
+
+> arXiv:2607.02119v1 [eess.AS] 2 Jul 2026 Audio Input
+> Audio Encoder Text Input
+> LLM Model Backbone
+
+# ... 
+
+> Codebook token prediction head
+> Delay Pattern
+> - - c c c c
+> - - - - - c
+
+## ... 
+
+> De-interleave
+> Acoustic
+> Decoder
+> Audio Output
+> Text Output
+> - c c c c c
+
+Figure 1: Speech language model architecture. The unified autoregressive transformer processes encoded audio and text. During audio generation, hidden states ht and stream embed-dings ei (where 1 ≤ i ≤ S) are projected via S codebook heads into parallel delayed streams, which are subsequently de-interleaved for acoustic decoding. 
+
+The main contributions are summarized as follows. 1. We identify the structural limitations of current text-centric inference engines in handling multimodal auto-regressive generation and propose a unified architecture that natively supports synchronous multi-stream sampling and delay-pattern de-interleaving for multi-codebook audio tokens. 2. We design an end-to-end fused acoustic pipeline that inte-grates a lightweight audio decoder directly into the engine’s output pipeline, eliminating the need for an external vocoder service and enabling single-process waveform synthesis on GPU. 3. We introduce a Paired Request Co-Scheduling strategy for CFG. By systematically pairing and co-scheduling condi-tional and unconditional requests within the same continuous batch, our system efficiently absorbs dual-branch overheads and logit synchronization costs, sustaining up to 80% of non-CFG throughput and effectively overcoming the shared intu-ition of halved performance, while seamlessly supporting the concurrent prefilling and decoding of text and CFG-enabled audio requests in a unified pipeline. 
+
+# 2. Method 
+
+We present a serving framework that enables high-throughput inference for unified audio understanding and generation within existing token-level continuous batching engines. We first de-scribe the class of models our framework targets (§2.1), then detail our unified serving pipeline (§2.3), and finally describe efficient Classifier-Free Guidance (§2.4). 
+
+2.1. Speech Language Models 
+
+Our system broadly targets the widely adopted delay-pattern [18] SpeechLM architecture. To validate the generality of our pipeline, we ground our implementation and evaluation in three representative models: Bagpiper [1], OpusLM [2], and OpusLM dialogue [11]. As illustrated in Figure 1, the core gen-eration mechanisms of these models share a unified architec-tural foundation. 
+
+Multi-token Prediction. The pipeline begins with an audio encoder feeding continuous speech to an autoregressive LLM. The LLM operates over a unified vocabulary, partitioned into text and S audio sub-vocabulary. For audio output, at each time step t, the LLM backbone produces a hidden state ht. As illus-trated in Figure 1, S parallel codebook heads then project this state to generate logits ℓ(i) and their corresponding sampled to-kens ci (where 1 ≤ i ≤ S). Specifically, each head adds a learnable stream embedding ei to ht before applying a shared language modeling head WH , such that ℓ(i) = WH (ht + ei).
+
+Delay Interleave pattern. Under the delay pattern [18], the i-th stream is offset by i steps, meaning the S tokens 
+
+{c1, . . . , c S } emitted at step t correspond to different temporal positions. To maintain this structure during autoregressive feed-back, the input representation at each step aggregates the em-beddings of these previously generated tokens. Post-generation, the resulting S × T codebook matrix (where T represents the total number of acoustic frames) is de-interleaved and passed to an acoustic decoder for waveform synthesis. Crucially, this uni-fied vocabulary inherently enables mixed-modality responses (e.g., text seamlessly transitioning to audio). 
+
+2.2. Standard Continuous Batching Engines 
+
+Modern text-based LLM serving frameworks, such as vLLM [13], maximize hardware utilization through iteration-level scheduling and continuous batching. Rather than pro-cessing static batches where early-finishing requests idle, the scheduler dynamically injects new prompts and retires com-pleted generations at the granularity of a single decoding step. This highly dynamic scheduling is supported by memory man-agement mechanisms like PagedAttention [13], which parti-tions the Key-Value (KV) cache into fixed-size, non-contiguous blocks to allocate GPU memory on demand and eliminate frag-mentation. Structurally, these engines treat the underlying model as a black box that executes a uniform forward pass across all active requests. Consequently, the entire system in-frastructure is deeply coupled to the assumption of homoge-neous, single-stream text generation, presenting a strict archi-tectural constraint that our framework must navigate to support multi-token prediction and CFG inference. 
+
+2.3. Unified Multi-Token Prediction Serving Pipeline 
+
+To navigate this single-stream constraint and support S paral-lel audio tokens without requiring pervasive modifications to the engine’s iteration-level scheduler or PagedAttention [13] in-frastructure, we introduce a primary-auxiliary decomposition ,as depicted in Figure 2 (Left). 
+
+Primary-Auxiliary Decomposition. We designate one codebook stream as the primary token, which is fully managed by the engine’s standard pipeline. The remaining S−1 auxiliary 
+
+streams are sampled internally during the model’s logit compu-tation and buffered per-request. Consequently, the model ap-pears to the engine as a standard text LM that emits a single to-ken per step, while transparently executing the multi-codebook generation. 
+
+De-interleave and Decode. Upon request completion, the buffered matrix is delay-de-interleaved and passed to a co-located on-GPU acoustic decoder, fusing waveform synthesis directly into the serving path. 
+
+Mixed-Modality Phase Management. To orchestrate mixed text-audio outputs within this token-level engine, we im-plement a per-request phase state machine enforced via dy-Text and/or  
+
+> Raw Audio
+> Scheduler
+> Model
+> De-interleave
+> Audio
+> Decoder
+> audio text
+> Assistant
+> Message
+> Server
+> Request
+> (CFG>1)
+> auto-allocate
+> Main
+> (w/ cond)
+> Companion
+> (w/o cond)
+> Shared Forward
+> (scheduled in the same batch)
+> CFG Merge
+> sample
+> Main Token Companion
+> Sync Token
+> Next step
+
+Figure 2: Unified serving framework for SpeechLMs. (Left) 
+
+Overall pipeline: The engine manages continuous batching, primary-auxiliary token generation, and fused on-GPU acous-tic decoding for mixed-modality streaming. (Right) Paired co-scheduling for CFG: Conditional and unconditional requests share a batched forward pass, merging logits before sampling and synchronizing the sampled token for the next step. 
+
+namic vocabulary masking. The system transitions across three main states: a text phase restricted to text tokens, a transition phase injecting deterministic bridging tokens to condition audio generation, and an audio phase activating all S streams. Cru-cially, terminating the audio phase initiates a drain sub-phase 
+
+that emits S−1 padding tokens to flush the delay buffer, guar-anteeing a complete S × T codebook matrix (where T repre-sents the total number of acoustic frames) for de-interleaving. Furthermore, because continuous batching interleaves tokens from multiple requests into a single flattened sequence, track-ing modality via input positions is unreliable. We bypass this by dynamically inferring the active modality directly from the model’s unmasked output distribution (i.e., the argmax over the disjoint vocabulary regions), ensuring robust and engine-agnostic phase management. 
+
+2.4. Classifier-Free Guidance via Paired Request Co-Scheduling 
+
+Classifier-Free Guidance (CFG) [19] improves audio fidelity by interpolating between conditional and unconditional distribu-tions. Building upon the logit formulation ℓ(i) defined in Sec-tion 2.3, we apply CFG independently to each codebook stream 
+
+i:
+
+˜ℓ(i) = w · ℓ(i) 
+
+> cond
+
++ (1 − w) · ℓ(i)
+
+> uncond
+
+, w > 1 (1) A straightforward implementation would issue two indepen-dent requests, incurring severe scheduling fragmentation and cross-request synchronization overhead, and is not feasible be-cause it needs step-by-step sync. To resolve this, we introduce 
+
+paired request co-scheduling , which natively coordinates this dual-pass requirement within the serving engine. As detailed in Figure 2 (Right), the end-to-end processing pipeline begins with the input auto-allocation: when the server receives a request with a CFG scale w > 1, it transparently gen-erates a “Companion” request (with a null prompt) alongside the “Main” conditional request. The engine treats this pair as an atomic scheduling unit and always process them together. Dur-ing the shared forward process, they are co-scheduled into the same continuous batch and share a single forward pass through the transformer backbone. The engine strictly partitions the per-step token budget equally between the pair. After the forward pass, the raw logits ℓ(i) 
+
+> cond
+
+and ℓ(i) 
+
+> uncond
+
+from both contexts are merged according to Eq. 1. Crucially, this CFG merge operates only during the audio phase; it bypasses modality-switching tokens to prevent CFG from corrupting the phase state machine. To avoid redundant compute, projections for auxiliary streams are batched together. Finally, for the output and synchronization step, the engine samples a single Main Token from the merged distribution ˜ℓ(i).To ensure both contexts maintain the exact same autoregressive history for the next step, this sampled token is synchronously appended to the Companion request, while the companion’s ex-ternal outputs remain hidden from the client. By systematically co-scheduling these pairs within the same continuous batch, our architecture efficiently absorbs the dual-branch overheads and logit synchronization costs. This design effectively overcomes the conventional assumption that CFG halves performance, al-lowing the system to sustain up to 80% of non-CFG throughput. 
+
+# 3. Experiment 
+
+3.1. Experimental Setup 
+
+We evaluate our framework on three fully open-source SpeechLM architectures that span different design points, all sharing a delay-pattern codec structure and supporting both au-dio understanding and generation: • Bagpiper [1]: A model utilizing a Qwen3-8B [22] backbone with 8 parallel codebook streams encoded via X-Codec [6]. It is designed for open-ended audio understanding and gener-ation, natively supporting Classifier-Free Guidance for high-fidelity audio synthesis. • OpusLM [2]: A model featuring an OLMo-2-7B [23] back-bone with a 9-stream setup (1 SSL [24] + 8 DAC [5, 25]), tailored for both ASR and TTS tasks. • OpusLM-Dialogue [11]: A model adopting a SmolLM2-1.7B [26] backbone. It retains the same 9-stream codec con-figuration as OpusLM but is specifically optimized for spoken dialogue tasks. For the baseline, we use the original PyTorch inference pipeline, which processes requests sequentially without con-tinuous batching. All experiments are conducted on a single NVIDIA H100 80GB GPU with FlashAttention-3 [27] enabled. The maximum model sequence length is set to 16,384 tokens for all configurations. To maximize operational efficiency and fully saturate the GPU, we maintain a concurrency level of 512 si-multaneous requests for standard evaluations. For CFG-enabled settings, the concurrency is proportionally adjusted to 256 re-quests to account for the internal companion requests, yield-ing an equivalent active workload. This targeted concurrency ensures that the serving engine maintains a steady, moderately sized queue to sustain peak overall throughput. 
+
+3.2. Throughput 
+
+In addition to decode token rates, we measure Model FLOPs Utilization (MFU), which quantifies the ratio of actual floating-point operations to the GPU’s theoretical peak capacity, pro-viding a standardized metric for hardware utility. As sum-marized in Table 1, our continuous-batching pipeline achieves massive performance gains over the sequential PyTorch base-line across all models. By effectively batching multi-stream generation, our system accelerates token processing speeds by Table 1: Prompt and generation throughput comparison. All measurements are conducted on a single H100 80GB GPU with FlashAttention-3 and a maximum sequence length of 16,384.               
+
+> System Decode (tok/s) MFU (%)
+> Bagpiper (PyTorch) 52.7 0.096 Bagpiper (vLLM) 5694.5 9.95 OpusLM (PyTorch) 36.5 0.311 OpusLM (vLLM) 4582.9 9.89 OpusLM-Dial. (PyTorch) 53.9 0.290 OpusLM-Dial. (vLLM) 5870.5 3.28
+
+roughly two orders of magnitude. This architectural advantage directly translates to hardware utilization: while the baseline severely underutilizes the H100 GPU with an MFU well below 0.1%, our serving engine efficiently absorbs scheduling over-heads to drive the MFU up to 9.95% for Bagpiper and 9.89% for OpusLM. Notably, the 1.7B parameter OpusLM dialogue model exhibits a lower MFU of 3.28% despite achieving the highest absolute token throughput. This occurs because such a compact model possesses low arithmetic intensity on the H100 GPU, causing inference to hit the memory bandwidth wall be-fore fully saturating the compute units. 
+
+3.3. Numerical and Quality Check 
+
+A prerequisite for any serving optimization is that it must not degrade model output quality. We verify numerical correctness using the Bagpiper model [1] on the MMAU-mini dataset [28]. Specifically, we compare the token sequences and logit distribu-tions produced by our continuous-batching pipeline against the reference PyTorch implementation under identical inputs and random seeds. Table 2: Numerical deviation against the reference PyTorch im-plementation.            
+
+> Configuration RMSE RMSE First (Max) (Mean) Mismatch
+> FP32 + SDPA [29] 0.081 0.008 None (Identical) BF16 + FA3 [27] 0.532 0.163 34.0
+
+As shown in Table 2, under Float32 precision, the two im-plementations produce strictly identical token sequences, with a negligible mean logit RMSE of 0.008. This exact alignment confirms that our custom multi-stream sampling and phase con-trol introduce no numerical bugs. When transitioning to BF16 with FlashAttention-3 [27], a mismatch occurs around step 34, increasing the mean RMSE to 0.163. This discrepancy is an expected consequence of precision loss and non-associative floating-point arithmetic [30, 31]. Crucially, this inherent hardware-level divergence does not negatively impact end-to-end model fidelity. To confirm this empirically, we evaluate inference quality across understand-ing and generation tasks, as summarized in Table 3. We report accuracy on MMAU-mini [28] and word error rate (WER) on LibriSpeech test-clean [32] for understanding. For generation, we report WER on LibriSpeech test-clean and UTMOS on the Eval2000 dataset. While minor instance-level variations in syn-thesized speech naturally arise from hardware precision shifts and the inherent variance of TTS generation, outputs produced by our pipeline safely maintain the expected aggregate perfor-mance of the underlying models across all metrics. Table 3: Inference quality evaluation. Understanding is mea-sured by MMAU-mini accuracy (%, ↑) and ASR word error rate (%, ↓). Generation is measured by TTS word error rate (%, ↓)and dialogue UTMOS ( ↑). “–” indicates the task is not sup-ported by the model.                               
+
+> Understanding Generation System MMAU -mini ↑ASR ↓TTS ↓UTMOS ↑
+> Bagpiper (PyTorch) 74.5 2.5 2.7 –Bagpiper (vLLM) 75.4 2.6 3.3 –OpusLM (PyTorch) –2.3 4.6 –OpusLM (vLLM) –1.9 5.3 –OpusLM-Dial. (PyTorch) –––2.85 OpusLM-Dial. (vLLM) –––2.51
+
+Table 4: CFG overhead on Bagpiper (vLLM). Prompt and generation throughput (tok/s) and MFU (%) with and without Classifier-Free Guidance. 
+
+Setting Prefill (tok/s) Decode (tok/s) MFU (%) 
+
+w/o CFG 315.8 4952.0 8.0 w/ CFG 271.2 3960.7 12.8 
+
+3.4. CFG Overhead Analysis 
+
+While CFG inherently doubles compute via parallel forward passes, Table 4 shows our co-scheduling sustains over 80% of baseline throughput. These measurements are conducted using Bagpiper on the LibriSpeech TTS task, operating at concurren-cies of 256 and 512 for the CFG and baseline configurations, respectively. This efficiency stems from three factors. First, the companion request strictly copies the main sequence, en-suring near-perfect prefix cache hits and minimizing KV cache overhead. Second, since autoregressive decoding is fundamen-tally memory-bound, processing the companion request merely constitutes a marginal addition to the active batch size. This saturates idle compute to boost MFU with negligible latency and synchronization penalties. Finally, models like Bagpiper generate extensive textual reasoning before brief audio outputs. Selectively activating CFG solely during this short audio phase effectively amortizes the dual-pass cost across the entire end-to-end sequence. 
+
+# 4. Conclusion 
+
+In this work, we presented a unified inference architecture that extends a continuous batching engine to natively support Speech Language Models. By integrating synchronous multi-stream sampling and delay-pattern de-interleaving into the gen-eration loop, our design effectively handles the complexities of multi-layered audio tokens. Through a Paired Request Co-Scheduling strategy, our system efficiently absorbs dual-branch overheads, sustaining 80% of non-CFG throughput. Experi-mental results across multiple SpeechLM architectures demon-strate up to 108 × generation throughput improvement over se-quential PyTorch inference while maintaining strict numeri-cal correctness. As the modifications remain confined to the model and logit processing layers, this architecture provides a portable and high-performance foundation for real-time multi-modal voice applications. 5. Generative AI Use Disclosure 
+
+Artificial intelligence tools were utilized exclusively for lan-guage editing and manuscript polishing. The core technical contributions, including the system architecture design, frame-work implementation, and experimental evaluation, were inde-pendently conducted by the authors. 
+
+# 6. Acknowledgment 
+
+This work used the Bridges2 at PSC and Delta/DeltaAI NCSA systems through CIS210014 from the ACCESS program, sup-ported by NSF #2138259, #2138286, #2138307, #2137603, and #2138296. 
+
+# 7. References 
+
+[1] J. Tian, H. Wang, B.-H. Su, C.-y. Huang, Q. Wang, J. Shi, W. Chen, X. Gong, S. Arora, C.-J. Li et al. , “Bagpiper: Solv-ing open-ended audio tasks via rich captions,” arXiv preprint arXiv:2602.05220 , 2026. [2] J. Tian, W. Chen, Y. Peng, J. Shi, S. Arora, S. Bharadwaj, T. Maekaku, Y. Shinohara, K. Goto, X. Yue et al. , “Opuslm: A family of open unified speech language models,” arXiv preprint arXiv:2506.17611 , 2025. [3] J. Xu, Z. Guo, H. Hu, Y. Chu, X. Wang, J. He, Y. Wang, X. Shi, T. He, X. Zhu et al. , “Qwen3-omni technical report,” arXiv preprint arXiv:2509.17765 , 2025. [4] D. Ding, Z. Ju, Y. Leng, S. Liu, T. Liu, Z. Shang, K. Shen, W. Song, X. Tan, H. Tang et al. , “Kimi-audio technical report,” 
+
+arXiv preprint arXiv:2504.18425 , 2025. [5] J. Shi, J. Tian, Y. Wu, J.-w. Jung, J. Q. Yip, Y. Masuyama, W. Chen, Y. Wu, Y. Tang, M. Baali et al. , “Espnet-codec: Compre-hensive training and evaluation of neural codecs for audio, music, and speech,” in 2024 IEEE Spoken language technology workshop (SLT) . IEEE, 2024, pp. 562–569. [6] Z. Ye, P. Sun, J. Lei, H. Lin, X. Tan, Z. Dai, Q. Kong, J. Chen, J. Pan, Q. Liu et al. , “Codec does matter: Exploring the semantic shortcoming of codec for audio language model,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 39, no. 24, 2025, pp. 25 697–25 705. [7] H. Wang, J. Shi, J. Tian, B. Li, K. Yu, and S. Watanabe, “Bscodec: A band-split neural codec for high-quality universal audio recon-struction,” arXiv preprint arXiv:2511.06150 , 2025. [8] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak supervision,” in International conference on machine learning .PMLR, 2023, pp. 28 492–28 518. [9] J. Kim, J. Kong, and J. Son, “Conditional variational autoencoder with adversarial learning for end-to-end text-to-speech,” in Inter-national conference on machine learning . PMLR, 2021, pp. 5530–5540. [10] J. Shen, R. Pang, R. J. Weiss, M. Schuster, N. Jaitly, Z. Yang, Z. Chen, Y. Zhang, Y. Wang, R. Skerrv-Ryan et al. , “Natural tts synthesis by conditioning wavenet on mel spectrogram pre-dictions,” in 2018 IEEE international conference on acoustics, speech and signal processing (ICASSP) . IEEE, 2018, pp. 4779– 4783. [11] S. Arora, J. Tian, J. Shi, H. Futami, Y. Kashiwagi, E. Tsunoo, and S. Watanabe, “Optimizing conversational quality in spoken dialogue systems with reinforcement learning from ai feedback,” 
+
+arXiv preprint arXiv:2601.19063 , 2026. [12] A. D´ efossez, L. Mazar´ e, M. Orsini, A. Royer, P. P´ erez, H. J´ egou, E. Grave, and N. Zeghidour, “Moshi: a speech-text foundation model for real-time dialogue,” arXiv preprint arXiv:2410.00037 ,2024. [13] W. Kwon, Z. Li, S. Zhuang, Y. Sheng, L. Zheng, C. H. Yu, J. E. Gonzalez, H. Zhang, and I. Stoica, “Efficient memory manage-ment for large language model serving with pagedattention,” in 
+
+Proceedings of the ACM SIGOPS 29th Symposium on Operating Systems Principles , 2023. [14] L. Zheng, L. Yin, Z. Xie, C. L. Sun, J. Huang, C. H. Yu, S. Cao, C. Kozyrakis, I. Stoica, J. E. Gonzalez et al. , “Sglang: Efficient execution of structured language model programs,” Advances in neural information processing systems , vol. 37, pp. 62 557– 62 583, 2024. [15] G.-I. Yu, J. S. Jeong, G.-W. Kim, S. Kim, and B.-G. Chun, “Orca: A distributed serving system for {Transformer-Based } generative models,” in 16th USENIX symposium on operating systems design and implementation (OSDI 22) , 2022, pp. 521–538. [16] P. Mousavi, G. Maimon, A. Moumen, D. Petermann, J. Shi, H. Wu, H. Yang, A. Kuznetsova, A. Ploujnikov, R. Marxer et al. ,“Discrete audio tokens: More than a survey!” arXiv preprint arXiv:2506.10274 , 2025. [17] Y. Guo, Z. Li, H. Wang, B. Li, C. Shao, H. Zhang, C. Du, X. Chen, S. Liu, and K. Yu, “Recent advances in discrete speech tokens: A review,” IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025. [18] J. Copet, F. Kreuk, I. Gat, T. Remez, D. Kant, G. Synnaeve, Y. Adi, and A. D´ efossez, “Simple and controllable music genera-tion,” Advances in neural information processing systems , vol. 36, pp. 47 704–47 720, 2023. [19] J. Ho and T. Salimans, “Classifier-free diffusion guidance,” arXiv preprint arXiv:2207.12598 , 2022. [20] J. Tian, S.-g. Lee, Z. Kong, S. Ghosh, A. Goel, C.-H. H. Yang, W. Dai, Z. Liu, H. Ye, S. Watanabe et al. , “Ualm: Unified au-dio language model for understanding, generation and reasoning,” 
+
+arXiv preprint arXiv:2510.12000 , 2025. [21] H. Liu, Z. Chen, Y. Yuan, X. Mei, X. Liu, D. Mandic, W. Wang, and M. D. Plumbley, “Audioldm: Text-to-audio generation with latent diffusion models,” arXiv preprint arXiv:2301.12503 , 2023. [22] A. Yang, A. Li, B. Yang, B. Zhang, B. Hui, B. Zheng, B. Yu, C. Gao, C. Huang, C. Lv et al. , “Qwen3 technical report,” arXiv preprint arXiv:2505.09388 , 2025. [23] T. OLMo, P. Walsh, L. Soldaini, D. Groeneveld, K. Lo, S. Arora, A. Bhagia, Y. Gu, S. Huang, M. Jordan et al. , “2 olmo 2 furious,” 
+
+arXiv preprint arXiv:2501.00656 , 2024. [24] W. Chen, W. Zhang, Y. Peng, X. Li, J. Tian, J. Shi, X. Chang, S. Maiti, K. Livescu, and S. Watanabe, “Towards robust speech representation learning for thousands of languages,” in Proceed-ings of the 2024 Conference on Empirical Methods in Natural Language Processing , 2024, pp. 10 205–10 224. [25] R. Kumar, P. Seetharaman, A. Luebs, I. Kumar, and K. Kumar, “High-fidelity audio compression with improved rvqgan,” Ad-vances in Neural Information Processing Systems , vol. 36, pp. 27 980–27 993, 2023. [26] L. B. Allal, A. Lozhkov, E. Bakouch, G. M. Bl´ azquez, G. Penedo, L. Tunstall, A. Marafioti, H. Kydl´ ıˇ cek, A. P. Lajar´ ın, V. Srivastav 
+
+et al. , “Smollm2: When smol goes big–data-centric training of a small language model,” arXiv preprint arXiv:2502.02737 , 2025. [27] J. Shah, G. Bikshandi, Y. Zhang, V. Thakkar, P. Ramani, and T. Dao, “Flashattention-3: Fast and accurate attention with asyn-chrony and low-precision,” Advances in Neural Information Pro-cessing Systems , vol. 37, pp. 68 658–68 685, 2024. [28] S. Sakshi, U. Tyagi, S. Kumar, A. Seth, R. Selvakumar, O. Nieto, R. Duraiswami, S. Ghosh, and D. Manocha, “Mmau: A massive multi-task audio understanding and reasoning benchmark,” arXiv preprint arXiv:2410.19168 , 2024. [29] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, Ł. Kaiser, and I. Polosukhin, “Attention is all you need,” 
+
+Advances in neural information processing systems , vol. 30, 2017. [30] A. Golden, S. Hsia, F. Sun, B. Acun, B. Hosmer, Y. Lee, Z. De-Vito, J. Johnson, G.-Y. Wei, D. Brooks et al. , “Is flash attention stable?” arXiv preprint arXiv:2405.02803 , 2024. [31] J. Yuan, H. Li, X. Ding, W. Xie, Y.-J. Li, W. Zhao, K. Wan, J. Shi, X. Hu, and Z. Liu, “Understanding and mitigating numer-ical sources of nondeterminism in llm inference,” arXiv preprint arXiv:2506.09501 , 2025. [32] V. Panayotov, G. Chen, D. Povey, and S. Khudanpur, “Lib-rispeech: an asr corpus based on public domain audio books,” in 2015 IEEE international conference on acoustics, speech and signal processing (ICASSP) . IEEE, 2015, pp. 5206–5210.
