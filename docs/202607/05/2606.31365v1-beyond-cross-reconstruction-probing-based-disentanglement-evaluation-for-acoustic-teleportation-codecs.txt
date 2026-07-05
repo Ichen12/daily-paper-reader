@@ -1,0 +1,286 @@
+Title: Beyond Cross-Reconstruction: Probing-Based Disentanglement Evaluation for Acoustic Teleportation Codecs
+
+URL Source: https://arxiv.org/pdf/2606.31365v1
+
+Published Time: Wed, 01 Jul 2026 00:48:43 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# Beyond Cross-Reconstruction: Probing-Based Disentanglement Evaluation for Acoustic Teleportation Codecs 
+
+## Philipp Grundhuber 1, Emanu¨ el A. P. Habets ID 21 Fraunhofer Institute for Integrated Circuits (IIS), Erlangen, Germany 
+
+2 International Audio Laboratories Erlangen ∗, Erlangen, Germany 
+
+philipp.grundhuber@iis.fraunhofer.de, emanuel.habets@audiolabs-erlangen.de 
+
+## Abstract 
+
+Some neural audio codecs disentangle speech into latent sub-spaces encoding content, speaker identity, and acoustics, en-abling acoustic teleportation and voice conversion. Existing evaluations rely on cross-reconstruction quality, which cannot reliably detect leakage across partitions. We extend a probing-based framework to assess disentanglement by regressing room-acoustic parameters (reverberation time, clarity, and direct-to-reverberant ratio) and classifying speaker identity, using the gap between intended and unintended partitions as the disentangle-ment measure. Applied to an acoustic teleportation codec, we find speaker identity is largely confined to its partition, while acoustics leak into the speech embeddings due to the training objective. Acoustic embeddings blindly estimate room parame-ters within 0.02 s of supervised baselines, indicating physically meaningful structure emerges without explicit supervision. 
+
+Index Terms : room-acoustics, neural audio codecs, disentan-glement 
+
+## 1. Introduction 
+
+Certain Neural Audio Codecs (NACs) partition the latent space in order to disentangle distinct speech attributes, including lin-guistic content, speaker identity, prosody, and acoustic envi-ronment. This enables applications like Acoustic Teleporta-tion (AT), dereverberation, and voice conversion [1]. Recent codecs realize this idea through diverse architectural choices: FreeCodec [2] decomposes speech into global timbre, prosody, and content through separate encoders; NaturalSpeech 3 [3] fac-tors speech into five subspaces via vector quantization; Speech-Tokenizer [4] achieves hierarchical disentanglement across residual vector quantization (RVQ) layers; SD-Codec [5] sep-arates audio sources through parallel RVQ branches; and Om-ran et al. [6] and Grundhuber et al. [7] separate speech from acoustic characteristics in partitioned embeddings. Existing approaches evaluate disentanglement through downstream task performance, such as voice conversion qual-ity [2], TTS metrics [3], source separation metrics [5], or cross-reconstruction after embedding swaps [6, 7]. Qualitative methods (t-SNE, principal component analysis (PCA), listen-ing tests) provide intuitive evidence but are difficult to compare systematically. Crucially, none can reveal whether information leaks across partitions, as a decoder may learn to ignore redun-dant information in the wrong partition. Classical disentangle-ment metrics such as DCI (disentanglement, completeness, in-formativeness) [8], MIG (mutual information gap) [9], and the 
+
+β-VAE metric [10] assume dimension-wise independence over 
+
+> ∗
+
+A joint institution of Fraunhofer IIS and Friedrich-Alexander-Universit¨ at Erlangen-N¨ urnberg (FAU), Germany. 
+
+discrete factors and are therefore inapplicable to the partition-level structure found in NACs. Training lightweight classifiers on representations to evaluate disentanglement via the accuracy gap between content and speaker embeddings is an established method [11, 12, 13]. Prior probing work in speech has targeted attributes such as speaker identity [11, 14], but the blind es-timation of continuous, physically grounded parameters based on codec representations remains unexplored. In this work, we treat the pre-trained encoder of an AT codec [7], spanning different training task sets, quantization levels, and temporal downsampling factors, as a fixed fea-ture extractor and train identical lightweight multi-layer per-ceptron (MLP) probes on each embedding partition indepen-dently. For regression, we target the blind estimation of three room-acoustic parameters from reverberant speech (viz., rever-beration time ( T60 ), clarity ( C50 ), and direct-to-reverberant ra-tio (DRR)), which is a well-studied task [15, 16]. For classifica-tion, we target speaker identity on a fixed set of known speak-ers. These factors serve as diagnostic probes for representation quality rather than as end goals. Our contributions are: 1) We introduce regression-based probing for quantifying disentanglement in NACs, adapting the informativeness principle of the DCI framework [8] from indi-vidual dimensions to embedding partitions (Sec. 2). 2) We re-veal an asymmetric disentanglement structure: speaker identity is effectively confined to the speech partition, while acoustic information partially leaks into speech partition embeddings, and trace this asymmetry to the gradient structure of the AT training objective. 3) We show that acoustic embeddings yield blind T60 estimates competitive with supervised baselines, and informative C50 and DRR estimates, despite receiving no room parameter labels during codec training. 4) We conduct a sys-tematic study of the effects of training tasks, quantization lev-els, and temporal downsampling on disentanglement quality, demonstrating that output-quality metrics such as ScoreQ [17] do not predict disentanglement and that probing is necessary to expose leakage missed by cross-reconstruction evaluation. 
+
+## 2. Problem Formulation 
+
+In acoustic teleportation, a reverberant speech signal is modeled as xc,r = sc ∗ hr , where sc is anechoic speech with content c,
+
+hr is the room impulse response (RIR) of room r, and ∗ denotes convolution. The encoder splits the input into two partitions (Fig. 1): 
+
+{sc,r , hc,r } = Enc (xc,r ), (1) where sc,r ∈ RTs×64 captures speech content and hc,r ∈
+
+RTh×64 captures acoustic characteristics. Acoustic telepor-tation swaps acoustic embeddings at decode time, ˆxc1,r 2 =
+
+Dec (sc1,r 1 , hc2,r 2 ); dereverberation is the special case h = 0. 
+
+> arXiv:2606.31365v1 [eess.AS] 30 Jun 2026 frozen
+> ❄Linear (128→1)
+> Linear (128→7)
+> Linear (64→128)
+> Linear (128→1)
+> Linear (128→7)
+> Linear (128→1)
+> Linear (128→7)
+> ReLU, Dropout
+> Linear (128→100)
+> Softmax
+> Speaker ID
+> OR
+> Speaker
+> Classification Head
+> Room Parameter
+> Regression Heads
+
+Figure 1: Probing framework for disentanglement quantification. Left: The pre-trained AT encoder splits reverberant speech into speech ( sc,r ) and acoustic ( hc,r ) partitions. Right: Identical lightweight MLP probes trained on each partition independently predict room-acoustic parameters (regression) and speaker identity (classification). The gap ∆k (Eq. 5) between intended and unintended partition accuracy serves as a direct disentanglement measure. 
+
+Ideally, hc,r encodes room-acoustics irrespective of speaker identity, and sc,r encodes content and speaker characteristics ir-respective of the room. In practice, information may leak across partitions, and such leakage is invisible to output-quality met-rics like ScoreQ. We therefore seek a metric that directly mea-sures information content per partition. We probe each partition with three RIR parameters defined in [18, 19]: 
+
+T60 : time for energy decay of 60 dB , (2) 
+
+C50 = 10 log 10 
+
+R 50 ms  
+
+> 0
+
+h2 
+
+> r
+
+(t)dt 
+
+R ∞ 
+
+> 50 ms
+
+h2 
+
+> r
+
+(t)dt , (3) DRR = 10 log 10 
+
+R td 
+
+> 0
+
+h2 
+
+> r
+
+(t)dt 
+
+R ∞ 
+
+> td
+
+h2 
+
+> r
+
+(t)dt , (4) where the direct-path window is set to td = 2 .5 ms following [19]. These parameters are computed per octave band (125 Hz to 8 kHz) and as broadband averages, and probed alongside speaker identity as a complementary categorical factor. Classical disentanglement metrics such as DCI [8] operate at the dimension level, scoring how individual latent dimen-sions map to individual generative factors; in partition-level ar-chitectures, this mapping does not apply. Instead, we train a lightweight probe fa,p on each (attribute, partition) pair and measure performance M(a, p ) with a task-appropriate metric (Pearson ρ for room parameters, top-1 accuracy for speaker identity). For factor k with intended partition pin and unin-tended partition pun , the disentanglement gap 
+
+∆k = M(k, p in ) − M (k, p un ) (5) quantifies how well factor k is confined to its intended partition. We write ∆acc and ∆ρ for the gap evaluated with top-1 accuracy and Pearson ρ, respectively. Gaps are not comparable across factors, but each independently measures the degree of separa-tion. This adapts DCI’s informativeness score from dimensions to partitions, following established practice in speech [11, 12] and recently formalized as a general probe-based evaluation framework by Plachouras et al. [13]. Because our probes are deliberately simple (see Sec. 3), the measured leakage consti-tutes a lower bound on actual information content. 
+
+## 3. Proposed Probing Method 
+
+3.1. Probing Framework 
+
+We estimate ∆acc and ∆ρ by treating the pre-trained encoder of the AT models from [7] as a fixed feature extractor and train-ing lightweight probes on each embedding partition indepen-dently. The encoder is an EnCodec-based [20] NAC operating at 16 kHz with a hop length of 320 samples. It produces 128-dimensional outputs split equally into a 64-dimensional speech partition sc,r and a 64-dimensional acoustic partition hc,r , each quantized by an independent RVQ. We evaluated all model con-figurations from [7], spanning different training task sets, quan-tization levels ( N ∈ { 4, 8, 16 } and unquantized), and temporal downsampling factors (1 to 120) for the acoustic partition. The downsampling is applied to hc,r after the encoder by an integer factor, reducing its temporal resolution while the speech parti-tion remains at full resolution, which lowers the effective bitrate of the acoustic stream. 
+
+3.2. Architecture 
+
+We deliberately use a simple MLP so that probe accuracy re-flects the information content of the embeddings rather than estimator capacity. For both probes, the partition embedding is mean-pooled over the temporal dimension to a fixed 64-dimensional vector, followed by three fully connected layers (one for the speaker identification probe) with 128 hidden units, ReLU activations, and 10% dropout. Mean pooling handles variable temporal lengths arising from different downsampling factors and compresses non-stationary temporal variability in speech content, since room-acoustics and speaker identity are stationary per utterance. Both room-acoustic parameters and speaker identity are therefore predicted at the utterance level. The regression probe predicts ˆθ = [ bT60 , bC50 , [DRR ]⊤
+
+via eight linear heads per acoustic parameter (i.e., seven per-octave-band (125 Hz to 8 kHz) and one broadband) trained with a mean-squared-error loss. The classification probe predicts speaker identity via a K-way softmax head trained with cross-entropy loss. The total architecture has 44 440 parameters for room parameter estimation and 21 220 parameters for speaker identification. 3.3. Dataset and Training 
+
+Speech data was drawn from DNS5 read speech [21], assumed to be anechoic. RIRs were sourced from GWAsmall [22], pre-processed by truncating samples before the first absolute peak, normalized by maximum absolute value, and scaled by 0.25 to prevent clipping. T60 values were taken from GWAsmall meta-data; C50 and DRR were computed from the normalized RIR via (3) and (4). Anechoic samples (10% of the dataset) were assigned T60 = 0 s, C50 = 100 dB, DRR = 70 dB. These maxima serve as upper bounds on the values computed in the dataset and enable regression. Reverberant speech was gener-ated by convolving 3 s excerpts with one short ( T60 < 0.25 s), and one long (0.4 s < T 60 < 1.2 s) RIR drawn uniformly from the split’s room pool and normalizing to the value range of ±1.The full dataset comprised 60 000 training samples (50 h), and 6000 samples each for validation and test. For room pa-rameter estimation, speakers and rooms are mutually exclusive across splits. For the speaker identity probe, the top K = 100 
+
+speakers by utterance count are retained, split 80/10/10% per speaker. Here, the dataset consists of 7806 training, 983 valida-tion, and 983 test samples. Both probes were trained up to 100 epochs using the AdamW optimizer with a learning rate of 10 −3 and a weight decay of 10 −4; the learning rate was reduced by a factor of 2 after 7 epochs without validation-loss improvement, and early stopping was used with a patience of 15. Weighted random sam-pling (inverse class frequency) mitigates speaker imbalance in the classification probe. 
+
+## 4. Evaluation 
+
+4.1. Disentanglement 
+
+Disentanglement was evaluated by comparing the gaps ∆acc 
+
+and ∆ρ. Significance of ∆ρ was assessed via the Steiger test [23] for dependent correlations, which accounts for the shared test set and ground-truth labels; ∆acc was tested with a two-proportion z-test. Significance thresholds follow p ≤ 0.05 
+
+(*), p ≤ 0.01 (**), p ≤ 0.001 (***), and p > 0.05 (ns). In Fig. 2, we show the probe performance across four tasks: 
+
+T60 , C50 , DRR (Pearson ρ averaged over all bands and broad-band), and speaker classification top-1 accuracy. Non-AT base-lines (Clean Recon, +Reverb Recon, +Dereverberation) show very small speaker-identity gaps, none are statistically signifi-cant. All AT-trained models, by contrast, yield statistically sig-nificant separation on every probed factor. Speaker identity is effectively confined to the speech partition, with ∆acc reaching 56.8 pp for the quantized N =8 model (83.1% vs. 26.3%), and the AT Omran Taskset reaches 86.5% vs. 45.7% speaker accu-racy from the speech and acoustic partitions, respectively. AT training appears required for the observed speaker separation. Acoustic information, however, separated only partially: al-though the acoustic partition consistently yields higher room-parameter correlations, the speech partition retains acoustic in-formation across all configurations. While quantization am-plifies speaker separation ( ∆acc = 56 .8 pp at N = 8 vs. 40.8 pp unquantized) by discarding entangled speaker residu-als from the acoustic partition, speech-partition T60 leakage re-mains above ρ = 0 .75 . Temporal downsampling of the acous-tic partition left room parameter estimation performance largely unchanged ( T60 ρ ∈ [0 .895 , 0.915] ). This confirms the tempo-ral compressibility of room-acoustic properties. For the down-sampled acoustic embeddings, speech-partition leakage varies between ρ = 0 .752 and 0.870 without a systematic trend. Table 1: Broadband T60 estimation comparison to baselines. 
+
+Method RMSE [s] MAE [s] ρ
+
+L¨ ollmann ML [15] 0.404 0.308 0.446 Spectrogram CNN [16] 0.087 0.064 0.955 CRNN-MB [24] 0.082 0.056 0.959 
+
+Log-mel MLP (ours) 0.204 0.163 0.564 Acoustic Emb. MLP (ours) 0.094 0.064 0.947 
+
+4.2. Physically Meaningful Acoustic Embeddings 
+
+Despite receiving no room-parameter labels during codec train-ing, the acoustic embeddings support competitive blind esti-mation, which underlines that the embedding carries physi-cally meaningful room structure, complementing the disentan-glement gaps of Sec. 4. The obtained room-parameter esti-mates emerge as a by-product of a general-purpose codec em-bedding, without any task-specific feature engineering or room-parameter supervision. The best configuration (DS Ablation Factor 4) achieves broadband T60 Root Mean Squared Error (RMSE) = 0.094 s ( ρ = 0 .947 ), C50 ρ = 0 .964 , and DRR 
+
+ρ = 0 .954 from its acoustic partition alone (Fig. 3). Figure 3 shows the predicted versus ground-truth broadband values for all three parameters, where predictions closely follow the ideal diagonal across the full range of T60 , C50 , and DRR. Predic-tions for anechoic signals show large outliers where estimation errors for high C50 > 30 dB or high DRR > 30 dB are very large. Per-band performance follows the expected frequency dependence, weakest at 125 Hz ( T60 ρ = 0 .800 ) and strongest at 8 kHz ( ρ = 0 .940 ). Table 1 contextualizes these results against supervised base-lines retrained on the same data. The acoustic-embedding MLP falls within 0.02 s RMSE of the fully supervised CRNN-MB (0.082 s, ρ = 0.959 ) and spectrogram CNN (0.087 s, ρ =0.955 ), using only a 64-dimensional embedding generated us-ing a pre-trained encoder. A controlled ablation using the same MLP architecture on 64-dimensional log-mel features yields substantially worse performance (RMSE = 0.204 s, ρ = 0 .564 ), confirming that the codec embedding contributes to estimation quality. 
+
+## 5. Discussion 
+
+The asymmetry between speech and acoustic embedding leak-age can be attributed back to the AT training objective: Em-bedding swaps across speakers force the decoder to recover speaker identity exclusively from the speech partition. This di-rectly penalizes speaker leakage into the acoustic embedding. No analogous task minimizes room-acoustic information in the speech partition. If the speech embedding redundantly encodes room characteristics, the decoder ignores them when a different acoustic embedding is supplied. Importantly, output-quality metrics are blind to these dis-tinctions. Comparing the disentanglement analysis to quality estimates in [7] the +Dereverberation baseline achieves compet-itive ScoreQ without any detectable disentanglement, while the lower-quality AT-only model (ScoreQ NR 2.95) yields higher probe informativeness ( ρ = 0 .89 ). The cross-reconstruction metric used in prior work conflates the two disentanglement axes. Probing is required to expose leakage that output metrics cannot detect. This work extended the probing framework for disentan-glement evaluation in NACs by incorporating a regression task. This shows that, within the AT training framework, speaker 0.7 0.8 0.9                                                         
+
+> DS Ablation Factor 120
+> DS Ablation Factor 60
+> DS Ablation Factor 30
+> DS Ablation Factor 6
+> DS Ablation Factor 4
+> DS Ablation Factor 2
+> AT Quantized 16
+> AT Quantized 8
+> AT Quantized 4
+> AT only AT
+> AT all tasks
+> AT Omran Taskset
+> + Dereverberation
+> + Reverb Recon
+> Clean Recon
+> T60 (overall )
+> speech
+> acoustic
+> 0.8 0.9
+> C50 (overall )
+> 0.8 0.9
+> DRR (overall )
+> 0.25 0.50 0.75
+> top-1 accuracy T60 C50 DRR Acc
+> -0.102 *** -0.013 *** -0.011 *** +0.527 ***
+> -0.040 *** -0.008 *** -0.013 *** +0.408 ***
+> -0.142 *** -0.043 *** -0.038 *** +0.428 ***
+> -0.046 *** -0.006 *** -0.007 *** +0.429 ***
+> -0.163 *** -0.062 *** -0.053 *** +0.578 ***
+> -0.063 *** -0.019 *** -0.018 *** +0.542 ***
+> -0.027 *** -0.003 *** -0.005 *** +0.488 ***
+> -0.084 *** -0.030 *** -0.027 *** +0.568 ***
+> -0.044 *** -0.006 *** -0.007 *** +0.526 ***
+> +0.012 *** +0.002 *** +0.004 *** +0.206 ***
+> +0.018 *** +0.005 *** +0.008 *** +0.332 ***
+> -0.013 *** -0.001 ** -0.002 *** +0.408 ***
+> -0.008 *** -0.007 *** -0.010 *** +0.002 ns
+> +0.005 * -0.002 ns -0.002 ns +0.005 ns
+> -0.010 ** +0.001 *** +0.004 *** +0.013 ns
+
+Figure 2: Overview of probe performance across four tasks: T60 , C50 , DRR (Pearson ρ averaged over all bands and broadband), and speaker classification top-1 accuracy. Each row corresponds to one model; each panel shows paired bars for the speech (blue) and acoustic (orange) partitions. The rightmost table reports the per-model gap ∆ with statistical significance annotations. Dashed separators indicate model family boundaries. 0.00 0.25 0.50 0.75 1.00 1.25 
+
+Ground Truth (s) 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+1.2 
+
+> Predicted (s)
+
+(a) Broadband RT60 
+
+0 20 40 60 80 100 
+
+Ground Truth (dB) 
+
+0
+
+20 
+
+40 
+
+60 
+
+80 
+
+100 
+
+> Predicted (dB)
+
+(b) Broadband C50 
+
+20 0 20 40 60 80 
+
+Ground Truth (dB) 
+
+20 
+
+0
+
+20 
+
+40 
+
+60 
+
+80 
+
+> Predicted (dB)
+
+(c) Broadband DRR 
+
+Figure 3: Predicted versus ground-truth broadband room-acoustic parameters from the acoustic embedding of model DS Ablation Factor 4: (a) T60 , (b) C50 , and (c) DRR. The dashed diagonal indicates the ideal prediction. 
+
+identity is effectively separated, whereas acoustic information continues to leak into the speech partition. No existing task penalizes room-acoustic information in the speech embedding. Future work could extend the training task to explicitly push acoustic information out of the speech embed-ding, e.g., by adversarial decorrelation via a gradient-reversal branch that predicts room parameters from s. This would ex-plicitly penalize the acoustic information that the speech en-coder currently retains without cost. The present study probes only time-invariant factors (room-acoustics, speaker identity). Extending the framework to lin-guistic content, e.g., with phoneme or ASR-based probes on both partitions, would establish a third disentanglement and could verify whether the non-downsampled acoustic partition is truly speech-free. Evaluating the framework on codec architec-tures beyond EnCodec would further test the generality of the observed asymmetry. The MLP probes are deliberately simple. Therefore, the reported leakage levels constitute a lower bound, and actual information leakage may exceed what is measured. Additionally, exploring asymmetric partition dimensionalities may offer a mechanism to shift the leakage balance. 
+
+## 6. Conclusion 
+
+We introduced a probing-based framework that quantifies dis-entanglement in NACs by training lightweight regressors and classifiers on fixed embedding partitions, thereby directly mea-suring the information content per partition and per factor. Ap-plying this framework to an AT codec reveals an asymmetric disentanglement structure: speaker identity is effectively con-fined to the speech partition, while acoustic information leaks into speech partition embeddings. We trace this asymmetry to the AT objective, which induces a direct optimization sig-nal to remove speaker information from the acoustic partition but provides no analogous signal to push room information out of the speech partition. Quantization amplifies speaker sep-aration but leaves acoustic leakage unchanged. The acoustic embeddings nevertheless encode physically meaningful room structure, achieving T60 estimation with an RMSE of 0.094 s within 0.02 s of supervised baselines. We showed that cross-reconstruction evaluation fails to expose leakage, making prob-ing necessary, and explicit decorrelation losses are needed for complete separation along both axes. 7. Acknowledgements 
+
+The authors gratefully acknowledge the scientific support and HPC resources provided by the Erlangen National High Per-formance Computing Center (NHR@FAU) of the Friedrich-Alexander-Universit¨ at Erlangen-N¨ urnberg (FAU). The hard-ware is funded by the German Research Foundation (DFG). 
+
+## 8. Generative AI Use Disclosure 
+
+Generative AI in the form of LLMs was used for L ATEX format-ting, plotting, and minor script corrections. 
+
+## 9. References 
+
+[1] X. Wang, H. Chen, S. Tang, Z. Wu, and W. Zhu, “Disentangled representation learning,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 46, no. 12, pp. 9677–9696, 2024. [2] Y. Zheng, W. Tu, Y. Kang, J. Chen, Y. Zhang, L. Xiao, Y. Yang, and L. Ma, “FreeCodec: A disentangled neural speech codec with fewer tokens,” in Interspeech , 2025, pp. 4878–4882. [3] Z. Ju, Y. Wang, K. Shen, X. Tan, D. Xin, D. Yang, Y. Liu, Y. Leng, K. Song, S. Tang, Z. Wu, T. Qin, X.-Y. Li, W. Ye, S. Zhang, J. Bian, L. He, J. Li, and S. Zhao, “NaturalSpeech 3: Zero-shot speech synthesis with factorized codec and diffusion models,” in 
+
+Proc. of the 41st International Conference on Machine Learning .JMLR.org, 2024. [4] X. Zhang, D. Zhang, S. Li, Y. Zhou, and X. Qiu, “SpeechTok-enizer: Unified speech tokenizer for speech language models,” in 
+
+Proc. of the 12th International Conference on Learning Represen-tations , 2024. [5] X. Bie, X. Liu, and G. Richard, “Learning source disentanglement in neural audio codec,” in Proc. of the International Conference on Acoustics, Speech, and Signal Processing (ICASSP) . IEEE, 2025, pp. 1–5. [6] A. Omran, N. Zeghidour, Z. Borsos, F. de Chaumont Quitry, M. Slaney, and M. Tagliasacchi, “Disentangling speech from surroundings with neural embeddings,” in Proc. of the Interna-tional Conference on Acoustics, Speech, and Signal Processing (ICASSP) . IEEE, 2023, pp. 1–5. [7] P. Grundhuber, M. M. Halimeh, and E. A. P. Habets, “Acous-tic teleportation via disentangled neural audio codec represen-tations,” in Proc. of the International Conference on Acoustics, Speech, and Signal Processing (ICASSP) , 2026, pp. 1–5. [8] C. Eastwood and C. K. Williams, “A framework for the quanti-tative evaluation of disentangled representations,” in Proc. of the International Conference on Learning Representations , 2018. [9] R. T. Chen, X. Li, R. B. Grosse, and D. K. Duvenaud, “Isolat-ing sources of disentanglement in variational autoencoders,” Ad-vances in Neural Information Processing Systems , vol. 31, 2018. [10] C. P. Burgess, I. Higgins, A. Pal, L. Matthey, N. Watters, G. Des-jardins, and A. Lerchner, “Understanding disentangling in β-vae,” in Proc. of the 31st Conference on Neural Information Processing Systems , 2017. [11] W.-N. Hsu, Y. Zhang, R. J. Weiss, Y.-A. Chung, Y. Wang, Y. Wu, and J. Glass, “Disentangling correlated speaker and noise for speech synthesis via data augmentation and adversarial factor-ization,” in Proc. of the International Conference on Acoustics, Speech, and Signal Processing (ICASSP) . IEEE, 2019, pp. 5901– 5905. [12] K. Qian, Y. Zhang, H. Gao, J. Ni, C.-I. Lai, D. Cox, M. Hasegawa-Johnson, and S. Chang, “Contentvec: An improved self-supervised speech representation by disentangling speakers,” in 
+
+Proc. of the International Conference on Machine Learning .PMLR, 2022, pp. 18 003–18 017. [13] C. Plachouras, J. Guinot, G. Fazekas, E. Quinton, E. Benetos, and J. Pauwels, “Towards a unified representation evaluation frame-work beyond downstream tasks,” in Proc. of the International Joint Conference on Neural Networks , 2025. [14] J.-c. Chou, C.-c. Yeh, and H.-y. Lee, “One-shot voice conversion by separating speaker and content representations with instance normalization,” in Interspeech . ISCA, 2019. [15] H. W. L¨ ollmann, E. Yilmaz, M. Jeub, and P. Vary, “An improved algorithm for blind reverberation time estimation,” in Proc. of the International Workshop on Acoustic Echo and Noise Control (IWAENC) , 2010, pp. 1–4. [16] H. Gamper and I. J. Tashev, “Blind reverberation time estima-tion using a convolutional neural network,” in Proc. of the Inter-national Workshop on Acoustic Signal Enhancement (IWAENC) ,2018, pp. 136–140. [17] A. Ragano, J. Skoglund, and A. Hines, “SCOREQ: speech quality assessment with contrastive regression,” in Proc. of the 38th Inter-national Conference on Neural Information Processing Systems .Red Hook, NY, USA: Curran Associates Inc., 2025. [18] J. Eaton, N. D. Gaubitch, A. H. Moore, and P. A. Naylor, “The ACE challenge — Corpus description and performance evalua-tion,” in Proc. of the Workshop on Applications of Signal Process-ing to Audio and Acoustics (WASSPA) , 2015, pp. 1–5. [19] H. Kuttruff, Room acoustics . Crc Press, 2016. [20] A. D´ efossez, J. Copet, G. Synnaeve, and Y. Adi, “High fidelity neural audio compression,” Transactions on Machine Learning Research , 2023. [21] H. Dubey, A. Aazami, V. Gopal, B. Naderi, S. Braun, R. Cutler, H. Gamper, M. Golestaneh, and R. Aichner, “ICASSP 2023 Deep Noise Suppression Challenge,” in Proc. of the International Con-ference on Acoustics, Speech, and Signal Processing (ICASSP) ,2023. [22] Z. Tang, R. Aralikatti, A. Ratnarajah, and D. Manocha, “GWA: A large geometric-wave acoustic dataset for audio processing,” in 
+
+Proc. of the Special Interest Group on Computer Graphics and Interactive Techniques (SIGGRAPH) , 2022. [23] J. H. Steiger, “Tests for comparing elements of a correlation ma-trix,” Psychological Bulletin , vol. 87, no. 2, pp. 245–251, 1980. [24] P. G¨ otz, C. Tuna, A. Walther, and E. A. P. Habets, “Online rever-beration time and clarity estimation in dynamic acoustic condi-tions,” The Journal of the Acoustical Society of America , vol. 153, no. 6, pp. 3532–3542, 2023.
