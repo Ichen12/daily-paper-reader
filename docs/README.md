@@ -6,59 +6,46 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-05
-- 运行时间：2026-07-05 21:20:13 UTC
+- 最新运行日期：2026-07-06
+- 运行时间：2026-07-06 21:30:27 UTC
 - 运行状态：成功
-- 本次总论文数：13
-- 精读区：3
-- 速读区：10
+- 本次总论文数：8
+- 精读区：1
+- 速读区：7
 
 ### 今日简报（AI）
-今日共处理13篇论文，精读3篇，其中《Beyond Cross-Reconstruction》与《AV-SyncBench》均获9.0高分，聚焦声学编解码解缠评估与音视频同步基准。建议优先关注这两篇精读论文，它们分别突破了解缠评估方法缺失和时序-语义同步解耦的难题。下一步可深入阅读其实验设计，或结合速读中的音频检索（ALM2Vec）与自监督表征（BEST-RQ-2）拓展应用思路。
-- 详情：[/202607/05/README](/202607/05/README)
+1) 今日8篇论文，精读聚焦脑机接口语音合成新突破，速读覆盖多模态说话人识别与自监督音频表征。  
+2) 最值得关注：精读中的《Brain2voice 2.0》（8.0分）实现高性能语音合成BCI，以及速读里的《AMR》（7.0分）提出自适应模态路由提升多语言说话人识别效果。  
+3) 建议优先精读《Brain2voice 2.0》了解实时语音生成进展，再速读《AMR》学习多模态融合策略。
+- 详情：[/202607/06/README](/202607/06/README)
 
 ### 精读区论文标签
-1. [Beyond Cross-Reconstruction: Probing-Based Disentanglement Evaluation for Acoustic Teleportation Codecs](/202607/05/2606.31365v1-beyond-cross-reconstruction-probing-based-disentanglement-evaluation-for-acoustic-teleportation-codecs)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：用于语音转换编码器的评估方法
-2. [AV-SyncBench: Decoupled Benchmarking of Temporal and Semantic Audio-Visual Synchronization](/202607/05/2607.00726v1-av-syncbench-decoupled-benchmarking-of-temporal-and-semantic-audio-visual-synchronization)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：音频-视觉同步基准，涵盖语音、音乐和声音
-3. [NAVER LABS Europe Submission to the Instruction-following 2026 Short Track](/202607/05/2607.01960v1-naver-labs-europe-submission-to-the-instruction-following-2026-short-track)  
+1. [Brain2voice 2.0: High-performance voice synthesis brain-computer interface](/202607/06/biorxiv-10-64898-2026-06-30-735633-v1-brain2voice-20-high-performance-voice-synthesis-brain-computer-interface)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：从语音进行ASR、ST、SQA的系统，直接相关语音识别
+   evidence：从脑信号合成语音
 
 ### 速读区论文标签
-1. [ALM2Vec: Learning Audio Embeddings for Universal Audio Retrieval with Large Audio-Language Models](/202607/05/2606.30682v1-alm2vec-learning-audio-embeddings-for-universal-audio-retrieval-with-large-audio-language-models)  
+1. [AMR: Adaptive Modality Routing for Multimodal Polyglot Speaker Identification](/202607/06/2606.29335v1-amr-adaptive-modality-routing-for-multimodal-polyglot-speaker-identification)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：用于跨音频领域检索的通用音频嵌入框架
-2. [BEST-RQ-2: Contextualize-Then-Predict, a Two-Step Approach for Self-Supervised Audio Representations](/202607/05/2606.30700v1-best-rq-2-contextualize-then-predict-a-two-step-approach-for-self-supervised-audio-representations)  
+   evidence：面向语音识别的多模态说话人识别
+2. [BEST-RQ-2: Contextualize-Then-Predict, a Two-Step Approach for Self-Supervised Audio Representations](/202607/06/2606.30700v1-best-rq-2-contextualize-then-predict-a-two-step-approach-for-self-supervised-audio-representations)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：自监督音频表示学习方法，可应用于语音领域
-3. [AmbiDrop: Ambisonics-Based Array-Agnostic Neural Speech Enhancement](/202607/05/2607.00548v1-ambidrop-ambisonics-based-array-agnostic-neural-speech-enhancement)  
+   evidence：自监督音频表示方法
+3. [A Multi-Branch Hierarchy-Aware Framework for Heterogeneous Audio Classification](/202607/06/2607.01974v1-a-multi-branch-hierarchy-aware-framework-for-heterogeneous-audio-classification)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：基于ambisonics的语音增强方法
-4. [LMPAN: A Lightweight Multi-Path Alignment Network for Joint Full-Duplex Acoustic Echo Cancellation and Noise Suppression](/202607/05/2607.02062v1-lmpan-a-lightweight-multi-path-alignment-network-for-joint-full-duplex-acoustic-echo-cancellation-and-noise-suppression)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：声学回声消除和噪声抑制以提升语音识别
-5. [wav2VOT: Automatic estimation of voice onset time, closure duration, and burst realisation with wav2vec2](/202607/05/2606.28857v1-wav2vot-automatic-estimation-of-voice-onset-time-closure-duration-and-burst-realisation-with-wav2vec2)  
+   evidence：使用BSD35k音频数据集进行分类
+4. [TF-MoE: Time-Frequency Mixture-of-Experts for Efficient Speech Separation](/202607/06/2606.29575v1-tf-moe-time-frequency-mixture-of-experts-for-efficient-speech-separation)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：用于语音学研究的自动语音标注工具
-6. [Beyond Clean Text: Evaluating Encoder and Decoder Robustness for Bangla Event Detection in Noisy Text](/202607/05/2606.30914v1-beyond-clean-text-evaluating-encoder-and-decoder-robustness-for-bangla-event-detection-in-noisy-text)  
+   evidence：语音分离模型属于音频处理
+5. [Improving multichannel speech enhancement through accurate room-acoustic simulations](/202607/06/2606.31552v1-improving-multichannel-speech-enhancement-through-accurate-room-acoustic-simulations)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：在ASR转录文本上进行事件检测
-7. [Attacking UTMOS: Probing the Robustness of a Speech Quality Assessment Model](/202607/05/2606.31105v1-attacking-utmos-probing-the-robustness-of-a-speech-quality-assessment-model)  
+   evidence：通过精确房间声学模拟改善语音增强
+6. [ZEBRA: Zero-Shot Entropy-Regularized Prompt Learning for Base-to-Novel Generalization in Audio-Language Models](/202607/06/2606.31587v1-zebra-zero-shot-entropy-regularized-prompt-learning-for-base-to-novel-generalization-in-audio-language-models)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：语音质量评估攻击
-8. [Improving multichannel speech enhancement through accurate room-acoustic simulations](/202607/05/2606.31552v1-improving-multichannel-speech-enhancement-through-accurate-room-acoustic-simulations)  
+   evidence：解决音频-语言模型的泛化问题
+7. [Speech Playground: An Interactive Tool for Speech Analysis and Comparison](/202607/06/2607.00418v1-speech-playground-an-interactive-tool-for-speech-analysis-and-comparison)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：利用房间声学模拟改进语音增强
-9. [ZEBRA: Zero-Shot Entropy-Regularized Prompt Learning for Base-to-Novel Generalization in Audio-Language Models](/202607/05/2606.31587v1-zebra-zero-shot-entropy-regularized-prompt-learning-for-base-to-novel-generalization-in-audio-language-models)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：音频语言模型的提示学习泛化方法
-10. [TurnNat: Automatic Evaluation of Turn-Taking Naturalness in Dyadic Spoken Dialogue](/202607/05/2607.01345v1-turnnat-automatic-evaluation-of-turn-taking-naturalness-in-dyadic-spoken-dialogue)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：口语对话中轮流说话自然度的自动评估
+   evidence：语音分析和比较工具
 
 
 <div class="dpr-home-promo-card">

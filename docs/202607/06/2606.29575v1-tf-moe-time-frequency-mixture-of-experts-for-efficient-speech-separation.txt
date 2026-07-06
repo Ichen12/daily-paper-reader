@@ -1,0 +1,221 @@
+Title: TF-MoE: Time-Frequency Mixture-of-Experts for Efficient Speech Separation
+
+URL Source: https://arxiv.org/pdf/2606.29575v1
+
+Published Time: Tue, 30 Jun 2026 01:26:01 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# TF-MoE: Time-Frequency Mixture-of-Experts for Efficient Speech Separation 
+
+# Qinzhe Hu ID 1, Chenda Li ID 1, Wangyou Zhang ID 1, Shujie Liu ID 2, Yan Lu ID 2, Yanmin Qian ID 11 Auditory Cognition and Computational Acoustics Lab Shanghai Jiao Tong University, Shanghai, China  
+
+> 2
+
+# Microsoft Research Asia, China 
+
+lichenda1996@sjtu.edu.cn, yanminqian@sjtu.edu.cn 
+
+# Abstract 
+
+Recent advances in speech separation (SS) have led to com-pact front-end models with small parameter sizes, yet their high computational cost remains a major barrier for deployment on edge devices. To address this, we propose TF-MoE, a sparse Mixture-of-Experts (MoE) framework that enhances model ca-pacity with almost no increase in inference cost. Our method introduces dynamic expert specialization in time and frequency dimensions through alternating time-wise and frequency-wise MoE modules, each dynamically selecting experts per frame or mel band. Built upon a mel-band-splitting Conformer back-bone, TF-MoE achieves strong performance on SS tasks under low-compute settings. Experimental results demonstrate that TF-MoE consistently improves separation performance under computation cost constraints, outperforming BSRNN by +3.8 dB SDR on Libri2Mix with comparable 4.1 GMACs/s infer-ence cost. This positions TF-MoE as a promising candidate for edge-device deployment. 
+
+Index Terms : Speech Separation, Mixture-of-Experts, Compu-tational Efficiency 
+
+# 1. Introduction 
+
+Speech separation (SS) has made great progress with deep learning [1, 2, 3, 4, 5, 6, 7, 8], emerging as a critical enabler for a wide range of real-world applications. Driven by growing pri-vacy concerns [9], the demand for low-latency interaction [10], and the need for offline capability in network-unavailable envi-ronments [11, 12], there is a surging trend towards deploying SS models under resource-constrained conditions. In recent academic research, many speech separation (SS) models exhibit highly compact parameter sizes, typically fewer than 10 million parameters [5, 6, 13, 14, 15, 16]. However, this small parameter footprint is not a true reflection of effi-ciency. These parameter-compact SS models often incur sub-stantial computational costs, reaching tens or even hundreds of giga multiply-accumulate operations per second (GMACs/s) [5, 6, 13, 14, 15, 16, 17]. This creates a mismatch with the practical constraints of edge deployment. The small model size is generally not a bot-tleneck, since memory is relatively inexpensive. But high com-putational cost poses a significant challenge by preventing real-time processing and causing prohibitive power consumption. Recent studies have highlighted this imbalance, revealing that current SS models are effectively under-parameterized when compared to their high computational cost [17, 18]. For SS models, computational cost plays a more critical role in deter-mining performance than parameter count. Consequently, the key to advancing SS for edge deployment lies in correcting this mismatch: increasing model capacity through additional param-eters without increasing computational cost. Recently, many studies have explored various strategies for designing efficient and compact SS models [6, 15, 16, 19, 20, 21]. One of the most straightforward and commonly adopted approaches is to scale down the hidden dimensions of the net-work. However, excessively reducing the parameter count in-evitably leads to a decline in model capacity, which in turn com-promises performance [18]. Mixture-of-Experts (MoE) [22] models offer a promis-ing solution to this capacity-computation dilemma. An MoE layer consists of multiple expert sub-networks and a gat-ing mechanism that activates only a subset of them per in-put [23]. By routing each input to certain experts, MoEs achieve conditional computation, effectively scaling model capacity (#parameters) without significantly scaling the compute cost. Sparsely-gated MoE architectures have demonstrated orders-of-magnitude larger model capacity at fixed computational cost in other deep learning tasks [24, 25, 26, 27]. In this paper, we propose TF-MoE , a sparse MoE frame-work that operates in both time and frequency domain for SS. An overview of the proposed framework is shown in Fig. 1. It is worth noting that the MoE method has been explored in previ-ous studies [28, 29], but these works focused on phoneme-level gating for enhancement [28] or applied MoE sparsely along the temporal dimension only [29] for SS. In contrast, our proposed 
+
+TF-MoE framework introduces a unified time-frequency expert 
+
+structure that performs fine-grained routing across both dimen-sions. This design enables specialized processing for diverse acoustic patterns, achieving efficient capacity scaling for SS with almost no increase in computational overhead. Our con-tributions include: 1) We propose a competitive mel-band-splitting Conformer backbone that balances performance and efficiency, achieving a +2.5 dB SDR improvement over BSRNN on Libri2Mix at com-parable computational cost. 2) We propose TF-MoE, a sparse Mixture-of-Experts framework that replaces the feed-forward modules in both the time and frequency Conformer blocks with sparsely-gated ex-pert layers, scaling model capacity without increasing compu-tational cost. It outperforms Conformer backbone by +1.3 dB SDR on Libri2Mix. 3) Comprehensive ablation studies validate the complemen-tary nature of sparse MoE routing and Conformer on both tem-poral and frequency dimensions. Furthermore, visual analysis of the gating policies reveals an explicit structural specialization on different acoustic patterns.          
+
+> arXiv:2606.29575v1 [cs.SD] 28 Jun 2026 Feed Forward / MoE
+> Multi-head Self
+> Attention
+> Convolution
+> Layernorm
+> Feed Forward / MoE
+> Repeat times
+> (D.2) MoE
+> Feed Forward
+> Feed Forward
+> Feed Forward
+> Mel-band
+> split TF-MoE Band Merge and
+> Mask Decoding
+> (A) Overall Backbone
+> (B) TF-MoE Model
+> (C) MoE Conformer
+> Layernorm
+> Linear Layer
+> Swish Activation
+> Dropout
+> Linear Layer
+> Dropout
+> (D.1) Feed Forward
+> This figure shows the top-2 mixture of experts .
+> T-module: time-wise routing
+> F-module: band-wise routing
+> ...
+> ... ...
+> T-module: MoE Conformer across F-module: MoE Conformer across
+> ...
+> Feed Forward
+> Time/Band-wise
+> Router
+
+Figure 1: Overview of the proposed TF-MoE framework. (A) The TF-Conformer backbone; (B) The proposed TF-MoE model; (C) The MoE Conformer block, where standard feed-forward modules are replaced by MoE FFNs; (D.1): The standard feed-forward module; (D.2) The MoE feed-forward module with top-J sparse routing. 
+
+# 2. Methodology 
+
+2.1. Backbone Model 
+
+We first introduce a new SS model, TF-Conformer, as our back-bone, which is inspired by the band-split RNN (BSRNN) [6] with two key modifications: (i) the manually designed sub-band splitting is replaced with mel-scale [30] band splitting, and (ii) the RNN sequence modeling modules are replaced with Conformer [31] blocks. As shown in Fig. 1.A, the backbone model takes the com-plex spectrum Y ∈ CF ×T of the mixture signals as input, where F is the number of frequency bins and T denotes the number of time frames. The mel-band splitting module splits the F frequency bins into K mel-bands and projects the fre-quency bins in each band into an N -dimensional feature space, resulting in a three-dimensional deep feature representation 
+
+Z ∈ RN ×K×T .The core of the model consists of R stacked TF-blocks (Fig. 1(B)), each comprising a frequency Conformer module (F-module ) that models inter-band dependencies along the K
+
+dimension and a temporal Conformer module ( T-module ) that captures temporal dynamics along the T dimension. Each Conformer module follows the macaron-style architecture [31], consisting of two feed-forward modules (FFN), a multi-head self-attention module, and a convolution module (Fig. 1(C)). Crucially, these FFN layers serve as the primary target for our proposed sparse MoE replacement (Sec. 2.2). After the R
+
+TF-blocks, a mask decoding module estimates complex masks 
+
+M ∈ CF ×T to reconstruct the target speech. 
+
+2.2. Sparse MoE Feed-Forward Module 
+
+To scale model capacity without increasing computational cost, we replace the standard FFN with a sparsely-gated Mixture-of-Experts (MoE) FFN. A standard FFN (Fig. 1(D.1)) consists of two linear projections with a non-linear activation in between: FFN (x) = W2 σ(W1x + b1) + b2, (1) where σ(·) denotes the Swish activation [32]. In the MoE FFN (Fig. 1(D.2)), we maintain E parallel ex-pert networks {Ee}Ee=1 , each structurally identical to the stan-dard FFN but with independent parameters. A lightweight gat-ing network G, referred to as the router in Fig. 1(D.2), computes a routing distribution over all experts and only the top-J experts with the highest scores are activated: 
+
+G(x) = TopJ  Softmax (Wg x) → { (ej , w j )}Jj=1 , (2) where Wg ∈ RE×N is the gating projection, and wj is the normalized weight for the j-th selected expert. The MoE FFN output is a weighted sum of the activated expert outputs: MoE-FFN (x) = 
+
+> J
+
+X
+
+> j=1
+
+wj · Eej (x). (3) When J=1 , each input token activates one expert, matching the expert-computation cost of a standard FFN while increasing FFN parameters by E times. To encourage balanced expert utilization and prevent col-lapse to a few dominant experts, we adopt an auxiliary balance loss [26] that encourages uniform expert utilization: 
+
+L = LSS + α Lbalance , (4) where α controls the strength of the balancing regularization. We now analyze the computational overhead introduced by MoE. For a standard FFN processing an input x ∈ RN , the multiply-accumulate operations (MACs) are 2N 2 · M, where 
+
+M =4 is the FFN expansion factor. In the MoE FFN with E experts and top-J routing, the total MACs consist of two parts: gating and expert computation. The gating network requires N ·E MACs to compute routing scores. Each activated expert incurs the same cost as a standard FFN. Thus: MACs MoE = N · E| {z } 
+
+> gating
+
++ J · 2N 2M| {z }
+
+> experts
+
+. (5) When J=1 (our default setting), the expert computation cost equals that of a single standard FFN, and the gating overhead is negligible: MACs MoE 
+
+MACs FFN 
+
+= 1 + E
+
+2N M ≈ 1. (6) For example, with N = 32 , M = 4 , and E = 12 , the gating adds only ∼4.7%, (about 0.002 GMACs) to the total computa-tion. Meanwhile, the corresponding parameter count scales by a factor of E (from 2N 2M to 2EN 2M ), achieving the compute-neutral capacity scaling .
+
+2.3. TF-MoE: Dual-Dimension Expert Routing 
+
+The MoE FFN described in Sec. 2.2 can be applied to the Con-former blocks in either or both of the two modeling dimensions. As introduced in Sec. 2.1, the backbone processes the represen-tation Z ∈ RN ×K×T along the temporal and frequency dimen-sions via Conformer modules. Depending on the target dimen-sion, the routing granularity of the MoE gating differs: 
+
+T-MoE. In the T-module, Z is reshaped to (BK, T, N ) so that each of the K sub-bands is processed independently along the T dimension. The MoE gating in Eq. (2) then routes each 
+
+time frame x ∈ RN to a sparse subset of experts, enabling the model to dynamically allocate capacity based on temporal content—e.g., assigning different experts to voiced, unvoiced, and silence segments. 
+
+F-MoE. In the F-module, Z is reshaped to (BT, K, N )
+
+so that each of the T time frames is processed independently along the K dimension. The MoE gating routes each frequency band x ∈ RN to a sparse subset of experts, allowing special-ized processing for different spectral regions—e.g., dedicating certain experts to low-frequency harmonics and others to high-frequency components. 
+
+TF-MoE. By equipping both modules with MoE FFNs, the full TF-MoE model performs expert routing in both dimensions. This dual-dimension design maximizes the capacity scaling: with E experts and top-1 routing in both modules, the model contains approximately E times more FFN parameters than the dense baseline while maintaining the same computational cost. 
+
+# 3. Experiments 
+
+3.1. Experimental Setup Datasets & Configuration: Experiments are conducted on the Libri2Mix (16kHz, min) dataset from LibriMix [33]. The input spectrogram is extracted using a 32 ms Hanning window with an 8 ms shift, and split into K=80 mel-scale [30] sub-bands. Unless otherwise stated, models use hidden dimension N = 32 
+
+Table 1: Separation results on Libri2Mix 16 kHz.*: Results cited from [16]. †:Results cited from [40], trained and eval-uated on Libri2Mix 8 kHz.                                                                                         
+
+> Model Params MACs/s RTF SDR SI-SDR STOI PESQ (M) (G) (dB) (dB) (%) TF-GridNet ∗14.4 323.8 –19.6 19.2 ––SPMamba †6.1 238.7 –20.4 19.9 ––A-FRCNN-16 ∗6.1 81.3 –16.7 16.3 ––DualPathRNN ∗2.7 45.0 –11.6 11.3 ––TDANet Large ∗2.3 9.2 –16.1 15.6 ––Tiger ∗0.8 7.7 –17.1 16.7 ––Conv-TasNet ∗5.6 7.2 –12.5 12.1 ––SudoRM-RF1.0x ∗2.7 4.7 –13.6 13.2 ––BSRNN 2.4 4.2 0.23 13.9 13.4 92.6 2.31 TF-Conformer 2.3 4.1 0.45 16.4 16.0 95.4 2.63 +TF-MoE 4.6 4.1 0.47 17.7 17.2 96.3 2.81
+
+and R = 6 repeated blocks. For TF-MoE, the default routing uses top-J = 1 , and the weight α for Lbalance is 10 −3.
+
+Training & Evaluation: AdamW optimizer [34] with a co-sine annealing scheduler [35] was used for training. We adopt the SI-SNR loss [3] with permutation invariant train-ing (PIT) [2]. We report signal-to-distortion ratio (SDR) [36], scale-invariant SDR (SI-SDR) [37], Perceptual Evaluation of Speech Quality (PESQ) [38], and Short-Time Objective Intelli-gibility (STOI) [39] to evaluate the quality of separated speech. We also report model parameters (Params),computational cost (MACs/s), and real-time factor (RTF) to evaluate efficiency. RTF is measured on a single-thread laptop CPU by averaging 100 runs on a 2.4-second sample. 
+
+3.2. Main Results 
+
+Table 1 compares our proposed models against several main-stream models from the literature [3, 5, 6, 13, 40, 41, 16, 42, 43]. While our models maintain a lightweight footprint of approxi-mately 4 GMACs/s, existing SOTA models like TF-GridNet [5] and SPMamba [40] incur a prohibitively high computational cost—often exceeding 200 GMACs/s—rendering them imprac-tical for real-time edge deployment. In the computationally constrained and practical regime, our proposed TF-MoE exhibits dominant efficiency. Oper-ating at a highly lightweight footprint of just 4.1 GMACs/s, TF-MoE achieves a remarkable 17.7 dB SDR, largely outper-forming a wide range of popular baselines that consume sub-stantially more computation. For instance, TF-MoE surpasses A-FRCNN-16 [41] by +1.0 dB SDR while consuming nearly 
+
+20 × fewer MACs. It also eclipses recent efficient designs like Tiger [16] (7.7G, 17.1 dB) and TDANet Large [42] (9.2G, 16.1 dB) in both separation quality and computational economy. The glaring performance gap between classical models like Du-alPathRNN [13](45.0G, 11.6 dB) or Conv-TasNet [3] (7.2G, 12.5 dB) and our framework vividly illustrates the capacity-computation mismatch discussed in Sec. 1. Within our model family, the TF-Conformer backbone al-ready outperforms BSRNN [6] by +2.5 dB SDR at compara-ble cost, validating the mel-scale band-split Conformer design. Building upon this backbone, TF-MoE ( E=12 , J=1 ) achieves a further +1.3 dB improvement while keeping MACs/s almost unchanged. The additional parameters introduced by sparse ex-pert layers are effectively converted into performance gains with almost no computational overhead, confirming the effectiveness of compute-neutral capacity scaling via MoE. Table 2: Ablation on T/F-module. All MoE variants use E=6 ,
+
+J=1 . ‡: hidden dimension reduced from 32 to 30 to match the computational cost of MoE variants. All models have almost the same GMACs/s=4.1.                                                        
+
+> Model T-module F-module Params SDR SI-SDR (M) (dB) (dB) BSRNN RNN RNN 2.4 13.9 13.4
+> (a) TF-Conformer ablation
+> TF-conformer Conformer Conformer 2.3 16.4 16.0 - w/o T-Conformer ‡RNN Conformer 2.1 16.1 15.6 - w/o F-Conformer ‡Conformer RNN 2.1 16.1 15.6
+> (b) TF-MoE ablation
+> TF-MoE ( E= 6 ,J= 1 )MoE MoE 3.4 17.2 16.8
+> - w/o T-MoE Conformer MoE 2.9 16.5 16.0 - w/o T-Conformer ‡RNN MoE 2.8 16.3 15.8 - w/o F-MoE MoE Conformer 2.9 17.1 16.7 - w/o F-Conformer ‡MoE RNN 2.8 16.9 16.4
+
+Table 3: Ablation on expert number E with top-1 routing (J=1 ). All models have almost the same GMACs/s=4.1. 
+
+E Params (M) RTF SDR(dB) SI-SDR(dB) STOI(%) PESQ 3 2.8 0.46 16.5 16.1 95.5 2.65 6 3.4 0.47 17.2 16.8 95.9 2.75 12 4.6 0.47 17.7 17.2 96.3 2.81 
+
+24 7.0 0.49 16.6 16.1 95.6 2.66 
+
+3.3. Ablation Studies 
+
+To comprehensively validate our model design, we first exam-ine the effectiveness of the architectural components by system-atically comparing different backbone configurations. Subse-quently, we delve into the MoE routing mechanisms to interpret its behavior, specifically analyzing why the proposed configu-ration yields optimal performance. 
+
+Ablation on Architectural Components. Table 2 presents a systematic ablation by progressively replacing the advanced module with simpler components: MoE → Conformer (remov-ing mixture-of-experts ) and Conformer → RNN. The ablation results establish a clear performance hierar-chy: RNN < Conformer < MoE. Specifically, replacing either the T or F-module Conformer with an RNN leads to a 0.3 dB SDR degradation, confirming that both dimensions contribute significantly to the backbone’s modeling capability. Further-more, equipping either T or F module with MoE yields im-provements over the Conformer baseline, with the full TF-MoE model achieving the best performance. This validates that the mixture-of-experts mechanism effectively enhances the model’s capacity to handle complex acoustic scenarios. 
+
+Expert Capacity and Routing Interpretability. Having es-tablished the efficacy of the MoE architecture, we further inves-tigate the impact of expert capacity and the interpretability of learned routing policies. Table 3 investigates the effect of the expert number E. In-creasing E from 3 to 12 progressively improves performance, as a larger expert pool provides better specialization for diverse acoustic patterns. However, further increasing E to 24 leads to a performance drop ( −1.1 dB SDR compared to E=12 ). This degradation may be caused by the increased difficulty of learn-ing routing policies as the number of experts increases. To understand how experts utilize the capacity, we visual-ize the routing decisions in Figure 2. The visualization reveals that experts have learned distinct specializations corresponding 0 50 100 150 200 250 300 
+
+> Time Frames
+> 0
+> 1500
+> 3000
+> 4500
+> 6000
+> 7500
+> Frequency (Hz)
+> T-Experts
+> T-E0
+> T-E1
+> T-E2
+> T-E3
+> T-E4
+> T-E5
+> F-Experts
+> F-E0
+> F-E1
+> F-E2
+> F-E3
+> F-E4
+> F-E5
+> F-Experts
+> T-Experts
+
+Figure 2: Visualization of the expert routing in the first Feed Forward module of the fifth TF-MoE block. The top spec-trogram displays the time-frequency representation of the in-put signal comprising female-only (frames 0-100), mixed (100-200), and male-only (200-300) segments. The lower bar shows the routing decisions of T-MoE experts in the T-module along the time axis, while the right bar shows the routing decisions of F-MoE experts in the F-module along the mel-band axis. Dif-ferent colors represent distinct experts. 
+
+to specific acoustic characteristics: 1) Frequency-Specialized F-MoE Experts: As shown in the right bar chart (F-experts), the routing policy exhibits a clear frequency-dependent pat-tern. Different experts are consistently activated for different frequency bands (e.g., low, mid, and high frequencies), indicat-ing that the F-MoE experts have specialized in processing dis-tinct spectral patterns. 2) Speaker/Pattern-Sensitive T-MoE Experts: The lower bar chart (T-experts) shows that expert se-lection varies significantly across time frames. Distinct experts are activated during different temporal segments, which often correspond to different speakers or varying speaking patterns (e.g., male, female voices, or silence). This explicit specialization demonstrates how the TF-MoE effectively decomposes the speech separation task based on time and frequency characteristics. The fact that a finite set of experts can align well with distinct frequency bands and speaker patterns explains why moderate E (e.g., 12) is sufficient, while an excessive number of experts leads to training difficulties and performance degradation. 
+
+# 4. Conclusion 
+
+We proposed TF-MoE, a highly efficient time-frequency Mixture-of-Experts framework, to overcome the capacity-computation bottleneck in the state-of-the-art speech separa-tion. By integrating sparse expert routing into a dual-path Con-former backbone, our model successfully converts newly added parameters into separation performance almost without increas-ing inference cost, presenting a highly feasible pathway toward edge-device deployment. Crucially, our routing analysis reveals that the architecture explicitly decouples acoustic complexity: temporal experts dy-namically adapt to varying speaker states and overlap events, while frequency experts specialize structurally across hetero-geneous mel-bands. This work demonstrates that sparse MoE not only delivers a “free lunch” in scaling model performance under strict compute constraints but also reveals how the archi-tecture explicitly decomposes complex mixed signals based on their structural acoustic patterns. 5. Acknowledgments 
+
+This work was supported in part by the China STI 2030–Major Projects under Grant No. 2021ZD0201500, in part by the Na-tional Natural Science Foundation of China under Grant No. U25A20409, and in part by the SJTU Med-X (Medicine & Engineering) Translational Research Grant under Grant No. YG2025LC09. 
+
+# 6. Generative AI Use Disclosure 
+
+During the preparation of this work, the author(s) used genera-tive AI tools (e.g., ChatGPT, GLM, Gemini) for language pol-ishing and grammar checking to improve the readability of the manuscript. All scientific content, methodology design, and ex-perimental analysis were conducted and verified solely by the authors, who take full responsibility for the final content of this paper. 
+
+# 7. References 
+
+[1] D. Wang and J. Chen, “Supervised speech separation based on deep learning: An overview,” IEEE/ACM Transactions on Au-dio, Speech, and Language Processing , vol. 26, no. 10, pp. 1702– 1726, 2018. [2] D. Yu, M. Kolbæk, Z. Tan, and J. Jensen, “Permutation invari-ant training of deep models for speaker-independent multi-talker speech separation,” Mar. 2017, pp. 241–245. [3] Y. Luo and N. Mesgarani, “Conv-TasNet: Surpassing Ideal Time– Frequency Magnitude Masking for Speech Separation,” vol. 27, no. 8, pp. 1256–1266, Aug. 2019. [4] S. Welker, J. Richter, and T. Gerkmann, “Speech Enhancement with Score-Based Generative Models in the Complex STFT Do-main,” in Interspeech 2022 . ISCA, Sep. 2022, pp. 2928–2932. [5] Z.-Q. Wang, S. Cornell, S. Choi, Y. Lee, B.-Y. Kim, and S. Watan-abe, “Tf-gridnet: Making time-frequency domain models great again for monaural speaker separation,” in ICASSP 2023 - 2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2023, pp. 1–5. [6] J. Yu and Y. Luo, “Efficient Monaural Speech Enhancement with Universal Sample Rate Band-Split RNN,” Jun. 2023, pp. 1–5. [7] W. Zhang, R. Scheibler, K. Saijo, S. Cornell, C. Li, Z. Ni, A. Kumar, J. Pirklbauer, M. Sach, S. Watanabe, T. Fingscheidt, and Y. Qian, “URGENT Challenge: Universality, Robustness, and Generalizability For Speech Enhancement,” 2024, pp. 4868– 4872. [8] K. Saijo, W. Zhang, S. Cornell, R. Scheibler, C. Li, Z. Ni, A. Ku-mar, M. Sach, Y. Fu, W. Wang, T. Fingscheidt, and S. Watanabe, “Interspeech 2025 URGENT Speech Enhancement Challenge,” in 
+
+Interspeech 2025 , 2025, pp. 858–862. [9] N. Tomashenko, X. Miao, P. Champion, S. Meyer, X. Wang, E. Vincent, M. Panariello, N. Evans, J. Yamagishi, and M. Todisco, “The voiceprivacy 2024 challenge evaluation plan,” 
+
+arXiv preprint arXiv:2404.02677 , 2024. [10] H. Dubey, A. Aazami, V. Gopal, B. Naderi, S. Braun, R. Cutler, A. Ju, M. Zohourian, M. Tang, M. Golestaneh et al. , “Icassp 2023 deep noise suppression challenge,” IEEE Open Journal of Signal Processing , vol. 5, pp. 725–737, 2024. [11] I. Fedorov, M. Stamenovic, C. Jensen, L.-C. Yang, A. Mandell, Y. Gan, M. Mattina, and P. N. Whatmough, “Tinylstms: Effi-cient neural speech enhancement for hearing aids,” arXiv preprint arXiv:2005.11138 , 2020. [12] H. Schr¨ oter, T. Rosenkranz, A.-N. Escalante-B, and A. Maier, “Low latency speech enhancement for hearing aids using deep filtering,” IEEE/ACM Transactions on Audio, Speech, and Lan-guage Processing , vol. 30, pp. 2716–2728, 2022. [13] Y. Luo, Z. Chen, and T. Yoshioka, “Dual-Path RNN: Effi-cient Long Sequence Modeling for Time-Domain Single-Channel Speech Separation,” Barcelona, May 2020, pp. 46–50. [14] C. Subakan, M. Ravanelli, S. Cornell, M. Bronzi, and J. Zhong, “Attention Is All You Need In Speech Separation,” Jun. 2021, pp. 21–25. [15] C. Li, L. Yang, W. Wang, and Y. Qian, “Skim: Skipping Mem-ory Lstm for Low-Latency Real-Time Continuous Speech Sepa-ration,” Singapore, May 2022, pp. 681–685. [16] M. Xu, K. Li, G. Chen, and X. Hu, “Tiger: Time-frequency in-terleaved gain extraction and reconstruction for efficient speech separation,” arXiv preprint arXiv:2410.01469 , 2024. [17] J. Kim, U.-H. Shin, J. Ko, and H.-M. Park, “Stack Less, Repeat More: A Block Reusing Approach for Progressive Speech En-hancement,” May 2025. [18] W. Zhang, K. Saijo, J.-w. Jung, C. Li, S. Watanabe, and Y. Qian, “Beyond Performance Plateaus: A Comprehensive Study on Scal-ability in Speech Enhancement,” in Proc. Interspeech 2024 , 2024, pp. 1740–1744. [19] C. Li, Y. Wu, and Y. Qian, “Predictive Skim: Contrastive Pre-dictive Coding for Low-Latency Online Speech Separation,” Jun. 2023, pp. 1–5. [20] K. Tan, B. Dai, J. Li, and W. Mao, “CheapNET: Improving Light-weight speech enhancement network by projected loss function,” Nov. 2023. [21] Z. Li, S. He, J. Bai, and X. Zhang, “TF-SkiMNet: Speech En-hancement Based on Inplace Modeling and Skipping Memory in Time-Frequency Domain,” 2025, pp. 5143–5147. [22] S. Mu and S. Lin, “A Comprehensive Survey of Mixture-of-Experts: Algorithms, Theory, and Applications,” Apr. 2025. [23] N. Shazeer, A. Mirhoseini, K. Maziarz, A. Davis, Q. Le, G. Hin-ton, and J. Dean, “Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer,” Jan. 2017. [24] K. Kumatani, R. Gmyr, F. C. Salinas, L. Liu, W. Zuo, D. Patel, E. Sun, and Y. Shi, “Building a great multi-lingual teacher with sparsely-gated mixture of experts for speech recognition,” Jan. 2022. [25] N. Du, Y. Huang, A. M. Dai, S. Tong, D. Lepikhin, Y. Xu, M. Krikun, Y. Zhou, A. W. Yu, O. Firat, B. Zoph, L. Fedus, M. P. Bosma, Z. Zhou, T. Wang, E. Wang, K. Webster, M. Pellat, K. Robinson, K. Meier-Hellstern, T. Duke, L. Dixon, K. Zhang, Q. Le, Y. Wu, Z. Chen, and C. Cui, “GLaM: Efficient Scaling of Language Models with Mixture-of-Experts,” in Proceedings of the 39th International Conference on Machine Learning . PMLR, Jun. 2022, pp. 5547–5569. [26] D. Dai, C. Deng, C. Zhao, R. X. Xu, H. Gao, D. Chen, J. Li, W. Zeng, X. Yu, Y. Wu, Z. Xie, Y. K. Li, P. Huang, F. Luo, C. Ruan, Z. Sui, and W. Liang, “DeepSeekMoE: Towards Ulti-mate Expert Specialization in Mixture-of-Experts Language Mod-els,” Jan. 2024. [27] J. Zhang, X. Qu, T. Zhu, and Y. Cheng, “CLIP-MoE: Towards Building Mixture of Experts for CLIP with Diversified Multiplet Upcycling,” May 2025. [28] S. E. Chazan, J. Goldberger, and S. Gannot, “Speech Enhance-ment using a Deep Mixture of Experts,” Mar. 2017. [29] X. Wang, Z. Chen, Y. Shi, J. Wu, N. Kanda, and T. Yoshioka, “Handling Trade-Offs in Speech Separation with Sparsely-Gated Mixture of Experts,” May 2023. [30] J. Volkmann, S. S. Stevens, and E. B. Newman, “A Scale for the Measurement of the Psychological Magnitude Pitch,” The Journal of the Acoustical Society of America , vol. 8, no. 3 Supplement, p. 208, Jan. 1937. [31] A. Gulati, J. Qin, C.-C. Chiu, N. Parmar, Y. Zhang, J. Yu, W. Han, S. Wang, Z. Zhang, Y. Wu, and R. Pang, “Conformer: Convolution-augmented Transformer for Speech Recognition,” 2020, pp. 5036–5040. [32] P. Ramachandran, B. Zoph, and Q. V. Le, “Searching for activa-tion functions,” arXiv preprint arXiv:1710.05941 , 2017. [33] J. Cosentino, M. Pariente, S. Cornell, A. Deleforge, and E. Vin-cent, “Librimix: An open-source dataset for generalizable speech separation,” arXiv , 2020. [34] I. Loshchilov and F. Hutter, “Decoupled weight decay regulariza-tion,” arXiv preprint arXiv:1711.05101 , 2017. [35] ——, “Sgdr: Stochastic gradient descent with warm restarts,” 
+
+arXiv preprint arXiv:1608.03983 , 2016. [36] C. F´ evotte, R. Gribonval, and E. Vincent, “BSS EVAL Toolbox User Guide – Revision 2.0,” Report, 2005. [37] J. L. Roux, S. Wisdom, H. Erdogan, and J. R. Hershey, “SDR – Half-baked or Well Done?” May 2019, pp. 626–630. [38] A. W. Rix, J. G. Beerends, M. P. Hollier, and A. P. Hekstra, “Perceptual evaluation of speech quality (pesq)-a new method for speech quality assessment of telephone networks and codecs,” in 
+
+2001 IEEE international conference on acoustics, speech, and signal processing. Proceedings (Cat. No. 01CH37221) , vol. 2. IEEE, 2001, pp. 749–752. [39] C. H. Taal, R. C. Hendriks, R. Heusdens, and J. Jensen, “An Algo-rithm for Intelligibility Prediction of Time–Frequency Weighted Noisy Speech,” vol. 19, no. 7, pp. 2125–2136, Sep. 2011. [40] K. Li, G. Chen, R. Yang, and X. Hu, “SPMamba: State-space model is all you need in speech separation,” Sep. 2024. [41] X. Hu, K. Li, W. Zhang, Y. Luo, J.-M. Lemercier, and T. Gerk-mann, “Speech separation using an asynchronous fully recurrent convolutional neural network,” Advances in Neural Information Processing Systems , vol. 34, pp. 22 509–22 522, 2021. [42] K. Li, R. Yang, and X. Hu, “An efficient encoder-decoder ar-chitecture with top-down attention for speech separation,” arXiv preprint arXiv:2209.15200 , 2022. [43] E. Tzinis, Z. Wang, and P. Smaragdis, “Sudo rm-rf: Efficient net-works for universal audio source separation,” in 2020 IEEE 30th International Workshop on Machine Learning for Signal Process-ing (MLSP) . IEEE, 2020, pp. 1–6.
