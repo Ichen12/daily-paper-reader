@@ -1,0 +1,248 @@
+Title: Reinforcement Learning for Data-Efficient Code-Switched ASR
+
+URL Source: https://arxiv.org/pdf/2607.02757v1
+
+Published Time: Tue, 07 Jul 2026 00:12:19 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# Reinforcement Learning for Data-Efficient Code-Switched ASR 
+
+# Ziwei Ye ID 1,∗∗ , Peter Vickers ID 21 Independent Researcher 
+
+2 Spotify Canada 
+
+zxy1677@rit.edu, pvickers@spotify.com 
+
+# Abstract 
+
+Audio-language models can be prompted for code-switched speech, but their decoding is not optimized for code-switching and often fails at language boundaries. We propose a practical reinforcement learning with verifiable rewards recipe for data-efficient adaptation of audio-language models to code-switched ASR using group relative policy optimization, combining an er-ror rate reward with a script fidelity reward that penalizes wrong writing systems and a two-pass draft-and-refinement procedure. Using Qwen2-Audio as a reproducible testbed across 10 lan-guage pairs, training on only TTS code-switched speech, we show that RLVR with 10% of the data matches LoRA super-vised fine-tuning trained on the full dataset, with the largest gains on typologically distant pairs. The error rate reward elim-inates translation errors while the script fidelity reward sepa-rately reduces script contamination without degradation. These gains transfer zero-shot to a human-recorded code-switching corpus. 
+
+Index Terms : reinforcement learning, code-switching, auto-matic speech recognition, reward design 
+
+# 1. Introduction 
+
+Code-switching is a natural communicative behavior for the majority of the world’s multilingual population [1, 2]. De-spite its prevalence, code-switched automatic speech recogni-tion (CS-ASR) remains challenging due to the need to model rapidly shifting acoustic and linguistic cues, compounded by the scarcity of labeled code-switched training data [3, 4]. Since large-scale speech models are typically pre-trained on mono-lingual corpora [5, 6, 7], data-efficient adaptation methods are needed to endow speech-augmented large language models (speech-LLMs) with robustness to code-switching. Instruction-following speech-LLMs can ingest language context via prompting for flexible output control, yet their au-toregressive decoding is trained with token-level cross-entropy, which does not directly optimize sequence-level metrics such as CER and is subject to exposure bias [8]. These issues can be amplified at code-switch boundaries, where language confusion and script hallucination have been observed [9]. We frame CS-ASR as a verifiable reward problem: given reference transcripts, we can compute automatic rewards and use RL to directly optimize sequence-level transcription qual-ity. Rather than targeting state-of-the-art performance, we use an established, publicly available speech-LLM (Qwen2-Audio) as a controlled testbed to study how reward design and data ef-ficiency interact for code-switched adaptation. In this paper, we make the following contributions: 
+
+> **
+
+indicates the corresponding author. 
+
+Reference (cmn-eng, SwitchLingua) 
+
+这种科 学发现真是太fascinating 了
+
+Format-only baseline CER 1.81 
+
+This kind of scientific discovery is really fascinating   
+
+> Chinese translated to English 太...fascinating... 了frame code-switching lost
+
+LoRA SFT (100% data) CER 1.33 
+
+This scientific discovery is so fascinating. 
+
+RLVR (10% data) CER 0.00 
+
+这种科 学发现真是太fascinating 了  
+
+> Chinese preserved English insertion intact Code-switch boundary correct
+
+Figure 1: Chinese-English code-switch sample in SwitchLingua 
+
+• We apply Reinforcement Learning with Verifiable Re-wards (RLVR) [10] on code-switched ASR, using rewards based on CER and a script fidelity reward to directly en-courage correct writing systems at code-switch boundaries. • We introduce a training-time two-pass draft and refine-ment procedure that conditions a second decoding pass on the best draft to encourage “listen again and fix” behavior. • We evaluate on the human-read subset of CS-FLEURS [11] across 10 language pairs, showing data-efficient gains over LoRA supervised fine-tuning (SFT), and demonstrate zero-shot transfer to SwitchLingua [12], a human-recorded code-switching corpus. 
+
+# 2. Related work 
+
+Code-switched ASR. Code-switching ASR must jointly model acoustics and rapidly shifting language priors, and is challenged by language confusion errors and limited labeled code-switched data [13]. Recent work incorporates explicit language tag sig-nals and language-aware decoding [14]. FLEURS provides a standardized multilingual benchmark [15], and CS-FLEURS extends it to code-switched pairs [11]. 
+
+Speech-LLMs for ASR. Large-scale speech encoder-decoder models such as Whisper [5] have motivated speech-language models that pair speech encoders with LLM decoders for flexi-ble instruction following [7, 16]. A recurring challenge is hal-lucination, and in neural machine translation, exposure bias has been linked to hallucination under domain shift [17], an analogy that motivates RL-based training for code-switching, where the language distribution shifts abruptly at boundaries. 
+
+Sequence-level objectives and RLVR. Directly optimizing ASR evaluation metrics has a long history, including minimum word error rate training and minimum Bayes risk [18, 19]. Re-
+
+> arXiv:2607.02757v1 [cs.CL] 2 Jul 2026
+
+inforcement learning with verifiable rewards (RLVR) extends this idea using reward signals in domains where correctness can be automatically checked [20]. Group Relative Policy Op-timization (GRPO) normalizes rewards within groups of sam-pled completions to avoid an explicit learned critic [10], and has been used in reasoning RL [21]. Concurrent work has ap-plied GRPO to monolingual ASR [22] and to audio question-answering [23]. Our approach adapts RLVR to code-switched ASR with transcription rewards augmented by code-switch con-sistency signals. 
+
+# 3. Method 
+
+3.1. Problem Setup 
+
+Given an audio segment x, a language context C, and a refer-ence transcript y∗, the model produces a transcript ˆy ∼ πθ (· | 
+
+x, C). Our goal is to improve both transcription accuracy and code-switch fidelity. The language context C consists of a instruction specifying the language pair (“The audio contains speech mixing Japanese and English”) and format constraints. 
+
+3.2. RLVR with GRPO 
+
+We train the model with GRPO, a RL method that learns from relative preferences among a small set of sampled candidate transcriptions. For each input (x, C), we sample G candidate transcrip-tions {ˆyi}Gi=1 from the current policy πθold and score each one with a verifiable reward Ri = R(ˆ yi, y ∗, C). We then z-score re-wards within the group to obtain advantages Ai, so candidates that score above the group mean receive positive advantage and those below receive negative advantage. This encourages the model to increase the probability of higher scoring candidates relative to their peers, without requiring a learned value func-tion. We update the policy using a clipped surrogate objective with KL regularization to prevent distribution collapse: 
+
+L(θ) = −Ei
+
+h
+
+min 
+
+
+
+ρiAi, clip (ρi, 1 − ε, 1 + ε)Ai
+
+i 
+
++ λKL KL (πθ ∥ πref )
+
+(1) where 
+
+ρi = πθ (ˆ yi | x, C)
+
+πθold (ˆ yi | x, C) (2) is the importance ratio between the updated policy and the sam-pling policy. 
+
+3.3. Script Fidelity (SHR) Reward 
+
+When the base model is tuned for structured output, it exhibits pervasive script contamination: the output contains characters from a writing system unrelated to either language in the pair. On SwitchLingua, 18% of non-Latin-script samples contain wrong-script characters, rising to 27% for Japanese and 27% for Arabic. To discourage this, we augment the CER reward with a binary bonus for clean outputs: 
+
+R(ˆ yi, y ∗, C) = −CER(ˆ yi, y ∗)+ βsf ·Script(ˆ yi, C), where 
+
+Script(ˆ yi, C) = 1 if all characters in ˆyi belong to the al-lowed scripts and 0 otherwise. The set of allowed scripts is 
+
+S = SL1 ∪ S L2 , the union of Unicode scripts used by both lan-guages in the pair. Non-alphanumeric characters such as punc-tuation, digits, and whitespace are always permitted. We set 
+
+βsf = 0 .05 . Because GRPO normalizes rewards within each group, this bonus only affects the advantage when generations differ in script contamination. 
+
+Algorithm 1 Two-Pass GRPO with Draft Refinement 
+
+Require: Audio x, reference y∗, language context C, number of generations G
+
+Pass 1 (Draft):  
+
+> 1:
+
+Sample G drafts: ˆy(g) ∼ πθ (· | x, C) for g = 1 , . . . , G  
+
+> 2:
+
+Compute rewards R(g) = R(ˆ y(g), y ∗, C) and GRPO loss 
+
+L1 
+
+> 3:
+
+Select best draft: ˆy† = ˆ y(arg max g R(g)) 
+
+> 4:
+
+Update θ with ∇θ L1
+
+Pass 2 (Refine):  
+
+> 5:
+
+Construct prompt: (x, ˆy†, C) 
+
+> 6:
+
+Sample G refinements: ˜y(g) ∼ πθ (· | x, ˆy†, C) 
+
+> 7:
+
+Compute rewards ˜R(g) = R(˜ y(g), y ∗, C) and GRPO loss 
+
+L2 
+
+> 8:
+
+Update θ with ∇θ L2
+
+3.4. Two-Step Draft Refinement 
+
+Beyond script contamination, the base model reveals further failures, On SwitchLingua, 37% of non-Latin-script samples are fully translated into English, and 36% of code-switched utter-ances retain only the English portion. These errors suggest that single pass decoding can commit early to an incorrect language mode. Inspired by iterative self-refinement in LLMs [24], we address this with a two-step procedure in which the first pass generates G drafts and applies a GRPO update, then refines the highest reward draft in a second GRPO pass conditioned on the original audio and the draft (Algorithm 1). This two-step approach trains the model to both transcribe and self-correct within a single training iteration, without re-quiring any external correction signal beyond the existing re-ward function. We do single pass inference as with the other models during testing time. 
+
+# 4. Experimental setup 
+
+4.1. Datasets CS-FLEURS. CS-FLEURS [11] is a massively multilingual code-switched speech dataset built on FLEURS [15], covering 52 languages across 113 code-switched pairs. Code-switched text is generated with an align-then-swap procedure that re-places 30% of content words using word alignments from Awe-someAlign [25], yielding consistent code-mixing across pairs. We use two of its splits: XTTS-T RAIN (128 h, 16 X-English pairs), where speech is synthesized with XTTS-v2 [26], for training, and R EAD -T EST (3.3 h, 14 X-English pairs) which contains human-recorded bilingual speech for evaluation. Text includes English markers denoting code-switched spans and our normalization strips Unicode punctuation. 
+
+SwitchLingua. We additionally evaluate on SwitchLingua [12], a multilingual code-switching dataset with over 80 hours of human-recorded audio across 12 X-English pairs in single-and multi-turn dialogue formats. We restrict evaluation to the 8 pairs supported by Qwen2-Audio (ara, cmn, deu, fra, ita, jpn, kor, rus), excluding Cantonese, Hindi (unsupported by the base model) and Spanish (mislabeled in the Huggingface dataset). SwitchLingua complements CS-FLEURS by provid-ing naturally structured code-switching with human-recorded audio rather than TTS-synthesized speech. Table 1: CER on CS-FLEURS read_test and SwitchLingua (zero-shot transfer). For each data setting, the best per language pair is in bold . Multi-seed columns ( n=3) report mean ±std (SHR) . All models are trained on CS-FLEURS XTTS-T RAIN .
+
+10% data ( n=2,310) 20% data ( n=4,625) 100% data Lang pair CER +SHR +refine CER +refine CER only CER +SHR +refine LoRA SFT LoRA SFT Base 
+
+CS-FLEURS read_test 
+
+deu-eng .102 ±.008 (.000) .112 ±.001 (.007) .115 ±.001 (.002) .107 ±.001 (.002) .123 ±.002 (.008) .079 ±.003 (.003) .288 fra-eng .087 ±.002 (.003) .089 ±.001 (.002) .093 ±.001 (.000) .084 ±.000 (.000) .129 ±.005 (.011) .075 ±.001 (.002) .297 ita-eng .076 ±.003 (.000) .080 ±.001 (.003) .083 ±.000 (.003) .078 ±.002 (.000) .103 ±.001 (.009) .067 ±.004 (.003) .251 por-eng .086 ±.004 (.001) .095 ±.002 (.003) .097 ±.002 (.003) .088 ±.001 (.004) .137 ±.007 (.004) .069 ±.001 (.007) .284 spa-eng .055 ±.002 (.002) .061 ±.001 (.000) .061 ±.000 (.002) .055 ±.001 (.002) .087 ±.003 (.006) .041 ±.001 (.003) .181 ara-eng .269 ±.003 (.080) .267 ±.004 (.143) .275 ±.002 (.228) .254 ±.003 (.041) .531 ±.004 (.233) .338 ±.009 (.177) .883 cmn-eng .112 ±.002 (.000) .111 ±.002 (.001) .119 ±.001 (.002) .102 ±.002 (.000) .266 ±.011 (.002) .097 ±.008 (.003) .579 jpn-eng .185 ±.002 (.008) .191 ±.006 (.023) .210 ±.011 (.038) .183 ±.001 (.003) .392 ±.005 (.003) .230 ±.009 (.003) .723 kor-eng .229 ±.003 (.038) .222 ±.003 (.107) .229 ±.000 (.111) .212 ±.003 (.028) .359 ±.028 (.142) .187 ±.001 (.061) .635 rus-eng .182 ±.005 (.058) .177 ±.001 (.076) .182 ±.005 (.096) .174 ±.002 (.040) .327 ±.006 (.125) .196 ±.012 (.050) .528 Avg CER (ma/mi) .138/.155 .141/.155 .146/.162 .134/.147 .245/.295 .138/.159 .465/.553 Average SHR .025 ±.003 .048 ±.001 .068 ±.005 .015 ±.000 .074 ±.000 .049 ±.003 .104 
+
+SwitchLingua (zero-shot transfer) 
+
+deu-eng .194 ±.000 (.016) .197 ±.005 (.011) .197 ±.000 (.015) .192 ±.000 (.008) .211 ±.002 (.020) .152 ±.006 (.011) .324 fra-eng .131 ±.002 (.012) .139 ±.006 (.010) .133 ±.001 (.012) .130 ±.000 (.005) .172 ±.003 (.014) .120 ±.001 (.006) .276 ita-eng .120 ±.002 (.022) .127 ±.010 (.017) .129 ±.000 (.027) .120 ±.000 (.009) .198 ±.003 (.031) .103 ±.011 (.020) .329 ara-eng .408 ±.013 (.084) .410 ±.013 (.141) .411 ±.007 (.210) .393 ±.005 (.044) .831 ±.002 (.192) .652 ±.005 (.149) 1.031 cmn-eng .109 ±.002 (.000) .102 ±.023 (.000) .101 ±.004 (.000) .089 ±.010 (.000) .348 ±.016 (.000) .076 ±.001 (.000) .654 jpn-eng .192 ±.008 (.004) .189 ±.020 (.007) .193 ±.003 (.016) .177 ±.008 (.003) .383 ±.013 (.005) .188 ±.012 (.000) .539 kor-eng .473 ±.013 (.318) .509 ±.005 (.567) .493 ±.017 (.561) .503 ±.010 (.312) .975 ±.047 (.202) .536 ±.079 (.125) 1.001 rus-eng .242 ±.006 (.034) .239 ±.006 (.087) .233 ±.002 (.103) .230 ±.002 (.030) .437 ±.013 (.097) .290 ±.012 (.055) .541 Avg CER (ma/mi) .234/.224 .239/.229 .236/.226 .229/.219 .444/.450 .265/.246 .587/.609 Average SHR .061 ±.011 .105 ±.002 .114 ±.008 .053 ±.003 .059 ±.000 .038 ±.002 .071 Time/Step (8 ×A100) 1.5m 1.5m 1.5m 1.5m 3.6s 3.6s –Training Steps 132 132 132 264 528 5,176 –Total 204m 204m 202m 396m 38m 315m –
+
+4.2. Baselines 
+
+We compare against two baselines that isolate the contribution of RLVR: • Prompt-only (format) : A base Qwen2-Audio model trained for a small number of iterations with a format-only reward that encourages outputting transcripts inside <answer> 
+
+tags, without any transcription-quality signal. • LoRA SFT : LoRA [27] fine-tuning on the full CS-FLEURS training set, providing an upper bound on what supervised training alone can achieve at this scale. 
+
+4.3. Training details Base model. All experiments start from Qwen2-Audio-7B-Instruct [7], a 7B-parameter audio-language model with a Whisper-based audio encoder [5] and a Qwen-2 LLM decoder [28], trained in bfloat16 . We choose Qwen2-Audio as a con-trolled, publicly available testbed: its open weights enable full reproducibility, and its weaknesses on code-switched speech provide a starting point for studying reward design. Because Qwen2-Audio does not cover all CS-FLEURS language pairs, we restrict experiments to the 10 pairs where the base model has non-trivial recognition capability. 
+
+GRPO (RLVR). Both RLVR and LoRA keep the audio encoder frozen and update only the LLM decoder. RLVR updates all de-coder parameters, while LoRA updates low-rank adapters. We train with GRPO using DeepSpeed ZeRO-2 [29] on 8 GPUs (clip ε=0 .2, initial checkpoint as πref ). We sample G=8 com-pletions per prompt at temperature τ =1 .0, max length 512, with per-device batch size 1, gradient accumulation 8, and a constant learning rate of 10 −6. Two-pass models train for 4 epochs (2 updates per step). Single-pass models train for 8 epochs, equal-izing gradient updates. All evaluation uses single-pass greedy decoding. A format reward requiring <answer> tags is shared across all configurations. We subsample 2 310 utterances (10%) or 4 625 (20%) from XTTS-T RAIN across 10 language pairs. Both RLVR and LoRA experiments are run with 3 identical ran-dom seeds. 
+
+LoRA SFT. The LoRA baseline [27] applies low-rank adapters (r=64 , α=128 , dropout 0.05 ) to all attention and MLP projec-tions of the LLM decoder. Training matches GRPO in batch size, accumulation, and learning rate, with 4 epochs on the full XTTS-T RAIN split ( 10 × the 10% RLVR data). 
+
+4.4. Metrics Character Error Rate (CER) : the Levenshtein edit distance between the hypothesis and reference sequences, divided by the reference length. Both strings are lowercased, stripped of punctuation, and have whitespace removed before comparison: 
+
+CER = Lev(ˆ y, y ∗) / |y∗|. We report both macro-averaged CER over language pairs and micro-averaged CER, as the two can diverge when pairs differ in reference length. 
+
+Script Hallucination Rate (SHR) : the fraction of samples containing any character from a disallowed Unicode script. 
+
+SHR = 1
+
+> N
+
+P 
+
+> n
+
+1[∃ c ∈ ˆyn : script( c) /∈ S ]. This is the evaluation-time counterpart of the SHR reward (Section 3.3). Base 
+
+> CER
+> +refine
+> +ref+rew
+> 0
+> 10
+> 20
+> 30
+> 40
+> Rate (%)
+
+Transl. (SL) Script (SL) 
+
+Transl. (CF) Script (CF) 
+
+Figure 2: Translation and wrong-script rates across the 10% RLVR ablation chain on non-Latin-script samples. SL = Switch-Lingua, CF = CS-FLEURS. CER reward eliminates translation. The SHR reward is needed to reduce script contamination. 
+
+# 5. Results 
+
+CS-FLEURS human-read speech. Table 1 shows that with only 20% of the training data, RLVR with two-pass refinement and the SHR reward achieves a micro-averaged CER of 0.147 ,outperforming 100% LoRA SFT ( 0.159 ) despite using 5× less data. Even at 10% data, RLVR matches or surpasses LoRA trained on the full dataset. Two-pass refinement provides a clear gain over single-pass CER training at 10% data. The SHR re-ward substantially reduces script hallucinations (SHR 0.025 vs. 
+
+0.068 for CER-only at 10%) without degrading CER. LoRA’s advantage is limited to European pairs (deu, fra, ita, por, spa), cmn-eng, and kor-eng, where CER is already below 10%, while RLVR yields the largest gains on typologically distant pairs (ara, jpn, rus) where code-switch transitions are hardest. 
+
+SwitchLingua (Cross-dataset transfer). To test whether RLVR generalizes beyond TTS-synthesized speech, we eval-uate all models zero-shot on SwitchLingua, a human-recorded code-switching corpus with naturally structured multi-turn di-alogues and diverse speaker backgrounds. Table 1 shows that 20% RLVR with the SHR reward ( 0.219 micro-averaged CER) again outperforms 100% LoRA SFT ( 0.246 ) despite using 5×
+
+less data, demonstrating that the gains transfer across domains. Unlike CS-FLEURS, two-pass refinement alone does not im-prove over single-pass CER training at 10% data. However, adding the SHR reward recovers the gain and substantially re-duces SHR ( 0.061 vs. 0.114 for CER-only). The largest RLVR gains appear on ara-eng ( 0.393 vs. 0.652 for LoRA) and rus-eng, both typologically distant pairs where LoRA’s translation failure mode is most pronounced. LoRA retains an advan-tage on European pairs (fra, deu, ita) and cmn-eng, consistent with the CS-FLEURS pattern. Overall CER are higher than on CS-FLEURS READ _TEST , reflecting the greater difficulty of SwitchLingua’s long-form, multi-turn recordings. 
+
+# 6. Analysis and Discussion 
+
+6.1. Do the rewards address code-switching failures? 
+
+To isolate the contribution of each reward component, we mea-sure translation rate (non-English portion rendered as English) and wrong-script rate (characters from an unrelated writing sys-tem) across the ablation chain on non-Latin-script samples. Fig-ure 2 summarizes the results. CER reward alone virtually eliminates translation errors (37% →1.1% on SwitchLingua, 30% →3.2% on CS-FLEURS), since translating produces high edit distance from the code-switched reference. However, CER reward does not fix script contamination: wrong-script rates remain at 18.6% on Switch-Lingua with CER-only training, nearly unchanged from the base model (18.1%). Adding the SHR reward reduces this to 11.0%, a 41% relative reduction, without degrading CER. On CS-FLEURS the effect is stronger: wrong-script rates fall from 9.9% to 3.4%. For Latin-script pairs, the SHR reward also improves CER indirectly by regularizing surface-form fidelity (“seventy km” → “70 km”), demonstrating the need for better evaluation metrics. Two-pass refinement reduces wrong-script rates on CS-FLEURS (from 9.9% to 7.5%) even without the SHR reward, suggesting the second pass provides an opportunity to correct first-pass script errors. On SwitchLingua, refinement alone does not improve CER or wrong-script rate. A per-pair break-down shows refinement helps most pairs (e.g., jpn-eng −.014 ,cmn-eng −.011 on CS-FLEURS) but consistently hurts Arabic-English on both datasets ( +.068 on CS-FLEURS, +.070 on SwitchLingua). On SwitchLingua, 5 of 8 pairs improve but the Arabic degradation tips the overall average negative. This suggests the second pass can overcorrect on pairs where script boundaries are most ambiguous, and the SHR reward is needed to constrain such overcorrection. 
+
+6.2. What are the cases where LoRA or RLVR fails? 
+
+We compare 20% RLVR (with refinement and SHR reward) against 100% LoRA SFT. On CS-FLEURS, RLVR outperforms LoRA by >0.2 CER on 275 samples, while LoRA wins on 132. RLVR’s advantage concentrates on typologically distant pairs: ara-eng (158 vs. 19 wins) and jpn-eng (24 vs. 4). LoRA’s ad-vantage appears on kor-eng (26 vs. 17 wins on CS-FLEURS, 143 vs. 64 on SwitchLingua) and cmn-eng. In scenarios where RLVR wins, LoRA translates code-switched spans into a single language (CER >0.8), while RLVR preserves code-switch boundaries (CER <0.15). Conversely, RLVR garbles text or fails to preserve exact technical tokens that LoRA reproduces faithfully in cases where LoRA wins. LoRA achieves more near-perfect transcriptions (29.3% with CER <0.05 vs. 23.1% for RLVR on SwitchLingua), but RLVR produces fewer catastrophic errors (10.1% with CER >0.5 vs. 11.8%), consistent with RL optimizing expected reward rather than memorizing individual examples. 
+
+# 7. Conclusion 
+
+We showed that RLVR with GRPO enables highly data-efficient adaptation of speech-LLMs to code-switched ASR. With only 10% of the training data and ∼40 × fewer gradient steps, RLVR matches LoRA SFT trained on the full dataset across 10 lan-guage pairs, and at 20% outperforms it, with the largest gains on typologically distant pairs where code-switch transitions are hardest. A CER reward eliminates translation errors, while a dedicated SHR reward is needed to reduce script contamina-tion, and a two-pass draft refinement paradigm has potential to mitigate both error types. These gains transfer zero-shot from TTS-synthesized training data to human-recorded code-switching speech, demonstrating robustness across acoustic do-mains. 8. Generative AI Use Disclosure 
+
+LLMs were used to produce a fraction of the source codes for experiment orchestration. Additionally, LLMs were used for spellchecking and suggesting edits to further improve the flu-ency and conciseness of the paper during the drafting process. 
+
+# 9. References 
+
+[1] S. Poplack, “Sometimes I’ll start a sentence in Spanish y termino en español: Toward a typology of code-switching,” Linguistics ,vol. 18, no. 7–8, pp. 581–618, 1980. [2] A. S. Do˘ gruöz, S. Sitaram, B. E. Bullock, and A. J. Toribio, “A survey of code-switching: Linguistic and social perspectives for language technologies,” in Proceedings of the 59th Annual Meet-ing of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (ACL-IJCNLP) , 2021, pp. 1654–1666. [3] G. Winata, A. F. Aji, Z. X. Yong, and T. Solorio, “The decades progress on code-switching research in NLP: A systematic sur-vey on trends and challenges,” in Findings of the Association for Computational Linguistics (ACL) , 2023, pp. 2936–2978. [4] S. Sitaram, K. R. Chandu, S. K. Rallabandi, and A. W. Black, “A survey of code-switched speech and language processing,” arXiv preprint arXiv:1904.00784 , 2019. [5] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak su-pervision,” 2022. [6] A. Baevski, Y. Zhou, A. Mohamed, and M. Auli, “wav2vec 2.0: A framework for self-supervised learning of speech representa-tions,” in Advances in Neural Information Processing Systems ,H. Larochelle, M. Ranzato, R. Hadsell, M. Balcan, and H. Lin, Eds., vol. 33. Curran Associates, Inc., 2020, pp. 12 449–12 460. [7] Y. Chu et al. , “Qwen-Audio: Advancing universal audio under-standing via unified large-scale audio-language models,” 2023. [8] M. Ranzato, S. Chopra, M. Auli, and W. Zaremba, “Sequence level training with recurrent neural networks,” in International Conference on Learning Representations (ICLR) , 2016. [9] H. Liu, H. Xu, L. P. Garcia, A. W. H. Khong, Y. He, and S. Khu-danpur, “Reducing language confusion for code-switching speech recognition with token-level language diarization,” in IEEE Inter-national Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2023. [10] Z. Shao et al. , “DeepSeekMath: Pushing the limits of mathemati-cal reasoning in open language models,” 2024. [11] B. Yan, I. Hamed, S. Shimizu, V. Lodagala, W. Chen, O. Iakovenko, B. Talafha, A. Hussein, A. Polok, K. Chang, D. Klement, S. Althubaiti, P. Peng, M. Wiesner, T. Solorio, A. Ali, S. Khudanpur, S. Watanabe, C.-C. Chen, Z. Wu, K. Benhar-rak, A. Diwan, S. Cornell, E. Yeo, K. Choi, C. Carvalho, and K. Rosero, “CS-FLEURS: A massively multilingual and code-switched speech dataset,” 2025. [12] P. Xie, X. Liu, Y. Bie, T. W. Chan, Y. Song, Y. Wang, H. Chen, and K. Chen, “SwitchLingua: The first large-scale multilingual and multi-ethnic code-switching dataset,” in Advances in Neu-ral Information Processing Systems 38 (NeurIPS), Datasets and Benchmarks Track , 2025. [13] M. B. Mustafa, M. A. Yusoof, H. K. Khalaf, A. A. R. M. Abushariah, M. L. M. Kiah, H. N. Ting, and S. Muthaiyah, “Code-switching in automatic speech recognition: The issues and future directions,” Applied Sciences , vol. 12, no. 19, p. 9541, 2022. [14] Q. Wang and H. Li, “Text-derived language identity incorpora-tion for end-to-end code-switching speech recognition,” in Pro-ceedings of the 6th Workshop on Computational Approaches to Linguistic Code-Switching . Singapore: Association for Compu-tational Linguistics, dec 2023, pp. 33–42. [15] A. Conneau, M. Ma, S. Khanuja, Y. Zhang, V. Axelrod, S. Dalmia, J. Riesa, C. Rivera, and A. Bapna, “FLEURS: Few-shot learning evaluation of universal representations of speech,” 2022. [16] C.-I. J. Lai et al. , “Instruction-following speech recognition,” 2023. [17] C. Wang and R. Sennrich, “On exposure bias, hallucination and domain shift in neural machine translation,” in Proceedings of the 58th Annual Meeting of the Association for Computational Lin-guistics (ACL) , 2020, pp. 3544–3552. [18] R. Prabhavalkar et al. , “Minimum word error rate training for attention-based sequence-to-sequence models,” in Proceedings of the IEEE International Conference on Acoustics, Speech and Sig-nal Processing (ICASSP) , 2018. [19] M. Shannon et al. , “Optimizing expected word error rate via sampling for speech recognition,” in Proc. INTERSPEECH 2017 ,2017. [20] X. Wen et al. , “Reinforcement learning with verifiable rewards implicitly incentivizes correct reasoning in base LLMs,” 2025. [21] D. Guo et al. , “DeepSeek-R1: Incentivizing reasoning capability in LLMs via reinforcement learning,” 2025. [22] P. G. Shivakumar, Y. Gu, A. Gandhe, and I. Bulyko, “Group rel-ative policy optimization for speech recognition,” arXiv preprint arXiv:2509.01939 , 2025. [23] A. Rouditchenko, S. Bhati, E. Araujo, S. Thomas, H. Kuehne, R. Feris, and J. Glass, “Omni-R1: Do you really need audio to fine-tune your audio LLM?” arXiv preprint arXiv:2505.09439 ,2025. [24] A. Madaan, N. Tandon, P. Gupta, S. Hallinan, L. Gao, S. Wiegr-effe, U. Alon, N. Dziri, S. Prabhumoye, Y. Yang, S. Gupta, B. P. Majumder, K. Hermann, S. Welleck, A. Yazdanbakhsh, and P. Clark, “Self-refine: Iterative refinement with self-feedback,” in Advances in Neural Information Processing Systems 36 (NeurIPS) , 2023. [25] Z.-Y. Dou and G. Neubig, “Word alignment by fine-tuning embed-dings on parallel corpora,” in Proceedings of the 16th Conference of the European Chapter of the Association for Computational Linguistics (EACL) . Association for Computational Linguistics, 2021, pp. 2112–2128. [26] E. Casanova, K. Davis, E. Gölge, G. Göknar, I. Gulea, L. Hart, A. Aljafari, J. Meyer, R. Morais, S. Olayemi, and J. Weber, “XTTS: a massively multilingual zero-shot text-to-speech model,” in Interspeech 2024 , 2024, pp. 4978–4982. [27] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, and W. Chen, “LoRA: Low-rank adaptation of large lan-guage models,” in International Conference on Learning Repre-sentations (ICLR) , 2022. [28] A. Yang, B. Yang, B. Hui, B. Zheng, B. Yu, C. Zhou, C. Li, C. Li, D. Liu, F. Huang et al. , “Qwen2 technical report,” arXiv preprint arXiv:2407.10671 , 2024. [29] J. Rasley, S. Rajbhandari, O. Ruwase, and Y. He, “DeepSpeed: System optimizations enable training deep learning models with over 100 billion parameters,” in Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery & Data Mining . ACM, 2020, pp. 3505–3506.
