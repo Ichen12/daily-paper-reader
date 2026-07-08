@@ -1,0 +1,259 @@
+Title: Escaping the Procrustean Bed: Groupwise Orthogonal Connectors for Audio-Language Models
+
+URL Source: https://arxiv.org/pdf/2607.06014v1
+
+Published Time: Wed, 08 Jul 2026 00:43:36 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Escaping the Procrustean Bed: Groupwise Orthogonal Connectors for Audio-Language Models 
+
+Ho-Lam Chung 1,2 , Ke-Han Lu 1, Yi-Cheng Lin 1, Guan-Ting Lin 1, Yiming Chen 2, Hung-yi Lee 1
+
+> 1
+
+Graduate Institute of Communication Engineering, National Taiwan University, Taipei, Taiwan 
+
+> 2
+
+ASUS AICS, Taipei, Taiwan 
+
+Abstract —Audio-language models compress a speech encoder’s output through a Querying Transformer (Q-Former) connector before feeding it to a large language model. We identify two failures in this compression. The connector’s output vectors collapse to a single direction, and different speakers produce nearly indistinguishable outputs, with paralinguistic cues such as speaker identity, gender, and prosody lost along the way. Our method, ORCA, reverses this collapse by splitting the queries into groups whose outputs are constrained to point in different directions. On SAKURA multi-hop reasoning, ORCA gains 26.4 points over an identically trained 4B baseline, reaching 75.2% (vs. 49.0% for the 8B Audio Flamingo-3). At the connector level, the same change cuts query redundancy by 12 × and raises cross-speaker variance by 75 ×.
+
+Index Terms —audio-language models, paralinguistic reasoning, connector design, orthogonal subspaces. 
+
+I. I NTRODUCTION 
+
+An audio-language model (ALM) extends a large language model (LLM) to accept audio input alongside text. The standard pipeline has three components: an audio encoder (e.g., Whisper [1]) that maps audio to a sequence of hidden states, a connector that compresses this sequence into a fixed number of tokens, and an LLM (e.g., Llama [2], Qwen [3]) that reasons over the combined audio–text prefix. A widely used connector design is the Q-Former [4], in which K learnable queries cross-attend to the encoder output and produce a K-token summary for the LLM [5]–[9]. This makes the connector an information bottleneck: it determines the upper bound of audio information available to all downstream modules, and what it discards, no amount of LLM adaptation can recover. In practice, this compression fails to preserve much of the paralinguistic information in the signal. Speech carries semantic content ( what is said) and paralinguistic cues such as speaker identity, gender, and prosody ( how it is said). Recent benchmarks show that ALMs fall well below human performance on paralinguistic reasoning [10]–[13], and con-trolled experiments reveal a systematic preference for textual over acoustic cues [14], [15]. Upstream of the connector, the encoder’s intermediate representations retain measurable paralinguistic information [16]. Yet in §III, we show that the connector’s output is highly redundant, with very little variation across speakers, pointing to the compression itself as a key site of loss. The shape of this loss has a vivid analogue in the figure of Procrustes from Greek myth. Procrustes was an innkeeper with a single iron bed, and he forced every visitor onto it: those too tall were trimmed, those too short were stretched, so all guests left the same length as the bed. In the ALM pipeline, the bed is the language-modeling objective: it rewards only what helps the LLM predict text. The K-token bottleneck makes the fit tighter still, because with only K vectors to represent the full signal, there is no spare room for information the loss does not reward. Acoustic variation that aligns with text prediction fits the bed and survives; variation that does not is cut away. The result is a connector whose output is shaped by one objective alone, leaving non-semantic acoustic detail nowhere to live. We identify two measurable symptoms of this Procrustean compression. The first is query collapse: the connector’s K
+
+output vectors converge to near-identical directions. The second is information loss: different speakers reading the same sentence produce nearly interchangeable connector outputs. We argue that query collapse is the upstream cause. When the output vectors cluster in one direction, the connector compresses a rich signal down to a single axis of variation, and speaker differences that depend on other acoustic dimensions are lost. This causal link yields a testable prediction: a purely geometric constraint that forces the queries apart should recover speaker variation as a downstream effect, without targeting any specific acoustic attribute. We test it with ORCA (Orthogonal Representation for Controllable Audio), which replaces the standard Q-Former with a groupwise orthogonal connector (Fig. 1). The K queries are partitioned into G groups, each with its own learnable queries and its own learned combination of encoder layers, and a regularizer pushes the group centers to be orthogonal in the output space. The total parameter count and the inference cost match the baseline. Our contributions are: 1) We diagnose query collapse and information loss at the connector (§III). 2) We propose ORCA, a groupwise orthogonal connector that targets this collapse through a purely geometric constraint, requiring no attribute-specific supervision (§IV). 3) Empirically, this one change increases cross-speaker vari-ance by 75 × without an explicit variance objective, and arXiv:2607.06014v1 [cs.SD] 7 Jul 2026 the same model gains +26.4 points on SAKURA multi-hop reasoning over an identically trained 4B baseline (§V). II. R ELATED WORK 
+
+Empirical studies of speech–text alignment have exam-ined information flow through the audio-text interface. The alignment objective shifts speech representations toward the geometry of text, with directional convergence increasing in deeper layers [17]. Hsu et al. [18] dissect this process layer by layer and identify an information-dilution phase at intermediate layers. The D ESTA2.5-A UDIO line [7], [19] mitigates the resulting drift through descriptive self-generated training targets, operating on the supervision signal rather than on the connector’s internal structure. Our work takes a complementary approach: we restructure the connector’s output geometry rather than its training signal. The drift described above echoes broader collapse phenom-ena in the representation-learning literature. Auto-regressive training drives language-model embeddings into a narrow, anisotropic cone, an effect termed the representation degenera-tion problem [20], [21]. A related phenomenon, dimensional collapse, has been documented in contrastive self-supervised learning [22]: alignment objectives concentrate variance along a few principal directions. These findings concern encoders and embedding layers; the connector modules that bridge modalities have received less theoretical attention, though they face the same objective-driven pressure. Orthogonality is a standard tool for enforcing feature diversity [23], [24], and the orthogonal Procrustes problem [25] casts alignment itself as finding the orthogonal map that best relates two sets of vectors. In multimodal emotion recognition, angular constraints between shared and private spaces preserve prosodic cues [26], and vision-language work uses orthog-onal projections to keep modality-specific information from being overwritten [27]. Related ideas appear in disentangled representation learning, which separates factors of variation into independent subspaces [28]–[30], and in group- or slot-structured models that factor a signal into specialized parts [31], [32]. These efforts apply orthogonality between modalities .ORCA differs by applying it within the audio connector, between groups of queries that share the same modality, and by letting each group choose its own encoder depth. III. D IAGNOSING THE PROCRUSTEAN BED 
+
+We quantify the two failures on the D ESTA2.5-A UDIO 8B baseline, built from Whisper-Large-V3, a K=64 Q-Former connector, and Llama-3.1-8B-Instruct. All diagnostic experi-ments use CREMA-D [33], a corpus of acted emotional speech designed for paralinguistic research. It contains 7,442 utterances from 91 actors, 48 male and 43 female, each reading the same 12 sentences in 6 emotion classes. This factorial structure lets us hold one factor fixed and vary another: contrasting different sentences by the same speaker isolates semantic shifts, while contrasting different speakers reading the same sentence isolates non-semantic ones. Emotion serves as a control to verify that the findings are stable across speaking styles.         
+
+> TABLE I
+> BASELINE DIAGNOSTICS ON CREMA-D. QUERY COLLAPSE :QUERIES ARE NEARLY INDISTINGUISHABLE (COSINE SIMILARITY 1.0 MEANS IDENTICAL , 0 MEANS ORTHOGONAL ). I NFORMATION LOSS :
+> SAME -TEXT -DIFFERENT -SPEAKER PAIRS ARE BARELY MORE SIMILAR THAN RANDOM PAIRS ,SO THE CONNECTOR CANNOT SEPARATE SEMANTIC FROM ACOUSTIC SHIFTS .
+
+Diagnostic on D ESTA2.5-A UDIO 8B baseline Value 
+
+Mean off-diagonal query cosine sim. 0.923 
+
+Ssame (same text, different speakers) 0.925 
+
+Srandom (different text and speakers) 0.915 Discriminative margin ∆S = Ssame − Srandom 0.010 
+
+The first diagnostic measures query collapse. For each utterance, we compute the mean pairwise cosine similarity among the connector’s K=64 output vectors; a value near 1.0 means the vectors have collapsed to a single direction. Averaged across all utterances, the baseline gives 0.923 (Table I). Computed separately for each emotion or each sentence, the per-group values vary by at most 0.003, indicating that the collapse is a property of the model rather than of any particular input. The second diagnostic measures information loss. A connec-tor that preserves speaker variation should produce different vectors for the same text spoken by different speakers. Because absolute cosine similarity is not comparable across models with different embedding geometries [21], we define a relative discriminative margin 
+
+∆S = Ssame − Srandom , (1) where Ssame averages over all pairs sharing the same sentence but differing in speaker, and Srandom averages over random pairs that differ in both text and speaker. A large ∆S means same-text pairs are more similar than random ones; ∆S near zero means they are not. The D ESTA2.5-A UDIO 8B gives 
+
+∆S=0 .010 , with Ssame =0 .925 and Srandom =0 .915 . The high absolute values place all utterances in a narrow region of cosine-similarity space; the near-zero margin shows that same-text pairs are not separated from random ones within it. This is consistent with query collapse: when the output vectors are nearly collinear, all variation, whether cross-speaker or cross-sentence, is expressed along a single direction. If query collapse drives the information loss, then fixing collapse alone should reduce it, even without a loss term that targets cross-speaker variation directly. IV. G ROUPWISE ORTHOGONAL CONNECTOR 
+
+We first fix notation. A Q-Former [4] uses K learnable query vectors {q1, . . . , qK } ∈ Rd. For each query, the module computes 
+
+zk = CrossAttn( qk, H, H), (2) where H ∈ RT ×dh stacks T frames of encoder output. The 
+
+K output tokens are projected into the LLM’s embedding space and prepended to the text context as an audio prefix. Fig. 1. ORCA at a glance. ORCA partitions the K=64 connector queries into G=8 groups of J=8 tokens. Each group has its own learnable queries and cross-attends to the encoder output through a shared Q-Former backbone. A regularizer pushes the group output centers toward mutually orthogonal directions, so the audio prefix for the LLM spans multiple subspaces instead of collapsing onto one. 
+
+Two properties of this design drive the collapse. First, the loss in language-modeling rewards only the prediction of text, creating a convergence pressure that drives all K query outputs toward a single direction. Second, queries typically attend to a single encoder layer, and even multi-layer designs such as DESTA2.5-A UDIO [7] share their layer weights across all queries, so no query can specialize to a different encoder depth. ORCA addresses both by partitioning the queries into G groups whose outputs are regularized to be orthogonal and giving each group its own layer mixture (Fig. 1). The group structure is simple. We divide K queries into G
+
+groups of J tokens, K = GJ . Each group has its own learnable queries Qg but shares the Q-Former backbone weights, so the parameter count matches the baseline. Each group also learns layer-attention weights αg,l over a small set of encoder layers E = {7, 15 , 23 , 31 } (0-indexed), the same set used by DESTA2.5-A UDIO [7]. The output of group g is 
+
+Zg = X
+
+> l∈E
+
+αg,l QFormer( Qg , H(l)), (3) and the complete output is Z = [ Z1; . . . ; ZG].A regularizer then shapes these groups, enforcing two properties of the connector’s output. First, different groups should point in different directions in the output space, so groups occupy non-overlapping subspaces, which targets query collapse directly. Second, tokens within the same group should stay related but not identical, so each group can encode multiple facets of the same attribute without collapsing to a single point. Let zg,j ∈ Rd be the j-th output token of group g (the j-th row of Zg ). Let ¯zg = 1
+
+> J
+
+PJj=1 zg,j ∈ Rd be the group center. We add two terms to the language-modeling loss: 
+
+Lgroup = λinter 
+
+X
+
+> g<g ′
+
+¯z⊤ 
+
+> g
+
+¯zg′
+
+∥¯zg ∥ ∥ ¯zg′ ∥
+
+!2
+
++ λintra Ωintra . (4) The first sum is the inter-group term . It measures the squared cosine alignment between every pair of distinct group centers 
+
+(¯ zg , ¯zg′ ). When the centers are orthogonal the term is zero; when they collapse onto each other it grows toward one. We square the cosine so its sign is irrelevant and the gradient stays smooth at zero, and use cosine rather than inner product so groups cannot escape the penalty by shrinking themselves. The scalar weight λinter > 0 controls how strongly this competes with the language-modeling loss. This constraint is purely geometric: it rewards group centers for pointing in different directions and never references speaker, emotion, or any other attribute. Its role is to make the single-axis collapse geometrically infeasible, so that non-semantic variation has room to survive; it does not tell the model which attributes to encode, as the language-modeling loss remains the only task signal. The second is the intra-group term Ωintra . Without it, the inter-group penalty alone could push every group to a single point and waste the multi-token capacity inside each group. We instead pick a target similarity s⋆ ∈ (0 , 1) and penalize squared deviation of the average within-group similarity from 
+
+s⋆:
+
+Ωintra = 1
+
+G
+
+> G
+
+X
+
+> g=1
+
+ 2
+
+J(J−1) 
+
+X
+
+> j<j ′
+
+z⊤ 
+
+> g,j
+
+zg,j ′
+
+∥zg,j ∥ ∥ zg,j ′ ∥ − s⋆
+
+
+
+> 2
+
+. (5) The inner double sum is the average pairwise cosine similarity among the J tokens of group g. The outer squared deviation makes the penalty symmetric: tokens that drift apart (similarity 
+
+< s ⋆) and tokens that collapse together (similarity → 1) are both penalized. The scalar weight λintra > 0 controls the strength. Operating on group centers rather than every cross-group token pair keeps the constraint coarse and the gradient stable: tokens inside one group can still encode related aspects of the same attribute without being individually pushed away from tokens in other groups. We instantiate ORCA with G=8 , J=8 , and K=64 , match-ing the baseline’s token budget exactly, and set λinter =0 .1
+
+and λintra =0 .03 . The target similarity s⋆=0 .3 is moderately small but non-trivial: it keeps groups internally coherent while leaving room for token-level diversity inside each group. The Q-Former has 6 layers, and the audio encoder and the LLM are frozen, so only the connector is trained. We follow the public DESTA2.5-A UDIO recipe [7]: 5 epochs ( ∼250k steps) on AQA5M, Adam optimizer, peak learning rate 1×10 −4, cosine annealing with 2000-step warmup, global batch size 96, on 8×A100-80GB GPUs. The total loss is L = LLM + Lgroup .The added cost is small. The Q-Former backbone weights are shared across all groups, so relative to the single-group baseline the query-embedding budget is identical ( GJ =K=64 ) and the two connectors match in parameter count up to a handful of layer-attention scalars; over a connector-free pipeline the added queries are only GJd ≈0.065 M for d=1024 . The regularizer adds G(G−1) /2 cosine terms on mean vectors, and inference latency matches a standard Q-Former. V. E XPERIMENTS 
+
+We answer three questions in order. (Q1) Does fixing query collapse at the connector also reduce information loss, as the diagnosis predicts? (Q2) Does this propagate to better paralinguistic reasoning on real tasks? (Q3) Does the improvement survive acoustic noise? TABLE II                          
+
+> AQA5M DOMAIN COMPOSITION .THE DATASET COVERS 50 SOURCE DATASETS ACROSS THREE AUDIO DOMAINS . W E LIST THE METADATA TYPES AVAILABLE IN EACH DOMAIN .
+> Domain Hours #Datasets Metadata Types
+> Speech ∼5,400 38 emotion, gender, age, accent, pitch, speaking rate, SNR, language, speaker ID Env. Sound ∼1,000 7event category, caption, duration Music ∼500 5genre, instrument, MIDI note, song title
+> Total ∼7,000 50
+> TABLE III
+> QUERY REDUNDANCY BY CONDITION ON CREMA-D. THE BASELINE COLLAPSES UNIFORMLY ACROSS EMOTIONS AND SENTENCES ; ORCA
+> REDUCES THE SIMILARITY UNIFORMLY AS WELL . V ALUES ARE REPORTED AS MEAN ±STANDARD DEVIATION ACROSS CONDITIONS .
+
+Condition DESTA2.5-A UDIO 8B ORCA 4B 
+
+Overall 0.923 0.077 
+
+Per emotion (6 classes) 0.923 ± 0.001 0.077 ± 0.001 
+
+Per sentence (12 sents.) 0.923 ± 0.001 0.077 ± 0.003 
+
+We compare two 4B models that share the Whisper-Large-V3 encoder, the Qwen3-4B [3] backbone, the AQA5M training data [7], and the training recipe. The only difference is the connector: a standard Q-Former (the D ESTA2.5-A UDIO 4B baseline) versus ORCA. For context, we also report scaling baselines: Qwen2.5-Omni [34], Q WEN 2-A UDIO [35], Audio Flamingo-3 [36], and D ESTA2.5-A UDIO (8B) [7]. AQA5M comprises about 7,000 hours of audio across 50 publicly available datasets, with broad coverage of paralinguis-tic metadata that lets the model learn to attend to non-semantic attributes during training (Table II). Speech accounts for the majority ( ∼77%), with annotations spanning emotion, gender, age, accent, and prosodic features, while environmental sound (∼14%) and music ( ∼7%) round out the corpus. Following the self-generation principle of D ESTA2.5-A UDIO [7], training targets are generated by the same Qwen3-4B that serves as the backbone, which keeps the supervision and the model’s native output style on the same distribution. We evaluate on two benchmarks. SAKURA [10] measures multi-hop paralinguistic reasoning over gender, animal, lan-guage, and emotion attributes, and MMAU [37] measures general audio understanding over sound, speech, and music. We use the official prompts and greedy decoding, and report accuracy. The diagnostic experiments use CREMA-D [33] with speaker-disjoint folds. 
+
+A. Q1: Collapse and Variance Recovery 
+
+We re-run the two diagnostics from Section III on ORCA’s connector outputs. If query collapse drives information loss, fixing collapse should reduce information loss as well, even though no loss term addresses it directly. Query cosine similarity drops from 0.923 to 0.077 (Table IV), a 12 ×
+
+reduction. The regularizer directly penalizes this quantity, so the    
+
+> TABLE IV
+> RE-RUNNING THE DIAGNOSTICS ON ORCA. ONLY REDUNDANCY IS IN THE LOSS ;THE VARIANCE RECOVERY IS A DOWNSTREAM EFFECT .
+
+Diagnostic DESTA2.5-A UDIO 8B ORCA 4B 
+
+Query cosine sim. (targeted) 0.923 0.077 
+
+Cross-speaker variance 0.0015 0.113 
+
+Discriminative margin ∆S 0.010 0.085 
+
+reduction is expected. The effect is uniform across emotions and sentences (Table III), matching the uniformity of the original collapse. The second diagnostic also improves: ∆S grows from 0.010 to 0.085 (Table IV). We also measure cross-speaker variance, the per-dimension variance of the mean-pooled connector output across speakers reading the same sentence, averaged over dimensions and sentences. It rises from 0.0015 to 0.113, a 75 × increase. No loss term penalizes either quantity, so both improvements are downstream effects of reducing collapse alone. 
+
+B. Q2: Paralinguistic Reasoning Downstream 
+
+Table V gives the main numbers. Existing models struggle on paralinguistic reasoning even when recognition is strong. Qwen2.5-Omni scores 22.6% on Gender multi-hop and 15.4% on Emotion multi-hop despite high automatic speech recogni-tion (ASR) accuracy, so the failure is not in recognition but in preserving non-semantic information through alignment. The connector alone explains a large part of this gap. With identical encoder, LLM, data, and recipe, ORCA (4B) beats the DESTA2.5-A UDIO 4B baseline on every multi-hop category by large margins: Animal 76.2 vs. 34.2, Gender 85.8 vs. 38.0, Emotion 57.2 vs. 50.8, and Language 81.6 vs. 72.2, for a +26.4-point gain in multi-hop average. Since the only differences are the orthogonal group partition and the per-group layer mixtures, this isolates the effect to the connector. ORCA (4B) also exceeds the 8B D ESTA2.5-A UDIO by +5.3 points on multi-hop average, though this comparison is not controlled, as the two models use different LLM backbones. The gains are not uniform, and the ordering tracks how much each attribute relies on non-semantic acoustic structure. They are largest for Gender (+47.8) and Animal (+42.0), both carried by spectrally broad cues that a collapsed connector destroys, smaller for Language (+9.4), whose phonemic identity partially survives collapse, and smallest for Emotion (+6.4), which depends on fine prosodic cues that are hard to preserve through any compression. The same ordering holds, more weakly, on the single-hop split. ORCA wins there too (80.5 vs. 56.0 average against the 4B baseline; 80.5 vs. 76.7 against the 8B), but by a smaller margin. Single-hop questions ask the model to read an attribute directly, which even a partially collapsed connector can sometimes do through surface cues; multi-hop questions require combining it with internal knowledge, exactly where carrying the attribute through alignment matters. TABLE V 
+
+MAIN RESULTS (ACCURACY ) ON SAKURA ( PARALINGUISTIC REASONING ) AND MMAU ( GENERAL AUDIO UNDERSTANDING ). S: SINGLE -HOP , M:
+
+> MULTI
+
+-HOP . BOLD : BEST IN COLUMN ; UNDERLINE : SECOND BEST . T HE DESTA2.5-A UDIO 4B BASELINE AND ORCA SHARE ENCODER , LLM, DATA , AND TRAINING RECIPE ; ONLY THE CONNECTOR DIFFERS . W ITH 4B PARAMETERS AND 7K HOURS OF AUDIO , ORCA RANKS FIRST ON OVERALL MULTI -HOP REASONING (SAKURA A VG -M) AND IS FIRST OR SECOND ON 10 OF THE 14 REPORTED METRICS , WHEREAS THE QWEN AND AUDIO FLAMINGO MODELS ,
+
+> TRAINED ON ONE TO THREE ORDERS OF MAGNITUDE MORE AUDIO
+
+, LEAD ON SINGLE -HOP BUT DROP SHARPLY UNDER MULTI -HOP .                                                                                                                       
+
+> SAKURA (Reasoning) MMAU (General) Animal Gender Emotion Lang Avg Model Param Audio (hrs) SMSMSMSMSMSound Speech Music Avg
+> Reference systems (varied scale & data)
+> Qwen2.5-Omni 3B ∼1.7M–3.3M est. 92.2 70.6 64.8 22.6 27.4 15.4 80.0 29.0 66.1 34.4 70.0 56.5 59.3 61.9 QWEN 2-A UDIO 7B ∼520k 90.0 60.6 89.0 43.4 62.2 40.2 83.4 46.4 81.2 47.7 54.4 43.8 55.4 51.2 Audio Flamingo-3 8B ∼100k 88.0 61.6 66.4 49.4 70.8 41.2 93.8 43.6 79.8 49.0 80.2 67.6 71.9 73.2
+> DESTA2.5-A UDIO (8B) 8B 7,000 58.8 58.0 89.2 84.0 62.2 57.4 96.4 80.0 76.7 69.9 64.6 64.9 54.8 61.4
+> Controlled comparison: same encoder, LLM, data & recipe (4B, 7k-hr); only the connector differs
+> DESTA2.5-A UDIO 4B Baseline 4B 7,000 30.8 34.2 44.2 38.0 56.0 50.8 93.0 72.2 56.0 48.8 58.6 74.2 47.9 60.2
+> ORCA (ours) 4B 7,000 76.0 76.2 87.6 85.8 63.8 57.2 94.4 81.6 80.5 75.2 64.0 71.8 52.4 62.7
+
+Audio: CREMA-D 1001 TAI HAP XX. Male speaker says “The airplane is almost full” in a happy , upbeat tone. 
+
+Prompt: “What is the emotion of the speaker? Describe the audio.” 
+
+DESTA2.5-A UDIO 8B: “The emotion expressed in the audio is Fear . The speaker’s voice conveys a sense of anxiety or apprehension, suggesting unease about the situation. The vocal delivery is likely high-pitched and rapid, with a slight tremble, indicating heightened emotional arousal. Given the line ‘The airplane is almost full,’ the speaker may be expressing nervousness about boarding a crowded flight.” 
+
+ORCA (4B): “The emotion expressed by the speaker is happy . The audio features a male voice (age 22) delivering ‘The airplane is almost full’ with a positive and upbeat emotional inflection, suggesting enthusiasm or excitement. The voice quality is clear and energetic, consistent with the cheerful delivery.” 
+
+Fig. 2. Downstream effect of connector collapse on emotion description. 
+
+Given the same audio and prompt, D ESTA2.5-A UDIO 8B misclassifies the emotion and invents acoustic details (tremble, high pitch) to match, while ORCA correctly identifies the emotion and describes the actual delivery. Attribute details such as the stated age remain unverified model guesses; the example illustrates emotion grounding rather than attribute-level fidelity. 
+
+Figure 2 shows what information loss looks like at the output level. Given a happy CREMA-D utterance, the D ESTA2.5-AUDIO 8B baseline misclassifies the emotion as “Fear” and then builds a coherent story around that wrong choice, complete with invented acoustic details. With cross-speaker variance crushed by the collapsed connector, the LLM has no acoustic content to ground its description in, so it fills in plausible-sounding details from the wrong emotion choice, a failure mode documented for audio-language models that hallucinate ungrounded reasoning [38]. The same prompt with ORCA produces a description consistent with the actual delivery. On general audio understanding the picture is different. On MMAU, ORCA (62.7%) is on par with Qwen2.5-Omni (61.9%) and the 8B baseline (61.4%), while Audio Flamingo-3 (73.2%) leads with a different paradigm and more data. Structure helps paralinguistic reasoning; scale helps broad audio knowledge; the two are complementary. ORCA keeps Speech accuracy high (71.8%, second only to the 4B baseline; the small regression suggests the orthogonality constraint shifts some capacity from general speech understanding toward paralinguistic subspaces) and matches the field on Sound and Music, where success depends more on the breadth of audio events seen during 
+
+TABLE VI 
+
+ROBUSTNESS . SAKURA MULTI -HOP ACCURACY (%) UNDER ADDITIVE 
+
+GAUSSIAN NOISE . ∆10 IS THE CHANGE FROM CLEAN TO A 10 DB
+
+> SIGNAL
+
+-TO -NOISE RATIO (SNR). 
+
+DESTA2.5-A UDIO 8B ORCA 4B Category Clean 10 dB ∆10 Clean 10 dB ∆10 
+
+Animal 58.0 55.6 −2.4 76.2 59.8 −16.4 Gender 84.0 68.6 −15.4 85.8 85.0 −0.8 Emotion 57.4 39.0 −18.4 57.2 41.0 −16.2 Language 80.0 78.6 −1.4 81.6 83.8 +2.2 
+
+Avg 69.9 60.5 −9.4 75.2 67.4 −7.8 
+
+pretraining [39]–[42] than on whether the connector preserved paralinguistic structure. 
+
+C. Q3: Robustness Under Noise 
+
+We add white Gaussian noise at 10 dB SNR and re-evaluate (Table VI). Gender shows the clearest separation. Both models start near 84–86% on clean audio, yet D ESTA2.5-A UDIO 8B drops 15.4 points multi-hop while ORCA drops 0.8. Gender cues such as fundamental frequency (F0) and formant structure are spectrally broad and survive noise, so the gap reflects whether the connector preserves them. The diagnostics in §III show the baseline does not preserve them, consistent with its sharp drop under noise, whereas ORCA retains a usable acoustic pathway. On Language, both models are nearly invariant, since phonemic and rhythmic cues are robust by nature. On Animal, both drop and ORCA drops further from a higher start, the generic regression any model shows once the absolute signal is degraded. Emotion is intrinsically fragile for both models because fine prosodic cues are masked by additive noise at the signal level. Even at 10 dB, ORCA retains 67.4% multi-hop average, just 2.5 points below the D ESTA2.5-A UDIO 
+
+8B clean average. Structure cannot rescue physically corrupted cues, but it makes a real difference for cues the connector would otherwise discard. 
+
+D. Group Specialization 
+
+We never tell the groups what to learn. Yet the learned αg,l 
+
+split the eight groups into three patterns (Fig. 3). Groups 0, 1, 4, Fig. 3. Learned layer-attention weights αg,l . Rows are the 8 groups, columns are Whisper layers {7, 15 , 23 , 31 } (0-indexed). Without supervision, groups split into shallow-, mid-, and deep-layer specialists. 
+
+and 5 act as shallow specialists, concentrating on layers 7 and 15, which encode lower-level spectral and prosodic features; Group 4, for instance, places α=0 .354 on layer 15 and 0.292 
+
+on layer 7, with low weight on the deep layers. Group 6 is a mid-layer specialist, uniquely peaking on layer 23 ( α=0 .309 )and assigning the lowest weight to the final layer 31 ( 0.093 )among all groups. Groups 3 and 7 are deep specialists, placing the most weight on the final layer 31 of any group ( α=0 .270 
+
+and 0.259 ), about 2× that of the shallow specialists. Read against layer-wise analyses of speech encoders [18], [43]–[45], this specialization suggests that orthogonality on output centers pushes groups to draw from different processing depths, a natural way to occupy non-overlapping output subspaces. The structural inductive bias does the work; specialization emerges for free, echoing how group structure can yield specialized parts without part-level supervision in other domains [31]. 
+
+E. Discussion 
+
+The fix is structural, so its reach is bounded by what is upstream of the connector. One bound is the encoder, which sets a floor. ORCA cannot recover information the audio encoder has already discarded, nor can it extract cues that are physically masked by noise. Emotion is the clearest example: the clean-condition gain over the 4B baseline is the smallest of the four SAKURA categories (+6.4 vs. +47.8 for Gender), and the 10 dB drop is similar for both ORCA and the 8B baseline. Fine prosodic cues such as pitch contour, voice quality, and timing live close to the noise floor of any frame-level feature extractor, and structure cannot push them above it. A second bound is the loss. Group orthogonality opens room for non-semantic axes, but it does not change which axis the language-modeling loss most heavily rewards. The semantic axis remains primary by construction, and other groups specialize only to the extent that the gradient finds them useful. This bounds what an architecture-only fix can achieve and points to data and task design as complementary levers. VI. C ONCLUSION 
+
+Q-Former connectors in standard audio-language models collapse their output onto a single semantic direction: the mean pairwise cosine similarity among K=64 output vectors reaches 0.923 on the D ESTA2.5-A UDIO baseline, and the cross-speaker discriminative margin is only ∆S=0 .010 . ORCA addresses this upstream cause by partitioning the K queries into G orthogonal groups, each with its own learned encoder-layer mixture, at no additional parameter or inference cost. The geometric constraint reduces query cosine similarity from 0.923 to 0.077 ( 12 ×) and raises cross-speaker variance by 75 ×,both as downstream effects without any attribute supervision. On SAKURA multi-hop reasoning, ORCA gains 26.4 points over the identically trained 4B baseline (75.2% vs. 48.8%), and group specialization in encoder depth emerges without supervision. The result illustrates a general principle. When a training objective rewards only one mode of variation, the connector discards everything else. Adding per-attribute losses treats symptoms one at a time and requires annotated targets for each attribute. Reshaping the output geometry so that multiple subspaces coexist in the bottleneck addresses the structural cause, and gains propagate to attributes the designer did not specify. Connector geometry is therefore a first-class design axis alongside model scale and training data: a 4B model with the right structure can recover what an 8B model with a collapsed connector discards. REFERENCES [1] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak supervision,” in International Conference on Machine Learning (ICML) . PMLR, 2023, pp. 28 492–28 518. [2] A. Grattafiori, A. Dubey, A. Jauhri, A. Pandey, A. Kadian, A. Al-Dahle, A. Letman, A. Mathur, A. Schelten, A. Vaughan et al. , “The llama 3 herd of models,” arXiv preprint arXiv:2407.21783 , 2024. [3] A. Yang, A. Li, B. Yang, B. Zhang, B. Hui, B. Zheng, B. Yu, C. Gao, C. Huang, C. Lv, C. Zheng, D. Liu, F. Zhou, F. Huang, F. Hu, H. Ge, H. Wei, H. Lin, J. Tang, J. Yang, J. Tu, J. Zhang, J. Yang, J. Yang, J. Zhou, J. Zhou, J. Lin, K. Dang, K. Bao, K. Yang, L. Yu, L. Deng, M. Li, M. Xue, M. Li, P. Zhang, P. Wang, Q. Zhu, R. Men, R. Gao, S. Liu, S. Luo, T. Li, T. Tang, W. Yin, X. Ren, X. Wang, X. Zhang, X. Ren, Y. Fan, Y. Su, Y. Zhang, Y. Zhang, Y. Wan, Y. Liu, Z. Wang, Z. Cui, Z. Zhang, Z. Zhou, and Z. Qiu, “Qwen3 technical report,” 2025. [Online]. Available: https://arxiv.org/abs/2505.09388 [4] J. Li, D. Li, S. Savarese, and S. C. H. Hoi, “BLIP-2: Bootstrapping Language-Image pre-training with frozen image encoders and large language models,” in International Conference on Machine Learning (ICML) , 2023. [5] C. Tang, W. Yu, G. Sun, X. Chen, T. Tan, W. Li, L. Lu, Z. Ma, and C. Zhang, “SALMONN: Towards generic hearing abilities for large language models,” in International Conference on Learning Representations (ICLR) , 2024. [6] S. Ghosh, S. Kumar, A. Seth, C. K. R. Evuru, U. Tyagi, S. Sakshi, O. Nieto, R. Duraiswami, and D. Manocha, “GAMA: A large audio-language model with advanced audio understanding and complex reasoning abilities,” in Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing . Miami, Florida, USA: Association for Computational Linguistics, Nov. 2024, pp. 6288–6313. [Online]. Available: https://aclanthology.org/2024.emnlp-main.361/ [7] K.-H. Lu, Z. Chen, S.-W. Fu, C.-H. H. Yang, S.-F. Huang, C.-K. Yang, C.-E. Yu, C.-W. Chen, W.-C. Chen, C. yu Huang, Y.-C. Lin, Y.-X. Lin, C.-A. Fu, C.-Y. Kuan, W. Ren, X. Chen, W.-P. Huang, E.-P. Hu, T.-Q. Lin, Y.-K. Wu, K.-P. Huang, H.-Y. Huang, H.-C. Chou, K.-W. Chang, C.-H. Chiang, B. Ginsburg, Y.-C. F. Wang, and H. yi Lee, “Desta2.5-audio: Toward general-purpose large audio language model with self-generated cross-modal alignment,” IEEE Transactions on Audio, Speech and Language Processing , 2026. [Online]. Available: https://arxiv.org/abs/2507.02768 [8] D. Robinson, M. Miron, M. Hagiwara, and O. Pietquin, “Naturelm-audio: an audio-language foundation model for bioacoustics,” in International Conference on Learning Representations (ICLR) , Y. Yue, A. Garg, N. Peng, F. Sha, and R. Yu, Eds., vol. 2025, 2025, pp. 21 378–21 398. [Online]. Available: https://proceedings.iclr.cc/paper files/paper/2025/ file/36c20807317ae6cb3817acd554da2d32-Paper-Conference.pdf [9] Z. Wang, X. Xia, X. Zhu, and L. Xie, “U-SAM: An Audio Language Model for Unified Speech, Audio, and Music Understanding,” in 
+
+Interspeech , 2025, pp. 2720–2724. [10] C.-K. Yang, N. Ho, Y.-T. Piao, and H. yi Lee, “Sakura: On the Multi-Hop reasoning of large Audio-Language models based on speech and audio information,” in Interspeech , 2025. [Online]. Available: https://arxiv.org/abs/2505.13237 [11] Q. Wang, H. B. Sailor, T. Liu, W. Zhang, M. Huzaifah, N. Lertcheva, S. Sun, N. F. Chen, J. Wu, and A. Aw, “Benchmarking contextual and paralinguistic reasoning in Speech-LLMs: A case study with in-the-wild data,” in Conference on Empirical Methods in Natural Language Processing (EMNLP), Findings , 2025. [Online]. Available: https://doi.org/10.18653/v1/2025.findings-emnlp.760 [12] J. Ao, Y. Wang, X. Tian, D. Chen, J. Zhang, L. Lu, Y. Wang, H. Li, and Z. Wu, “SD-eval: A benchmark dataset for spoken dialogue understanding beyond words,” in The Thirty-eighth Conference on Neural Information Processing Systems Datasets and Benchmarks Track ,2024. [Online]. Available: https://openreview.net/forum?id=PnjbvbblGv [13] D. Wang, J. Wu, J. Li, D. Yang, X. Chen, T. Zhang, and H. Meng, “Mmsu: A massive multi-task spoken language understanding and reasoning benchmark,” 2025. [Online]. Available: https://arxiv.org/abs/2506.04779 [14] J. Chen, Z. Guo, J. Chun, P. Wang, A. Perrault, and M. Elsner, “Do audio LLMs really LISTEN, or just transcribe? measuring lexical vs. acoustic emotion cues reliance,” in Proceedings of the 19th Conference of the European Chapter of the Association for Computational Linguistics (Volume 1: Long Papers) . Rabat, Morocco: Association for Computational Linguistics, Mar. 2026, pp. 5848–5877. [Online]. Available: https://aclanthology.org/2026.eacl-long.274/ [15] J. Xiong, Y. Qi, Q. Cao, Y. Zheng, Y. Zhang, Z. Wang, R. Liao, W. Xu, and S. Liu, “Deaf: A benchmark for diagnostic evaluation of acoustic faithfulness in audio language models,” 2026. [Online]. Available: https://arxiv.org/abs/2603.18048 [16] J. Pang, A. Chaubey, and M. Soleymani, “Do audio llms listen or read? analyzing and mitigating paralinguistic failures with voxparadox,” 2026. [Online]. Available: https://arxiv.org/abs/2605.27772 [17] B. Xiang, S. Zhao, T. Guo, and W. Zou, “Understanding the modality gap: An empirical study on the Speech-Text alignment mechanism of large speech language models,” in Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2025, pp. 5187–5202. [Online]. Available: https://doi.org/10.48550/arxiv.2510.12116 [18] M.-H. Hsu, X. Zhang, X. Tian, J. Zhang, and Z. Wu, “Anatomy of the modality gap: Dissecting the internal states of end-to-end speech llms,” 2026. [Online]. Available: https://arxiv.org/abs/2603.01502 [19] K.-H. Lu, Z. Chen, S.-W. Fu, H. Huang, B. Ginsburg, Y.-C. F. Wang, and H. yi Lee, “DeSTA: Enhancing speech language models through descriptive Speech-Text alignment,” in Interspeech , 2024. [Online]. Available: https://doi.org/10.21437/Interspeech.2024-457 [20] J. Gao, D. He, X. Tan, T. Qin, L. Wang, and T.-Y. Liu, “Representation degeneration problem in training natural language generation models,” in International Conference on Learning Representations (ICLR) , 2019. [21] K. Ethayarajh, “How contextual are contextualized word representations? comparing the geometry of bert, elmo, and gpt-2 embeddings,” in 
+
+Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2019, pp. 55–65. [22] L. Jing, P. Vincent, Y. LeCun, and Y. Tian, “Understanding dimen-sional collapse in contrastive self-supervised learning,” in International Conference on Learning Representations (ICLR) , 2022. [23] A. Saxe, J. L. McClelland, and S. Ganguli, “Exact solutions to the nonlinear dynamics of learning in deep linear neural networks,” in 
+
+International Conference on Learning Representations (ICLR) , 2014. [Online]. Available: https://doi.org/10.48550/arxiv.1312.6120 [24] N. Bansal, X. Chen, and Z. Wang, “Can we gain more from orthogonality regularizations in training deep cnns?” in Conference on Neural Information Processing Systems (NeurIPS) , 2018. [Online]. Available: https://doi.org/10.48550/arxiv.1810.09102 [25] P. H. Sch ¨onemann, “A generalized solution of the orthogonal procrustes problem,” Psychometrika , vol. 31, no. 1, pp. 1–10, 1966. [26] X. Che, W. Wang, Y. Hou, M. Xie, Q. Zhao, and J. Guan, “Angle-optimized partial disentanglement for multimodal emotion recognition in conversation,” 2025. [Online]. Available: https://arxiv.org/abs/2511.22447 [27] A. Chaudhuri, A. Dutta, T. Bui, and S. Georgescu, “A closer look at multimodal representation collapse,” in International Conference on Machine Learning (ICML) , 2025. [Online]. Available: https: //doi.org/10.48550/arxiv.2505.22483 [28] H. Kim and A. Mnih, “Disentangling by factorising,” in International Conference on Machine Learning (ICML) , 2018. [Online]. Available: https://doi.org/10.48550/arxiv.1802.05983 [29] F. Locatello, S. Bauer, M. Lu ˇci ´c, G. R ¨atsch, S. Gelly, B. Sch ¨olkopf, and O. Bachem, “Challenging common assumptions in the unsupervised learning of disentangled representations,” in International Conference on Machine Learning (ICML) , 2019. [Online]. Available: https: //doi.org/10.48550/arxiv.1811.12359 [30] R. Cai, Z. Jiang, K. Zheng, Z. Li, W. Chen, X. Chen, Y. Shen, G. Chen, Z. Hao, and K. Zhang, “Learning disentangled representation for multi-modal time-series sensing signals,” in Proceedings of the ACM on Web Conference (WWW) , 2025. [Online]. Available: https://doi.org/10.1145/3696410.3714931 [31] J. Xu, S. D. Mello, S. Liu, W. Byeon, T. Breuel, J. Kautz, and X. Wang, “GroupViT: Semantic segmentation emerges from text supervision,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022. [Online]. Available: https: //doi.org/10.1109/cvpr52688.2022.01760 [32] F. Locatello, D. Weissenborn, T. Unterthiner, A. Mahendran, G. Heigold, J. Uszkoreit, A. Dosovitskiy, and T. Kipf, “Object-Centric learning with slot attention,” in Conference on Neural Information Processing Systems (NeurIPS) , 2020. [Online]. Available: https://doi.org/10.48550/arxiv.2006.15055 [33] H. Cao, D. G. Cooper, M. K. Keutmann, R. C. Gur, A. Nenkova, and R. Verma, “Crema-d: Crowd-sourced emotional multimodal actors dataset,” IEEE Transactions on Affective Computing , vol. 5, pp. 377–390, 2014. [Online]. Available: https://doi.org/10.1109/taffc.2014.2336244 [34] J. Xu, Z. Guo, J. He, H. Hu, T. He, S. Bai, K. Chen, J. Wang, Y. Fan, K. Dang, B. Zhang, X. Wang, Y. Chu, and J. Lin, “Qwen2.5-omni technical report,” 2025. [Online]. Available: https://arxiv.org/abs/2503.20215 [35] Y. Chu, J. Xu, Q. Yang, H. Wei, X. Wei, Z. Guo, Y. Leng, Y. Lv, J. He, J. Lin, C. Zhou, and J. Zhou, “Qwen2-audio technical report,” 2024. [Online]. Available: https://arxiv.org/abs/2407.10759 [36] A. Goel, S. Ghosh, J. Kim, S. Kumar, Z. Kong, S. gil Lee, C.-H. H. Yang, R. Duraiswami, D. Manocha, R. Valle, and B. Catanzaro, “Audio flamingo 3: Advancing audio intelligence with fully open large audio language models,” 2025. [Online]. Available: https://arxiv.org/abs/2507.08128 [37] S. Sakshi, U. Tyagi, S. Kumar, A. Seth, R. K. Selvakumar, O. Nieto, R. Duraiswami, S. Ghosh, and D. Manocha, “MMAU: A massive Multi-Task audio understanding and reasoning benchmark,” in 
+
+International Conference on Learning Representations (ICLR) , 2025. [Online]. Available: https://arxiv.org/abs/2410.19168 [38] Y. Chen, W. Zhu, X. Chen, Z. Wang, X. Li, P. Qiu, H. Wang, X. Dong, Y. Xiong, A. Schneider, Y. Nevmyvaka, and Y. Wang, “Aha: Aligning large audio-language models for reasoning hallucinations via counterfactual hard negatives,” arXiv preprint arXiv:2512.24052 , 2025. [39] J. F. Gemmeke, D. P. W. Ellis, D. Freedman, A. Jansen, W. Lawrence, R. C. Moore, M. Plakal, and M. Ritter, “Audio set: An ontology and human-labeled dataset for audio events,” in 2017 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2017, pp. 776–780. [40] C. D. Kim, B. Kim, H. Lee, and G. Kim, “Audiocaps: Generating captions for audios in the wild,” in Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers) , 2019, pp. 119–132. [41] K. J. Piczak, “Esc: Dataset for environmental sound classification,” in 
+
+Proceedings of the 23rd ACM International Conference on Multimedia ,2015, pp. 1015–1018. [42] J. Engel, C. Resnick, A. P. Roberts, S. Dieleman, D. Eck, K. Simonyan, and M. Norouzi, “Neural audio synthesis of musical notes with wavenet autoencoders,” in International Conference on Machine Learning (ICML) .PMLR, 2017, pp. 1068–1077. [43] A. Pasad, J.-C. Chou, and K. Livescu, “Layer-wise analysis of a self-supervised speech representation model,” in IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) , 2021. [Online]. Available: https://doi.org/10.1109/asru51503.2021.9688093 [44] A. Baevski, H. Zhou, A. Mohamed, and M. Auli, “wav2vec 2.0: A framework for Self-Supervised learning of speech representations,” in 
+
+Conference on Neural Information Processing Systems (NeurIPS) , 2020. [45] W.-N. Hsu, B. Bolte, Y.-H. H. Tsai, K. Lakhotia, R. Salakhutdinov, and A. Mohamed, “HuBERT: Self-Supervised speech representation learning by masked prediction of hidden units,” IEEE/ACM Transactions on Audio, Speech, and Language Processing , vol. 29, pp. 3451–3460, 2021. [Online]. Available: https://doi.org/10.1109/taslp.2021.3122291
