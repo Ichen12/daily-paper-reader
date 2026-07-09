@@ -1,0 +1,250 @@
+Title: UBG-Net: An Uncertainty-aware Bayesian Gating Network for Robust Audio-Visual Speech Recognition
+
+URL Source: https://arxiv.org/pdf/2607.06892v1
+
+Published Time: Thu, 09 Jul 2026 00:19:40 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# UBG-Net: An Uncertainty-aware Bayesian Gating Network for Robust Audio-Visual Speech Recognition 
+
+# Jinjie Fu 1, Hang Chen 1,∗∗ , Wu Guo 1, Zhijun Zhang 1, Kuiliang Li 1, Peng Gao 1
+
+1NERC-SLIP, University of Science and Technology of China, Hefei, China 
+
+jjfu@mail.ustc.edu.cn, hangchen@ustc.edu.cn 
+
+# Abstract 
+
+Audio-Visual speech recognition systems often degrade in real-world scenarios due to signal corruption and distribution shifts. To address this, we propose a unified uncertainty-modeling framework, namely the uncertainty-aware Bayesian gating net-work (UBG-Net). UBG-Net features a Modality Uncertainty-aware Bayesian Fusion (MUBF) mechanism that injects signal-level aleatoric uncertainty into a Bayesian network to model epistemic uncertainty, thereby ensuring robust fusion of pre-trained backbone features. For inference, we introduce Distri-bution Uncertainty-aware Hierarchical Voting (DUHV) to se-lect transcripts from Monte Carlo samples, prioritizing fre-quency and using inference scores in case of a tie. Experiments on the AVCocktail and LRS2 datasets demonstrate the overall superiority of UBG-Net compared to SOTA baselines. Ablation studies confirm that MUBF and DUHV effectively filter noise, enhancing fusion and decoding robustness. 
+
+Index Terms : Robust Speech Recognition, Audio-Visual, Un-certainty Estimation, Bayesian Deep Learning. 
+
+# 1. Introduction 
+
+Audio-Visual Speech Recognition (AVSR) leverages visual cues, such as lip movements, to compensate for audio degradation[1, 2]. This mechanism is particularly crucial in noisy environments where acoustic signals are corrupted, yet visual information remains reliable. However, most existing AVSR models rely on fixed audio–visual fusion paradigms [3, 4, 5, 6, 7], thereby limiting their generalization to dynamic real-world scenarios, such as cross-modal heterogeneity (e.g., fluc-tuating audio-visual reliability) [8]. To mitigate such degradation, the core challenge lies in ef-fectively evaluating and utilizing the reliability of each modal-ity. Traditional approaches primarily rely on attention mecha-nisms or gating modules to dynamically weight audio and vi-sual features [5, 6, 9]. While effective under matched condi-tions, these deterministic methods yield only point estimates and inherently fail to capture input reliability. Recent works have thus begun to explore probabilistic modeling to capture two distinct types of uncertainty: aleatoric uncertainty (inherent data noise) and epistemic uncertainty (model knowledge limita-tion) [10, 11]. However, existing attempts in multimodal tasks typically treat these uncertainties in isolation [12, 13, 14, 15, 16], overlooking their potential correlation. For instance, stud-ies like [12, 13] focus primarily on modeling aleatoric uncer-tainty via variance learning, whereas the approach in [14] mod-els epistemic uncertainty through Bayesian Neural Networks (BNNs) [17]. Unfortunately, such isolated practices implicitly 
+
+> **
+
+indicates the corresponding author. 
+
+assume these uncertainties are independent. This assumption fails to capture the intrinsic dependency between data quality and model confidence. From our perspective, severe signal cor-ruption should be explicitly accounted for in estimating epis-temic uncertainty, ensuring that data noise is not misconstrued as semantic ambiguity. In this paper, we propose a novel uncertainty-aware Bayesian gating network (UBG-Net) to enhance AVSR perfor-mance under challenging conditions. Instead of treating data noise and model ambiguity as separate entities, we design a modality uncertainty-aware Bayesian fusion (MUBF) mecha-nism in which signal-level aleatoric uncertainty serves as a con-textual cue for model-level epistemic uncertainty. Specifically, we explicitly model the input distribution to capture aleatoric uncertainty and inject this information into a Bayesian gating network, which dynamically modulates the uncertainty-aware features with the pre-trained backbone representations. Further-more, we introduce a distribution uncertainty-aware hierarchi-cal voting (DUHV) strategy to address the sequence alignment challenge inherent in the Monte Carlo (MC) sampling [18] em-ployed during inference to approximate the posterior predictive distribution [10]. Specifically, we first apply majority voting to hypotheses generated via MC sampling and retain the most fre-quent candidates. When multiple candidates tie for the highest frequency, the final prediction is selected based on the highest inference score. In summary, the main contributions of UBG-Net are: • proposing the MUBF mechanism that utilizes signal-level aleatoric uncertainty as context to explicitly guide the esti-mation of model-level epistemic uncertainty, offering a more elaborate control over multimodal fusion. • designing the DUHV strategy to resolve alignment ambigui-ties in Monte Carlo sampling, which selects the optimal hy-pothesis by first applying majority voting and then leveraging inference scores in case of a tie. • performing extensive experiments across the challenging AV-Cocktail dataset [8] and the noise-augmented LRS2 bench-marks [19], achieving new state-of-the-art (SOTA) perfor-mances and demonstrating excellent generalization ability 1.
+
+# 2. Proposed UBG-Net 
+
+The proposed UBG-Net for AVSR, as depicted in Fig. 1, in-cludes three parts: the AV-HuBERT encoder for multimodal deep representation extracting, the modality uncertainty-aware Bayesian fusion block and the AV-HuBERT decoder. Our in-novations focus on the latter two parts, and we will provide de-
+
+> 1
+
+We did not include LRS3 in our evaluation as the dataset was un-available for access at the time of this research. arXiv:2607.06892v1 [eess.AS] 8 Jul 2026 Majority Vote      
+
+> Sampling
+> Confidence Vote Training Stage
+> Transformer Decoder
+> Bayesian Linear Bayesian Linear ReLU Sigmoid Gating
+> MLP
+> Linear Linear
+> MLP
+> Sampling
+> Video Features
+> Audio Features
+> Video Embedding Audio Embedding
+> Bayesian Linear
+> Trainable Frozen
+> DoRA
+> Modality Uncertainty-aware Bayesian Fusion AV-HuBERT Decoder
+> Monte Carlo Inference
+> Hybrid Loss
+> Transformer Decoder
+> DoRA
+> Result 1
+> Result 2
+> Result K-1
+> Result K
+> Final Result
+> Train Path
+> Inference Path
+> Encoder Encoder
+> ResNet FFN
+> Audio-Visual Fusion
+> Transformer Encoder
+> Audio Features Video Features
+> Audio-Visual Embedding
+> AV-HuBERT Encoder
+> Inference Stage
+
+Figure 1: Framework Overview. (1) AV-HuBERT Encoder: A pre-trained backbone employed for deep multimodal representation extraction. (2) Modality Uncertainty-aware Bayesian Fusion: A Bayesian gating network that modulates multimodal streams using injected aleatoric uncertainty parameters. (3) AV-HuBERT Decoder: The decoding module, where the top and bottom parts denote the training and inference stages, respectively. 
+
+tailed descriptions in the following sections. 
+
+2.1. Modality uncertainty-aware Bayesian fusion 
+
+We propose a unified framework to jointly model aleatoric and epistemic uncertainties, as depicted in the middle of Fig. 1. 
+
+2.1.1. Aleatoric uncertainty encoders 
+
+To capture aleatoric uncertainty inherent in the data, we map features into a stochastic latent space through modality-dependent encoders. For the input frame-level feature f mt , the mean μmt and standard deviation σmt of the distribution can be calculated as 
+
+μmt , log( σmt )2 = Linear m 
+
+> {μ,σ }
+
+(MLP m
+
+> enc
+
+(f mt )) (1) where MLP m 
+
+> enc
+
+and Linear m 
+
+> {μ,σ }
+
+stand for multi-layer percep-tion module and the following parallel linear heads. In this and the following sections, the superscripts or subscripts m ∈{v, a } denote the modality (visual or audio) and t ∈ { 1, . . . , T }
+
+index the time frames within an input sequence of length T .
+
+(σmt )2 quantifies the observed data heteroscedasticity, and we predict log( σmt )2 because it is more numerically stable than re-gressing the variance (σmt )2 in neural network training [10]. Instead of point estimates, we generate stochastic embeddings 
+
+zmt via the reparameterization trick [20]: 
+
+zmt = μmt + ϵ ⊙ σmt , ϵ ∼ N (0, I) (2) Finally, the refined features hmt = MLP m
+
+> proj
+
+(zmt ) are used for the subsequent information fusion. A KL divergence loss 
+
+LKL -Feat constrains this latent space towards a standard Gaus-sian prior [21]. 
+
+2.1.2. Epistemic uncertainty gating 
+
+Unlike previous approaches that model aleatoric and epistemic uncertainty independently, we design a Bayesian Gating Net-work (BGN) in which aleatoric uncertainty serves as a contex-tual cue for modeling epistemic uncertainty, guiding the gating process and effectively bridging the two types of uncertainty. As shown in Fig. 1, the BGN consists of two Bayesian linear layers [17], a ReLU activation, and a sigmoid gating function. For each Bayesian linear layer, we place a variational distribu-tion qθ (W) over the weights and define the prior distribution as a standard Gaussian p(W) = N (W; 0, I) [22]. The in-puts to the bottom Bayesian linear layer are not raw features but the distribution parameters. We construct a perceptual context vector ct by concatenating the mean and variance from both modalities: 
+
+ct = Concat   μvt , (σvt )2, μat , (σat )2 (3) The context ct feeds into the next Bayesian linear layers to produce a stochastic gating vector gt, which dynamically mod-ulates the multimodal features for information fusion. 
+
+gt = σ
+
+
+
+BNN( ct; W)
+
+
+
+(4) 
+
+Hfinal  
+
+> t
+
+= Hdeep  
+
+> t
+
++ gt ⊙ Concat( hvt , hat ) (5) where Hdeep  
+
+> t
+
+is the deep representation from a pre-trained model, BNN( ·) denotes the composite transformation of two Bayesian linears with an intermediate ReLU. To learn the weight posterior, we adopt the Variational In-ference (VI) method, which optimizes the negative Evidence Lower Bound (ELBO) [17]. Within this objective, the Bayesian layers contribute the complexity cost, formulated as the KL di-vergence between the variational posterior and the prior: 
+
+LKL -Weight = KL( qθ (W)|| p(W)) (6) Mathematically, the summation of the recognition loss (acting as the negative log-likelihood) and this KL term constitutes the standard negative ELBO for the model parameters. To ensure stable convergence, we apply the local reparam-eterization trick [23]. Instead of sampling weights directly, we sample the pre-activation outputs, thereby decoupling the sam-ple variance from the minibatch size. Table 1: WER (%) comparison on the LRS2 dataset. Note that ’Int.’ denotes the number of interfering speakers. 
+
+Model Int. SNR (dB) Avg -5 0 5 10 ∞
+
+0 2.1 Baseline 1 6.4 3.5 3.4 2.8 4.1 2 9.0 4.4 3.2 2.8 0 4.0 Whisper 1 96.6 30.4 14.1 6.0 33.8 2 104.0 30.4 13.1 5.4 Qwen3 -Omni 0 4.2 1 96.4 30.0 13.5 5.6 32.8 2 100.0 30.1 10.8 4.8 0 2.2 UBG-Net 1 5.2 3.1 3.1 2.6 3.9 2 8.3 4.1 3.2 3.0 Finally, the total loss combines the negative ELBO (com-prising the recognition loss and weight priors) with explicit reg-ularization on the latent feature space: 
+
+Ltotal = LCTC /Attn + β1LKL -Weight + β2LKL -Feat (7) where LCTC /Attn is the weighted sum of CTC and attention losses. The coefficients β1 and β2 balance the model complex-ity cost and the feature-level constraints, respectively. 
+
+2.2. Distribution uncertainty-aware hierarchical voting 
+
+During inference, we propose a distribution-uncertainty-aware hierarchical voting (DUHV) strategy to effectively leverage the diversity of predictions produced by the Bayesian gating net-work. Specifically, we employ Monte Carlo (MC) sampling to approximate the posterior predictive distribution[17]: 
+
+p(y|x) ≈ 1
+
+K
+
+> K
+
+X
+
+> k=1
+
+p(y|x, Wk ), Wk ∼ qθ (W) (8) Since sequence lengths vary across K hypotheses by the MC method in the inference stage, standard averaging is in-applicable [18]. Then, let H = {(yk , s k )}Kk=1 be the set of hypotheses, where sk denotes the inference score, defined as the sequence log-probability obtained via beam search decod-ing. For each unique hypothesis y, we calculate its frequency 
+
+N (y) and peak confidence Speak (y) = max k:yk =y sk . The optimal sequence y∗ is determined by a hierarchical selection rule. First, we apply majority voting and obtain the set of can-didates with the maximum frequency. 
+
+Ycand = {y | N (y) = max 
+
+> y′∈H
+
+N (y′)} (9) If the candidate set has only one sequence, this sequence is the final transcript. In the event of a tie, we select the one with the highest inference score from the candidates by the first step 
+
+y∗ = arg max 
+
+> y∈Y cand
+
+Speak (y) (10) Table 2: Ablation study of different components and different in-ference strategies in UBG-Net on the AVCocktail dataset, where ”w/o” denotes ”without”. 
+
+Model Segmentation Active Speaker Fixed Gold Detection chunk (10s) 
+
+Baseline 22.6 39.2 18.2 Whisper 67.3 136.0 52.3 Qwen3-Omni 70.5 143.3 54.9 UBG-Net 21.9 36.1 17.4 w/o Epistemic 22.3 37.8 17.9 w/o Aleatoric 22.1 37.6 17.7 w/o Majority 22.4 37.5 17.7 w/o Confidence 22.2 37.8 17.8 
+
+# 3. Experimental Setup 
+
+3.1. Datasets and metrics 
+
+For training, we use a combination of datasets including LRS2, Vox2, and AVYT [8]. For evaluation, we use two benchmarks: • Simulated LRS2 [19]: Following the protocol of Nguyen et al. [8], we introduce up to two background interfering speakers and apply different signal-to-noise ratios (SNRs) of 
+
+{− 5, 0, 5, 10 } dB. This setup measures robustness against controlled synthetic interruptions. • Real-world AVCocktail [8]: This dataset contains ∼6.1 hours of multi-party conversations recorded with 360-degree cameras. It faithfully reproduces speech overlap, varying acoustics, and up to 53.7% silent face segments. We eval-uate under three segmentation settings: manual segmenta-tion (Gold), fixed-duration chunks (Fixed Chunk), and active speaker detection (ASD). We adopt word error rate (WER) as the primary metric. 
+
+3.2. Implementation details 
+
+We adopt a two-stage training strategy. Stage 1 follows the training protocol of the baseline [8] 2, finetuning the pretrained AV-HuBERT [24] on the combined training set until conver-gence to ensure a fair comparison. Stage2 freezes the main en-coder/decoder parameters and only trains the proposed UBG-Net modules and the Weight-Decomposed Low-Rank Adapta-tion (DoRA) modules [25] (an improvement over LoRA [26]) inserted into the decoder linear layers ( r = 8 , α = 16 ). The aleatoric uncertainty modeling modules are imple-mented as 2-layer MLPs with a hidden dimension of 512 and GELU activation. To ensure training stability, the last layer of the semantic projection MLP m 
+
+> proj
+
+is initialized to zero. For the Bayesian linear layers, the weights are initialized using Xavier-uniform [27] (gain 0.01), and the biases are initialized to -5.0 to encourage sparsity at the start. We optimize the model on 2 NVIDIA 4090 GPUs for 40000 steps using AdamW [28] (weight decay 0.005, gradient clipping 1.0) with a peak learn-ing rate of 1e − 4 (linear warmup for 4000 steps). The effective batch size is 64. Additionally, the loss coefficients β1 and β2
+
+> 2Our implementation is adapted from the official repository of [8]:
+> https://github.com/nguyenvulebinh/AVSRCocktail .
+
+are linearly warmed up for 4000 steps to their target values of 
+
+1e − 7 and 1e − 4, respectively, and kept constant thereafter. During inference, the number of Monte Carlo samples is set to 
+
+K = 5 .
+
+# 4. Experimental Results 
+
+4.1. Comparison with baseline 
+
+We use algorithms in paper [8] as the baseline, which can achieve SOTA performance on AVCocktail and LRS2 3. Addi-tionally, we include Whisper (large-v3) [29] and Qwen3-Omni (30B-A3B-Instruct) [30] as reference points to contextualize the task difficulty. As shown in the Table 1 and Table 2, these general-purpose models suffer severe performance degradation in the presence of interference, underscoring the need for spe-cialized audio-visual adaptation to this challenge. 
+
+Robustness on LRS2. Table 1 demonstrates consistent im-provements over the baseline across most SNR levels, except for slight declines at 10 dB and under clean conditions, which may be due to over-enhancement. Notably, at -5 dB, the im-provement from UBG-Net is more pronounced. This trend con-firms the efficacy of our UBG-Net: it explicitly captures sig-nal quality via aleatoric uncertainty to suppress noisy features, while simultaneously mitigating distribution shifts caused by severe corruption through epistemic modeling. 
+
+Robustness on AVCocktail. As shown in Table 2, our method outperforms the baseline across all settings. Most notably, in the challenging fixed-chunk setting, we achieve a 7.9% relative WER reduction. In this setting, the model must handle unseg-mented streams containing non-speech frames. We attribute this significant gain to our MUBF mechanism, which acts as a soft voice activity detector. By explicitly modeling signal aleatoric uncertainty, the network effectively downweights multimodal features in the presence of silence or background noise, thereby preventing it from hallucinating to some extent. 
+
+4.2. Ablation studies Analysis of modality uncertainty-aware Bayesian fusion (MUBF). First, we investigate the contribution of aleatoric and epistemic uncertainty modeling of the proposed MUBF by in-dividually applying them, with the ablation results on the AV-Cocktail dataset shown in Table 2. The results in rows 5-6 show that modeling aleatoric or epistemic uncertainty in iso-lation can improve the baseline to some extent. It is evident that the proposed MUBF mechanism achieves the best performance. This demonstrates the complementary nature of the two uncer-tainty types: explicitly modeling aleatoric uncertainty serves as a signal-quality indicator that guides the Bayesian gating net-work to suppress noisy features. Simultaneously, the Bayesian linear models account for parameter variance under distribu-tional shifts. This mechanism effectively calibrates the feature representation and prevents the model from being misled by corrupted inputs, a capability lacking in independent modeling approaches. 
+
+Analysis of distribution uncertainty-aware hierarchical vot-ing (DUHV). To validate our robust decoding, we compare the proposed DUHV against two alternative sequence-level selection criteria: best confidence (selecting the hypothesis with the highest inference score) and standard majority voting 
+
+> 3Due to the stochastic nature of our inference strategy, all reported results are averaged over 10 independent runs to ensure statistical relia-bility.
+
+Figure 2: Effect of MC sample size on WER across ASD, Fix, and Gold sets. 0 denotes deterministic decoding, 1 represents a single stochastic sample, and ≥ 2 indicates voting results. 
+
+(frequency-based). As shown in Table 2, our method yields the lowest WER by addressing the limitations of these baselines. While the best confidence strategy suffers from the calibration error inherent in deep models (where the network is often con-fident but wrong on out-of-distribution samples), and standard majority voting discards valuable likelihood information dur-ing ties, our DUHV approach leverages population consensus to filter out inconsistent predictions. Furthermore, by using in-ference scores as a fine-grained tie-breaker, this approach pre-serves the model’s discriminative power in ambiguous scenar-ios. 
+
+Effect of sample size K. In the following experiment, we eval-uate the parameter K in Monte Carlo (MC) method for the in-ference. Fig. 2 illustrates the WER trend across different sample sizes, where K = 0 denotes standard deterministic beam search (without stochastic sampling). We observe that transitioning from deterministic decoding ( K = 0 ) to stochastic sampling (K ≥ 2) yields significant performance gains, validating the benefit of capturing diverse posterior modes. The WER reduc-tion is most rapid as K increases to 3 and saturates around K =5. This indicates that K = 5 is the optimal operating point for balancing recognition accuracy and inference latency. 
+
+# 5. Conclusion 
+
+In this work, we proposed a novel uncertainty-aware AVSR framework featuring a Bayesian fusion mechanism that is modality-uncertainty-aware. By explicitly injecting aleatoric uncertainty as a perceptual context to the Bayesian gating net-work, our method effectively decouples optimization objec-tives, enabling the epistemic uncertainty modeling module to distinguish irreducible signal noise from semantic ambiguity. Additionally, we introduced a distribution-uncertainty-aware hierarchical voting strategy to robustly resolve sequence align-ment errors during Monte Carlo inference. Extensive exper-iments demonstrate the superiority of our approach, notably achieving a 7.9% relative WER reduction in the challenging fixed chunk setting of AVCocktail. Future work will explore extending this unified uncertainty paradigm to other multimodal understanding tasks. 6. Generative AI Use Disclosure 
+
+Generative AI tools were used in a limited manner strictly for language polishing and formatting. No AI tool was used to gen-erate the core scientific contributions, and all authors take full responsibility for the manuscript’s content. 
+
+# 7. References 
+
+[1] D. Michelsanti, Z.-H. Tan, S.-X. Zhang, Y. Xu, M. Yu, D. Yu, and J. Jensen, “An overview of deep-learning-based audio-visual speech enhancement and separation,” IEEE/ACM Transactions on Audio, Speech, and Language Processing , vol. 29, pp. 1368–1396, 2021. [2] H. McGurk and J. MacDonald, “Hearing lips and seeing voices,” 
+
+Nature , vol. 264, no. 5588, pp. 746–748, 1976. [3] D. Ivanko, D. Ryumin, and A. Karpov, “A review of recent ad-vances on deep learning methods for audio-visual speech recog-nition,” Mathematics , vol. 11, no. 12, p. 2665, 2023. [4] P. Ma, A. Haliassos, A. Fernandez-Lopez, H. Chen, S. Petridis, and M. Pantic, “Auto-AVSR: Audio-visual speech recognition with automatic labels,” in IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2023, pp. 1–5. [5] A. Rouditchenko, Y. Gong, S. Thomas, L. Karlinsky, H. Kuehne, R. Feris, and J. Glass, “Whisper-Flamingo: Integrating Visual Features into Whisper for Audio-Visual Speech Recognition and Translation,” in Interspeech 2024 , 2024, pp. 2420–2424. [6] J. Li, C. Li, Y. Wu, and Y. Qian, “Robust audio-visual ASR with unified cross-modal attention,” in IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2023, pp. 1–5. [7] Z. Zhao, D. Guo, W. Ou, H. Liu, and Y. Lin, “AMG-AVSR: Adap-tive modality guidance for audio-visual speech recognition via progressive feature enhancement,” in The 16th Asian Conference on Machine Learning (Conference Track) , 2024. [8] T.-B. Nguyen, N.-Q. Pham, and A. Waibel, “Cocktail-Party Audio-Visual Speech Recognition,” in Interspeech 2025 , 2025, pp. 1828–1832. [9] Y. Hu, R. Li, C. Chen, H. Zou, Q. Zhu, and E. S. Chng, “Cross-modal global interaction and local alignment for audio-visual speech recognition,” in Proceedings of the 32nd International Joint Conference on Artificial Intelligence (IJCAI) ,2023. [Online]. Available: https://www.ijcai.org/proceedings/ 2023/0564.pdf [10] A. Kendall and Y. Gal, “What uncertainties do we need in Bayesian deep learning for computer vision?” in Advances in Neural Information Processing Systems , vol. 30, 2017. [11] J. Gawlikowski, C. R. N. Tassi, M. Ali, J. Lee, M. Humt, J. Feng, A. Kruspe, R. Triebel, P. Jung, R. Roscher et al. , “A survey of un-certainty in deep neural networks,” Artificial Intelligence Review ,vol. 56, no. Suppl 1, pp. 1513–1589, 2023. [12] A. Zhu, M. Hu, X. Wang, J. Yang, Y. Tang, and N. An, “Proxy-driven robust multimodal sentiment analysis with incomplete data,” in Proceedings of the 63rd Annual Meeting of the Asso-ciation for Computational Linguistics (Volume 1: Long Papers) ,2025, pp. 22 123–22 138. [13] Z. Gao, X. Jiang, X. Xu, F. Shen, Y. Li, and H. T. Shen, “Embrac-ing unimodal aleatoric uncertainty for robust multimodal fusion,” in IEEE/CVF Conference on Computer Vision and Pattern Recog-nition (CVPR) , 2024, pp. 26 876–26 885. [14] M. Subedar, R. Krishnan, P. L. Meyer, O. Tickoo, and J. Huang, “Uncertainty-aware audiovisual activity recognition using deep bayesian variational inference,” in Proceedings of the IEEE/CVF international conference on computer vision , 2019, pp. 6301– 6310. [15] J. Huang, J. Zhong, Q. Lei, J. Gao, Y. Yang, S. Wang, P. Li, and K. Wei, “Latent distribution decouple for uncertain-aware mul-timodal multi-label emotion recognition,” in Findings of the As-sociation for Computational Linguistics: ACL 2025 , 2025, pp. 24 123–24 138. [16] M. K. Tellamekala, S. Amiriparian, B. W. Schuller, E. Andr´ e, T. Giesbrecht, and M. Valstar, “COLD fusion: Calibrated and or-dinal latent distribution fusion for uncertainty-aware multimodal emotion recognition,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 46, no. 2, pp. 805–822, 2023. [17] C. Blundell, J. Cornebise, K. Kavukcuoglu, and D. Wierstra, “Weight uncertainty in neural network,” in International confer-ence on machine learning . PMLR, 2015, pp. 1613–1622. [18] A. Malinin and M. Gales, “Uncertainty estimation in autore-gressive structured prediction,” in International Conference on Learning Representations (ICLR) , 2021. [Online]. Available: https://openreview.net/forum?id=jN5y-zb5Q7m [19] J. Son Chung, A. Senior, O. Vinyals, and A. Zisserman, “Lip read-ing sentences in the wild,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2017, pp. 6447–6456. [20] D. P. Kingma and M. Welling, “Auto-Encoding Variational Bayes,” in International Conference on Learning Representations (ICLR) , 2014. [21] A. A. Alemi, I. Fischer, J. V. Dillon, and K. Murphy, “Deep variational information bottleneck,” in International Conference on Learning Representations (ICLR) , 2017. [Online]. Available: https://openreview.net/forum?id=HyxQzBceg [22] A. Graves, “Practical variational inference for neural networks,” in Advances in Neural Information Processing Systems , vol. 24, 2011. [23] D. P. Kingma, T. Salimans, and M. Welling, “Variational dropout and the local reparameterization trick,” in Advances in Neural In-formation Processing Systems , vol. 28, 2015. [24] B. Shi, W.-N. Hsu, K. Lakhotia, and A. Mohamed, “Learning audio-visual speech representation by masked multimodal cluster prediction,” in International Conference on Learning Representations (ICLR) , 2022. [Online]. Available: https: //openreview.net/forum?id=Z1Qlm11uOM [25] S.-Y. Liu, C.-Y. Wang, H. Yin, P. Molchanov, Y.-C. F. Wang, K.-T. Cheng, and M.-H. Chen, “DoRA: Weight-decomposed low-rank adaptation,” in Forty-first International Conference on Machine Learning , 2024. [26] E. J. Hu, Y. Shen, P. Wallis, Z. Allen Zhu, Y. Li, S. Wang, L. Wang, and W. Chen, “LoRA: Low-rank adaptation of large language models,” in International Conference on Learning Representations (ICLR) , 2022. [Online]. Available: https://openreview.net/forum?id=nZeVKeeFYf9 [27] X. Glorot and Y. Bengio, “Understanding the difficulty of train-ing deep feedforward neural networks,” in Proceedings of the thirteenth international conference on artificial intelligence and statistics . JMLR Workshop and Conference Proceedings, 2010, pp. 249–256. [28] I. Loshchilov and F. Hutter, “Decoupled weight de-cay regularization,” in International Conference on Learn-ing Representations (ICLR) , 2019. [Online]. Available: https://openreview.net/forum?id=Bkg6RiCqY7 [29] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak supervision,” in International conference on machine learning .PMLR, 2023, pp. 28 492–28 518. [30] J. Xu, Z. Guo, H. Hu, Y. Chu, X. Wang, J. He, Y. Wang, X. Shi, T. He, X. Zhu, Y. Lv, Y. Wang, D. Guo, H. Wang, L. Ma, P. Zhang, X. Zhang, H. Hao, Z. Guo, B. Yang, B. Zhang, Z. Ma, X. Wei, S. Bai, K. Chen, X. Liu, P. Wang, M. Yang, D. Liu, X. Ren, B. Zheng, R. Men, F. Zhou, B. Yu, J. Yang, L. Yu, J. Zhou, and J. Lin, “Qwen3-omni technical report,” arXiv preprint arXiv:2509.17765 , 2025.

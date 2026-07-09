@@ -6,49 +6,71 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-08
-- 运行时间：2026-07-08 21:28:01 UTC
+- 最新运行日期：2026-07-09
+- 运行时间：2026-07-09 21:21:10 UTC
 - 运行状态：成功
-- 本次总论文数：9
-- 精读区：4
-- 速读区：5
+- 本次总论文数：17
+- 精读区：6
+- 速读区：11
 
 ### 今日简报（AI）
-今日推荐9篇论文，聚焦语音合成与编码前沿，两篇TTS工作获9.0高分。  
-精读首选《Fréchet Distance Loss》与《BlueMagpie-TTS》，前者改进了语音表征距离度量，后者专攻台语口音码切换合成。  
-建议关注噪声鲁棒性和音码器适应技术，实用性强。
-- 详情：[/202607/08/README](/202607/08/README)
+今天共推荐17篇论文，精读6篇，重点聚焦声音效果、语音口音归一化及对话自然度评估。最值得关注《Doppelganger: Sound Effects and Their Synthetic Twins》（10分）揭示真实与合成声音效果的相似性，以及《TokAN: Accent Normalization》（9分）利用自监督语音令牌实现口音归一化。建议深入研读这两篇高分论文，并关注声音效果鉴别与口音适应技术的前沿进展。
+- 详情：[/202607/09/README](/202607/09/README)
 
 ### 精读区论文标签
-1. [Fréchet Distance Loss on Speech Representations for Text-to-Speech Synthesis](/202607/08/2607.06027v1-frchet-distance-loss-on-speech-representations-for-text-to-speech-synthesis)  
+1. [Doppelganger: Sound Effects and Their Synthetic Twins](/202607/09/2607.04337v1-doppelganger-sound-effects-and-their-synthetic-twins)  
+   标签：评分：10.0/10、query:speech-audio
+   evidence：匹配真实与合成音效的基准数据集
+2. [TokAN: Accent Normalization Using Self-Supervised Speech Tokens](/202607/09/2607.03928v1-tokan-accent-normalization-using-self-supervised-speech-tokens)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：提出用于文本到语音合成的分布正则化方法
-2. [BlueMagpie-TTS: A Token-Efficient Tokenizer, Language Model, and TTS for Taiwanese-Accent Code-Switching Speech](/202607/08/2607.06054v1-bluemagpie-tts-a-token-efficient-tokenizer-language-model-and-tts-for-taiwanese-accent-code-switching-speech)  
+   evidence：口音归一化是一种语音转换技术
+3. [Gradient-Based Speech-to-Text Alignment for Any ASR Model: From CTC to Speech LLMs](/202607/09/2607.06831v1-gradient-based-speech-to-text-alignment-for-any-asr-model-from-ctc-to-speech-llms)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：针对台湾口音代码转换语音的文本到语音合成
-3. [WordVoice: Explicit and Decoupled Multi-Dimensional Word-Level Control for LLM-Based TTS](/202607/08/2607.06461v1-wordvoice-explicit-and-decoupled-multi-dimensional-word-level-control-for-llm-based-tts)  
+   evidence：针对任意ASR模型的梯度对齐方法
+4. [UBG-Net: An Uncertainty-aware Bayesian Gating Network for Robust Audio-Visual Speech Recognition](/202607/09/2607.06892v1-ubg-net-an-uncertainty-aware-bayesian-gating-network-for-robust-audio-visual-speech-recognition)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：基于LLM的TTS的显式词级控制
-4. [Unified Audio Intelligence Without Regressing on Text Intelligence](/202607/08/2607.05196v2-unified-audio-intelligence-without-regressing-on-text-intelligence)  
+   evidence：视听语音识别中的不确定性感知融合
+5. [Conversational Human Audio-visual Talking Dialogue Generation](/202607/09/2607.02799v1-conversational-human-audio-visual-talking-dialogue-generation)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：统一的音频-文本LLM，支持语音和音频理解与生成
+   evidence：从文本生成语音和面部动作，直接相关于文本到语音合成
+6. [Unified Audio Intelligence Without Regressing on Text Intelligence](/202607/09/2607.05196v2-unified-audio-intelligence-without-regressing-on-text-intelligence)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：统一语音理解与生成的音频文本大语言模型
 
 ### 速读区论文标签
-1. [Escaping the Procrustean Bed: Groupwise Orthogonal Connectors for Audio-Language Models](/202607/08/2607.06014v1-escaping-the-procrustean-bed-groupwise-orthogonal-connectors-for-audio-language-models)  
+1. [Open-Set Source Tracing as Compositional Factors via Structured Prototypes](/202607/09/2607.03134v1-open-set-source-tracing-as-compositional-factors-via-structured-prototypes)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：合成语音的源追踪，与语音合成和反欺骗密切相关
+2. [Hierarchical Acoustic-Semantic Modeling: Modality Separation and Semantic Coherence for Full-Duplex SLMs](/202607/09/2607.06540v1-hierarchical-acoustic-semantic-modeling-modality-separation-and-semantic-coherence-for-full-duplex-slms)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：全双工口语语言模型的声学语义建模
+3. [TurnNat: Automatic Evaluation of Turn-Taking Naturalness in Dyadic Spoken Dialogue](/202607/09/2607.01345v2-turnnat-automatic-evaluation-of-turn-taking-naturalness-in-dyadic-spoken-dialogue)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：改进音频语言模型连接器以支持语音任务
-2. [Noisy Environment Adaptation of Neural Speech Codec via Focal Mask and Noise Feature Separation](/202607/08/2607.04195v1-noisy-environment-adaptation-of-neural-speech-codec-via-focal-mask-and-noise-feature-separation)  
+   evidence：自动评估对话中轮换自然度
+4. [Speaker head orientation estimation with a single microphone array using phase spectrogram features](/202607/09/2607.02129v1-speaker-head-orientation-estimation-with-a-single-microphone-array-using-phase-spectrogram-features)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：从音频估计说话人头朝向
+5. [Ranking the Impact of Contextual Specialization in Neural Speech Enhancement](/202607/09/2607.04826v1-ranking-the-impact-of-contextual-specialization-in-neural-speech-enhancement)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：研究神经语音增强中的上下文专业化，属于语音音频大主题
+6. [Flow Matching-Based Speech Source Separation with Best-of-N Biometric Sampling](/202607/09/2607.06088v1-flow-matching-based-speech-source-separation-with-best-of-n-biometric-sampling)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：用于语音识别增强的语音源分离方法
+7. [Compress the Cache, Not the Speech Embedding: KV Compression for Efficient Speech LLMs](/202607/09/2607.06827v1-compress-the-cache-not-the-speech-embedding-kv-compression-for-efficient-speech-llms)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：提升语音大语言模型的解码效率
+8. [Transformer-based segmentation of prosodic boundaries in Brazilian Portuguese](/202607/09/2607.07408v1-transformer-based-segmentation-of-prosodic-boundaries-in-brazilian-portuguese)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：韵律边界分割用于文本到语音合成
+9. [Information-Geometric Superposed Vowel Evaluation: Part 1. Moraic Syllabary (Japanese)](/202607/09/2607.04154v1-information-geometric-superposed-vowel-evaluation-part-1-moraic-syllabary-japanese)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：噪声环境语音编解码增强
-3. [Ranking the Impact of Contextual Specialization in Neural Speech Enhancement](/202607/08/2607.04826v1-ranking-the-impact-of-contextual-specialization-in-neural-speech-enhancement)  
+   evidence：基于元音分布分析区分合成与自然语音的方法
+10. [Towards Language-Agnostic Speech Inversion](/202607/09/2607.05060v1-towards-language-agnostic-speech-inversion)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：基于上下文特化的神经语音增强
-4. [Flow Matching-Based Speech Source Separation with Best-of-N Biometric Sampling](/202607/08/2607.06088v1-flow-matching-based-speech-source-separation-with-best-of-n-biometric-sampling)  
+   evidence：与语言无关的语音反演，恢复发音和源参数
+11. [InsideSSL: Understanding Self-Supervised Speech Representations using a Model-Centric Perspective](/202607/09/2607.06392v1-insidessl-understanding-self-supervised-speech-representations-using-a-model-centric-perspective)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：语音源分离作为语音处理任务并涉及基准评估
-5. [InsideSSL: Understanding Self-Supervised Speech Representations using a Model-Centric Perspective](/202607/08/2607.06392v1-insidessl-understanding-self-supervised-speech-representations-using-a-model-centric-perspective)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：研究自监督语音表示，是语音任务的基础
+   evidence：分析作为语音任务基础的SSL模型，对理解和改进合成/识别表示有指导意义
 
 
 <div class="dpr-home-promo-card">

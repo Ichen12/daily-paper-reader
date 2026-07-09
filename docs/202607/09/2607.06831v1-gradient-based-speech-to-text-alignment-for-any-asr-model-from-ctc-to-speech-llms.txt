@@ -1,0 +1,528 @@
+Title: Gradient-Based Speech-to-Text Alignment for Any ASR Model: From CTC to Speech LLMs
+
+URL Source: https://arxiv.org/pdf/2607.06831v1
+
+Published Time: Thu, 09 Jul 2026 00:13:55 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Gradient-Based Speech-to-Text Alignment for Any ASR Model: From CTC to Speech LLMs 
+
+Albert Zeyer , Ralf Schl¨ uter , Hermann Ney 
+
+Machine Learning and Human Language Technology Group, RWTH Aachen University, Aachen, Germany AppTek GmbH, Aachen, Germany 
+
+{zeyer,schlueter,ney }@ml.rwth-aachen.de 
+
+Abstract —Speech-to-text alignment means finding the tempo-ral boundaries of each word in the audio. Some models provide such an alignment directly and others do not. Connectionist temporal classification (CTC) and transducer models have an alignment by construction, whereas attention-based encoder-decoders (AED) and speech large language models (LLMs) do not, and their word timings are usually read off the attention weights instead. All of these signals live on the encoder frame grid, which bounds their temporal precision. We study a generic 
+
+gradient-based alignment that applies to any differentiable ASR model. We take the gradient of each teacher-forced token log probability with respect to the input, reduce it to a per-frame saliency, and decode the resulting matrix into word boundaries with a single dynamic-programming pass. The method needs no training, no model modification and no alignment heads, works across all model families including the speech LLMs, and aligns on the input grid rather than on the coarser encoder grid. We evaluate it on sixteen models from four families, on read (TIMIT) and spontaneous (Buckeye) speech, each against the model’s own native or attention-based alignment. We find that the gradient yields a usable alignment for every model, that it is usually somewhat behind a strong native aligner but better where the native alignment is weak, as for the streaming models, and that its main disadvantage is the cost of one backward pass per token. 
+
+Index Terms —speech-to-text alignment, forced alignment, gradient-based attribution, automatic speech recognition, speech language models 
+
+I. I NTRODUCTION & R ELATED WORK 
+
+Speech-to-text alignment assigns each transcribed word a start and end time in the audio. It is classically produced by finding the best path through a Gaussian-mixture hidden Markov model (GM-HMM) which is still the most accurate aligner for read speech [1]–[5]. Current models, however, differ in what alignment they provide on their own [6]: con-nectionist temporal classification (CTC) [4], [7] and transducer models [8] have one by construction, whereas attention-based encoder-decoders (AED) [9]–[11] and speech large language models (LLMs) [12]–[14] do not, and their word timings are usually read off the attention weights instead. All of these signals live on the 20 to 80 ms encoder frame grid, which bounds their temporal precision. For AED, reading the timing off the cross-attention is established practice: Whisper emits coarse segment-level timestamp tokens [15], word-level timestamps follow from a dynamic time warping (DTW) of the decoder cross-attention [16] that fine-tuning can sharpen [17], and the alignment-bearing heads can even be selected by an unsupervised heuristic and refined with character-level teacher forcing without any training [18]. Speech LLM self-attention carries a similar alignment, used to constrain text-to-speech synthesis [19] and as a policy for simultaneous translation [20]; forced alignment has separately been cast as a trained LLM task [21]. We study a generic gradient-based alignment that applies to any differentiable speech recognition model. For each transcript token we take the gradient of its teacher-forced log probability with respect to the input, reduce it to a per-frame saliency [22], and decode the resulting token-by-frame matrix into word boundaries with a single dynamic-programming pass (Fig. 1). As it uses the gradient w.r.t. the input signal, it aligns on the input grid rather than on the coarser encoder grid, and it can correct temporal shifts of the encoder: the encoder is often so powerful that it can displace the signal in time (e.g. with streaming models) or even reverse the time dimension [23] 1,which degrades the native forced alignment, while the gradient should still give a meaningful alignment. It needs no training and no model modification and it applies to all model families. Unlike the attention-based alignment, which first has to find which attention head carries the alignment (hand-picked for Whisper, and unpublished for the other models, so that we have to select it on a labeled development set), the gradient uses one canonical signal, the saliency of the token’s own log probability. In prior work, the same method has been applied to speech recognition AED models [18], [23] and machine-translation models [24]. This work is not a proposal of gradient alignment as the best aligner. A strong native aligner is usually still somewhat better, and the gradient is considerably more expensive. We rather provide a broad and fair analysis of what the gradient alignment is, how well it works across all the model families, and where it wins and loses. Our contributions are:  
+
+> •
+
+We show that the gradient-based alignment applies to all ASR model families: CTC (prefix scores), transducers (RNN-T and TDT, also via prefix scores), AED, and speech LLMs.  
+
+> •
+
+Improved alignment path scoring, where the best align-ment path is found via dynamic programming. The cross-attention dynamic time warping (DTW) used by Whisper and CrisperWhisper is a special case of it. Our version 
+
+> 1
+
+Arguably reversing the time dimension will not happen for CTC, though. arXiv:2607.06831v1 [cs.CL] 7 Jul 2026 improves on that DTW both on the attention and on the gradient signal.  
+
+> •
+
+For the speech LLMs, we read the alignment off their self-attention, the analog of the encoder-decoder cross-attention.  
+
+> •
+
+A comprehensive and fair comparison of sixteen models across the four families, on read (TIMIT) and spon-taneous (Buckeye) speech, each against its own native or attention-based alignment, including the tokenization granularity, the input-grid resolution, the recognition-mode alignment, and the compute cost.  
+
+> •
+
+Public source code to reproduce all results including the whole pipeline. II. A LIGNMENTS VIA GRADIENTS 
+
+We can calculate the gradient of the log probability p(as |
+
+as−11 , x T ′ 
+
+> 1
+
+) of some target label as ∈ A (the label vocabulary) in label position s, given the input xT ′ 
+
+> 1
+
+and the history as−11 ∈As−1 of previous labels, w.r.t. an input frame xt. The transcript 
+
+aS 
+
+> 1
+
+has S labels and the input T ′ frames; the saliency matrix and the alignment below have T time frames: T = T ′ when the gradient is taken at the input, or the number of encoder frames when it is taken at an encoder layer. Comparing the norm of these gradients over the time frames t will give us an indication of the importance of each frame for this specific output label as. Specifically, we calculate the log norm 2
+
+Gs,t := log ∇xt log p(as | as−11 , x T ′ 
+
+> 1
+
+) p
+
+∈ R. (1) The matrix log softmax T G in Fig. 1 shows the alignment clearly. Note that log p(as | as−11 , x T ′ 
+
+> 1
+
+) is straightforward to com-pute for an AED model or speech LLM (we exclude the EOS label here), and was done in a similar way in [18], [23]. It is possible for CTC and transducer as well, using the prefix scores [25] which can be calculated efficiently using dynamic programming. To use this to get some alignment, we need to define which alignment label topology we allow (mapping aS 
+
+> 1
+
+to yT 
+
+> 1
+
+) and how to score one particular alignment yT 
+
+> 1
+
+such that we can search for the one with the highest score. For the label topology, we map aS 
+
+> 1
+
+to yT 
+
+> 1
+
+over Y =
+
+A ∪ { ϵ}, letting each real label repeat over consecutive frames with ϵ (blank/silence) labels in between. We write this as a finite state automaton with enumerated states Y 2S+1 1 =(ϵ, 1, ϵ, 2, . . . , S, ϵ ), whose S+1 blank states sit before the first label, between adjacent labels, and after the last. A topology is fixed by which of these blank states it permits, the rest being disallowed. Our default is a word-level topology: a blank only at word boundaries (before the first word, after the last, and between adjacent words), forbidding blanks inside a word, as we evaluate word boundaries. The full , CTC-like topology instead permits every blank (unlike CTC, we do not force a             
+
+> 2We found that the log norm was better conditioned than the norm, and yielded better results. We also tested different p-norms, and found p= 2 in most cases to perform best. ref log-mel
+> FastConformer
+> (streaming)
+> CTC posteriors
+> ref
+> FastConformer
+> (streaming)
+> CTC grad
+> ref
+> Parakeet
+> CTC grad
+> ref Voxtral self-att
+> ref
+> 012345678
+> time [s]
+> Voxtral grad
+> Buckeye seq s0101a_011_1
+> "but the one but i mean you need to go through that right now because columbus is
+> expanding so much that we need the orange brailles and um"
+
+Fig. 1: Posteriors log 
+
+
+
+pt(y=as | xT ′ 
+
+> 1
+
+)
+
+
+
+> s,t
+
+∈ RS×T , gradient scores log softmax T (G) ∈ RS×T , and log self-attention weights (in RS×T ), all without energy weighting here, each with word boundaries, in comparison to the reference segmen-tation (silence in white, words in blue, with word boundaries). 
+
+ϵ between two equal labels as = as+1 ), and a variant with 
+
+no interior silence keeps only the leading and trailing blank, so adjacent tokens follow each other directly. We decode all topologies with the standard time-synchronous Viterbi search (as in CTC), advancing one frame per step, so every token spans at least one frame. Whisper and CrisperWhisper instead align the cross-attention by DTW, which additionally allows vertical transitions (advancing the token within a frame), so adjacent tokens may overlap by up to one frame; with no inte-ϵ   
+
+> a1
+> ϵ
+> a2
+> ϵ
+> a3
+> ϵ
+> no intra-word ϵ
+> time t
+> stay
+> skip ϵ
+
+Fig. 2: Decoding the saliency into an alignment, for two words 
+
+(a1a2)( a3). The DP runs a time-synchronous Viterbi over the FSA states Y 2S+1 1 (rows): per frame it stays, advances one state ( +1 ), or skips a blank. The word-level topology shades out the intra-word blank (between a1 and a2), forcing a skip there, while keeping the word-boundary blank (state 5). DTW instead allows a vertical move (advancing the token within a frame), so adjacent tokens may overlap by up to one frame. rior silence and without the log of eq. (3), our decoder reduces to that DTW up to those vertical transitions (Table VIII). We search for an allowed state sequence rT 
+
+> 1
+
+, rt ∈ { 1, . . . , 2S +1 },compatible with aS 
+
+> 1
+
+, that maximizes 
+
+GradScore( rT 
+
+> 1
+
+) = 
+
+> T
+
+X
+
+> t=1
+
+(G′ 
+
+> Yrt,t
+
+, Yrt̸ = ϵ, βt, Yrt = ϵ, (2) with a token score G′ and a silence score βt defined below. The best rT 
+
+> 1
+
+is found via dynamic programming (Fig. 2), and the alignment yT 
+
+> 1
+
+read off with yt = aYrt for non-blank states and yt = ϵ otherwise. The token score is the over-time log-softmax of the (option-ally energy-weighted) saliency, 
+
+G′ 
+
+> s,t
+
+= log softmax T (G + ρ log E)s,t , (3) where ρ ≥ 0 is a weighting ( ρ = 0 .5 by default; ρ = 0 
+
+disables it) and Et ∈ [0 , 1] a smoothed audio-energy envelope on the frame grid: from the waveform x we form the windowed root-mean-square energy ˜E = √w ∗ x2, with w a normalized 
+
+25 ms Hann window ( P 
+
+> i
+
+wi = 1 ) and ∗ convolution, sample it at the frame centers ct, and normalize by its maximum, Et =˜Ect / max t′ ˜Ect′ . The energy weight suppresses the gradient’s spurious response in silent frames. The silence score βt admits the constant blank of CTC, but also a self-calibrating blank derived from the per-frame statistics of the token scores. Let μt and σt be the mean and standard deviation of {G′
+
+> s,t
+
+}s over the labels s (taken at ρ = 0 ,so the blank calibrates against the raw saliency). We consider 
+
+βt =
+
+
+
+γ, (constant) 
+
+μt + κ σ t, (z-score) 
+
+μt − λ z (Et) σt, (energy) (4) with z(Et) = ( Et − ¯E)/ std( E) the z-score of the energy over the T frames ( ¯E and std( E) its mean and standard deviation), and hyperparameters γ (constant level), κ and λ. The energy blank is a VAD-style silence emission: in a low-energy frame TABLE I: Word-boundary error and accuracy per model ,gradient alignment vs. each model’s native or attention aligner, on TIMIT-test and Buckeye, grouped by family. The attention and posterior aligners use the model’s native subword units; the gradient uses characters for AED and speech-LLM and native subwords otherwise (Table IV). Starred Whisper-large-v3 gradient row (*) is taken at optimal encoder depth (encoder 3/4, Table X).                                                                                                                                                        
+
+> Model Align method TIMIT Buckeye Type Name WBE
+> [ms] ↓≤50ms
+> [%] ↑
+> WBE
+> [ms] ↓≤50ms
+> [%] ↑
+> GM-HMM MFA Likelihood 19 92 .332 90 .0
+> CTC MMS-FA Gradients 49 64 .3121 58 .2
+> Posteriors 37 71 .546 69 .9
+> XLS-R (Phoneme) Gradients 49 65 .781 66 .4
+> Posteriors 30 80 .744 70 .4
+> Parakeet CTC Gradients 94 40 .8117 37 .1
+> Posteriors 77 39 .499 32 .2
+> OWSM-CTC Gradients 142 28 .4145 30 .4
+> Posteriors 120 20 .6110 25 .2
+> FastConformer (streaming) Gradients 127 32 .0158 30 .1
+> Posteriors 357 1.1366 2.2
+> Transd. Parakeet RNN-T Gradients 125 31 .5147 29 .1
+> Posteriors 79 39 .393 35 .4
+> Parakeet TDT Gradients 128 32 .9157 27 .5
+> Posteriors 80 41 .290 38 .6
+> Emformer (streaming) Gradients 159 24 .8139 30 .4
+> Posteriors 394 0.3399 0.5
+> FastConformer (streaming) Gradients 153 27 .3189 24 .0
+> Posteriors 307 3.6331 3.9
+> AED Whisper-base Gradients 51 59 .375 52 .7
+> Cross-att. 51 62 .362 66 .3
+> Whisper-large-v3 Gradients 55 57 .853 66 .2
+> Gradients* 33 76 .939 80 .0
+> Cross-att. 42 66 .749 69 .1
+> Crisper-Whisper Gradients 60 54 .359 59 .2
+> Cross-att. 33 80 .747 80 .1
+> OWLS-1B Gradients 153 31 .7180 32 .9
+> Cross-att. 35 76 .751 69 .1
+> Speech LLM Voxtral Gradients 77 45 .674 51 .0
+> Self-att. 53 61 .152 65 .5
+> Phi-4-MM Gradients 84 43 .0104 43 .1
+> Self-att. 68 46 .679 39 .8
+> Canary-Qwen Gradients 90 40 .699 40 .6
+> Self-att. 131 28 .0211 16 .3
+
+z(Et) < 0 raises βt above the token mean, so the frame goes to the blank; in speech frames βt drops below the token scores. III. E XPERIMENTAL SETUP 
+
+We evaluate sixteen models from the four families. For reference we run two dedicated aligners, a GM-HMM via MFA [3], and MMS-FA [26], [27], a wav2vec 2.0 [28] CTC model built specifically for forced alignment. For CTC we further use XLS-R on phonemes [29], [30], Parakeet CTC [31], OWSM-CTC [32], [33], and a streaming FastConformer-CTC [34]. For the transducers we use Parakeet RNN-T [31] and TDT [35], and the streaming FastConformer-RNN-T [34] and Emformer [36], [37]. The AED models are Whisper base and large-v3 [15], CrisperWhisper [17], and OWLS-1B [38], and the speech LLMs are Voxtral [39], Phi-4-multimodal (Phi-4-MM) [40], and Canary-Qwen [41]. We align on TIMIT TABLE II: Hypothesis-mode alignment on Buckeye, where each model aligns its own recognition. Identity-gated F1 at a 50 ms collar and Levenshtein-matched WBE against the reference.                                                                                                               
+
+> Model Ref-WER
+> [%] ↓
+> Align method Matched-F1 Type Name match
+> [%] ↑
+> WBE
+> [ms] ↓≤50ms
+> [%] ↑
+> CTC Parakeet CTC 92 .311 .9Gradients 116 14 .0
+> Posteriors 99 11 .1
+> OWSM-CTC 89 .214 .3Gradients 142 9.9
+> Posteriors 114 5.4
+> FastConformer (streaming) 86 .516 .8Gradients 164 9.7
+> Posteriors 363 0.2
+> Transd. Parakeet RNN-T 89 .813 .6Gradients 156 7.6
+> Posteriors 92 13 .2
+> Parakeet TDT 91 .812 .8Gradients 155 7.8
+> Posteriors 86 17 .1
+> Emformer (streaming) 72 .130 .5Gradients 155 7.1
+> Posteriors 391 0.0
+> FastConformer (streaming) 87 .115 .9Gradients 206 5.9
+> Posteriors 318 0.4
+> AED Whisper-base 85 .518 .0Gradients 85 25 .5
+> Cross-att. 77 35 .8
+> Whisper-large-v3 88 .115 .3Gradients 66 40 .4
+> Cross-att. 66 40 .4
+> Crisper-Whisper
+> 92 .012 .7Gradients 56 33 .8
+> Cross-att. 44 59 .692 .612 .2Official 46 43 .5
+> OWLS-1B 85 .7208 .0Gradients 1024 3.8
+> Cross-att. 1312 7.8
+> Speech LLM Voxtral 88 .315 .3Gradients 87 25 .3
+> Self-att. 67 37 .4
+> Phi-4-MM 92 .811 .7Gradients 102 19 .0
+> Self-att. 80 16 .0
+> Canary-Qwen 93 .111 .4Gradients 95 17 .1
+> Self-att. 212 3.9
+
+(test) [42] and on Buckeye spontaneous speech [43], both with gold word boundaries. For Buckeye we use a 5 h subset stratified by speaker (all speakers represented proportionally), split at every ≥ 1 s inter-word silence, then split any piece still longer than 18 s at its largest internal gap 3. We report the word-boundary error (WBE), i.e. the mean per-word start and end absolute error, averaged over all words in the corpus 4, and the accuracy at a collar, i.e. the fraction of all boundaries within 
+
+50 ms over the corpus. We compare each model against its own alignment, i.e. the CTC or transducer forced alignment on the model’s own emission (the “posteriors”), the AED cross-attention DTW [16], and, for the speech LLMs, the analogous text-to-audio self-attention, decoded by the same dynamic program as the gradient scores. We select the attention heads by per-head WBE on TIMIT development gold and average the top 8 heads. In hypothesis mode, where the recognition differs from the reference, we match the words by identity and report an identity-gated F1 at a 50 ms collar together with the matched WBE. IV. R ESULTS 
+
+a) Alignment quality across model families: Table Icompares the gradient alignment versus each model’s own   
+
+> 3[4] drops long utterances, but we keep them by splitting.
+> 4[5] averages first per utterance and then over utterances.
+
+TABLE III: Signed boundary offsets on Buckeye, gradient alignment vs. the model’s alternative aligner. WBE is the mean absolute word-boundary error, start/end off. the signed mean boundary offset (positive = late), and width err. the signed word-width error (0 = correct duration). Parakeet RNN-T is the offline contrast to the streaming transducers.                                                                              
+
+> Model Align method WBE
+> [ms] ↓
+> Start off.
+> [ms]
+> End off.
+> [ms]
+> Width err.
+> [ms] Type Name
+> CTC MMS-FA Gradients 121 −93 −91 +2
+> Posteriors 46 +47 −14 −60
+> XLS-R (Phoneme) Gradients 81 −72 −47 +25
+> Posteriors 44 +46 −14 −60
+> Parakeet CTC Gradients 117 −33 −54 −21
+> Posteriors 99 +53 −51 −104
+> OWSM-CTC Gradients 145 −89 −107 −18
+> Posteriors 110 +125 −10 −136
+> FastConformer (streaming) Gradients 158 −62 −97 −35
+> Posteriors 366 +415 +310 −106
+> Transd. Parakeet RNN-T Gradients 147 −22 −42 −20
+> Posteriors 93 +42 −70 −113
+> Emformer (streaming) Gradients 139 +67 +32 −35
+> Posteriors 399 +484 +308 −176
+> FastConformer (streaming) Gradients 189 −85 −123 −37
+> Posteriors 331 +386 +260 −126
+> AED Whisper-base Gradients 75 +4 −4−9
+> Cross-att. 62 −38 −19 +19
+
+TABLE IV: Character vs. subword targets , one representa-tive model per family, Buckeye. Each model shows its gradient alignment and its model-native alternative. The character target is a valid re-segmentation of the transcript, one token per character with a word-boundary token between words.                                                 
+
+> Model Align method Char Subword Type Name WBE
+> [ms] ↓≤50ms
+> [%] ↑
+> WBE
+> [ms] ↓≤50ms
+> [%] ↑
+> CTC Parakeet CTC Gradients 4167 2.8117 37 .1
+> Posteriors 173 26 .199 32 .2
+> Transd. Parakeet RNN-T Gradients 384 22 .1147 29 .1
+> Posteriors 1255 14 .893 35 .4
+> AED Whisper-large-v3 Gradients 53 66 .2108 41 .2
+> Cross-att. 57 75 .249 69 .1
+> Speech LLM Voxtral Gradients 74 51 .0118 38 .0
+> Self-att. 129 46 .052 65 .5
+
+native or attention aligner, across CTC, AED, transducer and speech-LLM families. Gradient alignment is competitive on every family, beats the native alignment where it is weak (the streaming models, Canary-Qwen), and at the starred best encoder depth it also beats the Whisper-large-v3 cross-attention. The streaming posteriors’ large error is largely a systematic emission-delay bias rather than scatter (Table III and Fig. 1); the same table shows that gradient alignment shifts both boundaries together (a positional lead) rather than shrinking the word like the posteriors do. Table II aligns each model’s own recognition (identity-gated F1 at a 50 ms collar and matched WBE), showing that gradient alignment remains usable when the hypothesis differs from the reference. 
+
+b) Tokenization and the attention baseline: Table IV justifies the tokenization we use throughout: the gradient alignment uses character targets for the AED and speech-TABLE V: Grad-score ablation across families, Buckeye. The feature-axis reduction (L0.5 / L1 / L2 / sum), and whether the gradient is multiplied by the input (the right group). The signed sum columns need special handling, since their score can be negative: normalized score, constant blank score, on plain CTC topology.                                                                 
+
+> Model WBE [ms] ↓
+> Type Name ∇(gradient) ∇× input L0.5 L1 L2 sum L2 sum
+> CTC MMS-FA 121 121 121 197 120 164
+> Parakeet CTC 118 117 117 172 116 166
+> Transd. Parakeet RNN-T 147 147 147 181 146 188
+> Emformer (streaming) 142 140 139 184 138 190
+> AED Whisper-base 74 74 75 110 76 122
+> Speech LLM Voxtral 73 74 74 112 76 121
+> Phi-4-MM 107 106 104 138 103 119
+> Canary-Qwen 100 100 99 107 99 113
+
+TABLE VI: Blank-scoring scheme across signals, Buckeye, word-level topology, energy weighting fixed at ρ=0 .5. The constant blank γ, the energy-aware silence βt = μt −
+
+λ z (Et) σt, and the z-score βt = μt + κ σ t. WBE for the gradient signal and for the native attention signal.                                                                                             
+
+> Blank Opts WBE [ms] ↓
+> Gradients Cross-att. Self-att. MMS-FA Whi-sper OWLS Vox-tral Whi-sper OWLS Vox-tral
+> constant
+> γ=−3176 129 658 183 100 74 63
+> γ=−5131 87 577 131 44 65 53
+> γ=−8141 65 237 94 65 70 65
+> energy
+> λ= 0 .5131 54 193 77 63 65 59
+> λ= 1 127 53 188 75 61 60 56
+> λ= 2 121 53 180 74 49 51 52
+> λ= 3 117 54 174 75 48 48 55
+> z-score
+> κ= 0 .5130 54 192 77 63 65 59
+> κ= 1 127 53 186 75 61 59 56
+> κ= 2 123 56 181 78 54 51 60
+
+LLM families and subword targets for CTC and transducers, while every attention or posterior baseline uses the model’s native subword tokens. Character targets improve the gradient markedly for the autoregressive families (on Whisper-large-v3 and Voxtral the char gradient is well below the subword gradient), but they do not help the model-native attention aligners, and for the non-autoregressive CTC and transducer, which have no per-character acoustic emission, char-level collapses: char targets are consistently worse than subword for both the gradient and the posteriors, in the worst cases by an order of magnitude. 
+
+c) Ablations: The grad. score per-token reduction (Ta-ble V) moves WBE by only a few ms across the p-norms, while the plain sum is clearly worse, and gradient versus gradient-×-input [44], [45] is within ∼1–3 ms with neither winning consistently. Multi-pass attribution (SmoothGrad [46], VarGrad [47], Integrated [48] and Expected Gradients [49]) does not beat the single-pass gradient (numbers omitted here). Most decoding options behave consistently (Tables VI to VIII): the gradient is active even in silence and needs the energy-aware ( λ ≈ 2) or z-score blank, whereas the attention is TABLE VII: Audio-energy token weighting , Buckeye, word-level topology. The token scores are weighted by (audio energy) ρ before the DP, and we sweep ρ (ρ=0 disables it) at each blank scheme. This complements Table VI, which sweeps the blank scheme at fixed ρ=0 .5.                                                                                                                      
+
+> Blank ρ
+> WBE [ms] ↓
+> Gradients Cross-att. Self-att. MMS-FA Whi-sper OWLS Vox-tral Whi-sper OWLS Vox-tral
+> constant
+> γ=−5
+> 0.0 147 99 884 174 54 77 59
+> 0.25 140 89 700 141 48 71 56
+> 0.5 131 87 577 131 44 65 53
+> 0.75 126 89 512 131 45 60 52
+> 1.0 124 92 485 137 47 57 52
+> energy
+> λ= 1
+> 0.0 141 70 263 94 64 67 62
+> 0.25 136 58 212 81 63 65 59
+> 0.5 127 53 188 75 61 60 56
+> 0.75 119 53 177 75 57 57 54
+> 1.0 116 56 171 77 52 53 53
+> z-score
+> κ= 1
+> 0.0 142 70 263 94 65 66 64
+> 0.25 137 57 210 81 63 64 59
+> 0.5 127 53 186 75 61 59 56
+> 0.75 120 54 175 76 57 55 54
+> 1.0 117 57 173 79 52 52 54
+
+TABLE VIII: Whisper’s cross-attention DTW vs. our aligner (Whisper-base cross-attention or grad. scores, Buck-eye). Top row reproduces Whisper’s find_alignment .Columns: alignment-head set (Whisper’s curated heads, our gold-tuned top-k, or single best), token z-norm, median filter, pre-log of the score matrix ( log ), log-softmax over time ( log sm ; DP sums these log-scores), mono ( ✓ = our monotonic DP forbidding vertical step; × = Whisper DTW), silence topology (word = blank only between words; none = no blank), and energy weighting ( en ).                                                                           
+
+> Configuration heads z-norm med. filt. log log sm mono sil. en. WBE
+> [ms] ↓
+> Cross-attn
+> Whisper (faithful) Whi-sper
+> ✓✓
+> ×××none
+> ×85 +energy ✓89 +mono DP ✓
+> ×
+> 84 +silence word 84 +no median-filter ××none
+> 85 +no z-norm
+> ×
+> ✓
+> 83 +log softmax
+> ✓
+> 81 +mono DP ✓✓83 +silence word 76 +our heads ours ✓×××none 79 +single best head 1-best 95
+> ours (full) ours ××
+> ✓✓✓word ✓71 +DTW ××none
+> 73 +no energy ×71 +no silence ✓✓✓117
+> Grad
+> ours (full) –––✓✓✓word ✓
+> 75 +DTW, word-topo
+> ×
+> 76 +no word-topo none 138 +no energy ×152
+
+already silence-aware and a constant blank suffices; the z-score blank is the energy-free option that matches the energy one for gradients. The audio-energy token-weighting exponent matters little around our default and behaves consistently across the blank schemes (Table VII). For the cross-attention DTW, the dominant gain over the original Whisper heuristic is the gold-TABLE IX: MMS-FA (wav2vec 2.0) CTC gradient align-ment across the internal level the gradient is taken at ,Buckeye. The levels run from the convolutional feature en-coder through the feature projection to the raw waveform at several pooling rates. The feat-proj linear row equals the MMS-FA gradient number reported in Table I.                                                     
+
+> Gradient w.r.t. ms/frame Grid
+> [Hz]
+> WBE
+> [ms] ↓≤50ms
+> [%] ↑
+> Conv 0 0.31 3200 137 48 .7
+> Conv 1 0.62 1600 133 49 .5
+> Conv 2 1.25 800 133 49 .5
+> Conv 3 2.5 400 132 50 .0
+> Conv 4 5200 130 50 .8
+> Conv 5 10 100 128 52 .3
+> Feat-proj LayerNorm 20 50 122 55 .3
+> Feat-proj Linear 20 50 121 58 .2
+> Raw waveform, pool 320 20 50 135 52 .1
+> Raw waveform, pool 80 5200 140 48 .4
+> Raw waveform, pool 16 11000 142 47 .5
+> Raw waveform, pool 1 0.0625 16000 134 47 .7
+
+TABLE X: Encoder depth the gradient is taken at for gradient alignment. Buckeye. Rows run from log-mel input through encoder to its output. Whisper-large-v3 uses char targets (32 layers; 1/4 etc. = L8/16/24) and FastConformer-CTC subword targets (17 layers; L4/9/13). Off. is mean signed boundary offset (positive = late).                                          
+
+> Gradient w.r.t. Whisper-large-v3 (char) FastConformer-CTC Grid
+> [Hz]
+> WBE
+> [ms] ↓≤50ms
+> [%] ↑
+> Off.
+> [ms]
+> Grid
+> [Hz]
+> WBE
+> [ms] ↓≤50ms
+> [%] ↑
+> Off.
+> [ms] Log-mel in 100 53 66 .2−10 100 158 30 .1−80
+> Encoder in
+> 50 44 74 .6−912 .5152 30 .0−63
+> Encoder 1/4 42 76 .3−9145 29 .4−33
+> Encoder 1/2 41 78 .2−9146 23 .9+73
+> Encoder 3/4 39 80 .0−9229 12 .5+196
+> Encoder out 42 79 .0−13 305 4.9+274
+
+TABLE XI: OWSM-CTC alignment from each inter-CTC block (6/12/15/21) and the final block (27). Gradient align-ment vs. posterior alignment.                           
+
+> Emit block WBE [ms] ↓
+> TIMIT Buckeye Grad. Post. Grad. Post.
+> 6142 120 145 110
+> 12 150 124 167 118
+> 15 160 125 183 119
+> 21 168 125 194 120
+> 27 (final) 172 125 198 121
+
+tuned head selection (its curated set includes some near-useless heads); the Whisper-DTW setting is exactly our decoder with the log-compression and the blank state removed, and energy weighting helps the gradient but not the cross-attention DTW. 
+
+d) Where the gradient is taken: For MMS-FA, which is a wav2vec 2.0 model [28] (Table IX), the gradient localizes best at the feature-projection output (20 ms encoder grid); finer levels (the convolutional feature encoder, or the raw waveform pooled down to sample resolution) do not help, and the raw-waveform gradient is noisier. Table X sweeps the depth for Whisper-large-v3 and the FastConformer-CTC, from the log-TABLE XII: Cost of gradient alignment , single GPU, subset of TIMIT, as real-time factor (RTF) ×10 3 (ms compute per second of audio). Stages: Forward (encoder → logits, shared with native methods), prefix-sum (CTC/transducer only), and backward (encoder VJP, batched). Grad. align extra cost is prefix-sum + backward; Shared DP align is excluded.                     
+
+> Model Compute time [RTF ×10 3]
+> Type Name Model Prefix-sum Fwd Bwd Fwd Bwd
+> CTC MMS-FA 657 3212
+> AED Whisper-large-v3 24 277 n/a Speech LLM Phi-4-MM 26 216
+
+mel input through the encoder to its output (the activation just before the decoder / CTC linear): the sharpest gradient is at an intermediate depth (three quarters of the Whisper encoder, the L24 of the starred row in Table I; a quarter for the FastConformer-CTC), not the input, and in the streaming FastConformer-CTC the encoder’s time shift accumulates with depth, so its output gradient ends as delayed as its posteriors (Fig. 1). 
+
+e) Speech-LLM prompt influence: Gradient alignment is robust to the prompt used across all the speech LLMs and across the gradient-vs-self-attention signal (numbers omitted). 
+
+f) Inter-CTC: OWSM-CTC has intermediate CTC losses [32], [33], which we can use to take the gradient at each block of the encoder (Table XI). Interestingly, the earlier blocks are better than the later ones, both for the gradient and for the native CTC alignment. 
+
+g) Time stretch: Under audio time-stretch (numbers omitted), the same upsampling mechanism acts with opposite sign: it hurts a fine-grid model (MMS-FA) but helps a coarse-grid one (Voxtral) at mild factors. 
+
+h) Compute cost: The only extra cost over the native methods is the per-token backward (Table XII); the forward and the DP decode are shared, and for the CTC the per-token prefix-score lattice backward dominates. V. C ONCLUSION 
+
+Gradient alignment produces a usable word alignment for every model and family we tried, including the speech LLMs that have no built-in word aligner. It is usually a little behind a strong native aligner, but clearly better where that alignment is weak, as on the streaming models and Canary-Qwen, and on Whisper-large-v3 it even beats its cross-attention at the best encoder depth. Our decoder also improves on Whisper’s cross-attention DTW itself (Table VIII). Its input-grid resolution lets finer character targets improve accuracy, which the coarse attention grid cannot exploit. The per-token backward makes it much more expensive than a single forward, so we do not propose it as a practical aligner. The result is rather that one training-free input saliency aligns every differentiable ASR model across all four families, in some cases even better than the model’s own alignment. Beyond alignment, the gradient also serves as an analysis tool. ACKNOWLEDGMENT 
+
+This work was partially supported by NeuroSys, which as part of the initiative “Clusters4Future” is funded by the Federal Ministry of Research, Technology and Space BMFTR (funding IDs 03ZU2106DA and 03ZU2106DD), and by the project RESCALE within the program AI Lighthouse Projects for the Environment, Climate, Nature and Resources funded by the Federal Ministry for the Environment, Nature Con-servation, Nuclear Safety and Consumer Protection (BMUV), funding ID: 67KI32006A. The authors gratefully acknowledge the computing time provided to them at the NHR Center NHR4CES at RWTH Aachen University (project number p0023999). This is funded by the Federal Ministry of Edu-cation and Research, and the state governments participating on the basis of the resolutions of the GWK for national high performance computing at universities (www.nhr-verein.de/ unsere-partner). AI-G ENERATED CONTENT DISCLOSURE 
+
+We used AI assistants (large language models) substantially in this work, to help set up and run the experiments, to debug and write parts of the code, and to draft and edit parts of this paper. All results were verified by the authors, who take full responsibility for the content. REFERENCES [1] M. Gales and S. Young, “The application of hidden Markov models in speech recognition,” Found. Trends Signal Process. , vol. 1, no. 3, pp. 195–304, Jan. 2008. [2] L. R. Rabiner, “A tutorial on hidden Markov models and selected applications in speech recognition,” Proc. of the IEEE , vol. 77, no. 2, pp. 257–286, 1989. [3] M. McAuliffe, M. Socolof, S. Mihuc, M. Wagner, and M. Sonderegger, “Montreal Forced Aligner: Trainable text-speech alignment using Kaldi,” in Proc. Interspeech , 2017, pp. 498–502. [4] R. Huang, X. Zhang, Z. Ni, L. Sun, M. Hira, J. Hwang, V. Manohar, V. Pratap, M. Wiesner, S. Watanabe, D. Povey, and S. Khudanpur, “Less peaky and more accurate CTC forced alignment by label priors,” in Proc. IEEE ICASSP , 2024, pp. 11 831–11 835. [5] R. Rousso, E. Cohen, J. Keshet, and E. Chodroff, “Tradition or inno-vation: A comparison of modern asr methods for forced alignment,” in 
+
+Proc. Interspeech , 2024, pp. 1525–1529. [6] R. Prabhavalkar, T. Hori, T. N. Sainath, R. Schl¨ uter, and S. Watanabe, “End-to-end speech recognition: A survey,” IEEE/ACM Trans. Audio, Speech, and Language Processing , vol. 32, pp. 325–351, 2023. [7] A. Graves, S. Fern´ andez, F. Gomez, and J. Schmidhuber, “Connection-ist temporal classification: labelling unsegmented sequence data with recurrent neural networks,” in Proceedings of the 23rd international conference on Machine learning . ACM, 2006, pp. 369–376. [8] A. Graves, “Sequence transduction with recurrent neural networks,” ArXiv:1211.3711, ICML Representation Learning Workshop, 2012. [9] J. K. Chorowski, D. Bahdanau, D. Serdyuk, K. Cho, and Y. Bengio, “Attention-based models for speech recognition,” in NIPS , 2015, pp. 577–585. [10] W. Chan, N. Jaitly, Q. V. Le, and O. Vinyals, “Listen, attend and spell: A neural network for large vocabulary conversational speech recognition,” in Proc. IEEE ICASSP , 2016, pp. 4960–4964. [11] A. Zeyer, K. Irie, R. Schl¨ uter, and H. Ney, “Improved training of end-to-end attention models for speech recognition,” in Interspeech , Hyderabad, India, Sep. 2018. [12] D. Zhang, S. Li, X. Zhang, J. Zhan, P. Wang, Y. Zhou, and X. Qiu, “SpeechGPT: Empowering large language models with intrinsic cross-modal conversational abilities,” in Findings of the Association for Computational Linguistics: EMNLP 2023 , H. Bouamor, J. Pino, and K. Bali, Eds. Singapore: Association for Computational Linguistics, Dec. 2023, pp. 15 757–15 773. [Online]. Available: https://aclanthology.org/2023.findings-emnlp.1055/ [13] Y. Chu, J. Xu, X. Zhou, Q. Yang, S. Zhang, Z. Yan, C. Zhou, and J. Zhou, “Qwen-Audio: Advancing universal audio understanding via unified large-scale audio-language models,” arXiv:2311.07919, 2023. [14] R. Schmitt, A. Zeyer, M. Zeineldeen, R. Schl¨ uter, and H. Ney, “LLMs and speech: Integration vs. combination,” Arxiv:2603.15045, Mar. 2026. [Online]. Available: https://arxiv.org/abs/2603.15045 [15] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. Mcleavey, and I. Sutskever, “Robust speech recognition via large-scale weak supervision,” in Proc. ICML , ser. Proceedings of Machine Learning Research, A. Krause, E. Brunskill, K. Cho, B. Engelhardt, S. Sabato, and J. Scarlett, Eds., vol. 202. PMLR, 23–29 Jul 2023, pp. 28 492–28 518. [Online]. Available: https://proceedings.mlr.press/v202/radford23a.html [16] M. Bain, J. Huh, T. Han, and A. Zisserman, “WhisperX: Time-accurate speech transcription of long-form audio,” in Proc. Interspeech , 2023, pp. 4489–4493. [17] M. Zusag, L. Wagner, and B. Thallinger, “CrisperWhisper: Accurate timestamps on verbatim speech transcriptions,” in Proc. Interspeech ,2024, pp. 1265–1269. [18] S.-L. Yeh, Y. Meng, and H. Tang, “Whisper has an internal word aligner,” in Proc. IEEE ASRU , 2025. [19] H. Wang, C. Du, Y. Guo, S. Wang, X. Chen, and K. Yu, “Attention-constrained inference for robust decoder-only text-to-speech,” ArXiv 2404.19723, 2024. [Online]. Available: https://arxiv.org/abs/2404.19723 [20] S. Papi and L. Bentivogli, “DOA: Training-free decoder-only attention policy for long-form simultaneous translation with SpeechLLMs,” ArXiv 2605.31432, 2026. [Online]. Available: https://arxiv.org/abs/2605.31432 [21] B. Mu, X. Shi, X. Wang, H. Liu, J. Xu, and L. Xie, “LLM-ForcedAligner: A non-autoregressive and accurate llm-based forced aligner for multilingual and long-form speech,” ArXiv 2601.18220, 2026. [Online]. Available: https://arxiv.org/abs/2601.18220 [22] K. Simonyan, A. Vedaldi, and A. Zisserman, “Deep inside convolutional networks: Visualising image classification models and saliency maps,” ArXiv:1312.6034; ICLR Workshop Track, 2014. [23] R. Schmitt, A. Zeyer, M. Zeineldeen, R. Schl¨ uter, and H. Ney, “The conformer encoder may reverse the time dimension,” in Proc. IEEE ICASSP , Hyderabad, India, Apr. 2025, preprint ArXiv:2501.04521. [24] S. Ding, H. Xu, and P. Koehn, “Saliency-driven word alignment interpretation for neural machine translation,” in Proceedings of the Fourth Conference on Machine Translation (Volume 1: Research Papers) , O. Bojar, R. Chatterjee, C. Federmann, M. Fishel, Y. Graham, B. Haddow, M. Huck, A. J. Yepes, P. Koehn, A. Martins, C. Monz, M. Negri, A. N´ ev´ eol, M. Neves, M. Post, M. Turchi, and K. Verspoor, Eds. Florence, Italy: Association for Computational Linguistics, Aug. 2019, pp. 1–12. [Online]. Available: https://aclanthology.org/W19-5201/ [25] T. Hori, S. Watanabe, and J. Hershey, “Joint CTC/attention decoding for end-to-end speech recognition,” in Proc. ACL , R. Barzilay and M.-Y. Kan, Eds. Vancouver, Canada: Association for Computational Linguistics, Jul. 2017, pp. 518–529. [Online]. Available: https: //aclanthology.org/P17-1048 [26] V. Pratap, A. Tjandra, B. Shi, P. Tomasello, A. Babu, S. Kundu, A. Elkahky, Z. Ni, A. Vyas, M. Fazel-Zarandi, A. Baevski, Y. Adi, X. Zhang, W.-N. Hsu, A. Conneau, and M. Auli, “Scaling speech tech-nology to 1,000+ languages,” Journal of Machine Learning Research ,vol. 25, no. 1, Jan. 2024. [27] J. Hwang, M. Hira, C. Chen, X. Zhang, Z. Ni, G. Sun, P. Ma, R. Huang, V. Pratap, Y. Zhang, A. Kumar, C.-Y. Yu, C. Zhu, C. Liu, J. Kahn, M. Ravanelli, P. Sun, S. Watanabe, Y. Shi, and Y. Tao, “TorchAudio 2.1: Advancing speech recognition, self-supervised learning, and audio processing components for PyTorch,” in Proc. IEEE ASRU , 2023, pp. 1–9. [28] A. Baevski, Y. Zhou, A. Mohamed, and M. Auli, “wav2vec 2.0: A framework for self-supervised learning of speech representations,” in 
+
+Proc. NeurIPS , H. Larochelle, M. Ranzato, R. Hadsell, M. Balcan, and H. Lin, Eds., vol. 33. Curran Associates, Inc., 2020, pp. 12 449– 12 460. [Online]. Available: https://proceedings.neurips.cc/paper files/ paper/2020/file/92d1e1eb1cd6f9fba3227870bb6d7f07-Paper.pdf [29] V. Phy, “Automatic phoneme recognition on TIMIT dataset with Wav2Vec 2.0,” 2022. [Online]. Available: https://huggingface.co/ vitouphy/wav2vec2-xls-r-300m-timit-phoneme [30] A. Babu, C. Wang, A. Tjandra, K. Lakhotia, Q. Xu, N. Goyal, K. Singh, P. von Platen, Y. Saraf, J. Pino, A. Baevski, A. Conneau, and M. Auli, “XLS-R: Self-supervised cross-lingual speech representation learning at scale,” in Proc. Interspeech , 2022, pp. 2278–2282. [31] D. Rekesh, N. R. Koluguri, S. Kriman, S. Majumdar, V. Noroozi, H. Huang, O. Hrinchuk, K. Puvvada, A. Kumar, J. Balam, and B. Gins-burg, “Fast conformer with linearly scalable attention for efficient speech recognition,” in Proc. IEEE ASRU , 2023, pp. 1–8. [32] Y. Peng, S. Muhammad, Y. Sudo, W. Chen, J. Tian, C.-J. Lin, and S. Watanabe, “OWSM v4: Improving open whisper-style speech models via data scaling and cleaning,” in Proc. Interspeech , 2025. [33] Y. Peng, Y. Sudo, M. Shakeel, and S. Watanabe, “OWSM-CTC: An open encoder-only speech foundation model for speech recognition, translation, and language identification,” in Proc. ACL , 8 2024, pp. 10 192–10 209. [Online]. Available: https://aclanthology.org/2024. acl-long.549 [34] V. Noroozi, S. Majumdar, A. Kumar, J. Balam, and B. Ginsburg, “Stateful conformer with cache-based inference for streaming automatic speech recognition,” in Proc. IEEE ICASSP , 2024, pp. 12 041–12 045. [35] H. Xu, F. Jia, S. Majumdar, H. Huang, S. Watanabe, and B. Ginsburg, “Efficient sequence transduction by jointly predicting tokens and durations,” in Proc. ICML , ser. Proceedings of Machine Learning Research, A. Krause, E. Brunskill, K. Cho, B. Engelhardt, S. Sabato, and J. Scarlett, Eds., vol. 202. PMLR, 23–29 Jul 2023, pp. 38 462–38 484. [Online]. Available: https://proceedings.mlr.press/v202/xu23g.html [36] Y. Shi, Y. Wang, C. Wu, C.-F. Yeh, J. Chan, F. Zhang, D. Le, and M. Seltzer, “Emformer: Efficient memory transformer based acoustic model for low latency streaming speech recognition,” in Proc. IEEE ICASSP , 2021, pp. 6783–6787. [37] Y.-Y. Yang, M. Hira, Z. Ni, A. Astafurov, C. Chen, C. Puhrsch, D. Pollack, D. Genzel, D. Greenberg, E. Z. Yang, J. Lian, J. Hwang, J. Chen, P. Goldsborough, S. Narenthiran, S. Watanabe, S. Chintala, and V. Quenneville-B´ elair, “TorchAudio: Building blocks for audio and speech processing,” in Proc. IEEE ICASSP , 2022, pp. 6982–6986. [38] W. Chen, J. Tian, Y. Peng, B. Yan, C.-H. H. Yang, and S. Watanabe, “OWLS: Scaling laws for multilingual speech recognition and translation models,” in Proc. ICML , 2025. [Online]. Available: https://openreview.net/forum?id=xnPW7yYomF [39] Mistral AI, “Voxtral,” arXiv:2507.13264, 2025. [40] A. Abouelenin, A. Ashfaq, A. Atkinson, H. Awadalla, N. Bach, J. Bao, A. Benhaim, M. Cai, V. Chaudhary, C. Chen, D. Chen, D. Chen, J. Chen, W. Chen, Y.-C. Chen, Y. ling Chen, Q. Dai, X. Dai, R. Fan, M. Gao, M. Gao, A. Garg, A. Goswami, J. Hao, A. Hendy, Y. Hu, X. Jin, M. Khademi, D. Kim, Y. J. Kim, G. Lee, J. Li, Y. Li, C. Liang, X. Lin, Z. Lin, M. Liu, Y. Liu, G. Lopez, C. Luo, P. Madan, V. Mazalov, A. Mitra, A. Mousavi, A. Nguyen, J. Pan, D. Perez-Becker, J. Platin, T. Portet, K. Qiu, B. Ren, L. Ren, S. Roy, N. Shang, Y. Shen, S. Singhal, S. Som, X. Song, T. Sych, P. Vaddamanu, S. Wang, Y. Wang, Z. Wang, H. Wu, H. Xu, W. Xu, Y. Yang, Z. Yang, D. Yu, I. Zabir, J. Zhang, L. L. Zhang, Y. Zhang, and X. Zhou, “Phi-4-mini technical report: Compact yet powerful multimodal language models via mixture-of-loras,” ArXiv 2503.01743, 2025. [Online]. Available: https://arxiv.org/abs/2503.01743 [41] K. C. Puvvada, P. ˙ Zelasko, H. Huang, O. Hrinchuk, N. R. Koluguri, K. Dhawan, S. Majumdar, E. Rastorgueva, Z. Chen, V. Lavrukhin, J. Balam, and B. Ginsburg, “Less is more: Accurate speech recognition & translation without web-scale data,” in Proc. Interspeech , 2024, pp. 3964–3968. [42] J. S. Garofolo, L. F. Lamel, W. M. Fisher, J. G. Fiscus, D. S. Pallett, N. L. Dahlgren, and V. Zue, “TIMIT acoustic-phonetic continuous speech corpus,” Linguistic Data Consortium, Philadelphia, LDC93S1, 1993. [43] M. A. Pitt, K. Johnson, E. Hume, S. Kiesling, and W. Raymond, “The Buckeye corpus of conversational speech: Labeling conventions and a test of transcriber reliability,” Speech Communication , vol. 45, no. 1, pp. 89–95, 2005. [44] A. Shrikumar, P. Greenside, and A. Kundaje, “Learning important features through propagating activation differences,” in Proc. ICML ,ser. Proceedings of Machine Learning Research, D. Precup and Y. W. Teh, Eds., vol. 70. PMLR, Aug. 2017, pp. 3145–3153. [Online]. Available: https://proceedings.mlr.press/v70/shrikumar17a.html [45] M. Ancona, E. Ceolini, C. ¨Oztireli, and M. Gross, “Towards better understanding of gradient-based attribution methods for deep neural networks,” in Proc. ICLR , 2018. [Online]. Available: https: //openreview.net/forum?id=Sy21R9JAW [46] D. Smilkov, N. Thorat, B. Kim, F. Vi´ egas, and M. Wattenberg, “Smooth-Grad: removing noise by adding noise,” arXiv:1706.03825, 2017. [47] J. Adebayo, J. Gilmer, M. Muelly, I. Goodfellow, M. Hardt, and B. Kim, “Sanity checks for saliency maps,” in Proc. NeurIPS ,S. Bengio, H. Wallach, H. Larochelle, K. Grauman, N. Cesa-Bianchi, and R. Garnett, Eds., vol. 31. Curran Associates, Inc., 2018. [Online]. Available: https://proceedings.neurips.cc/paper files/ paper/2018/file/294a8ed24b1ad22ec2e7efea049b8737-Paper.pdf [48] M. Sundararajan, A. Taly, and Q. Yan, “Axiomatic attribution for deep networks,” in Proc. ICML , ser. Proceedings of Machine Learning Research, D. Precup and Y. W. Teh, Eds., vol. 70. PMLR, Aug. 2017, pp. 3319–3328. [Online]. Available: https: //proceedings.mlr.press/v70/sundararajan17a.html [49] G. Erion, J. D. Janizek, P. Sturmfels, S. M. Lundberg, and S.-I. Lee, “Improving performance of deep learning models with axiomatic attribution priors and expected gradients,” Nature Machine Intelligence ,vol. 3, no. 7, pp. 620–631, Jul. 2021.
