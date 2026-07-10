@@ -1,0 +1,310 @@
+Title: When Synthetic Speech Is All You Have: Better Call GRPO
+
+URL Source: https://arxiv.org/pdf/2607.08409v1
+
+Published Time: Fri, 10 Jul 2026 00:50:26 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+# When Synthetic Speech Is All You Have: Better Call GRPO 
+
+Shashi Kumar 1,2,⋆ , Yanis Labrak 1,⋆ ,Hasindri Watawana 1,2, Sergio Burdisso 1, Esa´ u Villatoro-Tello 1,Kadri Hacio˘ glu 3, Petr Motlicek 1,4, Andreas Stolcke 3
+
+> 1
+
+Idiap Research Institute, Martigny, Switzerland 
+
+> 2
+
+EPFL, Lausanne, Switzerland ; 3Uniphore, U.S.A. 
+
+> 4
+
+Brno University of Technology, Brno, Czech Republic 
+
+Abstract —LLM-based ASR adapted to regulated domains such as banking is bottlenecked by privacy: real speech is costly and legally constrained to collect, making synthetic text-to-speech (TTS) an attractive substitute. Yet synthetic speech stays acous-tically mismatched with real recordings, and work on this gap has stayed within supervised fine-tuning (SFT). We instead turn to reinforcement learning, and show that Group Relative Policy Optimization (GRPO) extracts far more from the same synthetic speech than SFT. Synthetic-only adaptation of the model with GRPO, a critic-free method rewarding low-WER hypotheses, reduces WER by 40% relative to SFT (36.71% →22.09%), and an SFT-then-GRPO combination pushes this further to 45%. We trace the gain to behavior rather than representation: GRPO reduces insertion errors by improving stopping calibration and speech-to-text alignment by better anchoring attention to audio, leaving early-layer representations intact. When synthetic speech is the main resource, reinforcement learning should be preferred over supervised fine-tuning. 
+
+Index Terms —GRPO, Reinforcement Learning, Synthetic Speech, Text-to-Speech, Domain Adaptation, Automatic Speech Recognition, Speech LLM, Low-Resource 
+
+I. I NTRODUCTION 
+
+Speech recordings, such as customer–agent telephone calls in regulated domains such as banking are among the hardest data to collect at scale, because privacy is the central concern and regulations such as the GDPR and the EU AI Act [1] restrict how such recordings, which may qualify as biometric data, can be stored, shared, and reused for training due to personally identifiable and financial information they carry. These constraints slow the adoption of speech technologies in high-stakes domains, as systems must be adapted to in-domain speech data, yet sourcing such recordings remains slow, costly, and tightly regulated. To sidestep this problem, the community has explored sub-stituting real in-domain audio with speech synthesized using text-to-speech (TTS) systems from available transcripts [2]– [6]. However, synthetic speech still differs acoustically from real recordings [7], and this severe mismatch keeps the result-ing performance gain sub-optimal, motivating continuation of work on closing the synthetic-to-real gap [8], [9]. A recent work convolves synthetic speech with room impulse responses 
+
+> ⋆Equal contribution.
+
+(RIRs) to reproduce real channel characteristics, matching the real-speech baseline while using only a quarter of the real data [10]. These works typically build on pre-trained large language model (LLM) architectures adapted to the speech modality by plugging in a speech encoder [11]–[16], yet they all share the same limitation of remaining within the supervised fine-tuning (SFT) paradigm. Meanwhile, the broader NLP community has moved beyond cross-entropy and successfully leverages synthetic data [17]–[19] through reinforcement learning (RL) approaches such as Direct Preference Optimization (DPO) [20] and Group Relative Policy Optimization (GRPO) [21]. These observations, combined with the acoustic irregular-ities of synthetic speech, lead us to hypothesize that this reliance on SFT is what caps the performance achievable with synthetic speech. Token-level cross-entropy forces the model to reproduce the reference token by token, so local synthetic artifacts, such as: unnatural prosody, phonetic glitches, or imperfect RIR simulation, get absorbed into fluent but acous-tically unsupported continuations, producing hallucinated in-sertions. RL instead optimizes a sequence-level objective over sampled hypotheses, directly targeting the evaluation metric (e.g. WER), so only the output as a whole needs to score well, making it robust to such locally corrupted signal. For these reasons, this paper focuses on GRPO, a critic-free method that scores a group of sampled hypotheses and reinforces those that outperform the group, using task met-rics as the reward function. Its value for adaptation with synthetic speech remains untested, and we hypothesize that it is precisely in this regime that GRPO becomes decisive, making synthetic data usable without relying on real speech. We organize the study around six questions: 1) Is GRPO more effective than SFT? On real and on synthetic speech, does optimizing WER with GRPO improve over the SFT checkpoint it starts from? (Sec-tion IV-A) 2) Is additional real data necessary? Given a large syn-thetic speech corpus, how much real speech is worth an-notating, and where do returns diminish? (Section IV-B) 3) How much synthetic speech is needed when a small amount of data is available? With a tiny real speech arXiv:2607.08409v1 [cs.CL] 9 Jul 2026 budget fixed, how do metrics scale with the amount of synthetic speech? (Section IV-C) 4) Which reward function is more optimal? Among WER, CER, a length term, and their combinations, which reward function minimizes errors? (Section IV-D) 5) Does selecting a subset of the synthetic training speech help? Do entropy-based selection strategies over speaker, semantic, acoustic embeddings, or GRPO-specific selectors such as ranking utterances by rollout statistics, outperform random sampling? (Section IV-E) 6) Why does GRPO work better than SFT? Is its advantage behavioral rather than representational? How is the attention anchored to audio inputs after different adaptations approaches? (Section V) II. M ETHOD 
+
+In this section, we first describe the LLM-based ASR used throughout our experiments and motivate why this architecture provides a controlled setting for studying domain adaptation through post-training. We then describe supervised fine-tuning (SFT), the predominant adaptation approach. Next, we discuss why synthetic speech adaptation may benefit from a sequence-level objective, and describe our application of Group Relative Policy Optimization (GRPO) [21] to ASR. Finally, we define the reward functions used during GRPO training. 
+
+A. LLM-based ASR Backbone 
+
+We use a modular LLM-based ASR backbone that con-nects a WavLM-Large speech encoder [22] to Llama-3.2-1B-Instruct [23] through a trainable speech projector. Following the SLAM-ASR recipe [14], [15], the projector consists of two linear layers with a ReLU activation and downsamples the acoustic sequence by a factor of 5 before passing it to the LLM. During adaptation, we update the projector and LoRA adapters [24] inserted into the LLM. The LoRA rank is set to 
+
+r = 16 with scaling factor α = 32 . The WavLM encoder and the LLM parameters remain frozen throughout all experiments. We choose this backbone to provide a controlled set-ting for studying domain-adaptive post-training. Speech-capable LLMs, such as Phi-4-Multimodal [25] and Qwen3-ASR [26], have undergone large-scale speech or multimodal post-training, often including synthetic speech. This makes it difficult to isolate the effects of a downstream adaptation objective and its data. In contrast, our backbone combines a frozen speech encoder with a frozen text LLM, restricting adaptation to the projector and LoRA parameters. This design is suited for evaluating how synthetic speech adaptation data and the training objective affect ASR performance. 
+
+B. Domain Adaptation using Supervised Fine-Tuning 
+
+Supervised fine-tuning (SFT) is the predominant approach for adapting LLM-based ASR models. Given an input utter-ance x and its reference transcript y⋆ = ( y⋆ 
+
+> 1
+
+, . . . , y ⋆T ), SFT trains the model with teacher forcing by minimizing the token-level cross-entropy loss: 
+
+LSFT (θ) = −E(x,y ⋆)
+
+" TX
+
+> t=1
+
+log πθ (y⋆t | x, y ⋆<t )
+
+#
+
+. (1) This objective optimizes the likelihood of each reference token under the ground-truth prefix. However, when the adaptation data includes synthetic speech, the acoustic signal can contain prosodic mismatch, phonetic artifacts, or imperfect articula-tion. Since SFT applies a local token-level penalty at every position, it can be sensitive to such localized acoustic artifacts and may overfit to token-level mismatches. 
+
+C. Domain Adaptation using GRPO 
+
+Unlike SFT, GRPO optimizes a sequence-level objective over model-generated hypotheses, shifting adaptation from matching every reference token under the ground-truth prefix to comparing complete decoded transcripts under the model’s own generation distribution. Because rewards are assigned to entire transcripts rather than individual tokens, localized artifacts in synthetic speech should have less influence on the training signal. In this sense, GRPO provides a discriminative sequence-level adaptation signal: rather than only increasing the likelihood of the reference transcript as in SFT, it reinforces good hypotheses and suppresses lower-reward alternatives for the same utterance. This contrastive effect may help reduce overfitting to synthetic-speech artifacts, since the update is driven by separation between better and worse transcripts rather than token-level imitation alone. We therefore study GRPO for synthetic speech domain adaptation, following its recent application to ASR on real speech [27]. Let x be an input utterance, real or synthetic, with reference transcript y⋆. For each x, the old policy πθold samples a group of G hypotheses {o1, . . . , o G} by stochastic decoding with temperature τ . Each hypothesis receives a scalar reward 
+
+ri = R(oi, y ⋆), where R is one of the reward functions defined in Section II-D. Sampling a group of hypotheses exposes the model to alternative transcripts for the same utterance, allow-ing the update to compare relatively better and worse decodes under the same acoustic input. GRPO computes a group-relative advantage by standardizing the sampled rewards: 
+
+Ai = ri − mean( {r1, . . . , r G})std( {r1, . . . , r G}) + εstd 
+
+, (2) This normalization removes the need for a learned value function and makes the update depend on relative transcript quality within each sampled group, reducing the need to calibrate reward scales across utterances. The policy is updated by maximizing the clipped surrogate objective with a KL penalty to a fixed reference policy πref (the SFT checkpoint): 
+
+J (θ) = E
+
+h 1
+
+> G
+
+PGi=1 1
+
+> |oi|
+
+P 
+
+> t
+
+min  ρi,t Ai,
+
+clip( ρi,t , 1−ϵ, 1+ ϵ)Ai
+
+i
+
+− βKL[ πθ ∥πref ] ,
+
+(3) where ρi,t = πθ (oi,t | x, o i,<t )/π θold (oi,t | x, o i,<t ) is the per-token importance ratio, ϵ is the clipping range, and β is the KL coefficient. The reference policy is fixed during GRPO train-ing. Hypotheses with above-average reward receive positive advantage and are reinforced, while lower-reward hypotheses are suppressed. The KL term limits drift from the reference policy, preventing the model from exploiting the reward at the cost of transcription fluency or decoding stability. 
+
+D. Reward Functions for GRPO 
+
+We define rewards so that higher values indicate better recognition. Our default reward is WER , defined as one minus standard word error rate (WER), RWER (o, y ⋆) = 1 −
+
+WER( o, y ⋆), which directly targets the evaluation metric. We additionally study a character-level reward RCER = 1 − CER ,a length-consistency term RLEN that penalizes the length nor-malized absolute difference in token count between hypothesis and reference, and the additive combinations W ER + L EN ,CER + L EN , W ER + C ER , and W ER + C ER + L EN . All reward experiments are otherwise identical. III. E XPERIMENTAL SETUP 
+
+A. Data 
+
+All experiments use DefinedAI [28], [29], a corpus of manually transcribed English customer–agent telephone calls, restricted to its banking domain ( ≃54 h of real speech for training, 6.55 h of test set). As a high-resource out-of-domain pre-training source we also use LibriSpeech 960 h [30], named as LS 960 in the rest of the sections. Synthetic counterparts of the banking references transcripts are generated with Qwen3-TTS [31], using VoiceDesign letting us match synthetic voices to real data persona metadata (gender, race) without any refer-ence recordings. The prompting strategy ( “clear articulation, naturally” ) is used to improve prosody as shown by [10] and convolved with measured RIRs from the BUT Speech@FIT Reverb Database [32] to reproduce the channel acoustics closer to the real recordings. The overall pipeline is following [10] protocol. We refer to this RIR-augmented synthetic speech simply as synthetic speech throughout. 
+
+B. Training Configurations 
+
+We evaluate two regimes. The first assumes access to the full 54 h of real banking speech and is used to compare SFT and GRPO and to study adaptation from an LS 960 checkpoint. This experiment represent the upper limit of what is possible with a high budget. The second assumes only a tiny budget (as little as 1 h of real speech) alongside the synthetic speech pool, reflecting the privacy-constrained setting. 
+
+C. Hyperparameters 
+
+Both SFT and GRPO uses AdamW, learning rate 1 × 10 −4
+
+and 2 × 10 −5 respectively, batch size 16 , 100 warmup steps, 
+
+5 epochs, with LoRA r = 16 , α = 32 . GRPO starts from SFT checkpoints, rollout group size G = 4 , maximum 128 
+
+new tokens, sampling temperature τ = 0 .8, KL coefficient 
+
+β = 0 .04 , clipping ϵ = 0 .2, and gradient-norm clipping at 1.0.All runs use BF16 precision on a single NVIDIA H100 80 GB GPU. During inference, the models are allowed to generate maximum 256 new tokens, with beam size 1.
+
+D. Metrics 
+
+We report word error rate (WER), character error rate (CER), as well as insertion (INS), deletion (DEL), and substi-tution (SUB) rates. Lower is better for all metrics. 
+
+E. Synthetic Speech Selection 
+
+When the synthetic pool is larger than the training budget, the choice of which utterances to keep may affect how much useful signal GRPO receives. We compare six selection strategies. The first is random sampling, which serves as the main baseline. The next three are SFT-style diversity selectors: each utterance is embedded 0 using either a speaker encoder (pyannote [33]), a semantic text encoder (BGE [34]), or the acoustic encoder (WavLM [22]), and a greedy maximum-entropy procedure selects utterances that maximize coverage in that embedding space. The final two selectors are designed for GRPO: we sample 
+
+G hypotheses per utterance from a fixed checkpoint (as in GRPO training) and rank utterances by rollout statistics. GRPO -S IGNAL favors high reward variance, large reward range, and diverse hypotheses. G RPO -R ECOVERABLE favors a large gap between the mean and best sampled hypothesis, i.e. cases the model transcribes well only sometimes. For every strategy we construct nested 1 h, 5 h, and 25 h subsets. IV. R ESULTS 
+
+We compare GRPO against SFT and discuss the choices that govern how well it exploits synthetic speech. Models are adapted from the LS 960 SFT checkpoint, unless specified. 
+
+A. Does GRPO outperform SFT?                                                     
+
+> TABLE I RESULTS ON THE TEST SET ,COMPARING SFT AND GRPO FINE -TUNING FROM THE LS-960 HSFT BASELINE (B ASE ), USING EITHER 54 H OF REAL OR SYNTHETIC BANKING SPEECH .
+> Configuration WER ↓CER ↓INS/DEL/SUB
+> LS 960 S FT (B ASE )66.44 46.73 42.18 / 5.68 / 18.59 REAL BANKING SPEECH
+> →SFT 10.27 7.11 2.99 / 2.13 / 5.14
+> →GRPO 10.78 7.68 1.79 / 3.50 / 5.49
+> →SFT →GRPO 9.49 6.66 1.98 / 2.50 / 5.01 SYNTHETIC BANKING SPEECH
+> →SFT 36.71 25.06 24.79 / 2.55 / 9.37
+> →GRPO 22.09 15.89 8.39 / 5.15 / 8.56
+> →SFT →GRPO 20.21 14.68 8.60 / 3.66 / 7.95
+
+Two observations stand out in Table I. First, on real data, GRPO helps mainly when stacked after SFT. Applied directly from LS 960, GRPO does not outperform SFT on real speech alone, but SFT followed by GRPO extracts a small additional gain even where abundant real data exists, driven primarily by reduced insertions. 
+
+> 0huggingface.co/pyannote/embedding
+
+Second, the effect is far larger when only synthetic speech is available. SFT on synthetic speech alone performs poorly (36.71% WER), dominated by insertions (24.79), whereas GRPO over the same data reaches 22.09% and SFT followed by GRPO 20.21%, a 16 point absolute reduction over SFT, or 45% relative. GRPO thus recovers a large fraction of the synthetic-to-real gap precisely in the privacy-constrained setting that motivates synthetic speech in the first place, validating our initial intuition. 
+
+B. How Much Real Data Is Worth Collecting? 
+
+We first ask how much real speech is worth pairing with the synthetic pool. Starting from LS 960 SFT, we fix the 54 h synthetic pool and add increasing amounts of real banking speech, all optimized with GRPO (Table II).                                         
+
+> TABLE II EFFECT OF VARYING THE AMOUNT OF REAL BANKING SPEECH (XH)
+> MIXED WITH A FIXED 54 H OF SYNTHETIC SPEECH ,FINE -TUNED WITH
+> GRPO ON TOP OF THE LS 960 SFT BASELINE .
+> Real Synth WER ↓CER ↓INS/DEL/SUB
+> 0H54 H22.09 15.89 8.39 / 5.15 / 8.56 1H
+> 54 H
+> 20.32 14.08 7.25 / 4.16 / 8.91 5H15.51 11.41 3.35 / 4.65 / 7.51 10 H14.03 10.10 2.90 / 3.89 / 7.24 25 H13.03 9.59 3.10 / 3.36 / 6.57 54 H12.61 9.03 3.58 / 3.20 / 5.83
+
+WER falls steeply over the first few hours of real data, from 20.32% at 1h to 15.51% at 5h and 14.03% at 10h, then flattens, improving only to 13.03% at 25h and 12.61% at the full 54h. The marginal value of real speech is thus concentrated in the first ≈5–10 hours: roughly two thirds of the achievable WER reduction comes from less than a fifth of the real data, after which returns diminish relative to collection and retention cost. 
+
+C. Do We Need All The Synthetic Speech? 
+
+The complementary question holds the real budget at its minimum (1 h) and instead varies the amount of synthetic speech used for GRPO (Table III).                                                       
+
+> TABLE III EFFECT OF VARYING THE AMOUNT OF SYNTHETIC SPEECH (XH)MIXED WITH A FIXED 1H OF REAL IN -DOMAIN SPEECH ,WITH GRPO ON TOP OF THE LS 960 SFT BASELINE .
+> Synth Real WER ↓CER ↓INS/DEL/SUB
+> 25 H0H22.11 15.62 8.62 / 4.04 / 9.44 54 H0H22.09 15.89 8.39 / 5.15 / 8.56 1H
+> 1H
+> 24.60 17.59 6.60 / 6.55 / 11.45 5H24.20 16.49 8.45 / 5.40 / 10.34 10 H19.91 13.77 5.22 / 5.27 / 9.42 25 H16.77 11.63 3.82 / 4.46 / 8.48 54 H20.32 14.08 7.25 / 4.16 / 8.91 25 H5H14.56 10.50 3.10 / 4.25 / 7.21
+
+The relationship is non-monotonic. With 1 h of real speech fixed, WER improves as synthetic speech grows from 1 h (24.60%) to 25 h (16.77%), but degrades when all 54 h are used (20.32%). Thus, more synthetic speech is not automat-ically better: after a moderate point, the additional synthetic data appears to weaken the influence of the limited real in-domain signal rather than provide useful diversity. The best 1 h setting uses roughly 25 h of synthetic speech, giving the strongest balance between synthetic coverage and real-speech anchoring. Increasing the real budget from 1 h to 5 h at the same 25 h synthetic setting improves WER further to 14.56%, showing that GRPO continues to benefit from additional real supervision once the synthetic amount is kept in a favorable range. We therefore adopt the 25 h synthetic setting as the starting point for the reward study that follows. 
+
+D. Which Reward Function Is Best? 
+
+Holding this data mix fixed, we vary only the GRPO reward (Table IV) as mentioned in the Section II-D. The W ER reward yields the best %WER (16.77), confirming the principle of optimizing the target metric directly. Adding a LEN or C ER term does not help and often hurts, W ER +L EN ,WER +C ER , and the three-way combination all trail it, and the extra terms tend to raise insertions. C ER behave as expected on their own metric, with C ER +L EN achieving the best %CER (11.02) at a competitive %WER (16.81), a reasonable choice when character-level accuracy is the priority. For %WER-driven evaluation, the W ER is thus both the simplest and the strongest option. With the objective and data quantities settled, one lever remains, which synthetic utterances to train on.                                    
+
+> TABLE IV ABLATION OF THE GRPO REWARD FUNCTION ,FINE -TUNED ON 25 HSYNTHETIC + 1 H REAL IN -DOMAIN SPEECH . L EN DENOTES AN ADDED LENGTH -MATCHING PENALTY .
+> Reward Function WER ↓CER ↓INS/DEL/SUB
+> WER 16.77 11.63 3.82 / 4.46 / 8.48 WER + L EN 17.42 12.47 4.52 / 4.48 / 8.42 CER 18.46 11.97 5.97 / 3.50 / 8.98 CER + L EN 16.81 11.02 4.22 / 3.67 / 8.91 WER + C ER 18.27 12.63 5.63 / 4.11 / 8.53 WER + C ER + L EN 17.32 11.68 4.69 / 3.89 / 8.74
+
+E. Does Selecting Synthetic Speech Help? 
+
+The last lever is which synthetic utterances to train on. In the Table V, we compared random sampling, three SFT style diversity selectors (semantic and acoustics embeddings), and the two GRPO-specific selectors described in Section III-E. Every strategy selects nested 1 h, 5 h, and 25 h subsets from the same 54 h synthetic pool, and each subset is then fine-tuned with GRPO from the LS 960 SFT checkpoint. No real speech is considered here. The result is mixed and budget dependent. At the smallest budgets selection can help, but the best criterion shifts, BGE is best at 1 h (38.65% vs. 40.21% for random), while speaker diversity selection is best at 5 h (30.50%), but the effect is unstable at different budgets. On the other hand, WavLM selection is far worse at 1 h (59.67%), selecting atypical utterances that make the training difficult when the budget is too small. At 25 h, random sampling is the strongest overall choice. It reaches 22.11% WER, while speaker diversity and G RPO -RECOVERABLE are close but no better (22.30% and 22.31%), and the explicitly GRPO-oriented G RPO -S IGNAL criterion is worse (25.45%). Rollout-derived selection therefore does not improve over random sampling, even though it directly uses the GRPO hypothesis distribution. Taken together, GRPO recovers most of the synthetic-to-real gap from a few hours of real speech, a WER reward, and a randomly sampled synthetic pool. What remains open is what GRPO changes in the model, which the next section addresses. 
+
+TABLE V COMPARISON OF SYNTHETIC SPEECH SELECTION STRATEGIES FOR GRPO  
+
+> ON TOP OF
+
+LS 960 SFT, AT THREE SUBSET SIZES DRAWN FROM THE 54 HSYNTHETIC POOL . N ON -RANDOM STRATEGIES USE GREEDY MAXIMUM -ENTROPY SELECTION IN THEIR RESPECTIVE EMBEDDING SPACE .                                                                                
+
+> Strategy Synth WER ↓CER ↓INS/DEL/SUB
+> RANDOM SELECTION
+> 1H40.21 26.50 20.03 / 5.47 / 14.71 5H33.82 21.30 16.27 / 5.07 / 12.48 25 H22.11 15.62 8.62 / 4.04 / 9.44 SPEAKER EMBEDDINGS
+> 1H40.38 26.90 20.29 / 5.26 / 14.83 5H30.50 21.46 13.77 / 4.60 / 12.13 25 H22.30 15.21 9.15 / 3.73 / 9.42 WAV LM E MBEDDINGS
+> 1H59.67 44.56 38.53 / 5.35 / 15.79 5H32.67 22.61 15.36 / 4.50 / 12.81 25 H23.87 16.67 9.95 / 4.00 / 9.92 BGE E MBEDDINGS
+> 1H38.65 27.50 18.30 / 5.16 / 15.20 5H35.60 23.82 17.73 / 4.63 / 13.24 25 H25.01 16.65 11.49 / 3.17 / 10.35 GRPO-R ECOVERABLE
+> 1H43.20 30.05 23.14 / 5.60 / 14.47 5H33.85 24.96 17.53 / 4.21 / 12.11 25 H22.31 15.34 9.19 / 3.45 / 9.67 GRPO-S IGNAL
+> 1H42.22 28.94 22.34 / 5.72 / 14.16 5H35.28 23.82 18.31 / 4.42 / 12.54 25 H25.45 18.31 12.24 / 3.15 / 10.06
+
+V. W HY DOES GRPO W ORK BETTER THAN SFT? When only synthetic speech is available, SFT fails mainly through insertions. In Table I, synthetic SFT reaches 36.71% WER, of which 24.79 points are insertions. GRPO reduces WER to 22.09% and cuts insertions to 8.39. We interpret this as a difference in how the two objectives handle localized synthetic artifacts. Synthetic speech may contain unreliable re-gions caused by TTS prosody, phonetic artifacts, or imperfect RIR simulation. Token-level SFT forces the model to explain every local region against the reference, so small acoustic mismatch can push the decoder into a language-model-driven continuation without sufficient acoustics grounding. GRPO instead scores complete hypotheses: outputs where a local artifact grows into a long insertion chain receive low reward. The following analyses trace this mechanism from the output errors, to decoder confidence, to audio-token attention, and finally to representation change. 
+
+A. GRPO removes length-independent hallucination 0 10 20 30 40 50  
+
+> Reference length (words)
+> 10 0
+> 10 1
+> 10 2
+> Insertion count (log scale)
+> SFT GRPO
+
+Fig. 1. Insertion count vs. reference length for SFT and GRPO, with individual utterances shown as scattered points. 
+
+We first ask whether the WER gain comes from containing insertion errors. Figure 1 plots per-utterance insertion count against reference length. S FT has a heavy insertion tail, includ-ing short utterances followed by tens or even hundreds of extra tokens. This shows that the synthetic mismatch is not only pro-ducing local word errors, it can trigger long continuations after the spoken content has ended. G RPO largely removes this tail and keeps insertion counts low across reference lengths. Thus, GRPO does not merely improve average word recognition, but prevents local synthetic defects from propagating into global decoding failures. 
+
+B. GRPO improves stopping calibration 
+
+TABLE VI EXPECTED CALIBRATION ERROR (ECE) BY UTTERANCE LENGTH BIN 
+
+(NUMBER OF REFERENCE TOKENS ). 
+
+Short Medium Long Very long Model (1–8) (9–15) (16–22) (≥23) 
+
+BASE 0.619 0.409 0.331 0.271 
+
+→ SFT 0.430 0.195 0.135 0.174 
+
+→ GRPO 0.198 0.085 0.078 0.080 
+
+→ SFT → GRPO 0.186 0.107 0.099 0.095 
+
+The insertion tail suggests a stopping failure, after the acous-tically supported transcript ends, the model should become uncertain rather than continue generating text. We therefore examine token confidence around the final reference token. Figure 2 shows that S FT remains confident after the bound-ary, consistent with confident hallucinated continuation. G RPO 
+
+drops much more sharply after the final token, indicating that the policy has learned when not to continue. Table VI confirms this in aggregate, GRPO lowers ECE in every length bin, with the largest gain on short utterances, where insertion bursts are most damaging. This supports the view that GRPO turns uncertain local regions into conservative stopping behavior rather than fluent over-generation. TLast 6 TLast 4 TLast 2 TLast TLast + 2 TLast + 4 TLast + 6    
+
+> Token Index
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Token Probability
+> SFT GRPO SFT GRPO
+
+Fig. 2. Mean token probability (with confidence bands) around the final reference token ( TLast , dotted line) for SFT, GRPO, and SFT → GRPO. 
+
+C. GRPO relies on stable audio evidence 
+
+If the model is driven mainly by the language prior, attention over audio tokens should become diffuse. Figure 4 plots attention entropy over decoding time. S FT has consistently higher entropy than G RPO , indicating weaker concentration on specific audio regions. G RPO keeps attention entropy lower through most of the decoding trajectory, suggesting that it emits tokens only when the audio evidence is stable enough. It therefore does not ignore audio, rather, it avoids continuing when attention over the audio becomes uninformative. 
+
+Fig. 3. Decoder cross-attention to audio tokens for one utterance, decoded with S FT (top) and G RPO (bottom). Inserted tokens are marked [INS] in red. Red boxes mark regions where S FT ’s attention is diffuse or leaks across words and audio tokens; green boxes mark the same audio regions under GRPO , where attention instead stays sharp and concentrated on a single row. 
+
+The heatmap in Figure 3 shows the same behavior. S FT 
+
+emits inserted tokens with weakly localized attention, while GRPO keeps a cleaner monotonic alignment and produces no inserted tokens for the same utterance. Together, the entropy and heatmap analyses show that GRPO makes the decoder more robust to local synthetic artifacts by discouraging tokens that are not supported by stable audio evidence. 0.0 0.2 0.4 0.6 0.8 1.0     
+
+> Token Index (Relative)
+> 2.8
+> 2.9
+> 3.0
+> 3.1
+> 3.2
+> 3.3
+> Entropy
+> BASE SFT GRPO SFT GRPO
+
+Fig. 4. Token-level attention entropy over the course of decoding (relative position) for B ASE , S FT , G RPO , and S FT → GRPO . Higher entropy reflects more diffuse attention over audio tokens; lower entropy reflects sharper, more focused attention. 
+
+D. GRPO is a lightweight policy correction 
+
+Finally, we ask whether this robustness comes from broadly rewriting the audio representations. Figure 5 compares layer-wise representations using linear Centered Kernel Alignment (CKA) similarity. GRPO stays close to BASE throughout, while S FT diverges most in the early-to-middle layers, the same region associated with the synthetic/real gap in previous work [10]. Moreover, S FT → GRPO remains almost identical to S FT , showing that the final GRPO stage changes behavior without substantially changing the representation geometry. 0 2 4 6 8 10 12 14 16         
+
+> Layer Index
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> Similarity
+> BASE SFT BASE GRPO SFT GRPO SFT SFT GRPO
+
+Fig. 5. Layerwise linear CKA similarity between model pairs. Lower similarity reflect bigger delta in weights. 
+
+This completes the mechanism suggested by the previous plots. SFT strongly adapts the representation to synthetic speech, but can turn local acoustic artifacts into confident insertion chains. GRPO instead acts as a targeted policy cor-rection: it preserves most representations, improves stopping calibration, and suppresses continuations that are not supported by stable audio evidence. VI. C ONCLUSION 
+
+We started by asking whether synthetic speech is better exploited by SFT or by GRPO when privacy and cost rule out collecting real recordings. On a banking domain ASR task, GRPO is clearly the better choice: trained on synthetic speech alone, it cuts WER from 36.71% (SFT) to 22.09%, an SFT-then-GRPO schedule reaches 20.21%, and GRPO adds a small but consistent gain on real data (10.27% → 9.49%). The gain is behavioral, not representational. Synthetic-only SFT hallucinates confident insertions once acoustic support runs out. GRPO instead improves stopping calibration and keeps attention anchored to stable audio evidence, while leaving the early-layer representations that SFT rewrites largely intact. Three practical takeaways follow from our ablations. Using WER as a reward is enough, and more elaborate combinations do not help. No synthetic speech selection strategy consistently beats random sampling once the pool is moderately sized. And most of the achievable WER reduction comes from mixing 5 to 10 hours of real speech with a larger synthetic pool, rather than from annotating up to 54 h of in-domain speech. Overall, when synthetic speech is the main or only adaptation resource for LLM-based ASR, reinforcement learning should be preferred over supervised fine-tuning. All code will be released. 1
+
+ACKNOWLEDGEMENTS 
+
+This work was supported by Idiap Research Institute and Uniphore collaboration project. Part of this work was also supported by EU Horizon 2020 project ELOQUENCE (grant number 101070558). VII. G ENERATIVE AI U SE DISCLOSURE 
+
+Specific sections were refined using Large Language Mod-els to ensure linguistic clarity. All experiments, results, and scientific claims are the authors’ own. REFERENCES [1] European Parliament and Council, “Regulation (EU) 2024/1689 laying down harmonised rules on artificial intelligence (artificial intelligence act),” Official Journal of the European Union, OJ L 2024/1689, 2024. [2] N. Rossenbach, A. Zeyer, R. Schl¨ uter, and H. Ney, “Generating synthetic audio data for attention-based speech recognition systems,” in Proc. ICASSP , 2020, pp. 7069–7073. [3] A. Rosenberg et al. , “Speech recognition with augmented synthesized speech,” in Proc. ASRU , 2019, pp. 996–1002. [4] G. Chen et al. , “Large-scale self- and semi-supervised learning for speech translation,” in Proc. Interspeech , 2021, pp. 2242–2246. [5] G. Yang, F. Yu, Z. Ma, Z. Du, Z. Gao, S. Zhang, and X. Chen, “Enhancing low-resource ASR through versatile TTS: Bridging the data gap,” arXiv preprint arXiv:2410.16726 , 2024. [6] Y. Perrin and G. Boulianne, “Towards improved speech recogni-tion through optimized synthetic data generation,” arXiv preprint arXiv:2508.21631 , 2025. [7] P. S. Varadhan et al. , “The state of TTS: A case study with human fooling rates,” in Proc. Interspeech , 2025, pp. 2285–2289. [8] H. Su, H. Farn, F.-Y. Sun, S.-T. Chen, and H.-Y. Lee, “Task arithmetic can mitigate synthetic-to-real gap in automatic speech recognition,” in 
+
+Proc. EMNLP , 2024, pp. 8905–8915. [9] C.-K. Chou et al. , “A self-refining framework for enhancing ASR using TTS-synthesized data,” arXiv preprint arXiv:2506.11130 , 2025. [10] Y. Labrak, D. Sanchez-Cortes, S. Burdisso, S. Baroudi, S. Kumar, E. Villatoro-Tello, S. Madikeri, M. K. E, O. Plchot, K. Hacio˘ glu, P. Motlicek, and A. Stolcke, “How to leverage synthetic speech for llm-based asr systems?” 2026. [Online]. Available: https://arxiv.org/abs/ 2606.29031 [11] C. Tang et al. , “SALMONN: Towards generic hearing abilities for large language models,” in Proc. ICLR , 2024. [12] Y. Chu et al. , “Qwen-Audio: Advancing universal audio understand-ing via unified large-scale audio-language models,” arXiv preprint arXiv:2311.07919 , 2023. 
+
+> 1
+
+Repository withheld for blind review. [13] P. K. Rubenstein et al. , “AudioPaLM: A large language model that can speak and listen,” arXiv preprint arXiv:2306.12925 , 2023. [14] Z. Ma, G. Yang, Y. Yang, Z. Gao, J. Wang, Z. Du, F. Yu, Q. Chen, S. Zheng, S. Zhang, and X. Chen, “An embarrassingly simple approach for LLM with strong ASR capacity,” arXiv preprint arXiv:2402.08846 ,2024. [15] Z. Ma et al. , “Speech recognition meets large language model: Bench-marking, models, and exploration,” in Proc. AAAI , 2025. [16] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak super-vision,” in Proc. ICML , 2023, pp. 28 492–28 518. [17] B. Peng, C. Li, P. He, M. Galley, and J. Gao, “Instruction tuning with gpt-4,” 2023. [Online]. Available: https://arxiv.org/abs/2304.03277 [18] L. Tunstall, E. E. Beeching, N. Lambert, N. Rajani, K. Rasul, Y. Belkada, S. Huang, L. V. Werra, C. Fourrier, N. Habib, N. Sarrazin, O. Sanseviero, A. M. Rush, and T. Wolf, “Zephyr: Direct distillation of LM alignment,” in First Conference on Language Modeling , 2024. [Online]. Available: https://openreview.net/forum?id=aKkAwZB6JV [19] I. Padhi, K. Natesan Ramamurthy, P. Sattigeri, M. Nagireddy, P. Dognin, and K. R. Varshney, “Value alignment from unstructured text,” in Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing: Industry Track , F. Dernoncourt, D. Preot ¸iuc-Pietro, and A. Shimorina, Eds. Miami, Florida, US: Association for Computational Linguistics, Nov. 2024, pp. 1083–1095. [Online]. Available: https://aclanthology.org/2024.emnlp-industry.81/ [20] R. Rafailov, A. Sharma, E. Mitchell, S. Ermon, C. D. Manning, and C. Finn, “Direct preference optimization: your language model is secretly a reward model,” in Proceedings of the 37th International Conference on Neural Information Processing Systems , ser. NIPS ’23. Red Hook, NY, USA: Curran Associates Inc., 2023. [21] Z. Shao, P. Wang, Q. Zhu, R. Xu, J. Song, X. Bi, H. Zhang, M. Zhang, Y. K. Li, Y. Wu, and D. Guo, “DeepSeekMath: Pushing the limits of mathematical reasoning in open language models,” arXiv preprint arXiv:2402.03300 , 2024. [22] S. Chen et al. , “WavLM: Large-scale self-supervised pre-training for full stack speech processing,” IEEE Journal of Selected Topics in Signal Processing , vol. 16, no. 6, pp. 1505–1518, 2022. [23] A. Dubey et al. , “The Llama 3 herd of models,” arXiv preprint arXiv:2407.21783 , 2024. [24] E. J. Hu et al. , “LoRA: Low-rank adaptation of large language models,” in Proc. ICLR , 2022. [25] A. Abouelenin, A. Ashfaq, A. Atkinson, H. Awadalla, N. Bach, J. Bao, A. Benhaim, M. Cai, V. Chaudhary, C. Chen et al. , “Phi-4-mini technical report: Compact yet powerful multimodal language models via mixture-of-loras,” arXiv preprint arXiv:2503.01743 , 2025. [26] X. Shi, X. Wang, Z. Guo, Y. Wang, P. Zhang, X. Zhang, Z. Guo, H. Hao, Y. Xi, B. Yang et al. , “Qwen3-asr technical report,” arXiv preprint arXiv:2601.21337 , 2026. [27] P. G. Shivakumar, Y. Gu, A. Gandhe, and I. Bulyko, “Group relative policy optimization for speech recognition,” in 2025 IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) , 2025, pp. 1–7. [28] S. Kumar et al. , “Distilling conversations: Abstract compression of conversational audio context for LLM-based ASR,” arXiv preprint arXiv:2603.26246 , 2025. [29] A. Carofilis et al. , “Text-only adaptation in LLM-based ASR through text denoising,” arXiv preprint arXiv:2601.20900 , 2026. [30] V. Panayotov, G. Chen, D. Povey, and S. Khudanpur, “Librispeech: An asr corpus based on public domain audio books,” in 2015 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2015, pp. 5206–5210. [31] Qwen Team, “Qwen3-TTS: Voice design,” Hugging Face model, https: //huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign, 2025. [32] I. Sz˝ oke, M. Sk´ acel, L. Moˇ sner, J. Paleˇ sek, and J. ˇ Cernock´ y, “Building and evaluation of a real room impulse response dataset,” IEEE Journal of Selected Topics in Signal Processing , vol. 13, no. 4, pp. 863–876, 2019. [33] H. Bredin, “pyannote.audio 2.1 speaker diarization pipeline: Principle, benchmark, and recipe,” in Proc. Interspeech , 2023. [34] S. Xiao, Z. Liu, P. Zhang, and N. Muennighoff, “C-Pack: Packed resources for general Chinese embeddings,” in Proc. SIGIR , 2024.
