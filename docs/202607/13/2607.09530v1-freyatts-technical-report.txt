@@ -1,0 +1,363 @@
+Title: FreyaTTS Technical Report
+
+URL Source: https://arxiv.org/pdf/2607.09530v1
+
+Published Time: Mon, 13 Jul 2026 01:03:05 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# FreyaTTS Technical Report 
+
+Freya Team 
+
+July 13, 2026 
+
+Project: https://github.com/freyavoiceai/FreyaTTS 
+
+Model: https://huggingface.co/freyavoice/Freya-TTS 
+
+Abstract 
+
+We introduce FreyaTTS, a compact, tokenizer-free, Turkish-first text-to-speech model designed for highly reliable and efficient conversational synthesis. FreyaTTS is a 183 .2 M-parameter non-autoregressive conditional flow-matching Diffusion Transformer (DiT) that operates in the frozen continuous-latent space of the frozen AudioVAE2 (Zhou et al., 2026), reused unmodified ( 16 kHz encode, 48 kHz decode); holding the codec fixed lets the model devote all of its capacity to the text-to-latent map while inheriting 48 kHz reconstruction for free. We advance the framework across three key dimensions: (i) Rule-Free End-to-End Modeling , by driving generation end-to-end from a 92 -symbol Turkish character vocabulary with no phonemizer, grapheme-to-phoneme frontend, or discrete speech tokenizer, so that agglutinative morphology, vowel harmony, and the spoken form of numbers and acronyms are learned directly from audio; (ii) Non-Autoregressive Parallel Denoising , which avoids the left-to-right error accumulation of au-toregressive decoders by predicting and denoising the entire latent sequence in parallel over a predicted duration; and (iii) Production-Hardening Post-Training , utilizing a two-stage post-training recipe–a single-speaker voice lock that stabilizes speaker identity (collapsing cross-generation 𝐹 0 standard deviation from 74 .9 Hz to 5.0 Hz) followed by short-utterance coverage to resolve isolated-token and short-phrase failures. On our Freya-TR-Eval benchmark, FreyaTTS achieves a band-matched WER of 8.0% and CER of 3.0%, outperforming larger open-source systems at a fraction of their parameter size. With a real-time factor of 0.11 on consumer GPUs and the ability to run faster than real time on a laptop CPU, the model is highly optimized for resource-constrained edge deployment. We release the model weights, the training and inference code, and the evaluation benchmark under the Apache-2.0 license. arXiv:2607.09530v1 [cs.CL] 10 Jul 2026 2
+
+# Contents       
+
+> 1Introduction 32Related Work 4
+> 2.1 Speech Synthesis Paradigms
+
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 42.2 Turkish, Multilingual, and Efficient TTS . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 5    
+
+> 3Methodology 6
+> 3.1 Overview
+
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 63.2 Frozen AudioVAE2 Latent Space . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 73.3 The FreyaTTS Diffusion Transformer . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 73.4 Pretraining from Scratch . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 83.5 Post-training . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 93.6 Inference . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 9    
+
+> 4Experiments and Results 10
+> 4.1 Experimental Setup
+
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 10 4.2 Main Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11 4.3 Speaker Consistency and the Voice-Lock . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12 4.4 Inference Efficiency . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 12    
+
+> 5Conclusion and Future Work 13 FREYA TTS 3
+
+# 1 Introduction 
+
+Text-to-speech (TTS) has advanced from producing merely intelligible speech toward generating natural, expres-sive, and controllable audio (Shen et al., 2018; Ren et al., 2020), driven by the large-language-model paradigm of framing synthesis as sequence modeling over discrete audio tokens (Borsos et al., 2023; Chen et al., 2025a) and, more recently, by continuous-latent flow-matching generators (Shen et al., 2023; Le et al., 2023; Chen et al., 2025b). This progress, however, is concentrated in high-resource English and Chinese. Mid-resource languages such as Turkish, for which public corpora such as FLEURS-tr (Conneau et al., 2023) and Common-Voice-tr (Ardila et al., 2020) offer only tens of hours of validated read speech, remain underserved: large multilingual systems (Casanova et al., 2024; Du et al., 2025) treat Turkish as one language among dozens rather than as a first-class target. A second gap is computational. The strongest open systems reach their quality through multi-billion-parameter backbones trained on hundreds of thousands to millions of hours of speech (for example, CosyVoice 3 on roughly one million hours and Qwen3-TTS on over five million) (Du et al., 2025; Hu et al., 2026), an operating point that excludes single-GPU serving and on-device deployment. Turkish additionally stresses the text frontend: agglutinative morphology, vowel harmony, and the spoken-form expansion of numbers, dates, and acronyms make hand-built grapheme-to-phoneme and normalization pipelines brittle and incomplete. These pressures argue for a compact, Turkish-first system that learns pronunciation end-to-end from audio rather than dictating it by rules. Two modeling paradigms dominate contemporary TTS. Discrete-token systems represent speech as codec tokens and inherit LLM-style scaling and in-context learning (Borsos et al., 2023; Chen et al., 2025a; Du et al., 2025), but quantization discards fine acoustic detail and typically forces a multi-stage pipeline. Continuous-latent systems instead model speech representations directly with denoising or flow-matching objectives, spanning non-autoregressive diffusion models (Shen et al., 2023; Le et al., 2023; Chen et al., 2025b; Eskimez et al., 2024) and diffusion-autoregressive hybrids (Li et al., 2024; Jia et al., 2025). VoxCPM (Zhou et al., 2025) unified these lines through a differentiable finite-scalar-quantization bottleneck (Mentzer et al., 2024) inside a single continuous-latent backbone, and its successor VoxCPM2 (Zhou et al., 2026) scales the design to a 2B-parameter, 48 kHz, 30-language foundation model whose asymmetric AudioVAE encodes at 16 kHz and reconstructs at 48 kHz. FreyaTTS takes a different route: we treat its AudioVAE2 as a frozen , Apache-2.0 continuous-latent codec, a fixed 
+
+25 Hz, 64 -dimensional latent space, and train a compact 183 .2M-parameter generator entirely inside it. Because high-fidelity 48 kHz reconstruction is already solved and held fixed, every parameter and training signal is spent on the text-conditional prior rather than on waveform modeling, and a from-scratch Turkish pretraining run over a large, high-quality corpus yields a strong Turkish-first model at a fraction of the size of the multilingual foundation models above. The second design decision concerns how the latent sequence is generated. VoxCPM and VoxCPM2 decode autoregressively, one acoustic patch at a time, atop a MiniCPM-4 backbone (Team et al., 2025). Autoregression is expressive, but it accumulates errors over long horizons and is prone to number and word garbling, a benign glitch in a story reader but a critical failure wherever a misread digit changes meaning. FreyaTTS therefore adopts a non-autoregressive formulation: a conditional flow-matching Diffusion Transformer predicts an entire utterance’s latent sequence in parallel over a separately predicted duration, sidestepping left-to-right error accumulation by construction. Text conditions the latents through cross-attention over ConvNeXt-refined character features from a 92 -symbol Turkish character vocabulary, with no byte-pair encoding, phonemizer, or grapheme-to-phoneme step, so the model learns the pronunciation of in-context numbers, currencies, and acronyms directly from audio. What limits digit rendering in the NAR design is not decoding order but duration allocation, so digit strings are expanded to their spoken form at the text frontend, the standard input contract for character-level synthesis, while isolated bare tokens are handled by post-training and a thin inference layer (sections 3.5 and 4). A two-stage post-training recipe then specializes the from-scratch pretrained prior into a single-voice production model. The main contributions of FreyaTTS are as follows. 1. A tokenizer-free non-autoregressive Turkish TTS model. FreyaTTS is a 183.2M-parameter conditional flow-matching Diffusion Transformer that synthesizes 48 kHz Turkish speech in the frozen continuous-latent space of AudioVAE2, from a 92-symbol character vocabulary with no phonemizer, grapheme-to-phoneme FREYA TTS 4
+
+frontend, or discrete speech tokenizer, to our knowledge the first openly released tokenizer-free NAR TTS model pretrained from scratch as a Turkish-first system, whereas prior open Turkish baselines relied on phonemizers or autoregressive architectures (Pratap et al., 2024; Casanova et al., 2024). We release the single-voice production model’s weights publicly. 2. A pretrain-to-SFT production-hardening recipe. A full-parameter voice-lock stage on a single consented speaker writes the voice into the weights, collapsing cross-generation 𝐹 0 standard deviation from 74 .9 to 
+
+5.0 Hz, and a short-utterance-coverage stage over forced-aligned one-word and two-word segments repairs the isolated-token failures a sentence-only corpus structurally cannot. 3. A public benchmark and an efficiency-oriented evaluation. We release Freya-TR-Eval , a 495-sentence, domain-neutral Turkish benchmark, together with its seeded build scripts and our full evaluation harness, so that every number in this report is reproducible without redistributing third-party audio. Under an identical band-matched Whisper WER/CER protocol, FreyaTTS achieves a WER of 8.0 % and a CER of 3.0 %. The model also supports efficient batched non-autoregressive inference, delivering high throughput with a small memory footprint on both consumer GPUs and laptop CPUs. The remainder of this report is organized as follows. Section 2 situates FreyaTTS within large-scale and low-resource TTS foundation models and continuous-latent flow-matching generation. Section 3 presents the FreyaTTS system: the tokenizer-free non-autoregressive architecture over the frozen VoxCPM2 latent space, the flow-matching and duration objectives, the from-scratch Turkish pretraining stage, and the two-stage voice-lock and short-utterance-coverage fine-tuning recipe. Section 4 reports the Turkish evaluation against openly available systems together with inference- and serving-efficiency measurements. Section 5 discusses limitations and future directions. 
+
+# 2 Related Work 
+
+We situate FreyaTTS along two axes: the generative paradigm it instantiates, non-autoregressive flow matching over a continuous latent space (section 2.1), and the niche it fills, a compact Turkish-first model in a field of large multilingual generalists (section 2.2). 
+
+2.1 Speech Synthesis Paradigms 
+
+Contemporary TTS is organized by how speech is represented and generated. We review the three families that frame FreyaTTS: discrete-token language models, non-autoregressive generation over continuous features, and diffusion-autoregressive hybrids. 
+
+Discrete-token codec language models. The dominant paradigm casts synthesis as autoregressive language modeling over discrete acoustic tokens from a neural audio codec (Défossez et al., 2022; Kumar et al., 2023), inheriting the scaling and in-context learning of large language models. VALL-E (Chen et al., 2025a) cast zero-shot cloning as prompt continuation over residual-quantized tokens, and the CosyVoice family (Du et al., 2024, 2025) pairs a language model over supervised semantic tokens with a separate flow-matching decoder that restores acoustic detail. The route scales well but pays two structural prices: quantization discards fine acoustic information, and the semantic-token and acoustic-decoder stages cannot be optimized jointly end to end. 
+
+Non-autoregressive generation over continuous features. A second family drops discrete tokens and models continuous acoustic features directly and in parallel, under a diffusion or conditional-flow-matching objective. NaturalSpeech 2 (Shen et al., 2023) applies latent diffusion with explicit duration and pitch predictors, and Voicebox (Le et al., 2023) frames TTS as text-conditioned flow matching over mel frames guided by an external alignment and a duration model. This alignment-and-duration template runs through diffusion TTS: Grad-TTS (Popov et al., 2021) couples a score-based decoder with monotonic-alignment search and a duration predictor, FREYA TTS 5
+
+and Matcha-TTS (Mehta et al., 2024) recasts it under optimal-transport conditional flow matching. Nearby, StyleTTS 2 (Li et al., 2023) adds style diffusion and adversarial training, NaturalSpeech 3 (Ju et al., 2024) factorizes a codec latent for attribute-wise diffusion, and end-to-end VAE-GAN models of the VITS (Kim et al., 2021) family, on which the MMS Turkish baseline is built (Pratap et al., 2024), learn alignment and waveform jointly. A distinct branch removes the alignment and duration modules altogether: E2-TTS (Eskimez et al., 2024) pads the character sequence with filler tokens to the target length and lets a single Transformer learn the text-to-audio correspondence implicitly through self-attention, and F5-TTS (Chen et al., 2025b) keeps this filler-padded formulation while adding a ConvNeXt text refiner and sway-sampling inference; compact successors such as ZipVoice (Zhu et al., 2025) push the same objective toward small, fast models. FreyaTTS belongs to this family but conditions through cross-attention over character features rather than filler-padded implicit alignment, and it generates a frozen VoxCPM2 latent rather than a mel-spectrogram. 
+
+Diffusion-autoregressive hybrids. A third family autoregresses over continuous latents while rendering each step with a local diffusion head, combining language-model-style planning with continuous acoustic fidelity (Meng et al., 2025). The mechanism originates in image generation, where MAR (Li et al., 2024) replaced the categorical softmax of a token-based model with a small per-token diffusion loss, showing that vector quantization is not required for autoregressive generation. DiTAR (Jia et al., 2025) ported this to speech through a local diffusion transformer over patches of continuous latents, and VoxCPM (Zhou et al., 2025) realized a semantic-acoustic hierarchy inside a single continuous-latent backbone via a differentiable finite-scalar-quantization bottleneck (Mentzer et al., 2024) atop a MiniCPM-4 language model (Team et al., 2025). These hybrids are expressive but retain an autoregressive decode loop, with the exposure bias and error accumulation it carries over long or number-dense utterances. 
+
+Positioning FreyaTTS. FreyaTTS keeps VoxCPM2’s continuous-latent representation but discards its autore-gressive stack. It reuses only the frozen AudioVAE, the 25 Hz, 64 -dimensional, 16 kHz-in / 48 kHz-out codec of VoxCPM2 (Zhou et al., 2026), under its Apache-2.0 license and never trained, so representation learning is decoupled from generative modeling and 48 kHz super-resolution comes for free from the frozen decoder. In place of the hierarchical TSLM/FSQ/RALM stack and the autoregressive loop, a single 183 .2M-parameter flow-matching transformer predicts an utterance duration and denoises all latent frames in parallel (a 32 -step Euler ODE at infer-ence). The system is tokenizer-free on both ends: no discrete audio codec, and a 92 -symbol character vocabulary with no phonemizer or grapheme-to-phoneme frontend, so that the pronunciation of numbers, acronyms, and code-switched terms is learned from audio rather than dictated by a rule-based frontend. 
+
+2.2 Turkish, Multilingual, and Efficient TTS 
+
+The mid-resource regime: Turkish beyond nominal coverage. Progress in large-scale TTS is measured almost exclusively on English and Chinese. Training corpora are dominated by read and audiobook speech in those two languages, as in Emilia (He et al., 2024), and the zero-shot benchmarks that define the state of the art, notably Seed-TTS-Eval (Anastassiou et al., 2024), inherit the same distribution. Massively multilingual systems nominally widen this coverage to dozens or hundreds of languages (Casanova et al., 2024; Du et al., 2025; Zhu et al., 2026), and Turkish typically appears among them. Nominal coverage, however, is not specialization: a single checkpoint must amortize a fixed capacity budget across every language it serves, and the supervision it receives for each is generic read speech. The consequence is sharpest for languages that are neither high- nor low-resource. Turkish occupies precisely this mid-resource band, where public read-speech corpora such as FLEURS-tr (Conneau et al., 2023) and Common-Voice-tr (Ardila et al., 2020) together supply only tens of hours, an order of magnitude below their English or Chinese counterparts, and where no openly available corpus targets a conversational domain. A language in this regime is well served neither by the multilingual generalist, whose Turkish is a marginal slice of a shared budget, nor by the low-resource literature, whose methods assume a scarcity that does not hold. FreyaTTS is designed for this regime: a Turkish-first model trained from scratch on a large in-domain Turkish corpus, rather than one language slot in a multilingual grid. FREYA TTS 6
+
+Compact and deployable synthesis. The strongest open systems obtain their quality from multi-billion-parameter backbones that preclude single-GPU serving and on-device use. A parallel line pursues efficiency instead: VITS-based on-device voices such as Piper and the multilingual MMS-TTS (Pratap et al., 2024), and compact flow-matching models such as ZipVoice (Zhu et al., 2025), trade breadth for a small, fast footprint. FreyaTTS shares this goal but reaches it differently. A frozen high-fidelity codec absorbs waveform reconstruction, leaving a 183 .2M-parameter non-autoregressive generator that serves faster than real time on a consumer GPU and runs on a laptop CPU, while carrying a single production voice in its weights rather than cloning one from a reference prompt. 
+
+# 3 Methodology 
+
+3.1 Overview 
+
+FreyaTTS is a tokenizer-free, non-autoregressive (NAR) text-to-speech model realized as a conditional flow-matching Diffusion Transformer (DiT) over the continuous latent space of a frozen AudioVAE2. It shares VoxCPM’s core premise, modeling speech in a continuous latent space rather than over discrete codec tokens (Zhou et al., 2025), but departs sharply from its generative backbone. VoxCPM and VoxCPM2 render audio autoregressively: a MiniCPM-4 language model (Team et al., 2025) predicts semi-discrete FSQ semantic states (Mentzer et al., 2024) that a local diffusion head decodes patch by patch. We instead discard the entire autoregressive stack (the text-semantic LM, the FSQ bottleneck, the residual acoustic LM, and the local diffusion transformer) and keep only AudioVAE2, replacing the backbone with a single NAR DiT that denoises all latent frames of an utterance in parallel (fig. 1). This choice is dictated by reliability. Conversational Turkish is dense with digit strings, dates, and amounts, and autoregressive latent prediction can accumulate error across such sequences, garbling numbers mid-utterance. Predicting the whole latent sequence in parallel removes the left-to-right dependency; it also decouples the number of sequential generation steps from utterance length (a fixed ODE-step budget replaces a length-proportional decode loop, though each step still attends over all 𝑇 frames) and pairs naturally with flow matching (Le et al., 2023; Chen et al., 2025b; Anastassiou et al., 2024), in contrast to the multi-stage LM-plus-vocoder pipelines of discrete-token systems (Du et al., 2025). 
+
+Formulation. Let 𝑥 1 ∈ ℝ𝑇 ×64 be the clean latent sequence produced by the frozen AudioVAE2 encoder and  
+
+> 𝑐
+
+= TextEnc ( 𝑦 ) the character-feature memory of the input text 𝑦 . We adopt a conditional flow-matching objective with a linear probability path, which interpolates on a straight line between a Gaussian prior 𝑥 0 ∼ N ( 0, 𝐼 ) and the data 𝑥 1 and trains a velocity field 𝑣 𝜃 to transport one to the other:  
+
+> 𝑥 𝑡
+
+= (1 − 𝑡 ) 𝑥 0 + 𝑡 𝑥 1, 𝑥 0 ∼ N ( 0, 𝐼 ), 𝑡 ∼ U [ 0, 1],
+
+L = 𝔼 𝑡, 𝑥 0, 𝑥 1
+
+h 
+
+> 𝑚
+
+⊙  𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 ) − 
+
+> 𝑣 ★
+
+z }| {
+
+(𝑥 1 − 𝑥 0)  22
+
+i| {z }
+
+> masked flow-matching
+
++ 𝜆 dur 
+
+  log ˆ 𝑇 − log 𝑇 2. (1) Here 𝑣 ★ = 𝑥 1 − 𝑥 0 is the target velocity, which is constant along the straight path so that a single network evaluation supervises the entire trajectory; 𝑚 ∈ { 0, 1}𝑇 masks padding frames, and the flow-matching term is averaged over the ∥𝑚 ∥1 real frames; ˆ𝑇 is the length predicted by the duration head (section 3.3); and 𝜆 dur = 0.1.Because 𝑥 0 and 𝑥 1 are sampled independently rather than optimally coupled, this is the linear-path, rectified-flow 
+
+instance of conditional flow matching (Lipman et al., 2023; Tong et al., 2024), not a minibatch optimal-transport coupling. There is no adversarial loss, no autoregression, and no discrete-token cross-entropy: only the masked flow-matching regression and the auxiliary duration term. Because the model consumes raw characters and no discrete speech tokenizer intervenes, the pronunciation of in-context numbers, currencies, and acronyms is learned end-to-end from audio rather than delegated to a text frontend; isolated tokens are harder and are addressed by post-training and inference-time guards (section 3.5). FREYA TTS 7c (K, V) log T                 
+
+> N×
+> latent x
+> (frozen)
+> 48 kHz waveform
+> FreyaTTS NAR conditional flow-matching TTS
+> c(conditioning)
+> adaLN-zero:
+> zero-init shift / scale / gate
+> text
+> context
+> DiT Block Design (adaLN-zero conditioning)
+> Turkish text noise xN(0, I)
+> Char Embedding
+> (vocab 92)
+> ConvNeXt-1d ×K
+> Latent Proj
+> Duration
+> Head
+> FreyaTTS DiT Block
+> Output Proj velocity v
+> ODE solve (Euler, 32 steps)
+> VoxCPM2 AudioVAE Decoder
+> hidden htTime MLP (SiLU)
+> adaLN
+> Self-Attention +RoPE
+> adaLN
+> Cross-Attention (Q=frames)
+> adaLN
+> SwiGLU FFN
+> h
+> +
+> +
+> +
+
+Figure 1: Overall architecture of FreyaTTS. Character-level Turkish text (a 92 -symbol vocabulary; no byte-pair encoding, phonemizer, or grapheme-to-phoneme frontend) is embedded and refined by a ConvNeXt-1d encoder into a character-feature sequence 𝑐 , which (i) drives a duration head that predicts the total latent length ˆ𝑇 and (ii) serves as the key/value memory for the cross-attention layers of a non-autoregressive Diffusion Transformer (DiT). Conditioned on the flow-matching timestep 𝑡 through adaLN-zero modulation, the DiT denoises a length-ˆ𝑇 sequence of 64 -dimensional latent frames drawn from Gaussian noise; the resulting clean latents are rendered to 48 kHz audio by the frozen AudioVAE2 decoder. The autoregressive TSLM/FSQ/RALM backbone is discarded; only AudioVAE2 is reused. 
+
+3.2 Frozen AudioVAE2 Latent Space 
+
+We build on AudioVAE2 (Zhou et al., 2026), reused frozen under its Apache-2.0 license and never trained. Its encoder maps a 16 kHz waveform to 64 -dimensional latent frames at 25 Hz (one frame per 40 ms) and its decoder reconstructs at a 48 kHz sample rate. We stress that this 16 kHz-in / 48 kHz-out asymmetry fixes the output 
+
+sample rate , not the acoustic bandwidth: the usable bandwidth of a synthesis is still bounded by the encoder’s 
+
+16 kHz input and by the band of the training audio, so the narrowband single-speaker corpus of section 3.5 yields a 48 kHz-rate signal that retains a telephony-band fidelity ceiling (section 5). Holding this codec fixed is what lets us train a compact generator from scratch: high-fidelity reconstruction is already solved, so all capacity goes to the text-conditional prior, and modeling the continuous latent rather than discrete tokens keeps fine acoustic detail and leaves the pipeline tokenizer-free (Shen et al., 2023; Le et al., 2023). We retain only this continuous codec; the semi-discrete FSQ bottleneck (Mentzer et al., 2024) that gives VoxCPM its semantic-acoustic factorization lives in the autoregressive backbone we discard, and our NAR DiT operates directly on the native 25 Hz frame grid with no patch grouping, so the sequence length 𝑇 is simply the number of 40 ms frames. 
+
+3.3 The FreyaTTS Diffusion Transformer 
+
+The velocity field 𝑣 𝜃 is a DiT that takes the noisy latent sequence 𝑥 𝑡 ∈ ℝ𝑇 ×64 , the timestep 𝑡 , and the character memory 𝑐 , and predicts a velocity at every frame. Table 1 lists the configuration. FREYA TTS 8                                
+
+> Table 1: FreyaTTS configuration. AudioVAE2 is reused frozen; only the DiT and text encoder ( 183 .2M parameters) are trained.
+> Component Setting
+> Latent space (frozen AudioVAE2) 64 -dim @ 25 Hz; 16 kHz encode / 48 kHz decode Text vocabulary character-level Turkish, 92 symbols (no BPE, no G2P) Text encoder ConvNeXt-1d ×4
+> DiT width / depth / heads 𝑑 =640 /16 /10
+> DiT feed-forward SwiGLU, hidden 2048
+> Self-attention position encoding RoPE Time conditioning adaLN-zero ( 9-way modulation) Text conditioning cross-attention (frame queries →character keys/values) Duration objective weight 𝜆 dur 0.1(pretraining) Trainable parameters 183 .2MInference solver 32 -step Euler ODE
+
+Text encoder and duration head. The text encoder embeds the character-level Turkish vocabulary ( 92 symbols in total: the 29 -letter alphabet including ç, ğ, ı, ö, ş, ü, together with digits, punctuation, and whitespace) and refines it with four ConvNeXt-1d blocks (Chen et al., 2025b; Liu et al., 2022) into the feature sequence 𝑐 ,shared by the cross-attention memory and the duration head. Operating on raw characters means that Turkish orthographic phenomena (vowel harmony, the dotted/dotless ı distinction, and the spoken form of acronyms) are absorbed into the weights rather than handed to a grapheme-to-phoneme frontend. Digit strings are the deliberate exception: their orthographic and phonetic lengths diverge so sharply that we expand them to spoken form at the text frontend, since the bottleneck lies in the duration predictor rather than in the acoustic model; isolated acronyms and bare tokens remain a documented failure mode addressed in sections 3.5 and 4. Since generation is non-autoregressive, the target length must be known before denoising: a small MLP over the mask-averaged mean of 𝑐 regresses log ˆ 𝑇 , supervised by the auxiliary term of eq. (1) and used to size the noise tensor at inference. 
+
+DiT block. Each of the 16 layers updates the frame hidden states ℎ ∈ ℝ𝑇 ×𝑑 (𝑑 =640 ) through three residual sub-layers (RoPE self-attention, text cross-attention, and a SwiGLU feed-forward network), each modulated by the flow-matching timestep through adaLN-zero: 
+
+(𝛽 1, 𝛾 1, 𝑔 1, 𝛽 2, 𝛾 2, 𝑔 2, 𝛽 3, 𝛾 3, 𝑔 3) = MLP zero 
+
+ emb (𝑡 ),ℎ ← ℎ + 𝑔 1 ⊙ SelfAttn RoPE 
+
+ 𝛾 1 ⊙ LN (ℎ) + 𝛽 1
+
+,ℎ ← ℎ + 𝑔 2 ⊙ CrossAttn  𝛾 2 ⊙ LN (ℎ) + 𝛽 2, 𝑐 ,ℎ ← ℎ + 𝑔 3 ⊙ SwiGLU  𝛾 3 ⊙ LN (ℎ) + 𝛽 3
+
+,
+
+(2) where emb (𝑡 ) is a sinusoidal timestep embedding and ⊙ applies per-channel shift/scale/gate broadcast over frames. The nine modulation vectors are produced by a per-layer MLP whose final projection is zero-initialized 
+
+(adaLN-zero): every block therefore begins as the identity and departs from it only as training warrants, a stabilizer standard in diffusion transformers (Peebles & Xie, 2023; Li et al., 2024; Jia et al., 2025). Self-attention carries rotary position embeddings (Su et al., 2024) over the frame axis; in contrast to the NoPE (Kazemnejad et al., 2023) residual LM of VoxCPM2 (Zhou et al., 2026), we retain RoPE because our sequence is generated in one shot and benefits from explicit positional structure. In CrossAttn the queries are the modulated frame states while the keys and values are the character features 𝑐 : this dedicated cross-attention is the sole pathway through which text conditions acoustics, following the alignment-based diffusion decoders of Grad-TTS, Matcha-TTS, and NaturalSpeech 2 (Popov et al., 2021; Mehta et al., 2024; Shen et al., 2023). 
+
+3.4 Pretraining from Scratch 
+
+The DiT and text encoder are trained from random initialization (AudioVAE2 contributes no gradients) on a large-scale, high-quality internal corpus of multi-speaker Turkish speech, pre-encoded offline into AudioVAE2 latents so that the frozen encoder never runs during training, and spanning number-string reads, name-list reads, FREYA TTS 9
+
+conversational sentences, and general speech. We optimize eq. (1) in bf16 with AdamW (learning rate 5×10 −4,weight decay 0.01 , gradient clipping at 1.0, 2,000 -step linear warmup then cosine decay) for 150 k steps at batch size 64 , in a single training run with a fixed seed. Training runs on H100 and H200 GPUs with a memory-safe loader over the pre-encoded fp16 latents. 
+
+Pretraining behavior. The flow-matching loss descends smoothly to convergence over the 150 k steps (fig. 2a), and re-transcribing generations with Whisper-large-v3 (Radford et al., 2023) yields intelligible, well-aligned Turkish, with in-context numbers read in their full spoken form. The pretrained model has, however, no speaker identity : with no speaker field in the corpus and no speaker conditioning in the network, the Gaussian prior 𝑥 0
+
+seeds a fresh speaker on each generation. This is expected behavior for an unconditioned prior, and it directly motivates the voice-lock post-training below; section 4.3 quantifies the effect. 
+
+3.5 Post-training 
+
+Two supervised fine-tuning stages turn the speaker-agnostic pretrained model into a deployable single-voice product. 
+
+SFT v1: single-speaker voice lock. Initialized from the 150 k-step checkpoint, we full-parameter fine-tune (AudioVAE2 still frozen) on an internal single-speaker corpus of a single consented professional voice talent, recorded at 16 kHz over a narrowband channel matching the deployment domain. Training uses multi-GPU DDP, bf16, and learning rate 1×10 −4 with cosine decay; the flow-matching loss falls from 0.918 to ≈0.62 within roughly one epoch. The speaker identity is written into the weights: cross-generation F0 standard deviation collapses from 74 .9 to 5.0 Hz and content similarity reaches 0.923 , while domain acronyms stabilize, pronounced as words rather than spelled letter by letter. We select step 1000 : continued training over-fits and destabilizes the voice, with the voice-lock standard deviation drifting from 5.0 back to 11 Hz by 3k steps. 
+
+SFT v2: short-utterance coverage. The single-speaker corpus contains no clips of two words or fewer, which we identified as the structural root cause of a collapse on isolated acknowledgments, bare numbers, and lone acronyms. We therefore continue fine-tuning from the v1 step-1000 checkpoint on the same corpus augmented with mined short single-speaker segments (one-word and two-word phrases, numbers, and acknowledgments) that we extracted from the same speaker by MMS forced alignment (torchaudio MMS_FA with a Turkish-to-roman character map). This continuation stage uses learning rate 5×10 −5 and 𝜆 dur =0.2, and we again select step 1000. Isolated acknowledgments are rendered once, cleanly, rather than entering a repetition loop; in-context numbers are correct; and full-sentence quality and the locked voice are preserved. SFT v2 is the shipped production model. A thin inference wrapper completes the system: clause-level chunking for long inputs, a duration floor for very short ones, and a voicing-based retry on the rare degenerate draw. 
+
+3.6 Inference 
+
+Given input text, the text encoder produces 𝑐 and the duration head predicts the latent length ˆ𝑇 . We draw  
+
+> 𝑥 0
+
+∼ N ( 0, 𝐼 ) of length ˆ𝑇 and integrate the flow-matching ODE d𝑥 /d𝑡 = 𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 ) from 𝑡 =0 to 𝑡 =1 with a fixed-step Euler solver ( 32 steps), evaluating the DiT once per step with 𝑐 supplied through cross-attention. The resulting clean latent sequence is decoded by the frozen AudioVAE2 into a 48 kHz waveform. Because generation is non-autoregressive, the whole sequence is denoised in parallel: the number of sequential solver steps is fixed at 32 regardless of utterance length (each step still attending over all 𝑇 frames), and there is no left-to-right error accumulation. Unlike the autoregressive sampler of VoxCPM2, which leans on classifier-free guidance, sway sampling (Chen et al., 2025b), and CFG-Zero ∗ (Fan et al., 2025), we find a plain 32 -step deterministic Euler integrator sufficient; the inference wrapper re-draws 𝑥 0 only on the rare voicing-check failure. Empirically the shipped FreyaTTS model attains a mean per-utterance real-time factor of ≈0.14 on an H100, which we detail in section 4.4. FREYA TTS 10 10 0 10 1 10 2 
+
+> Training steps (×10 3)
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> 2.25
+> 2.50
+> Flow-matching loss (masked MSE)
+> 0.62
+> Pretrain (from scratch)
+> SFT plateau (single-speaker)
+> (a)
+
+Training loss. Pretrain   
+
+> (multi-speaker)
+> SFT
+> (voice-lock)
+> 50
+> 100
+> 150
+> 200
+> 250
+> 300
+> Median  F0 per generation (Hz)
+> male/female
+> boundary
+> Pretrain (std 74.9 Hz)
+> SFT (std 5.0 Hz) (b)
+
+Voice-lock ( 𝐹 0). 0 5 10 15 20 25   
+
+> Input length (words)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Word Error Rate
+> Pretrain
+> SFT + clause chunking (c)
+
+WER vs. length. 
+
+Figure 2: Left: flow-matching loss over pretraining (log-scale steps) with the single-speaker SFT plateau. Center: median 𝐹 0
+
+across regenerations of a fixed prompt; the multi-speaker pretrained model scatters across an octave (std 74 .9 Hz) whereas the voice-locked SFT model is stable (std 5.0 Hz). Right: word error rate as a function of input length on a length-swept probe set; long-horizon drift in the pretrained model is mitigated, though not removed, by inference-time clause chunking. 
+
+# 4 Experiments and Results 
+
+We evaluate FreyaTTS along three axes: main results against the field of openly-available, sub-billion-parameter Turkish TTS systems on a single held-out benchmark (sections 4.1 and 4.2); speaker consistency and the voice-lock stage (section 4.3); and inference efficiency (section 4.4). 
+
+4.1 Experimental Setup 
+
+Benchmark. We evaluate on a single, purpose-built benchmark, Freya-TR-Eval : 495 natural, domain-neutral Turkish sentences of everyday conversational register (statements, mI -questions, and exclamations), length 3–13 
+
+words. It merges native Turkish sentence texts sampled from Common Voice 17-tr (Ardila et al., 2020) and CoVoST2-tr (Wang et al., 2021) with everyday-conversational lines generated by gemini-3.1-pro-preview 
+
+under fixed topic and sentence-type quotas ( 22 everyday topics), filtered for length, full Turkish grapheme coverage (ç ğ ı i ö ş ü), and de-duplication. FreyaTTS is trained only on internal corpora (sections 3.4 and 3.5) disjoint from the benchmark sources, so every item probes generalization; the exact sentence list and the seeded build scripts are released. 1 Because FreyaTTS is a single-voice synthesizer rather than a zero-shot cloner, we synthesize the reference text of each item and score the output; the two reference-prompt baselines (XTTS-v2, F5-TTS) are given one fixed shared reference clip (cloner scores can be sensitive to this choice). 
+
+Comparison systems. We position FreyaTTS, the shipped 183 .2M single-voice model, against the field of openly available, sub-billion-parameter Turkish TTS systems, the models a practitioner can download and self-host: MMS-TTS-tr (Pratap et al., 2024) ( 36 M, Meta’s VITS-based multilingual TTS), Coqui GlowTTS-tr (∼28 M, flow-based), 
+
+Piper-tr (∼16 M, VITS, on-device), SpeechT5-tr (Ao et al., 2022) ( ∼144 M, fine-tuned on Turkish Common Voice), 
+
+XTTS-v2 (Casanova et al., 2024) ( ∼470 M, multilingual zero-shot cloner), and F5-TTS-Turkish (Chen et al., 2025b) ( ∼336 M, a flow-matching zero-shot cloner fine-tuned for Turkish). 
+
+Metrics. The primary metrics are band-matched WER and CER : every system’s output is downsampled to 8 kHz before transcription with Whisper-large-v3 (Radford et al., 2023), so that FreyaTTS’s telephony-band 48 kHz output (section 3.2) is not penalized relative to natively wideband baselines, and reference and transcript pass the same Turkish text normalization before scoring; the protocol is applied identically to every system. We also report 
+
+real-time factor (RTF): per-utterance synthesis time over audio duration at batch size 1, including AudioVAE2 decoding, averaged over the set, on an H100. Naturalness is measured with a mean opinion score (MOS) listening study: 24 native Turkish raters scored randomized, system-blind samples of every system on a 5-point scale ( 2566 ratings in total, 360 –375 per system); we report per-system means with 95% confidence intervals. 
+
+Voice consistency (section 4.3) is the 𝐹 0 standard deviation across regenerations of the same text. Content 
+
+> 1
+
+Released as freyavoice/freya-tr-eval on HuggingFace. FREYA TTS 11 
+
+similarity is 1 minus the normalized character-level edit distance between the input text and the Whisper-large-v3 transcript of the synthesis. 
+
+4.2 Main Results                                                                    
+
+> Table 2: Conversational Turkish TTS, sub-1B open models. All systems evaluated on the full Freya-TR-Eval set ( 495 everyday, general-purpose Turkish sentences) under an identical protocol: WER /CER from Whisper-large-v3 with 8kHz band-matching (in %), and naturalness MOS from a listening study with 24 native Turkish raters ( 2566 ratings, 360 –375 per system, 5-point scale, 95% confidence intervals). Best per column in bold ; systems ordered by size.
+> System Params WER ↓CER ↓MOS ↑
+> Piper (tr, dfki) 16M 4.4 1.1 3.47 ±0.22
+> Coqui GlowTTS (tr) 28M 12.1 3.3 2.53 ±0.19
+> MMS-TTS (tr) 36M 6.8 1.7 3.58 ±0.20
+> SpeechT5 (tr) 144M 83.4 45.5 1.59 ±0.14
+> FreyaTTS (ours) 183.2M 8.0 3.0 3.68 ±0.22
+> F5-TTS (tr) 336M 24.3 10.9 3.63 ±0.23
+> XTTS-v2 (multi) 470M 11.1 3.9 3.82 ±0.19
+
+FreyaTTS outperforms the larger open systems in its field. Table 2 reports band-matched Whisper WER/CER for every system on the same 495 conversational sentences. FreyaTTS reaches WER 8.0 % and CER 3.0 %, 
+
+outperforming both larger open systems in the field , the zero-shot cloners XTTS-v2 ( ∼470 M, WER 11.1 %) and F5-TTS ( ∼336 M, WER 24.3 %), each 1.8–2.6× its parameter count, despite their larger backbones and far greater training data: cloning a target voice from a short reference generalizes poorly to arbitrary sentences, whereas FreyaTTS carries a single voice natively in its weights. It also comfortably beats the weaker same-class models (GlowTTS, SpeechT5). Piper ( ∼16 M, WER 4.4 %) and MMS-TTS ( ∼36 M, WER 6.8 %) are compact phonemizer-driven VITS baselines whose highly regular pronunciation maximizes recognizer agreement; FreyaTTS supplies the single, consistent learned voice they lack (section 4.3). The listening study bears this out on naturalness: FreyaTTS reaches MOS 3.68 , above every same-class system including the two low-WER VITS baselines (Piper 
+
+3.47 , MMS-TTS 3.58 ) and F5-TTS ( 3.63 ), and second overall only to the 2.6×-larger XTTS-v2 ( 3.82 ); the 95% 
+
+intervals of the top four systems overlap, so we read the MOS column as a ranking rather than pairwise significance. That a 183 M model trained from scratch outperforms every larger open system in this field is the paper’s central empirical claim. 
+
+Statistical robustness, calibration, and the inference layer. Three checks contextualize the headline numbers. First, a sentence-level bootstrap ( 10 ,000 resamples over the 495 items, computed on an independent re-synthesis of the full set) gives WER 7.9% with a 95% confidence interval of [6.8, 9.1] and CER 2.9% [2.4, 3.4], reproducing table 2 within run-to-run noise. Second, two anchors calibrate the protocol’s absolute scale: real human recordings (FLEURS-tr test (Conneau et al., 2023)) transcribe at 9.7% WER under the identical band-matched pipeline, and re-encoding held-out real recordings of the target speaker through the frozen AudioVAE alone costs 2.6% WER – the transcription floor of the latent space itself. FreyaTTS’s 8.0% is therefore comparable in magnitude to the recognizer’s error on real human speech, though the two are measured on different corpora and Whisper WER is sensitive to text distribution, and sits within 5.4 points of the latent space’s floor. Third, ablating the entire inference layer of section 3.6 (normalization, clause chunking, duration floor, voicing retry) moves WER by at most 
+
+0.3 points (paired bootstrap 95% CI of the difference [− 0.3, 0.0]); the voicing retry fires on 1 of 495 sentences and clause chunking on 7 of 495 . The guards are tail insurance against rare failure modes, not a crutch the headline numbers depend on. Error does climb with input length on a length-swept probe (fig. 2c): long-horizon drift on long utterances is mitigated, though not eliminated, by this clause chunking. FREYA TTS 12 
+
+4.3 Speaker Consistency and the Voice-Lock 
+
+Because FreyaTTS carries no speaker field and no reference-prompt pathway, the pretrained prior has no notion of speaker identity: the Gaussian prior 𝑥 0 seeds a fresh, uncontrolled speaker on every generation. Figure 2b makes this concrete. Regenerating a fixed text many times (a 114 -generation voice-consistency probe), the pretrained model’s per-generation median 𝐹 0 spans roughly 70 –347 Hz, with a standard deviation of 74 .9 Hz and a 60% rate of crossing the 165 Hz male/female pitch boundary between successive draws. Intelligibility metrics are blind to this (the content is correct on each draw), yet for a deployed single-voice product it is a categorical failure: the listener hears a different person each turn. The voice-lock stage writes a single identity into the weights. Full-parameter fine-tuning on the consented target speaker (SFT-v1; section 3.5) collapses the cross-generation 𝐹 0 standard deviation from 74 .9 Hz to 5.0 Hz and effectively eliminates the gender flips, while the content-similarity metric of section 4.1 reaches 0.923 : the model now emits a deterministic, consistent target voice regardless of the noise draw (fig. 2b), measured on sentence-length in-distribution text. A speaker-verification embedding confirms the lock at the identity level: the ECAPA-TDNN (Desplanques et al., 2020) cosine similarity between FreyaTTS syntheses and the target-speaker centroid is 0.873 ± 0.029 , within one standard deviation of the 0.883 ± 0.026 same-speaker ceiling measured on disjoint real recordings of the speaker, and far above the 0.140 different-speaker floor. The identity is a property of the parameters, not of a prompt: no reference audio is supplied at inference. We select the step-1000 checkpoint because prolonged fine-tuning over-specializes and destabilizes the voice, with the consistency standard deviation drifting back from 5.0 Hz toward 11 Hz by step 3k. SFT also stabilizes pronunciation: all-caps acronyms are spoken natively as words rather than spelled out, and isolated short utterances, covered by SFT-v2’s mined one-word and two-word segments (section 3.5), are rendered cleanly. This pretrain-to-SFT contrast, an unconditioned multi-speaker prior turned into a locked single voice, is the mechanism by which the foundation-style generative prior becomes a deployable single-voice product. 
+
+4.4 Inference Efficiency 
+
+FreyaTTS generates 48 kHz audio non-autoregressively: given the duration head’s predicted length ˆ𝑇 , a single fixed-step Euler integrator runs 32 ODE steps from noise to a clean latent sequence, which the frozen AudioVAE decodes in one pass (section 3.6). The number of sequential solver steps is fixed at 32 regardless of ˆ𝑇 , there is no left-to-right error accumulation, and a plain deterministic integrator suffices, without classifier-free guidance or sway sampling. At 183 .2M parameters the model fits in 1.5 GB of VRAM.                                                                           
+
+> Table 3: Inference efficiency on a single RTX 4090 (fp32/bf16 as released, batch size 1, end-to-end including vocoder/VAE decoding; median of 10 runs after 3warmups on a fixed Turkish prompt set of three length buckets (five sentences each; released with our code)). TTFT = time to first audio on the long bucket ( 22 –28 words): native streaming first-chunk for XTTS-v2, first synthesized clause for FreyaTTS, full-utterance latency for the offline systems. RTF = synthesis time over audio duration. Throughput = aggregate audio-seconds per wall-second over a 45 -utterance queue at the best concurrency level ( 𝐶 engines in separate processes). Best per column in bold .†Serving-style rows: VoxCPM2 through the nanovllm continuous-batching engine (chunk streaming, 16 concurrent sequences, GPU-memory utilization 0.5), and FreyaTTS through a static-batching ODE server (padded batch, one masked 32 -step solve; TTFT column reports its per-batch latency at 𝐵 =8). All other rows are the systems’ released library stacks.
+> System Params VRAM (GB) TTFT long (s) RTF med RTF long Throughput FreyaTTS (ours) 183M 1.5 0.52 0.11 0.10 9.4 ( 𝐶 =4)F5-TTS (tr) ∼336M 0.8 0.74 0.13 0.05 8.4 ( 𝐶 =2)XTTS-v2 (multi) ∼470M 2.2 0.30 0.33 0.33 3.4 ( 𝐶 =2)Spark-TTS ∼0.5B 5.4 14.0 1.08 1.04 1.4 ( 𝐶 =2)VoxCPM2 ∼2B 5.5 4.2 0.37 0.37 1.7 ( 𝐶 =1)VoxCPM2 (serving engine) †∼2B 11.4 0.14 0.15 0.13 24.8 ( 𝐶 =16 )
+> FreyaTTS (batched ODE) †183M 3.8 0.54 ––65.2 (𝐵 =8)FREYA TTS 13
+
+Table 3 measures FreyaTTS against four larger open systems, including the ∼2B VoxCPM2 (Zhou et al., 2026) whose AudioVAE2 we reuse, the autoregressive Spark-TTS (Wang et al., 2025), XTTS-v2 (Casanova et al., 2024), and F5-TTS (Chen et al., 2025b), each run end-to-end through its released inference stack with default sampling on an RTX 4090. Among the released library stacks, FreyaTTS attains the best medium-sentence RTF ( 0.11 ) and the highest throughput ( 9.4 audio-seconds per wall-second with four concurrent engines) at the second-smallest memory footprint. Against the production-class VoxCPM2 it is 3.4× faster in medium-bucket RTF, 8× faster to first audio on long inputs, 3.7× smaller in VRAM, and 5.5× higher in throughput; against the autoregressive Spark-TTS the gaps widen to roughly 10 × in RTF and 27 × in TTFT. The optimized F5-TTS runtime is the one system in the same speed class: its fused bf16 kernel path reaches a lower long-form RTF, while FreyaTTS, running unoptimized fp32 eager PyTorch, retains lower TTFT, higher throughput, and, per table 2, a three-times-lower Turkish WER with no reference clip at inference. XTTS-v2’s native chunk streaming yields the best library-stack TTFT ( 0.30 s) at roughly 3× the RTF. We additionally measure VoxCPM2 through a dedicated continuous-batching serving engine (nanovllm) rather than its released library stack: chunk streaming brings its TTFT to 0.14 s and batching lifts throughput to 24 .8 audio-seconds per wall-second at 16 concurrent sequences, at 11 .4 GB of reserved VRAM. A serving engine is thus worth roughly an order of magnitude on both axes for the 2B model. The same treatment favors the non-autoregressive design even more: a static-batching ODE server for FreyaTTS (pad the batch, run one masked 32 -step solve, decode, trim; released with our inference tooling) reaches 65 .2 audio-seconds per wall-second at batch size 8 with a 0.54 s per-batch latency and 3.8 GB of VRAM, 2.6× the 2B engine’s continuous-batching throughput at one-third of its memory, before any length-bucketing or chunk-streaming refinements. On an H100, FreyaTTS’s benchmark-set mean RTF is ≈0.14 .The compact size also admits deployment classes the systems of table 3 do not target. On a laptop CPU (Apple M3, four threads, fp32, no quantization) FreyaTTS synthesizes at or faster than real time: RTF 0.70 on medium-length sentences and 0.94 –1.00 on the short and long buckets, with a 5.7 s first-clause TTFT on long inputs. Compiled to Core ML at fp16, the DiT’s full 32 -step loop renders 4.4 s of audio in 0.205 s on the laptop’s neural engine (RTF 
+
+0.047 ) and 0.72 s on CPU only (RTF 0.165 ), with AudioVAE decoding adding 0.33 s on CPU, for an end-to-end real-time factor of ≈0.12 on consumer Apple silicon. A model competitive with the fastest GPU systems of its field while synthesizing faster than real time on a laptop CPU is an operating point that pairs the foundation-style generative prior with genuinely edge-deployable inference. 
+
+# 5 Conclusion and Future Work 
+
+In this work, we presented FreyaTTS, a tokenizer-free, non-autoregressive flow-matching model for Turkish conversational speech synthesis. Built as a compact 183 .2M-parameter conditional flow-matching Diffusion Transformer inside the frozen 25 Hz continuous-latent space of the AudioVAE2 (Zhou et al., 2026), and driven by a 92 -symbol character vocabulary with no phonemizer, grapheme-to-phoneme frontend, or discrete speech tokenizer, FreyaTTS is trained from scratch on a large-scale Turkish speech corpus and denoises an entire utterance in parallel in a fixed 32 -step ODE. A two-stage pretrain-to-SFT recipe, a single-speaker voice lock ( 𝐹 0
+
+standard deviation 74 .9 → 5.0 Hz) followed by short-utterance coverage, converts the speaker-agnostic prior into a reliability-hardened single-voice production model. Evaluated under a band-matched Whisper WER/CER protocol on the released Freya-TR-Eval benchmark, FreyaTTS (WER 8.0 %, CER 3.0 %) outperforms both larger open systems, XTTS-v2 and F5-TTS, at a real-time factor of ≈0.14 and roughly 40 –55% of their parameter count. While FreyaTTS delivers strong results for its size, several challenges remain. Two compact phonemizer-driven VITS baselines still attain lower error on clean conversational text; digit-dense input requires spoken-form expansion at the text frontend, because the character-level duration predictor under-allocates frames for compact digit strings; and the shipped voice inherits a narrowband fidelity ceiling from its telephony-band source. Future work will focus on a jointly learned CTC-monotonic aligner, already prototyped, that targets the residual word-skip and long-horizon-drift failures a single global length prediction cannot prevent; preference-based post-training (Rafailov et al., 2023) from intelligibility and voicing rewards; extending the voice-lock recipe from one speaker to multiple voices and natural-language voice design; and explicit bandwidth extension so that a narrowband-trained speaker can be rendered in true wideband. We hope the open release of FreyaTTS, the model weights, the Freya-TR-Eval FREYA TTS 14 
+
+benchmark, and the inference tooling provides a solid foundation for Turkish and low-resource speech research. 
+
+# Contributors 
+
+Ahmet Erdem Pamuk, Ömer Yentür, Ahmet Tunga Bayrak, Yavuz Alp Sencer Öztürk, Mustafa Yavuz. 
+
+# References 
+
+Philip Anastassiou, Jiawei Chen, Jitong Chen, Yuanzhe Chen, Zhuo Chen, Ziyi Chen, Jian Cong, Lelai Deng, Chuang Ding, Lu Gao, et al. Seed-tts: A family of high-quality versatile speech generation models. arXiv preprint arXiv:2406.02430 , 2024. Junyi Ao, Rui Wang, Long Zhou, Chengyi Wang, Shuo Ren, Yu Wu, Shujie Liu, Tom Ko, Qing Li, Yu Zhang, Zhihua Wei, Yao Qian, Jinyu Li, and Furu Wei. SpeechT5: Unified-modal encoder-decoder pre-training for spoken language processing. In 
+
+Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (ACL) , pp. 5723–5738, 2022. Rosana Ardila, Megan Branson, Kelly Davis, Michael Henretty, et al. Common voice: A massively-multilingual speech corpus. In Language Resources and Evaluation Conference (LREC) , 2020. Zalán Borsos, Raphaël Marinier, Damien Vincent, Eugene Kharitonov, Olivier Pietquin, Matt Sharifi, Dominik Roblek, Olivier Teboul, David Grangier, Marco Tagliasacchi, et al. Audiolm: a language modeling approach to audio generation. IEEE/ACM transactions on audio, speech, and language processing , 31:2523–2533, 2023. Edresson Casanova, Kelly Davis, Eren Gölge, Görkem Göknar, Iulian Gulea, Logan Hart, Aya Aljafari, Joshua Meyer, Reuben Morais, Samuel Olayemi, et al. Xtts: a massively multilingual zero-shot text-to-speech model. arXiv preprint arXiv:2406.04904 , 2024. Sanyuan Chen, Chengyi Wang, Yu Wu, Ziqiang Zhang, Long Zhou, Shujie Liu, Zhuo Chen, Yanqing Liu, Huaming Wang, Jinyu Li, et al. Neural codec language models are zero-shot text to speech synthesizers. IEEE Transactions on Audio, Speech and Language Processing , 2025a. Yushen Chen, Zhikang Niu, Ziyang Ma, Keqi Deng, Chunhui Wang, JianZhao JianZhao, Kai Yu, and Xie Chen. F5-tts: A fairytaler that fakes fluent and faithful speech with flow matching. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 6255–6271, 2025b. Alexis Conneau, Min Ma, Simran Khan, Yu Zhang, et al. FLEURS: Few-shot learning evaluation of universal representations of speech. In IEEE Spoken Language Technology Workshop (SLT) , 2023. Alexandre Défossez, Jade Copet, Gabriel Synnaeve, and Yossi Adi. High fidelity neural audio compression. arXiv preprint arXiv:2210.13438 , 2022. Brecht Desplanques, Jenthe Thienpondt, and Kris Demuynck. ECAPA-TDNN: Emphasized channel attention, propagation and aggregation in TDNN based speaker verification. In Interspeech , 2020. Zhihao Du, Qian Chen, Shiliang Zhang, Kai Hu, Heng Lu, Yexin Yang, Hangrui Hu, Siqi Zheng, Yue Gu, Ziyang Ma, et al. Cosyvoice: A scalable multilingual zero-shot text-to-speech synthesizer based on supervised semantic tokens. arXiv preprint arXiv:2407.05407 , 2024. Zhihao Du, Changfeng Gao, Yuxuan Wang, Fan Yu, Tianyu Zhao, Hao Wang, Xiang Lv, Hui Wang, Chongjia Ni, Xian Shi, et al. Cosyvoice 3: Towards in-the-wild speech generation via scaling-up and post-training. arXiv preprint arXiv:2505.17589 ,2025. Sefik Emre Eskimez, Xiaofei Wang, Manthan Thakker, Canrun Li, Chung-Hsien Tsai, Zhen Xiao, Hemin Yang, Zirun Zhu, Min Tang, Xu Tan, et al. E2 tts: Embarrassingly easy fully non-autoregressive zero-shot tts. In 2024 IEEE spoken language technology workshop (SLT) , pp. 682–689. IEEE, 2024. Weichen Fan, Amber Yijia Zheng, Dejia Zhu, Yao Ma, Nikola Liu, Zhangyang Wang, and Dilin Liu. Cfg-zero*: Improved classifier-free guidance for flow matching models. arXiv preprint arXiv:2503.18886 , 2025. FREYA TTS 15 
+
+Haorui He, Zengqiang Shang, Chaoren Wang, Xuyuan Li, Yicheng Gu, Hua Hua, Liwei Liu, Chen Yang, Jiaqi Li, Peiyang Shi, et al. Emilia: An extensive, multilingual, and diverse speech dataset for large-scale speech generation. In 2024 IEEE Spoken Language Technology Workshop (SLT) , pp. 885–890. IEEE, 2024. Hangrui Hu, Xinfa Zhu, Ting He, Dake Guo, Bin Zhang, Xiong Wang, Zhifang Guo, Ziyue Jiang, Hongkun Hao, Zishan Guo, et al. Qwen3-tts technical report. arXiv preprint arXiv:2601.15621 , 2026. Dongya Jia, Zhuo Chen, Jiawei Chen, Chenpeng Du, Jian Wu, Jian Cong, Xiaobin Zhuang, Chumin Li, Zhen Wei, Yuping Wang, et al. Ditar: Diffusion transformer autoregressive modeling for speech generation. In International Conference on Machine Learning , pp. 27255–27270. PMLR, 2025. Zeqian Ju, Yuancheng Wang, Kai Shen, Xu Tan, et al. NaturalSpeech 3: Zero-shot speech synthesis with factorized codec and diffusion models. International Conference on Machine Learning (ICML) , 2024. Amirhossein Kazemnejad, Inkit Padhi, Karthikeyan Natesan Ramamurthy, Payel Das, and Siva Reddy. The impact of positional encoding on length generalization in transformers. Advances in Neural Information Processing Systems , 36:24892–24928, 2023. Jaehyeon Kim, Jungil Kong, and Juhee Son. Conditional variational autoencoder with adversarial learning for end-to-end text-to-speech. In International Conference on Machine Learning (ICML) , 2021. Rithesh Kumar, Prem Seetharaman, Alejandro Luebs, Ishaan Kumar, and Kundan Kumar. High-fidelity audio compression with improved rvqgan. Advances in Neural Information Processing Systems , 36:27980–27993, 2023. Matthew Le, Apoorv Vyas, Bowen Shi, Brian Karrer, Leda Sari, Rashel Moritz, Mary Williamson, Vimal Manohar, Yossi Adi, Jay Mahadeokar, et al. Voicebox: Text-guided multilingual universal speech generation at scale. Advances in neural information processing systems , 36:14005–14034, 2023. Tianhong Li, Yonglong Tian, He Li, Mingyang Deng, and Kaiming He. Autoregressive image generation without vector quantization. Advances in Neural Information Processing Systems , 37:56424–56445, 2024. Yinghao Aaron Li, Cong Han, Vinay Raghavan, Gavin Mischler, and Nima Mesgarani. StyleTTS 2: Towards human-level text-to-speech through style diffusion and adversarial training with large speech language models. In Advances in Neural Information Processing Systems (NeurIPS) , 2023. Yaron Lipman, Ricky T Q Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. 
+
+International Conference on Learning Representations (ICLR) , 2023. Zhuang Liu, Hanzi Mao, Chao-Yuan Wu, Christoph Feichtenhofer, Trevor Darrell, and Saining Xie. A ConvNet for the 2020s. 
+
+IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022. Shivam Mehta, Ruibo Tu, Jonas Beskow, Éva Székely, and Gustav Eje Henter. Matcha-TTS: A fast TTS architecture with conditional flow matching. In IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2024. Lingwei Meng, Long Zhou, Shujie Liu, Sanyuan Chen, Bing Han, Shujie Hu, Yanqing Liu, Jinyu Li, Sheng Zhao, Xixin Wu, et al. Autoregressive speech synthesis without vector quantization. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pp. 1287–1300, 2025. Fabian Mentzer, David Minnen, Eirikur Agustsson, and Michael Tschannen. Finite scalar quantization: Vq-vae made simple. In 
+
+The Twelfth International Conference on Learning Representations , 2024. William Peebles and Saining Xie. Scalable diffusion models with transformers. In IEEE/CVF International Conference on Computer Vision (ICCV) , 2023. Vadim Popov, Ivan Vovk, Vladimir Gogoryan, Tasnima Sadekova, and Mikhail Kudinov. Grad-TTS: A diffusion probabilistic model for text-to-speech. In International Conference on Machine Learning (ICML) , 2021. Vineel Pratap, Andros Tjandra, Bowen Shi, et al. Scaling speech technology to 1,000+ languages. Journal of Machine Learning Research , 2024. Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision. In International Conference on Machine Learning (ICML) , 2023. FREYA TTS 16 
+
+Rafael Rafailov, Archit Sharma, Eric Mitchell, Christopher D Manning, Stefano Ermon, and Chelsea Finn. Direct preference optimization: Your language model is secretly a reward model. In Advances in Neural Information Processing Systems (NeurIPS) , 2023. Yi Ren, Chenxu Hu, Xu Tan, Tao Qin, Sheng Zhao, Zhou Zhao, and Tie-Yan Liu. Fastspeech 2: Fast and high-quality end-to-end text to speech. In International Conference on Learning Representations , 2020. Jonathan Shen, Ruoming Pang, Ron J Weiss, Mike Schuster, Navdeep Jaitly, Zongheng Yang, Zhifeng Chen, Yu Zhang, Yuxuan Wang, Rj Skerrv-Ryan, et al. Natural tts synthesis by conditioning wavenet on mel spectrogram predictions. In 2018 IEEE international conference on acoustics, speech and signal processing (ICASSP) , pp. 4779–4783. IEEE, 2018. Kai Shen, Zeqian Ju, Xu Tan, Eric Liu, Yichong Leng, Lei He, Tao Qin, Jiang Bian, et al. Naturalspeech 2: Latent diffusion models are natural and zero-shot speech and singing synthesizers. In The Twelfth International Conference on Learning Representations , 2023. Jianlin Su, Murtadha Ahmed, Yu Lu, Shengfeng Pan, Wen Bo, and Yunfeng Liu. Roformer: Enhanced transformer with rotary position embedding. Neurocomputing , 568:127063, 2024. MiniCPM Team, Chaojun Xiao, Yuxuan Li, Xu Han, Yuzhuo Bai, Jie Cai, Haotian Chen, Wentong Chen, Xin Cong, Ganqu Cui, et al. Minicpm4: Ultra-efficient llms on end devices. arXiv preprint arXiv:2506.07900 , 2025. Alexander Tong, Kilian Fatras, Nikolay Malkin, et al. Improving and generalizing flow-based generative models with minibatch optimal transport. Transactions on Machine Learning Research (TMLR) , 2024. Changhan Wang, Anne Wu, and Juan Pino. CoVoST 2 and massively multilingual speech translation. In Interspeech , 2021. Xinsheng Wang, Mingqi Jiang, Ziyang Ma, Ziyu Zhang, Songxiang Liu, Linqin Li, Zheng Liang, Qixi Zheng, Rui Wang, Xiaoqin Feng, et al. Spark-tts: An efficient llm-based text-to-speech model with single-stream decoupled speech tokens. arXiv preprint arXiv:2503.01710 , 2025. Yixuan Zhou, Guoyang Zeng, Xin Liu, Xiang Li, Renjie Yu, Ziyang Wang, Runchuan Ye, Weiyue Sun, Jiancheng Gui, Kehan Li, et al. Voxcpm: Tokenizer-free tts for context-aware speech generation and true-to-life voice cloning. arXiv preprint arXiv:2509.24650 , 2025. Yixuan Zhou, Guoyang Zeng, Xin Liu, Xiang Li, Renjie Yu, Jiancheng Gui, Jiaheng Wu, Ziyang Wang, Xudong Shen, Runchuan Ye, Zhisheng Zhang, Jiuyang Zhou, Bingsong Bai, Weiyue Sun, Mengyuan Deng, Qundong Shi, Zhiyong Wu, and Zhiyuan Liu. Voxcpm2 technical report. arXiv preprint arXiv:2606.06928 , 2026. Han Zhu, Wei Kang, Zengwei Yao, Liyong Guo, Fangjun Kuang, Zhaoqing Li, Weiji Zhuang, Long Lin, and Daniel Povey. Zipvoice: Fast and high-quality zero-shot text-to-speech with flow matching. arXiv preprint arXiv:2506.13053 , 2025. Han Zhu, Lingxuan Ye, Wei Kang, Zengwei Yao, Liyong Guo, Fangjun Kuang, Zhifeng Han, Weiji Zhuang, Long Lin, and Daniel Povey. Omnivoice: Towards omnilingual zero-shot text-to-speech with diffusion language models. arXiv preprint arXiv:2604.00688 , 2026.

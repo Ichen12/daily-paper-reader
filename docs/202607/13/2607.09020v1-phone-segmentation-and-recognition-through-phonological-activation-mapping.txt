@@ -1,0 +1,356 @@
+Title: Phone Segmentation and Recognition through Phonological Activation Mapping
+
+URL Source: https://arxiv.org/pdf/2607.09020v1
+
+Published Time: Mon, 13 Jul 2026 00:14:54 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Phone Segmentation and Recognition through Phonological Activation Mapping 
+
+Shikhar Bharadwaj §∗ , Kwanghee Choi †∗ , Stephen McIntosh ‡∗ , Chin-Jou Li §, Eunjung Yeo †,Daisuke Saito ‡, Nobuaki Minematsu ‡, Shinji Watanabe §, Jian Zhu ¶, David Harwath † and David R. Mortensen §§CMU, USA †UT Austin, USA ‡UTokyo, Japan ¶UBC, Canada 
+
+{sbharad2,dmortens }@andrew.cmu.edu {kwanghee,harwath }@utexas.edu {smcintosh,mine }@gavo.t.u-tokyo.ac.jp 
+
+Abstract —Phone segmentation and recognition are inherently related tasks, yet modern approaches typically model them separately. We argue that phonetic structure is already latent in the representations of self-supervised speech models (S3Ms), and one only needs to steer them to solve both tasks. We leverage S3M-based Phonological Activation Mapping (SPAM), which maps each S3M representation frame to a vector of phonological feature activations, such as voicing and nasality. On top of SPAM, we introduce two simple but effective lightweight, gradient-descent-free prediction heads: a recognition head and a segmentation head. Our method requires less than a minute of phonetic transcriptions, and generalizes to unseen phones during training. Across a diverse range of datasets, our approach attains strong segmentation and recognition performance. 
+
+Index Terms —phone segmentation, phone recognition, self-supervised learning, phonetics, phonology 
+
+I. I NTRODUCTION 
+
+Phones are the smallest independent units of speech sound, conventionally transcribed across languages with the Inter-national Phonetic Alphabet (IPA). Locating and recognizing them, i.e. , phone segmentation and recognition, yields time-aligned phonetic transcriptions [1], [2]. These are foundational to a range of applications, including clinical assessment of pathological speech, computer-assisted pronunciation training, and the documentation of endangered languages [3]–[8]. However, obtaining such annotations is challenging, since expert phonetic transcription is slow and costly. Annotating one hour of speech can take a trained phonetician roughly 40 to 100 hours [9], [10]. Transcriptions can also be subjective, with even experienced transcribers sometimes disagreeing on phone labels and segment boundaries [11], [12]. These challenges have motivated automatic phone recogni-tion and segmentation models. Modern phone recognition is typically framed as a sequence-to-sequence task, much like automatic speech recognition (ASR) [13]–[16]. Accordingly, it is often trained with a connectionist temporal classification (CTC) loss [13], [17] or an attention-based encoder-decoder architecture [15], [18], [19]. Phone segmentation, by contrast, is typically cast as frame-wise classification [20]–[23], labeling each frame as a boundary (1) or not (0). Yet for human listeners, the two are inseparable: hearing speech, we perceive both which phones are spoken and where they occur in time. This 
+
+∗These authors contributed equally. Author order determined by random shuffling. Projected rt 
+
+> rt
+> Projected rt
+> rt
+
+Fig. 1. Overview of S3M-based Phonological Activation Mapping (SPAM). 
+
+Left : Phonological vectors [27], [28] can be found in S3M representation space by taking the difference of means. For example, vvoi+ is the difference between the mean representations of voiced phones and other phones. 
+
+Right : S3M frame representations rt and rt′ from different timesteps t
+
+and t′ are projected onto phonological vectors [8], [28] ( e.g. , vback+ ), yielding activation values (top right). Stacking these projections from different phonological vectors for each frame produces a time-aligned activation mapping (bottom right). 
+
+raises a natural question: can recognition and segmentation be addressed through a unified representation? We argue that they can, since the representations of self-supervised speech models (S3Ms) [24]–[26] already encode sufficient information for both phone recognition and segmen-tation [27], [28]. In particular, S3M representation geometry is dominated by phonetic information [25], [29]–[33]. To isolate phonetic information, we turn to phonological feature decomposition [34]. Rather than treating each phone as an atomic label, phonological features describe phones through physical descriptions such as the presence of voicing, tongue height, and lip rounding. In this framework, a phone becomes a vector of feature values. For example, [u] as in goose is represented as [voi+, hi+, back+, round+, ...] .
+
+PanPhon is a library that maps over 5,000 IPA segments to 21 such features [34]. Recent work [27], [28] shows that these phonological features can be accurately modeled as linear directions, i.e. ,
+
+phonological vectors , in the representation space of some S3Ms. For instance, adding the voicing vector to a representa-tion of [s] moves it toward [z] (Figure 1, left). Estimating these vectors is known to be highly sample-efficient [27], a major practical advantage given the difficulties of expert annotation. Projecting a frame’s S3M representation onto these arXiv:2607.09020v1 [eess.AS] 10 Jul 2026 vectors yields an activation value for each phonological feature (Figure 1, top right). Stacking these phonological activations over time results in an S3M-based Phonological Activation Map [8], [28], or SPAM (Figure 1, bottom right). This produces a time-aligned phonological representation of the speech. We design a segmentation head that locates phone bound-aries through dissimilarity between adjacent phonological activations, inspired by prior work on acoustic and raw S3M representations [35]–[37]. We also design a recognition head 
+
+based on SPAM, which simply predicts phone identity at a frame from its phonological activations. Accordingly, we can predict any cataloged phone in PanPhon , even if it does not exist in the training data. We claim that SPAMs have some key advantages for phonetic tasks like segmentation and recognition. They are based on a naturally occurring representation subspace aligned with human linguistic abstractions, which generalizes across many languages. Therefore, SPAM provides interpretability, generalization and sample efficiency by design. Our contributions are as follows:  
+
+> •
+
+Novel segmentation and recognition methods. We design two interpretable, lightweight, gradient-descent-free prediction heads that perform both tasks directly on SPAM (Section III, Figure 2).  
+
+> •
+
+Generalization and sample-efficiency. Our method needs less than a minute of labeled data (Section V-A ), recog-nizes phones never seen during training (Section V-C ), and generalizes well to low-resource languages and atypical speech (Section IV).  
+
+> •
+
+Comprehensive evaluation. We benchmark across a wide array of datasets and languages, reflecting realistic downstream use cases (Section IV). II. R ELATED WORK 
+
+Segmentation. Classic methods place boundaries at peaks of frame-to-frame acoustic dissimilarity [35], with mel-spectrogram dissimilarity still a surprisingly strong base-line [38]. Recent works use learned representations such as S3M [20] or self-supervised CPC [37], [39], and HMMs over S3M features [38]. However, all stop at boundary detection, where we also explore phone recognition. 
+
+Recognition. Modern multilingual phonetic recognizers, such as Allosaurus [40], Allophant [41], Wav2Vec2Phoneme [13], ZIPA [14], and PhoneticXeus [16], often learn a CTC, transducer, or encoder–decoder from large phone-transcribed datasets or grapheme-to-phoneme (G2P) pseudo-labels. Allo-phant is the closest to our recognition head, using articulatory attributes. Ours, in contrast, is gradient-descent-free, choosing each phone by matching its PanPhon feature vector against SPAM, requiring much less data. 
+
+Segmentation and recognition. Chang and Glass [36] propose “segmentation by recognition,” producing phone boundaries through segment-based recognition rather than purely local features. More recent text-independent phone-to-audio align-ment systems include Wav2Vec2-FC, Wav2Vec2-FS [21], and TIPAA-SSL [42]. Wav2Vec2-FC uses frame-level cross-entropy S3M          
+
+> (Section III-A)
+> Phonological Vectors (III-B)
+> Prediction
+> [0.00-0.14 _][0.14-0.22 ʃ][0.22-0.34 i]
+> Segmenter (III-D) Recognizer (III-C)
+> Raw Audio
+> IPA
+> S3M Features
+> SPAM
+> ΔSPAM
+> Time (s)
+> Fig. 2. Overview of our method (Section III).
+
+(FCE), Wav2Vec2-FS uses forward-sum alignment without frame-level labels (similar to CTC), and TIPAA-SSL combines CTC with FCE. In contrast, we use no training loss, relying on the phonetic structure SPAM already exposes. III. M ETHOD 
+
+A. S3M-based Phonological Vectors 
+
+S3M representation. A self-supervised speech model (S3M) encodes a waveform into a sequence D dimensional frame-level representations R = ( r1, . . . , rT ), where rt ∈ RD and T is the number of frames. These can be read from any transformer layer, although this choice matters since phonetic information is distributed unevenly across layers [32]. Following [27], [28], we primarily use the final layer of WavLM-large [26] for our experiments, where we additionally ablate different models and layers at Section V-D. 
+
+Pooling. We extract a single vector for each phone, which typically spans several temporal frames, using center pooling: the phone is represented by the frame at the center rather than by averaging over the span [33], [43]. Center-pooled representations are preferable for extracting phonological vectors, as phonetic arithmetic [27] holds more reliably on them than on average-pooled representations [28], [31]. 
+
+Phonological vectors. Recent work [27], [28] shows that, within an S3M’s representation space, each phonological feature can be effectively modeled as linear direction recoverable as a difference of means. We use PanPhon [34] to assign each phone its phonological features. Note that PanPhon uses a ternary feature system with +/0/−. + and − mark a property’s presence or absence ( e.g. , voiced versus voiceless), and 0 marks that the property does not apply to the phone ( e.g. , tenseness, which describes only vowels, is 0 for consonants). We split each ternary feature into two binary channels: 
+
+feature+ and feature- [27], resulting in a set of phono-logical channels C. These are 1 when the feature is + or −,respectively, and 0 otherwise. Pooling all training utterances, let Si denote the set of all phone segments where channel i ∈ C is 1 (i.e. , active). We denote its complement by S∁ 
+
+> i
+
+.For example, Svoi+ contains all voiced segments, and S∁
+
+> voi+
+
+contains all other segments. We discard channels whose positive or complement set is empty for the training vocabulary. Let c(s) represent the center frame of segment s. The phonological vector for channel i is a difference of means: 
+
+vi = Es∈S i
+
+rc(s)
+
+ − Es∈S ∁
+
+> i
+
+rc(s)
+
+ = μi − μ∁ 
+
+> i
+
+(1) For example, for the voicing feature, we estimate two phono-logical vectors: vvoi+ = μvoi+ − μ∁ 
+
+> voi+
+
+and vvoi- = μvoi- −
+
+μ∁
+
+> voi-
+
+.
+
+B. S3M-based Phonological Activation Mapping (SPAM) 
+
+Using these phonological vectors, we turn the frame-wise S3M representations rt into S3M-based Phonological Acti-vation Mapping (SPAM). Recent works [8], [28] use this for visualization, whereas we formally define it and apply it to phone segmentation and recognition. By measuring the similarity between each phonological vector and each repre-sentation, it yields a phonological activation vector mt ∈ R|C|.Specifically, we project each frame-wise representation rt onto each phonological vector vi and apply a per-channel affine normalization, so that the different channels share a common range of values: 
+
+mt,i = γλi
+
+(r⊤ 
+
+> t
+
+vi − αi), (2) where γ is a scaling constant 1 and αi, λ i are, respectively, the midpoint between and difference of the projected means, μ⊤ 
+
+> i
+
+vi
+
+and μ∁⊤ 
+
+> i
+
+vi:
+
+αi = 12
+
+
+
+μ⊤ 
+
+> i
+
+vi + μ∁⊤ 
+
+> i
+
+vi
+
+
+
+, λi = μ⊤ 
+
+> i
+
+vi − μ∁⊤ 
+
+> i
+
+vi. (3) Stacking mt along the time axis yields a SPAM M ∈ RT ×| C|.
+
+Silence and closure handling. Beyond the two channels per PanPhon feature, we add a dedicated silence channel and two extra channel pairs, closure ( ±) and release ( ±). The phonological vectors described above are designed to distinguish phones, not speech and silence. Thus, we introduce an additional channel, silence+ , trained by assigning silent segments to the positive set. Also, the closure and release channels target stops and affricates, which are realized as two acoustic phenomena: a near-silent closure followed by a release burst. (TIMIT separately transcribes closure and release for stops and affricates.) We collapse the closure and release back to the base phone during segmentation and recognition. 
+
+C. Recognition head 
+
+Because the SPAM channels are PanPhon features, recog-nition requires no trained classifier: a segment is labeled with the phone whose phonological feature vector best matches its SPAM activations. To do this, we precompute a canonical vector pv ∈ R|C| for each vocabulary item v in PanPhon 
+
+phone inventory. 2 Each channel contains the canonical channel     
+
+> 1We fix the scaling constant γ= 4 for all of our experiments.
+> 2We restrict the inventory to segments with a defined consonantal value (cons ̸= 0 ), which excludes tones; we leave tone modeling to future work.
+
+value for that phone, normalized by the number of active channels (each canonical vector sums to 1). For each segment 
+
+s delimited by the segmentation head (Section III-D ), we read the SPAM at its center frame c(s) and predict the phone, ˆv, as 
+
+ˆv = arg max  
+
+> v
+
+σ(mc(s))⊤pv , (4) where σ applies the sigmoid function element-wise to a vector. This amounts to a nearest-neighbor lookup in PanPhon 
+
+and has no learned parameters. This means that recognizer can output phones never seen during training; extending it to a new phone requires only preparing a new canonical vector based on its phonological features, and restricting outputs to a known language’s inventory requires only filtering the set of canonical vectors. 
+
+D. Segmentation head 
+
+Our segmentation head is based on prominence-based peak detection [44], applied to an ensemble of segmentation signals derived from SPAM and mel spectrogram of the waveform. Therefore, like the recognition head, the segmentation head is also gradient-descent-free. We now define the individual segmentation signals: 
+
+Difference between frames. Inspired by classical ap-proaches [45], we place boundaries at points of maximal temporal change by measuring the cosine distance between adjacent frames of the SPAM: 
+
+δ1(t) = 1 − cos( mt−1, mt), (5) where prominent peaks imply changes in phonological features, 
+
+i.e. , a phonetic boundary. 
+
+Multi-scale differences. A single adjacent-frame distance (Equation (5)) can be blurred by gradual transitions that unfold over several frames. We therefore add wider differences, centered near the frame t:
+
+δ2(t) = 1 − cos( mt−1, mt+1 ), (6) 
+
+δ3(t) = 1 − cos( mt−2, mt+1 ), (7) which accumulate change across a broader context while keeping the peak aligned to the boundary. 
+
+Backward contrast. [28] showed that position-dependent phonological subspaces exist within self-supervised represen-tations. In other words, one S3M frame also encodes the phonological features of the preceding phone. Based on this, we predict the previous phone’s phonological activations directly from the current S3M frame rt through a least-squares regressor, which has a closed-form solution: 
+
+> ↼
+
+W = arg min WEl,s ∥W⊤rc(s) − mc(l)∥2. (8) Here, we take all adjacent phone segment pairs l, s in the training data where l is a segment immediately preceding s.Based on the predicted activations ↼
+
+mt = ↼
+
+W⊤rt, we form a backward contrast at scale ℓ ∈ { 1, 2, 3} and anchor offset 
+
+a = ⌊ℓ/ 2⌋ to keep the peak aligned to the boundary: 
+
+βℓ(t) = cos ( ↼
+
+mt+a, mt+a−ℓ) − cos ( ↼
+
+mt+a, mt+a) , (9) TABLE I PHONE SEGMENTATION PERFORMANCE (R-VALUE ↑). T HE BEST AND SECOND -BEST SCORES ARE MARKED IN BOLD AND UNDERLINED , RESPECTIVELY .SPAM SHOWS STRONG PERFORMANCE ESPECIALLY FOR UNSEEN DOMAINS . S EE SECTION IV-A FOR DETAILS .                                                                            
+
+> English Accented English Atypical Speech Multilingual Avg. Model TIMIT Buckeye GTIMIT-S GTIMIT-T TORGO SSNCE Vox GTIMIT-Thai (OOD)
+> Toplines
+> GT Transcript + MFA [46] 82.4 84.0 81.2 83.9 80.1 53.1 -66.9 -KoelLabs-XLSR [47] + MFA [46] 81.7 83.1 80.3 82.4 78.9 ----PhoneticXeus [16] + MFA [46] 78.7 76.9 75.9 78.7 74.0 52.7 ---
+> Trained on TIMIT
+> CTC [17] 70.6 71.7 65.7 62.6 66.4 52.6 49.2 65.4 61.9 FCE [21] 89.6 80.5 73.0 70.5 68.7 54.3 63.0 74.1 69.2 BCE [20] 85.8 77.0 71.1 64.5 71.9 53.4 66.5 75.2 68.5 SPAM (Ours) 80.0 76.3 75.2 68.9 72.2 60.3 75.1 75.8 72.0
+
+which is large just after a phone boundary, where the predicted previous phone aligns with an earlier frame but not with the frame it is predicted from. 
+
+Mel spectrograms. We also add a mel spectrogram-based signal [35], [38], independent of SPAM. Identically to [38], we extract a log-mel spectrogram F ∈ RTmel ×40 on a 10 ms grid and measure the cosine distance across a 4-frame window: 
+
+δmel (u) = 1 − cos( Fu−2, Fu+1 ), (10) where u indexes the mel grid. We min-max normalize δmel over the utterance and subsample it onto the S3M grid by taking every other frame, so a peak at frame t marks a boundary at the start of frame t (consistent with other signals). 
+
+Ensembling different segmentation signals. While δ1(t) alone already performs well, we propose an ensemble that yields further empirical improvements (Section V-C): 
+
+b(t) = Y
+
+> k
+
+(bk(t) − φk) , (11) where b(t) is the ensembled boundary signal, each bk is an individual signal, and φk is its theoretical minimum, subtracted so that every signal is non-negative before the product. The product is large where component signals agree on a change, suppressing spurious peaks. A total of seven signals: multi-scale differences δ1, δ 2, δ 3,backward contrasts β1, β 2, β 3, and mel-spectrogram-based difference δmel are ensembled. Ablations are provided in Section V-C . Additionally, using the silence channel, we suppress peaks falling inside silent spans. IV. E XPERIMENTS 
+
+We compare SPAM against baselines that use segmen-tation losses proposed in prior work, training all methods on TIMIT [1] and testing out-of-domain performance on other datasets. We also compare against state-of-the-art (SotA) systems that serve as toplines. Our evaluations are over a wide range of datasets that reflect realistic downstream conditions, including atypical and nonnative speech and unseen languages. We release our modeling and benchmarking code. 3
+
+> 3SPAM modeling at https://github.com/juice500ml/spam, evaluation at https: //github.com/stephenmac7/phone-metrics, and benchmark at https://github.com/ Shikhar-S/Speech-Segmentation.
+
+A. Phone Segmentation 
+
+Baselines. We benchmark SPAM against the frame-wise cross-entropy (FCE) [21]–[23], frame-wise binary cross-entropy (BCE) [20], and CTC loss [17] baselines with full fine-tuning. For a fair comparison, all use TIMIT [1] as the common training data, and WavLM-large [26] as the underlying S3M. We also employ MFA [46] as a topline, which relies on ground truth (GT) phonetic transcriptions for forced alignment. Finally, we test cascaded systems that use state-of-the-art recognizers, like PhoneticXeus [16] and KoelLabs-XLSR [47], [51], for predicting transcripts and then force-align with MFA. 
+
+Datasets. We evaluate in various out-of-domain settings that cover conversational English speech (Buckeye [11]), accented English speech (GTIMIT-S [52] and GTIMIT-T [53]), multilin-gual speech (Voxangeles [2], GTIMIT-Thai [54]) and atypical speech (SSNCE [55], [56], TORGO [57], [58]). Together, these cover various domains where phone segmentation models are employed in real-world scenarios. 
+
+Evaluation. We use R-value [59] as the segmentation metric, following previous works [20], [21]. Specifically, we use a 20 ms threshold for a boundary hit along with the strict [20] mode of evaluation, consistent with [20]. R-value measures how close performance is to an ideal operating point. 
+
+Results. Table I summarizes phone segmentation performance across in-domain and out-of-domain conditions. SPAM achieves the best average R-value among the baselines trained on TIMIT, indicating robust generalization. While FCE and BCE perform competitively on English and some accented English datasets, their performance drops more substantially in atypical and multilingual settings, likely due to overfitting on TIMIT, an English dataset. In contrast, SPAM performs especially well on the most challenging out-of-domain datasets, achieving the best results on GTIMIT-S, TORGO, SSNCE, Voxangeles and GTIMIT-Thai, and remaining competitive on GTIMIT-T. Also, comparisons against the toplines employing MFA with GT or state-of-the-art recognizers reveal that SPAM outperforms on SSNCE and GTIMIT-Thai while maintaining moderate performance on English. Note that topline systems use pretrained acoustic models (English [60], Tamil [61] and Thai [62]) that are trained on far more transcribed data than SPAM. Furthermore, such systems are unavailable for many TABLE II PHONE RECOGNITION RESULTS (PFER ↓) ON THE PR ISM BENCHMARK [5]. S EE SECTION IV-B FOR DETAILS .                                                                          
+
+> Accented English Datasets Multilingual Datasets Model Learnable Param. PR-tmt [1] PR-arc [48] PR-saa [49] Avg. PR-drc [50] PR-vox [2] PR-tsm [6] Avg.
+> Toplines
+> KoelLabs-XLSR [51] 300M 9.6 7.8 7.8 8.4 22.9 18.0 24.7 21.9 PhoneticXeus [16] 580M 13.3 9.9 8.5 10.6 16.8 14.4 21.9 17.7
+> Trained on TIMIT
+> CTC 316M 7.2 15.3 11.8 11.4 20.8 22.4 22.7 22.0
+> FCE 316M 8.7 18.9 15.8 14.5 26.4 40.2 35.9 34.2 SPAM (Ours) 47K 22.9 22.6 23.4 23.0 27.3 24.3 35.0 28.9 11/2 21/2 41/2 61/2 81/2 10
+> Data ratio
+> 70
+> 75
+> 80
+> R-value (%)
+> TIMIT
+> VoxAngeles
+> 11/2 21/2 41/2 61/2 81/2 10
+> Data ratio
+> 21
+> 22
+> 23
+> 24
+> 25
+> 26
+> PFER (%)
+> Fig. 3. Ablation on the training dataset size. We randomly subsample TIMIT training split, which contains 4620 phonetically transcribed audio samples, from the full 3 hours training set (denoted 1) down to 1/1024 .
+
+languages, being impossible to segment VoxAngeles, which contains 95 languages [2]. The cascaded recognizers, likewise, depend on large transcribed dataset of roughly 17K hours [14]. SPAM, in contrast, can be applied to any language, making it more practical for low- or zero-resource languages. 
+
+B. Phone Recognition 
+
+Setup. We evaluate phone recognition using the PRiSM benchmark [5], which covers accented English (TIMIT [1], L2-ARCTIC Perceived [48], and Speech Accent Archive [49]) and multilingual phone recognition settings (DoReCo [50], VoxAngeles [2], and Tusom2021 [6]). Following PRiSM, we report Phone Feature Edit Rate (PFER) [15], [34], a soft edit-distance metric that accounts for phonological feature similarity between phones. Unlike PRiSM, we filter out the TIMIT training split before evaluation. 
+
+Baselines. To test generalization capabilities, we compare SPAM against FCE and CTC, by training on TIMIT and evaluating on PRiSM datasets. We also compare against SotA English and multilingual phone recognizers, KoelLabs-XLSR [47], [51] and PhoneticXeus [16] respectively. These models rely on high-quality human-transcribed data or large scale G2P-based datasets for training. In contrast, SPAM uses only TIMIT with pretrained speech representations, without any gradient-descent-based training. 
+
+Results. Table II reports phone recognition performance on PRiSM. Among the baselines, CTC achieves the best recognition performance, followed by SPAM or FCE, even though it was the worst in segmentation. This is because CTC is optimized for recognition alone, entirely different alignments can incur the same loss. FCE, by contrast, imposes strong supervision, which degrades sharply in the multilingual setting. Interestingly, SPAM maintains similar performance on both accented English datasets and on TIMIT ( PR-tmt ), with only 2% relative degradation. CTC and FCE, by contrast, perform much better on the training data (TIMIT) but degrade by 60%–117% on accented English. This gap is even more pronounced on multilingual datasets, where CTC and FCE degrade by 180%–360% while SPAM stays within 10%–50%. These results suggest that gradient-based methods overfit to English phonotactics 4, whereas SPAM is explicitly designed to avoid this, and hence generalizes more robustly to unseen domains, especially on VoxAngeles, with 95 languages across 21 language families. Finally, the large-scale SotA toplines maintain high per-formance, relying on large training sets and correspondingly expensive training. SPAM, in contrast, can be trained on as little as one minute of data (Section V-A ). These results indicate that SPAM delivers usable performance while requiring substantially less supervision, making it more accessible to resource-scarce settings such as compute-constrained scenarios or linguistic fieldwork on endangered languages [63]. V. A NALYSIS 
+
+A. Sample efficiency 
+
+Settings. [27] showed that phonological vectors are estimated reliably even from little data, implying that SPAM is likewise stable. As such, we estimate the phonological vectors from decreasing fractions of the TIMIT training set, from the full set down to 1/2, 1/4, . . . , 1/1024 . For each fraction, we randomly subsample utterances from the 4,620 TIMIT training audio files. We evaluate on TIMIT and VoxAngeles, which provide phone segmentation and are part of PRiSM [5]. 
+
+Results. Figure 3 shows little to no degradation as the data shrinks until 1/256 , i.e. , only 18 utterances, both PFER and R-value remaining on par across both datasets, with limited degradation even on 1/1024 . This level of sample efficiency reinforces our claim that a well-trained S3M only needs to be steered toward the task with minimal supervision, rather than fine-tuning on a large labeled dataset. For instance, large-scale                   
+
+> 4The language-specific rules governing which phoneme sequences are permitted, e.g. , English disallows words starting with [ N]. TABLE III PHONE SEGMENTATION PERFORMANCE COMPARISON (R-VALUE ↑)ON DIFFERENT SIGNALS .Segmentation signal TIMIT VoxAngeles Diff. between frames δ179.2 66.1 + Multi-scale diff. +δ2, δ 377.6 72.7 + Backward contrast +β1, β 2, β 378.7 73.3 + Mel spectrogram +δmel 80.0 75.1
+
+phone recognition models such as POWSM, ZIPA-CTC, and PhoneticXeus are trained on IPAPack++ [14] with roughly 17,000 hours of phonetically transcribed speech, where 18 utterances is less than one minute, requiring negligible compute. 
+
+B. Oracle ablations 
+
+Ground-truth segmentation. To localize the source of errors, whether the recognizer or the segmenter, we replace the predicted boundaries with ground-truth segmentation, i.e. , a perfect segmenter, and evaluate the recognition head alone. Concretely, we compare the baseline SPAM (predicted segmen-tation) against SPAM with ground-truth (GT) segmentation. GT segmentation lowers PFER substantially over the baseline (Table II): it more than halves the error on TIMIT (to 11.1) and cuts it to roughly a third on VoxAngeles (to 8.4). This indicates that the recognition head is already highly capable and that the segmenter is the primary bottleneck, hence being the main target for further improvement. 
+
+Seen and unseen phones. We further test whether SPAM recognizes phones unseen during training as well as seen ones. On VoxAngeles, we label each reference phone seen if it appears in TIMIT and unseen otherwise, and measure PFER separately on each group. We use GT segmentation, except the silence segment, such that each GT phone corresponds to exactly one predicted phone. PFER is then 6.4 on seen phones and 9.4 on unseen phones. Low PFER on unseen phones shows that SPAM recognizes unseen phones nearly as well as seen ones, likely due to the recognition head composing any phone directly from its PanPhon features. 
+
+C. Segmentation signal ablations 
+
+Settings. We verify whether ensembling (Section III-D ) helps and how each segmentation signal contributes. Starting from the simplest signal δ1, we cumulatively add the multi-scale differences δ2, δ 3, the backward contrasts β1, β 2, β 3, and finally the mel-spectrogram difference δmel , arriving at the full SPAM segmenter (Table III). 
+
+Results. As shown in Table III, δ1 alone is already strong on TIMIT, but it is markedly weaker on VoxAngeles. Each added signal helps a different regime: the multi-scale differences sharply improve VoxAngeles at a slight cost on TIMIT, while the backward contrasts and mel-spectrogram difference lift both datasets, yielding the best overall performance. Thus, although the simplest single signal is already decent, ensembling signals is consistently better, especially on VoxAngeles. 0 3 6 9 12 15 18 21 24          
+
+> Layer index
+> 20
+> 40
+> 60
+> 80
+> TIMIT
+> 036912 15 18 21 24
+> Layer index
+> VoxAngeles
+> R-value (%)
+> wav2vec 2.0
+> XLS-R
+> HuBERT
+> WavLM
+> Fig. 4. Segmentation performance on different S3Ms and layers for SPAM.
+
+D. Different S3Ms and layers ablations 
+
+Settings. The 24th (final) layer of WavLM is known to be well-suited for extracting phonological vectors [27], [28], so we use it as our primary model and layer. However, since different models and layers encode phonetic information differently [32], [43], we sweep both. We compare four mainstream S3Ms with the same number of transformer layers, wav2vec 2.0 [24], XLS-R [64], HuBERT [25], and WavLM [26]. 
+
+Results. Figure 4 shows that the final layer of WavLM achieves the best R-value on both datasets, indicating that the quality of the phonological vectors directly affects SPAM and, in turn, downstream performance. Except for HuBERT, the layer-wise trends are broadly similar across TIMIT and VoxAngeles, though VoxAngeles amplifies the differences with sharper peaks and collapses. Comparing XLS-R against wav2vec 2.0 shows that multilingual pretraining data does not guarantee better performance. Note that the best model, WavLM, is English-only pretrained model. VI. D ISCUSSION 
+
+Vocabulary filter. Qualitatively inspecting the predictions, our model frequently outputs narrow (fine-grained) phonetic transcriptions that reflect acoustic details. This is because the training-free prediction head is indifferent to how frequently a phone occurs in training data. For usability, we add an optional vocabulary filter [40] that restricts the output to a known inventory of each language. 
+
+Trainable extensions. Our method is fully differentiable, so the heads could be fine-tuned end-to-end. Also, the phonological features, currently weighted uniformly, can be re-weighted via learnable parameters. We leave both to future work. 
+
+Frame rate. The S3M frame rate is relatively coarse for fine phone boundaries, so resampling to a finer rate [65] is a promising direction for future work. VII. C ONCLUSION 
+
+We showed that phone segmentation and recognition can be solved jointly by reading them directly off S3M-based Phono-logical Activation Mapping (SPAM). Two lightweight, gradient-descent-free heads recover phone labels and boundaries from under a minute of labeled speech, attaining strong performance to unseen phones, datasets, and languages. This shows that well-trained S3Ms need only be steered, not retrained, for fine-grained phonetic tasks. AI-G ENERATED CONTENT DISCLOSURE 
+
+AI-generated content was used in preparing this manuscript, primarily for auto-completing code and revising sentences for grammar. Nevertheless, all scientific content was conceived, verified, and finalized by the authors. REFERENCES [1] J. S. Garofolo, L. F. Lamel, W. M. Fisher, D. S. Pallett, N. L. Dahlgren, V. Zue, and J. G. Fiscus, “TIMIT acoustic-phonetic continuous speech corpus,” 1993. [2] E. Chodroff, B. Pa ˇzon, A. Baker, and S. Moran, “Phonetic segmentation of the UCLA phonetics lab archive,” in LREC-COLING , 2024. [3] L. D. Shriberg, R. D. Kent, T. McAllister, J. L. Preston, and M. L. Speights, Clinical phonetics . Plural Publishing, 2025. [4] H. Franco, H. Bratt, R. Rossier, V. R. Gadde, E. Shriberg, V. Abrash, and K. Precoda, “EduSpeak®: A speech recognition and pronunciation scoring toolkit for computer-aided language learning applications,” 
+
+Language Testing , vol. 27, pp. 401 – 418, 2010. [Online]. Available: https://api.semanticscholar.org/CorpusID:143273296 [5] S. Bharadwaj, C.-J. Li, Y. Kim, K. Choi, E. Yeo, R. S.-E. Shim, H. Zhou, B. Boldt, K. R. Jacome, K. Chang, D. Agrawal, K. Xu, C.-H. H. Yang, J. Zhu, S. Watanabe, and D. R. Mortensen1, “PRiSM: Benchmarking phone realization in speech models,” in ACL , 2026. [6] D. R. Mortensen, J. Picone, X. Li, and K. Siminyu, “Tusom2021: A Phonetically Transcribed Speech Dataset from an Endangered Language for Universal Phone Recognition Experiments,” in Proc. Interspeech ,2021, pp. 3660–3664. [7] H. Sun, S. McIntosh, K. Choi, E. Yeo, D. Saito, and N. Minematsu, “Prosodic abx: A language-agnostic method for measuring prosodic contrast in speech representations,” Interspeech , 2026. [8] S. McIntosh, D. Saito, and N. Minematsu, “Speech playground: An interactive tool for speech analysis and comparison,” arXiv preprint arXiv:2607.00418 , 2026. [9] J. L. Suchardt, H. El-Shazli, and P. Cassotti, “Towards language-agnostic stipa: Universal phonetic transcription to support language documentation at scale,” in EMNLP , 2025. [10] F. Seifart, N. Evans, H. Hammarstr ¨om, and S. C. Levinson, “Language documentation twenty-five years on,” Language , vol. 94, no. 4, pp. e324– e345, 2018. [11] M. A. Pitt, K. Johnson, E. Hume, S. Kiesling, and W. Raymond, “The buckeye corpus of conversational speech: labeling conventions and a test of transcriber reliability,” Speech Communication , vol. 45, pp. 89–95, 2005. [12] L. D. Shriberg and G. L. Lof, “Reliability studies in broad and narrow phonetic transcription,” Clinical Linguistics & Phonetics , vol. 5, no. 3, pp. 225–279, 1991. [13] Q. Xu, A. Baevski, and M. Auli, “Simple and Effective Zero-shot Cross-lingual Phoneme Recognition,” in Interspeech , 2022. [14] J. Zhu, F. Samir, E. Chodroff, and D. R. Mortensen, “ZIPA: A family of efficient models for multilingual phone recognition,” in ACL , 2025. [15] C.-J. Li, K. Chang, S. Bharadwaj, E. Yeo, K. Choi, J. Zhu, D. Mortensen, and S. Watanabe, “POWSM: A phonetic open whisper-style speech foundation model,” in ACL , 2026. [16] S. Bharadwaj, C.-J. Li, K. Choi, E. Yeo, W. Chen, S. Watanabe, and D. R. Mortensen, “An Empirical Recipe for Universal Phone Recognition,” in 
+
+Interspeech , 2026. [17] A. Graves, “Connectionist temporal classification: labelling unsegmented sequence data with recurrent neural networks,” in ICML , 2006. [18] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, Ł . Kaiser, and I. Polosukhin, “Attention is all you need,” in NeurIPS ,2017. [19] J. K. Chorowski, D. Bahdanau, D. Serdyuk, K. Cho, and Y. Bengio, “Attention-based models for speech recognition,” Advances in neural information processing systems , vol. 28, 2015. [20] L. Strgar and D. Harwath, “Phoneme Segmentation Using Self-Supervised Speech Models,” in SLT , 2023. [21] J. Zhu, C. Zhang, and D. Jurgens, “Phone-to-audio alignment without text: A semi-supervised approach,” in ICASSP , 2022. [22] X. Xu, Y. Kang, S. Cao, B. Lin, and L. Ma, “Explore wav2vec 2.0 for mispronunciation detection.” in Interspeech , 2021. [23] E. J. Yeo, K. Choi, S. Kim, and M. Chung, “Speech intelligibility assessment of dysarthric speech by using goodness of pronunciation with uncertainty quantification,” in Interspeech , 2023. [24] A. Baevski, Y. Zhou, A. Mohamed, and M. Auli, “wav2vec 2.0: A framework for self-supervised learning of speech representations,” in 
+
+NeurIPS , 2020. [25] W.-N. Hsu, B. Bolte, Y.-H. H. Tsai, K. Lakhotia, R. Salakhutdinov, and A. Mohamed, “HuBERT: Self-supervised speech representation learning by masked prediction of hidden units,” IEEE/ACM TASLP , 2021. [26] S. Chen, C. Wang, Z. Chen, Y. Wu, S. Liu, Z. Chen, J. Li, N. Kanda, T. Yoshioka, X. Xiao et al. , “WavLM: Large-scale self-supervised pre-training for full stack speech processing,” J-STSP , 2022. [27] K. Choi, E. Yeo, C. J. Cho, D. Harwath, and D. R. Mortensen, “[b]=[d]-[t]+[p]: Self-supervised speech models discover phonological vector arithmetic,” in ACL Findings , 2026. [28] K. Choi, E. Yeo, C. J. Cho, D. R. Mortensen, and D. Harwath, “Self-supervised speech models encode phonetic context via position-dependent orthogonal subspaces,” arXiv preprint arXiv:2603.12642 , 2026. [29] K. Choi and E. J. Yeo, “Opening the black box of wav2vec feature encoder,” arXiv preprint arXiv:2210.15386 , 2022. [30] A. Sicherman and Y. Adi, “Analysing discrete self supervised speech representation for spoken language modeling,” in ICASSP 2023 -2023 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2023, pp. 1–5. [31] K. Choi, E. Yeo, K. Chang, S. Watanabe, and D. R. Mortensen, “Leveraging allophony in self-supervised speech models for atypical pronunciation assessment,” in NAACL , 2025. [32] A. Pasad, J.-C. Chou, and K. Livescu, “Layer-wise analysis of a self-supervised speech representation model,” in ASRU , 2021. [33] A. Pasad, “What do Speech Foundation Models Learn? Analysis and Applications,” Ph.D. dissertation, Toyota Technical Institute at Chicago, 2025, accessed on https://arxiv.org/abs/2508.12255. [34] D. R. Mortensen, P. Littell, A. Bharadwaj, K. Goyal, C. Dyer, and L. Levin, “Panphon: A resource for mapping ipa segments to articulatory feature vectors,” in COLING , 2016. [35] J. Glass and V. Zue, “Multi-level acoustic segmentation of continuous speech,” in ICASSP , 1988. [36] J. W. Chang and J. R. Glass, “Segmentation and modeling in segment-based recognition,” in Eurospeech , 1997. [37] F. Kreuk, J. Keshet, and Y. Adi, “Self-Supervised Contrastive Learning for Unsupervised Phoneme Segmentation,” in Interspeech , 2020. [38] G.-P. Yang and H. Tang, “A simple hmm with self-supervised represen-tations for phone segmentation,” in SLT , 2024. [39] S. Bhati, J. Villalba, P. ˙Zelasko, L. Moro-Velazquez, and N. Dehak, “Unsupervised Speech Segmentation and Variable Rate Representation Learning Using Segmental Contrastive Predictive Coding,” IEEE/ACM TASLP , 2022. [40] X. Li, S. Dalmia, J. Li, M. Lee, P. Littell, J. Yao, A. Anastasopoulos, D. R. Mortensen, G. Neubig, A. W. Black et al. , “Universal phone recognition with a multilingual allophone system,” in ICASSP , 2020. [41] K. Glocker, A. Herygers, and M. Georges, “Allophant: Cross-lingual Phoneme Recognition with Articulatory Attributes,” in Interspeech , 2023. [42] N. Tits, P. Bhatnagar, and T. Dutoit, “Text-Independent Phone-to-Audio Alignment Leveraging SSL (TIPAA-SSL) Pre-Trained Model Latent Representation and Knowledge Transfer,” Acoustics , vol. 6, no. 3, pp. 772–781, Sep. 2024. [43] K. Choi, A. Pasad, T. Nakamura, S. Fukayama, K. Livescu, and S. Watanabe, “Self-Supervised Speech Representations are More Phonetic than Semantic,” in Interspeech , 2024. [44] P. Virtanen, R. Gommers, T. E. Oliphant, M. Haberland, T. Reddy, D. Cournapeau, E. Burovski, P. Peterson, W. Weckesser, J. Bright, S. J. van der Walt, M. Brett, J. Wilson, K. J. Millman, N. Mayorov, A. R. J. Nelson, E. Jones, R. Kern, E. Larson, C. J. Carey, ˙I. Polat, Y. Feng, E. W. Moore, J. VanderPlas, D. Laxalde, J. Perktold, R. Cimrman, I. Henriksen, E. A. Quintero, C. R. Harris, A. M. Archibald, A. H. Ribeiro, F. Pedregosa, P. van Mulbregt, and SciPy 1.0 Contributors, “SciPy 1.0: Fundamental Algorithms for Scientific Computing in Python,” Nature Methods , vol. 17, pp. 261–272, 2020. [45] G. Aversano, A. Esposito, and M. Marinaro, “A new text-independent method for phoneme segmentation,” in Midwest Symposium on Circuits and Systems (MWSCAS) . IEEE, 2001. [46] M. McAuliffe, M. Socolof, S. Mihuc, M. Wagner, and M. Sonderegger, “Montreal forced aligner: Trainable text-speech alignment using kaldi,” in Interspeech , vol. 2017, 2017, pp. 498–502. [47] K. Labs, “XLSR Inclusive English Speech-to-IPA,” 2025. [Online]. Available: https://huggingface.co/collections/KoelLabs/ xlsr-inclusive-english-speech-to-ipa [48] G. Zhao, S. Sonsaat, A. Silpachai, I. Lucic, E. Chukharev-Hudilainen, J. M. Levis, and R. Gutierrez-Osuna, “L2-ARCTIC: A Non-native English Speech Corpus,” in Interspeech , 2018. [49] S. Weinberger, “Speech Accent Archive,” 2015, retrieved from https: //accent.gmu.edu. [50] L. Paschen, F. Delafontaine, C. Draxler, S. Fuchs, M. Stave, and F. Seifart, “Building a time-aligned cross-linguistic reference corpus from language documentation data (DoReCo),” in Proc. LREC . European Language Resources Association, 2020. [51] A. Metzger, A. Srivastava, and R. Mukhamedvaleev, “Scaling human and g2p supervision for robust phonetic transcription,” in Interspeech ,2026. [52] H. Ding, S. Liao, Y. Zhan, H. Feng, W. He, X. Hu, Y. Wu, J. Yuan, and M. Liberman, “Global TIMIT learner simple english,” Web Download. LDC2020S11, Philadelphia, 2020. [Online]. Available: https://catalog.ldc.upenn.edu/LDC2020S11 [53] H. Luan, Y. Wang, H. Feng, W. He, X. Hu, Y. Wu, J. Yuan, and M. Liberman, “Global TIMIT learner treebank english,” Web Download. LDC2020S09, Philadelphia, 2020. [Online]. Available: https://catalog.ldc.upenn.edu/LDC2020S09 [54] M. Liberman, J. Yuan, C. Cieri, J. Wright, and N. Chanchaochai, “Global TIMIT Thai,” Web Download. LDC2022S13, Philadelphia, 2022. [Online]. Available: https://catalog.ldc.upenn.edu/LDC2022S13 [55] T. A. Mariya Celin, T. Nagarajan, and P. Vijayalakshmi, “Dysarthric speech corpus in Tamil for rehabilitation research,” in 2016 IEEE Region 10 Conference (TENCON) , 2016, pp. 2610–2613. [56] T. A. Mariya Celin, G. Anushiya Rachel, T. Nagarajan, and P. Vi-jayalakshmi, “A weighted speaker-specific confusion transducer-based augmentative and alternative speech communication aid for dysarthric speakers,” IEEE Transactions on Neural Systems and Rehabilitation Engineering , vol. 27, no. 2, pp. 187–197, 2019. [57] F. Rudzicz, A. K. Namasivayam, and T. Wolff, “The TORGO database of acoustic and articulatory speech from speakers with dysarthria,” Language Resources and Evaluation , vol. 46, no. 4, pp. 523–541, 2012. [58] A. Hernandez, E. J. Yeo, S. Kim, and M. Chung, “Dysarthria detection and severity assessment using rhythm-based metrics.” in Interspeech ,2020. [59] O. J. R ¨as ¨anen, U. K. Laine, and T. Altosaar, “An improved speech segmentation quality measure: the r-value,” in Interspeech , 2009. [60] M. McAuliffe and M. Sonderegger, “English mfa acoustic model v3.1.0,” https://mfa-models.readthedocs.io/acoustic/English/ EnglishMFAacousticmodelv3 1 0.html, Tech. Rep., Jun 2024. [61] E. Ahn and E. Chodroff, “Voxcommunis corpus,” https://osf.io/t957v, Jan 2022. [62] M. McAuliffe and M. Sonderegger, “Thai mfa acoustic model v3.0.0,” https://mfa-models.readthedocs.io/acoustic/Thai/ ThaiMFAacousticmodelv3 0 0.html, Tech. Rep., Feb 2024. [63] T. He, K. Choi, L. Tjuatja, N. Robinson, J. Shi, S. Watanabe, G. Neubig, D. Mortensen, and L. Levin, “Wav2Gloss: Generating Interlinear Glossed Text from Speech,” in ACL , 2024. [64] A. Babu, C. Wang, A. Tjandra, K. Lakhotia, Q. Xu, N. Goyal, K. Singh, P. von Platen, Y. Saraf, J. Pino, A. Baevski, A. Conneau, and M. Auli, “XLS-R: Self-supervised Cross-lingual Speech Representation Learning at Scale,” in Interspeech , 2022. [65] H. Kamper and B. v. Niekerk, “Towards unsupervised phone and word segmentation using self-supervised vector-quantized neural networks,” in 
+
+Interspeech , 2021.
