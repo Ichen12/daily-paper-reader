@@ -1,0 +1,252 @@
+Title: Qwen-Audio-VAE Technical Report
+
+URL Source: https://arxiv.org/pdf/2607.11738v1
+
+Published Time: Tue, 14 Jul 2026 03:21:25 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+2026-07-14 
+
+# Qwen-Audio-VAE Technical Report 
+
+Qwen Team 
+
+# Abstract 
+
+We introduce Qwen-Audio-VAE , a suite of low-bitrate, fast-encoding continuous audio autoencoders designed for scalable general audio generation. The model is built around a simple but important principle: an audio VAE should not only reconstruct diverse audio with high fidelity, but also produce compact latent representations fast enough to support large-scale text-to-audio training. Qwen-Audio-VAE combines a causal encoder-decoder, window Transformer blocks, and multi-discriminator training to achieve a strong bal-ance between reconstruction quality and compression rate. The model is trained at scale on 5 million hours of multi-domain audio, enabling robust reconstruction across heterogeneous acoustic conditions. To further improve computational efficiency, we adopt an asymmetric encoder-decoder backbone and introduce latency-aware encoder pruning to maximize encoding throughput. Experiments on public speech, music, and sound reconstruction benchmarks show that Qwen-Audio-VAE generalizes well across diverse audio domains and is particularly efficient, requiring only 541 ms to encode 32 minutes of audio. Overall, Qwen-Audio-VAE provides a high-quality, compact, and high-throughput representation backbone for efficient general audio generation. 
+
+Figure 1: Qwen-Audio-VAE : a low-bitrate, fast-encoding continuous audio autoencoder with high-fidelity reconstruction across speech, music, and sound and fast encoding ( 541 ms for 32 min of audio), making it an efficient backbone for general audio generation. 
+
+# 1 Introduction 
+
+Multimodal foundation models (OpenAI, 2024; Comanici et al., 2025; Qwen, 2026) have made text-to-audio-video generation (Yang et al., 2025; Chen et al., 2025; Wan et al., 2025; Seedance et al., 2026) a fast-growing direction. These systems (Esser et al., 2021; Peebles & Xie, 2023) do not model waveforms directly but generate in the compact latent space of an autoencoder (Liu et al., 2023; Evans et al., 2025; Cheng et al., 2025; Shan et al., 2025; Wang et al., 2025). The autoencoder is thus foundational: it determines the representation the generator must learn and caps the audio quality achievable after decoding. 1arXiv:2607.11738v1 [eess.AS] 13 Jul 2026 For general audio generation, a good autoencoder must satisfy three requirements at once. First, high-fidelity reconstruction across diverse audio, since reconstruction error upper-bounds the quality the generator can ultimately produce. Second, a compact latent , because a shorter latent sequence directly reduces the training cost of downstream diffusion transformers (Peebles & Xie, 2023). Third, high-throughput encoding : in large-scale text-to-audio training, latents are often computed online, so a slow encoder becomes a training bottleneck that limits how much audio each step can process. Existing representations, however, tend to prioritize a subset of these requirements rather than balancing all three together. Discrete audio codecs (Zeghidour et al., 2022; Défossez et al., 2022; Kumar et al., 2023; Ji et al., 2025; Zhang et al., 2023) compress speech very well, but their quantization error tends to weaken reconstruction on noisy general sound and higher-fidelity music. Continuous audio VAEs (Kingma & Welling, 2014) avoid this quantization loss and pair naturally with diffusion- and flow-based generators, making them attractive for high-fidelity general audio. Their limitations lie instead in efficiency and coverage: most run at relatively high frame rates (Cheng et al., 2025; Shan et al., 2025; Evans et al., 2025), which lengthen the latent sequence and increase downstream DiT cost, and many (Peng et al., 2025) are designed for a single domain such as clean speech rather than the heterogeneous in-the-wild audio that general audio generation demands. To close this gap, we present Qwen-Audio-VAE , a 12.5 Hz continuous audio autoencoder that targets all three requirements together. Our main contributions are: • We train Qwen-Audio-VAE on 5 million hours of multi-domain audio, combining a causal encoder-decoder, window Transformer blocks, and multi-discriminator training to obtain a compact, high-fidelity, and domain-robust representation. • We improve encoding efficiency through an asymmetric encoder-decoder backbone, latency-aware encoder pruning, and concentrating the heaviest window Transformer at the lowest frame rate, reducing 64 ×30s encoding latency from 1957 ms to 541 ms (a 3.62 × speedup) without degrading reconstruction. • We show that Qwen-Audio-VAE generalizes well across public speech, sound, and music bench-marks (LibriSpeech, AudioCaps, SongDescriber), while also improving downstream text-to-audio generation quality. 
+
+# 2 Architecture        
+
+> 24 kHz
+> input waveform
+> Conv Encoder
+> Window Transformer
+> (pre)
+> Latent z
+> 128-d
+> Window Transformer
+> (post)
+> Conv Decoder
+> 24 kHz
+> reconstructed waveform
+> ↓4↑4
+> 50 Hz 50 Hz
+> 12.5 Hz latent space
+> Multi-Period Multi-Resolution STFT
+> Multi-Scale STFT Sub-band CQT
+> Discriminators (training only)
+
+Figure 2: Overview of Qwen-Audio-VAE. A causal convolutional encoder downsamples the waveform to 50 Hz; a bottleneck reduces it to a 12.5 Hz diagonal-Gaussian latent between two window Transformers; and an asymmetric decoder reconstructs the waveform. During training, four discriminators provide adversarial supervision. 22.1 Overview 
+
+Qwen-Audio-VAE is a continuous variational autoencoder for 24 kHz mono audio, designed as a repre-sentation backbone for scalable general audio generation rather than a standalone codec. As illustrated in Figure 2, a causal encoder E maps a waveform x ∈ RT to the parameters of a diagonal-Gaussian posterior over a latent sequence z ∈ RD×L, from which a decoder G reconstructs the signal as ˆ x = G(z);the two are trained end-to-end with the spectral-reconstruction and adversarial objectives of Section 2.3. Architecturally, the model pursues the three requirements set out in Section 1: high-fidelity reconstruction, a compact latent, and high-throughput encoding—and the rest of this section is organized around how each is achieved. The compact latent is the design’s central mechanism, so we quantify it first. The encoder downsamples the waveform by 480 × to 50 Hz, and the bottleneck compresses it by a further 4 ×, for a total 1920 ×
+
+reduction to a 12.5 Hz latent. A 30 s clip therefore maps to only about 375 latent frames, versus roughly 600–2250 at the 20–75 Hz rates common in prior VAEs. Because the self-attention cost of a diffusion-transformer (DiT) generator (Peebles & Xie, 2023) grows as O(L2) in the latent length L, this low frame rate is the primary lever on downstream training cost. The other two requirements are then met around this compact latent: the training objectives (Section 2.3) preserve fine acoustic detail despite the aggressive compression, while an asymmetric encoder–decoder and latency-aware encoder pruning (Section 2.4) keep the latents themselves cheap to produce. 
+
+2.2 Model Components 
+
+Qwen-Audio-VAE follows a VAE-GAN design: a generator —a causal encoder–decoder with a continuous latent bottleneck—that maps a waveform to a compact latent and reconstructs it, and a bank of discrimi-nators that provide adversarial supervision during training. The full configuration is given in Table 11 (Appendix 7.1). 
+
+Generator. The generator is a causal convolutional encoder–decoder with a continuous latent bottleneck, comprising four modules in signal-flow order. 1. Causal encoder. A DAC-style (Kumar et al., 2023) causal convolutional stack downsamples the waveform to 50 Hz. An initial convolution lifts the mono input to 24 channels, and four strided residual blocks with strides (8, 5, 4, 3 ) reduce the temporal resolution by 480 × while widening the channels 24 →128 →256 →512 →1024. Each block pairs a Snake-activated residual unit with a strided convolution, and causal padding throughout preserves streaming and chunk-wise inference. The encoder outputs a feature map h ∈ R1024 ×T/480 .2. Continuous latent bottleneck. In place of vector quantization, we use a continuous diagonal-Gaussian latent (Kingma & Welling, 2014). A further 4 × temporal downsampling brings h
+
+to 12.5 Hz, and a linear projection produces the per-frame posterior mean and log-variance 
+
+μ, log σ2 ∈ RD×L with D = 128; latents are then sampled with the reparameterization trick 
+
+z = μ + σ ⊙ ϵ, ϵ ∼ N (0, I), (1) which keeps sampling differentiable. The continuous formulation avoids quantization error and matches the continuous trajectories modeled by diffusion- and flow-based generators. 3. Window Transformer blocks. Two windowed Transformers (8 layers, width 1024, 16 heads, attention window 72) flank the latent projection, both operating at 12.5 Hz. They supply the long-range context and modeling capacity that convolutions alone lack under such aggressive compression. Placing them at the lowest frame rate is deliberate: as the heaviest modules in the model, running them on the shortest sequence minimizes their cost and keeps them off the encoder’s high-resolution critical path. 4. Asymmetric decoder. A transposed-convolutional decoder inverts the 1920 × compression back to 24 kHz. Because decoding lies off the critical path of large-scale latent extraction (Section 4), we give it substantially more capacity than the encoder—base width 1536 and three residual units per block with dilations {1, 3, 9 }—which is the source of the encoder–decoder asymmetry. 
+
+Discriminators. During training, the reconstruction ˆx is critiqued against the reference x by a bank of K discriminators {Dk}Kk=1, each specialized to a different acoustic aspect of the signal. No single representation exposes every kind of artifact, so we combine complementary time- and frequency-domain critics; together they drive the reconstruction toward realism across speech, music, and general sound. 31. Multi-period discriminator (Kong et al., 2020), which reshapes the waveform along periods 
+
+{2, 3, 5, 7, 11 } to capture periodic structure such as pitch and voicing in speech and singing. 2. Multi-resolution STFT discriminator (Kumar et al., 2023), which splits the magnitude spectrum into sub-bands at several FFT sizes to enforce fidelity across frequency bands, especially the high frequencies. 3. Multi-scale STFT discriminator (Défossez et al., 2022), which operates on complex spectrograms at multiple resolutions to capture both fine transients and coarse time–frequency structure. 4. Sub-band CQT discriminator , whose constant-Q, log-frequency resolution matches the harmonic spacing of music and singing, sharpening tonal and harmonic detail. The exact periods, FFT sizes, and CQT resolutions are listed in Appendix 7.3. The discriminators enter only the adversarial objective (Section 2.3) and add no inference-time cost. 
+
+2.3 Training Objective 
+
+High-fidelity reconstruction requires supervising both the global spectral envelope and the fine detail that 
+
+ℓ1 spectral losses alone tend to over-smooth. We therefore combine multi-scale spectral reconstruction losses, which provide a stable and perceptually meaningful gradient, with the adversarial discriminators of Section 2.2, which sharpen fine structure and restore realistic high-frequency content. Let x denote the reference and ˆx = G(z) the reconstruction; the generator minimizes a weighted sum of spectral, adversarial, feature-matching, and KL terms, 
+
+LG = λmel Lmel + λstft Lstft + λadv Ladv + λfm Lfm + λkl Lkl . (2) The two spectral terms, Lmel and Lstft , are multi-scale ℓ1 distances between the log-mel and magnitude-STFT representations of x and ˆx, computed over a shared set of analysis windows (seven scales from 32 to 2048 samples) so that the coarse envelope and fine harmonic detail are supervised together; for the STFT term we use the perceptually weighted auraloss MultiResolutionSTFTLoss (Steinmetz & Reiss, 2020). The adversarial and feature-matching terms are computed over the discriminator bank of Section 2.2. Adversarial training follows the least-squares GAN form: the generator drives each Dk( ˆx) toward 1, while every discriminator Dk is trained to separate x from ˆx, averaged over the K discriminators. A feature-matching term Lfm complements this by averaging the ℓ1 distance between the intermediate feature maps that each Dk extracts from x and ˆx; acting as a perceptual loss in discriminator space, it is the main stabilizer of adversarial training. Finally, Lkl is the standard closed-form KL divergence that regularizes the diagonal-Gaussian posterior toward the prior N (0, I). In the final configuration, the spectral objective is weighted toward the STFT term ( λstft = 20, alongside a multi-scale mel term); the adversarial and feature-matching terms carry unit weight ( λadv = λfm = 1); and the KL weight is kept deliberately small ( λkl = 10 −6), so that reconstruction quality remains the dominant objective while the latent stays only lightly regularized. Table 1: Reconstruction collapse when naively reducing the entire encoder channel size, motivating the first-layer-only reduction.                 
+
+> Variant PESQ wb/nb ↑STOI ↑MR-STFT ↓SI-SDR ↑
+> Before (full channels) 3.09 / 3.44 0.87 0.848 8.34
+> After (all channels reduced) 1.91 / 2.37 0.74 1.08 -2.80
+
+Table 2: Per-layer encoder time profile (ms). The first layer dominates because it operates at the highest temporal resolution.      
+
+> Encoder layer Time (ms) Layer 1 (highest resolution) 305.8 Layer 2 78.1 Layer 3 36.4 Layer 4 197.4
+
+2.4 Encoder Acceleration 
+
+In text-to-audio integration, encoder latency—not the decoder—was the throughput bottleneck: encoding 64 clips of 30 s initially took ≈1957 ms. We therefore treat the encoder as a system-critical module and optimize its latency while holding the reconstruction quality and the 12.5 Hz latent rate fixed. 4The guiding principle is that computation at high temporal resolution is disproportionately expensive: early layers process long sequences, so even moderate channel counts dominate latency, whereas later layers run at lower resolution and are cheaper places to spend capacity. This is already reflected in the architecture—the window Transformers, the model’s largest blocks, operate at the 12.5 Hz bottleneck rather than at high resolution—and we push it further with three encoder-specific steps. 
+
+Step 1: stride re-allocation. We re-balance the strides so that most parameters act on lower-resolution intermediate features, cutting latency from 1957 ms to 1361 ms with negligible quality loss. 
+
+Step 2: residual-unit pruning. Dilated residual units add convolutional cost, so we keep a single dilation-1 residual unit per encoder block. Latency drops from 1361 ms to 747 ms .
+
+Step 3: first-layer channel reduction. Layer-wise profiling attributes most cost to the first layer, which runs at the highest resolution (Table 2). Shrinking all channels collapses quality—PESQ (wb/nb) falls from 3.09/3.44 to 1.91/2.37 and SI-SDR from 8.34 to −2.80 (Table 1)—so we reduce only the first-layer width from 64 to 24 , preserving later-layer capacity. Latency falls from 747 ms to 541 ms without harming convergence. The three steps compound to a 3.62 × speedup (1957 →541 ms) at almost unchanged reconstruction quality, making fast encoding a core practical advantage: it shortens offline latent extraction and enables larger text-to-audio batches at the same step time. Section 4 quantifies the end-to-end speedup and its downstream impact. 
+
+# 3 Data 
+
+Training a domain-general audio VAE at scale poses three data challenges: assembling a corpus diverse enough to avoid overfitting to any single acoustic condition, curating it reliably so that corrupted or mislabeled audio does not degrade reconstruction, and feeding it efficiently enough to keep large GPU clusters saturated. We address these in turn. 
+
+3.1 Data Collection 
+
+Qwen-Audio-VAE is trained on 5 million hours of multi-domain audio to support robust reconstruction across heterogeneous acoustic conditions. The corpus spans three major categories (Table 3): • Speech (∼3M h): English and Chinese speech, multilingual dialects, historical ASR data, and podcasts. • Music (∼1.3M h): instrumental and vocal music. • Sound (∼0.8M h): online sound effects, natural and environmental sound, and audio from online videos. This mixture matters for general audio generation because each category stresses a different aspect of reconstruction. Speech emphasizes intelligibility, speaker characteristics, prosody, and periodic structure. Music emphasizes harmonic structure, timbre, rhythm, and wide-band frequency detail. Sound and online-video audio introduce transient events, noisy environments, overlapping sources, and highly diverse acoustic scenes. Training on all three together makes the continuous latent more robust and reduces the risk of overfitting to clean speech or narrow acoustic conditions. All audio is resampled to 
+
+24 kHz mono before training. Table 3: Composition of the Qwen-Audio-VAE training corpus.           
+
+> Domain Data Categories Hours Speech EN/ZH, dialects, ASR, podcasts ∼3M Music Instrumental, vocal ∼1.3M Sound Online SFX, natural sound, sound from online video ∼0.8M Total Mixed ∼5M
+
+3.2 Data Curation and Quality Control 
+
+Reconstruction training is sensitive to corrupted audio, incorrect metadata, and distribution imbalance, so the raw multi-domain pool is curated before it is packed for training. As illustrated in Figure 3, every sample passes through a sequence of validation stages, and abnormal samples are handled explicitly at each stage rather than being allowed to silently enter training. 5• Accessibility check : Missing and unrecoverable samples are skipped .• Duration filtering : duration-mismatch checks, including a fix for a previously buggy >60 s filter; recoverable and false-positive cases are repacked .• Decode / sample-rate check : corrupted audio and sample-rate mismatches are filtered out. • Content-quality stratification : per-domain cleanliness and class-consistency checks; low-quality or domain-inconsistent samples—e.g., vocals leaking into instrumental music—are down-weighted or excluded .Beyond these validity checks, the pipeline supports multi-level filtering and data stratification: speech, music, and sound are weighted-sampled separately, and problematic subsets can be traced through their identifiers. This is useful for diagnosing domain-specific artifacts, such as high-frequency loss in music, transient smearing in sound effects, or robustness in noisy speech. Because Qwen-Audio-VAE serves as a representation backbone for text-to-audio training, reliable metadata and stable sample scheduling matter as much as raw data scale. 
+
+Figure 3: Qwen-Audio-VAE data pipeline. The multi-domain raw audio pool flows through accessibility, duration, decode/sample-rate, and content-quality stages; abnormal samples are skipped, repacked, filtered, or down-weighted rather than silently entering training. Retained samples are grouped into tar shards with offset-based reading, improving training throughput from 0.90 to 1.07 it/s. 
+
+3.3 Data Packaging and Loading 
+
+At the five-million-hour scale, training is limited not only by model computation but also by data I/O: raw collections contain many small files with heterogeneous metadata, which makes random access expensive and unstable. We therefore pack the curated samples into binary tar shards with a WebDataset-style index, storing each sample together with metadata such as offset, duration, sample rate, and identifier. A tar reader can then seek directly to a sample’s offset and read it into memory, avoiding random small-file IO, while a history-records module tracks which samples have been consumed—enabling resume from interruptions and stable, deduplicated scheduling across long-running jobs. In practice, this strategy increases training throughput by approximately 18% . Although it leaves the model unchanged, it materially accelerates experiment iteration and makes five-million-hour-scale training more practical. 
+
+# 4 Evaluation 
+
+We now examine whether Qwen-Audio-VAE meets its three design goals—high-fidelity reconstruction, a compact latent, and fast encoding—and whether these properties carry over to downstream text-to-audio training. 
+
+4.1 Evaluation Setup 
+
+We evaluate Qwen-Audio-VAE along three axes: reconstruction fidelity on public benchmarks, en-coding efficiency, and impact on downstream text-to-audio training. Reconstruction is measured on 6LibriSpeech (Panayotov et al., 2015) for speech, AudioCaps (Kim et al., 2019) for general sound, and SongDescriber (Manco et al., 2023) for music, which together span the acoustic diversity the model is intended to cover. We compare against representative discrete neural codecs (AudioDec (Wu et al., 2023a), DAC (Kumar et al., 2023), EnCodec (Défossez et al., 2022), and WavTokenizer (Ji et al., 2025)) and continuous audio VAEs (MM-Audio (Cheng et al., 2025), Stable Audio Open (Evans et al., 2025), and Hunyuan-Foley (Shan et al., 2025)). We report Mel distance, multi-resolution STFT distance (MR-STFT), PESQ, and STOI. Since no single metric fully reflects perceptual quality—objective scores can, for example, overlook high-frequency muffling—we report all four and interpret them jointly: Mel distance and MR-STFT emphasize spectral fidelity, PESQ and STOI emphasize perceptual quality and intelligibility, and the latent frame rate reflects downstream modeling cost. 
+
+4.2 Evaluation on Public Benchmarks 
+
+The three benchmarks stress complementary abilities: LibriSpeech targets clean-speech intelligibility and the preservation of speaker identity and prosody; AudioCaps covers environmental sounds, sound effects, and mixed scenes; and SongDescriber emphasizes harmonic structure, timbre, and wide-band detail in music and singing. In each table (Tables 4–6) we group models by latent frame rate, because a meaningful comparison must account for sequence length: Qwen-Audio-VAE competes directly with other low-frame-rate ( <50 Hz) systems, while high-frame-rate codecs are listed for reference. Table 4: Reconstruction results on LibriSpeech (Panayotov et al., 2015). Models are grouped by latent frame rate ( ≥50 Hz above the rule, <50 Hz below); the best result within each group is in bold .                                                 
+
+> Model Frame Rate Mel Dist ↓MR-STFT ↓PESQ ↑STOI ↑
+> AudioDec 80 Hz 1.099 3.391 1.986 0.819 DAC 75 Hz 0.305 0.784 4.464 0.995
+> EnCodec 75 Hz 1.567 4.239 1.557 0.845 WavTokenizer 75 Hz 1.104 3.437 2.380 0.912 Hunyuan Foley 50 Hz 0.945 1.654 3.232 0.964 MM Audio 31.25 Hz 0.816 1.253 2.492 0.913 Stable Audio Open 20 Hz 0.994 3.240 2.722 0.930
+> Qwen-Audio-VAE (Ours) 12.5 Hz 0.513 0.715 3.975 0.980
+
+Table 5: Reconstruction results on AudioCaps (Kim et al., 2019). Models are grouped by latent frame rate (≥50 Hz above the rule, <50 Hz below); the best result within each group is in bold .                                                 
+
+> Model Frame Rate Mel Dist ↓MR-STFT ↓PESQ ↑STOI ↑
+> AudioDec 80 Hz 1.274 4.137 1.494 0.414 DAC 75 Hz 0.320 0.958 4.392 0.974
+> EnCodec 75 Hz 1.593 5.006 1.541 0.559 WavTokenizer 75 Hz 1.374 3.990 1.477 0.475 Hunyuan Foley 50 Hz 1.001 1.835 3.181 0.869 MM Audio 31.25 Hz 0.832 1.605 1.946 0.607 Stable Audio Open 20 Hz 1.110 1.533 2.247 0.666
+> Qwen-Audio-VAE (Ours) 12.5 Hz 0.649 2.315 2.952 0.812
+
+4.2.1 LibriSpeech 
+
+On LibriSpeech, Qwen-Audio-VAE is the best low-frame-rate model on every metric (Mel 0.513, MR-STFT 0.715, PESQ 3.975, STOI 0.980) while operating at only 12.5 Hz. High-frame-rate codecs such as DAC reach higher raw fidelity, but only with 4–6 × longer latent sequences—precisely the cost we seek to avoid for downstream generation. We examine frame-rate and architecture variants in Section 4.3. 
+
+4.2.2 AudioCaps 
+
+On AudioCaps, whose diverse and transient-heavy content is harder than clean speech, Qwen-Audio-VAE again leads the low-frame-rate group on Mel distance, PESQ, and STOI, showing that its representation is not specialized to speech. Its MR-STFT is higher than Stable Audio Open’s, a reminder that fine-grained spectral matching and perceptual intelligibility do not always move together on general audio. 7Table 6: Reconstruction results on SongDescriber (Manco et al., 2023). Models are grouped by latent frame rate ( ≥50 Hz above the rule, <50 Hz below); the best result within each group is in bold .                                            
+
+> Model Frame Rate Mel Dist ↓MR-STFT ↓PESQ ↑STOI ↑
+> AudioDec 80 Hz 1.206 2.631 1.162 0.472 DAC 75 Hz 0.574 1.740 4.274 0.978 EnCodec 75 Hz 1.110 2.389 1.391 0.634 WavTokenizer 75 Hz 1.198 2.584 1.174 0.501 Hunyuan Foley 50 Hz 0.503 1.033 4.400 0.987
+> Stable Audio Open 20 Hz 0.752 0.986 2.617 0.838
+> Qwen-Audio-VAE (Ours) 12.5 Hz 0.671 0.903 3.319 0.883
+
+Figure 4: Spectrogram reconstruction comparison on LibriSpeech. Columns: ground truth, Stable Audio Open (20 Hz), and Qwen-Audio-VAE (Ours, 12.5 Hz); the green box marks the highlighted high-frequency region. Despite its lower latent frame rate, Qwen-Audio-VAE preserves harmonic structure and high-frequency texture close to the ground truth, whereas Stable Audio Open blurs high-frequency detail. 
+
+4.2.3 SongDescriber 
+
+On SongDescriber, Qwen-Audio-VAE surpasses Stable Audio Open on all four metrics, showing that its compact latent also captures musical harmonic and timbral structure; among high-frame-rate systems the music-oriented Hunyuan-Foley is strongest, as expected for a 50 Hz model tuned for music. Taken together, the three benchmarks establish the intended operating point of Qwen-Audio-VAE: it is consistently the best low-frame-rate model across speech, sound, and music while using the fewest latent frames, trading a small margin of raw fidelity against high-frame-rate codecs for a 4–6 × shorter latent sequence. Figure 4 illustrates this qualitatively on LibriSpeech: our 12.5 Hz reconstruction tracks the ground-truth spectrum more faithfully than the higher-frame-rate Stable Audio Open, most visibly in the highlighted high-frequency region. 
+
+4.3 Ablation Study 
+
+We isolate individual design choices in Table 7, using LibriSpeech as a representative benchmark; all rows share the encoder/decoder topology of the main model and differ only in the factor being ablated. Table 7: Ablation of Qwen-Audio-VAE variants, evaluated on LibriSpeech (Panayotov et al., 2015). Variants differ in latent frame rate, the encoder-side window Transformer, latent dimension, and decoder width.                                   
+
+> Variant Frame Rate Mel Dist ↓MR-STFT ↓PESQ ↑STOI ↑
+> Qwen-Audio-VAE (main) 12.5 Hz 0.513 0.715 3.975 0.980 Qwen-Audio-VAE-50Hz 50 Hz 0.467 0.637 4.040 0.987
+> w/o Encoder Transformer 12.5 Hz 0.620 0.728 3.711 0.973 64 dim 12.5 Hz 0.717 0.807 3.129 0.951 64 dim + big decoder 12.5 Hz 0.715 0.801 3.155 0.953
+
+Encoder Transformer. Removing the bottleneck window Transformer raises Mel distance from 0.513 to 0.620 and lowers every other metric, confirming that attention-based aggregation is valuable under aggressive temporal compression, where each latent frame must summarize a long audio span. 8Latent dimension. Halving the latent to 64 dimensions consistently hurts reconstruction, and widening the decoder does not recover it. The limiting factor is therefore how information is organized in the latent, not decoder capacity. 
+
+Frame rate. The 50 Hz variant is best on every metric, but at four times the sequence length. Because downstream text-to-audio cost grows with sequence length, the 12.5 Hz model offers the better efficiency– quality trade-off and is our default configuration. 
+
+4.4 Encoding Efficiency 
+
+We now turn from reconstruction quality to the efficiency axis. Table 8 reports the wall-clock latency of encoding 64 clips of 30 s, the representative workload of offline latent extraction for text-to-audio training. The three optimizations of Section 2.4 reduce latency from 1957 ms to 541 ms (3.62 ×), with most of the gain coming from shifting computation away from the high-resolution early stages while preserving the capacity of the later, low-resolution ones. Table 8: Encoding efficiency comparison. †Stable Audio Open is 1.19 × faster than Qwen-Audio-VAE 
+
+before acceleration, but remains slower than the optimized model (541 ms).              
+
+> Model / Variant 64 ×30s Encoding Latency ↓Relative Speedup Qwen-Audio-VAE before acceleration 1957 ms 1.00 ×
+> + Encoder stride optimization 1361 ms 1.44 ×
+> + Residual unit pruning 747 ms 2.62 ×
+> + First-layer channel reduction 541 ms 3.62 ×
+> Stable Audio Open †1640 ms 1.19 ×
+
+Low frame rate and fast encoding are complementary: the former shortens downstream DiT sequences, while the latter lowers the cost of producing the latents themselves. Notably, Stable Audio Open is slower than our optimized encoder despite running at a higher 20 Hz frame rate, confirming that the two properties are independent advantages rather than a single speed-versus-rate trade-off. 
+
+4.5 Text-to-Audio Integration 
+
+We first quantify how encoder acceleration affects text-to-audio training. We train the same 150M-parameter diffusion transformer on latents produced by our encoder before and after acceleration, on 32 ×L20 (80 GB) GPUs with LAION-Audio-630K (Wu et al., 2023b) (4,325.39 h after filtering). At a fixed throughput of ∼1 step/s, removing the encoding bottleneck lets the accelerated model use a 4 × larger batch (64 vs. 16) and process 4 × more audio per step, which lifts AudioCaps CLAP from 0.29 to 0.33 under the same wall-clock budget (Table 9). For reference, we also run a Stable Audio Open baseline through the same pipeline; its higher-frame-rate, slower encoder needs longer training yet reaches lower quality (60 h for CLAP 0.27, versus 36 h for our 0.33). Table 9: Text-to-audio training efficiency and generation quality. CLAP is measured on the AudioCaps test set.                   
+
+> Setting GPU Setup Batch Size Audio per Batch Training Time AudioCaps CLAP ↑
+> Stable Audio Open 32 ×L20 80G 16 160 s 60 h 0.27 Ours w/o Encoder Acceleration 32 ×L20 80G 16 160 s 36 h 0.29 Ours 32 ×L20 80G 64 640 s 36 h 0.33
+
+Beyond throughput, the structure of the latent space itself shapes downstream generation. Starting from our default latent (KL weight λkl = 10 −6), we trained a more strongly regularized variant ( λkl = 10 −3), selecting a checkpoint that balances reconstruction and KL loss, and evaluated both with FD (VGG), Inception Score (IS), and CLAP on the AudioCaps test set (Table 10). The more strongly regularized latent degrades generation on all three metrics. We attribute this to latent information density: pulling the posterior harder toward the prior discards structure the transformer relies on, and we separately observe that higher-dimensional latents are harder for the diffusion transformer to fit. Aligning the latent with pretrained audio representations (e.g., CLAP or an Omni audio encoder) is a promising direction for improving generative learnability. 9Table 10: Effect of stronger KL regularization on text-to-audio generation (AudioCaps test set; the same 150M diffusion transformer). Raising the KL weight from 10 −6 to 10 −3 regularizes the latent but hurts every generation metric.                 
+
+> Setting FD (VGG) ↓IS ↑CLAP ↑
+> Ours ( λkl =10 −6)2.44 8.94 0.33
+> Ours ( λkl =10 −3)5.18 7.09 0.30
+
+# 5 Conclusion 
+
+We presented Qwen-Audio-VAE, a suite of continuous audio autoencoders for scalable general audio generation. Its design is organized around three goals that a generation backbone must meet simul-taneously: high-fidelity reconstruction across diverse audio, a compact latent that keeps downstream sequences short, and high-throughput encoding for large-scale training. The model couples a causal encoder–decoder with a continuous 12.5 Hz bottleneck, concentrates window Transformers at that low rate, and adds a bank of complementary discriminators for adversarial supervision. Trained on 5 mil-lion hours of multi-domain audio, it reconstructs speech, music, and general sound faithfully across heterogeneous acoustic conditions. Across public benchmarks (LibriSpeech, AudioCaps, SongDescriber), Qwen-Audio-VAE is consistently the strongest low-frame-rate model while using the fewest latent frames. Its asymmetric encoder–decoder and latency-aware encoder pruning cut 64 ×30s encoding latency from 1957 ms to 541 ms (3.62 ×) without degrading reconstruction, and this speedup translates into system-level gains: in text-to-audio training, faster latent extraction supports a 4 × larger batch and higher throughput at the same training time. More broadly, our results suggest that autoencoders for general audio generation should be optimized not for reconstruction alone, but jointly for compression, encoding throughput, data scalability, and latent learnability. Future work will pursue aligning the latent with pretrained audio representations, improving high-frequency and transient reconstruction, strengthening data stratification, and validating on larger-scale text-to-audio training. 10 References 
+
+Guibin Chen, Dixuan Lin, Jiangping Yang, Chunze Lin, Junchen Zhu, Mingyuan Fan, Hao Zhang, Sheng Chen, Zheng Chen, Chengcheng Ma, et al. Skyreels-v2: Infinite-length film generative model. arXiv preprint arXiv:2504.13074 , 2025. Ho Kei Cheng, Masato Ishii, Akio Hayakawa, Takashi Shibuya, Alexander Schwing, and Yuki Mitsufuji. MMAudio: Taming multimodal joint training for high-quality video-to-audio synthesis. In Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Marcel Blistein, Ori Ram, Dan Zhang, Evan Rosen, et al. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 , 2025. Alexandre Défossez, Jade Copet, Gabriel Synnaeve, and Yossi Adi. High fidelity neural audio compression. 
+
+arXiv:2210.13438 , 2022. Patrick Esser, Robin Rombach, and Björn Ommer. Taming transformers for high-resolution image synthesis. In Conference on Computer Vision and Pattern Recognition (CVPR) , 2021. Zach Evans, Julian D. Parker, CJ Carr, Zack Zukowski, Josiah Taylor, and Jordi Pons. Stable audio open. In IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2025. Shengpeng Ji, Ziyue Jiang, Wen Wang, Yifu Chen, Minghui Fang, Jialong Zuo, Qian Yang, Xize Cheng, Zehan Wang, Ruiqi Li, et al. WavTokenizer: an efficient acoustic discrete codec tokenizer for audio language modeling. In International Conference on Learning Representations (ICLR) , 2025. Chris Dongjoo Kim, Byeongchang Kim, Hyunmin Lee, and Gunhee Kim. AudioCaps: Generating captions for audios in the wild. In North American Chapter of the Association for Computational Linguistics: Human Language Technologies (NAACL-HLT) , 2019. Diederik P. Kingma and Max Welling. Auto-encoding variational bayes. In International Conference on Learning Representations (ICLR) , 2014. Jungil Kong, Jaehyeon Kim, and Jaekyoung Bae. HiFi-GAN: Generative adversarial networks for efficient and high fidelity speech synthesis. In Advances in Neural Information Processing Systems (NeurIPS) , 2020. Rithesh Kumar, Prem Seetharaman, Alejandro Luebs, Ishaan Kumar, and Kundan Kumar. High-fidelity audio compression with improved RVQGAN. In Advances in Neural Information Processing Systems (NeurIPS) , 2023. Haohe Liu, Zehua Chen, Yi Yuan, Xinhao Mei, Xubo Liu, Danilo Mandic, Wenwu Wang, and Mark D. Plumbley. AudioLDM: Text-to-audio generation with latent diffusion models. In International Conference on Machine Learning (ICML) , 2023. Ilaria Manco, Benno Weck, Seungheon Doh, Minz Won, Yixiao Zhang, Dmitry Bogdanov, Yusong Wu, Ke Chen, Philip Tovstogan, Emmanouil Benetos, Elio Quinton, George Fazekas, and Juhan Nam. The song describer dataset: a corpus of audio captions for music-and-language evaluation. In Machine Learning for Audio Workshop, NeurIPS , 2023. OpenAI. Gpt-4o, 2024. URL https://openai.com/index/hello-gpt-4o/ .Vassil Panayotov, Guoguo Chen, Daniel Povey, and Sanjeev Khudanpur. Librispeech: an asr corpus based on public domain audio books. In 2015 IEEE international conference on acoustics, speech and signal processing (ICASSP) , pp. 5206–5210. IEEE, 2015. William Peebles and Saining Xie. Scalable diffusion models with transformers. In International Conference on Computer Vision (ICCV) , 2023. Zhiliang Peng, Jianwei Yu, Wenhui Wang, Yaoyao Chang, Yutao Sun, Li Dong, Yi Zhu, Weijiang Xu, Hangbo Bao, Zehua Wang, et al. Vibevoice technical report. arXiv preprint arXiv:2508.19205 , 2025. Team Qwen. Qwen3.5-omni technical report, 2026. URL https://arxiv.org/abs/2604.15804 .Team Seedance, De Chen, Liyang Chen, Xin Chen, Ying Chen, Zhuo Chen, Zhuowei Chen, Feng Cheng, Tianheng Cheng, Yufeng Cheng, et al. Seedance 2.0: Advancing video generation for world complexity. 
+
+arXiv preprint arXiv:2604.14148 , 2026. 11 Sizhe Shan, Qiulin Li, Yutao Cui, Miles Yang, Yuehai Wang, Qun Yang, Jin Zhou, and Zhao Zhong. HunyuanVideo-Foley: Multimodal diffusion with representation alignment for high-fidelity foley audio generation. arXiv preprint arXiv:2508.16930 , 2025. Christian J. Steinmetz and Joshua D. Reiss. auraloss: Audio focused loss functions in PyTorch. In Digital Music Research Network One-day Workshop (DMRN+15) , 2020. Team Wan, Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianxiao Yang, et al. Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 , 2025. Jun Wang, Xijuan Zeng, Chunyu Qiang, Ruilong Chen, Shiyao Wang, Le Wang, Wangjing Zhou, Pengfei Cai, et al. Kling-Foley: Multimodal diffusion transformer for high-quality video-to-audio generation. 
+
+arXiv preprint arXiv:2506.19774 , 2025. Yi-Chiao Wu, Israel D. Gebru, Dejan Markovi´ c, and Alexander Richard. AudioDec: An open-source streaming high-fidelity neural audio codec. In IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2023a. Yusong Wu, Ke Chen, Tianyu Zhang, Yuchen Hui, Taylor Berg-Kirkpatrick, and Shlomo Dubnov. Large-scale contrastive language-audio pretraining with feature fusion and keyword-to-caption augmentation. In IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2023b. Zhuoyi Yang, Jiayan Teng, Wendi Zheng, Ming Ding, Shiyu Huang, Jiazheng Xu, Yuanming Yang, Wenyi Hong, Xiaohan Zhang, Guanyu Feng, et al. Cogvideox: Text-to-video diffusion models with an expert transformer. In International Conference on Learning Representations , volume 2025, pp. 83048–83077, 2025. Neil Zeghidour, Alejandro Luebs, Ahmed Omran, Jan Skoglund, and Marco Tagliasacchi. Soundstream: An end-to-end neural audio codec. IEEE ACM Trans. Audio Speech Lang. Process. , 2022. Xin Zhang, Dong Zhang, Shimin Li, Yaqian Zhou, and Xipeng Qiu. Speechtokenizer: Unified speech tokenizer for speech large language models. CoRR , abs/2308.16692, 2023. 12 6 Core Contributors 
+
+Ziyue Jiang Dake Guo Zekai Zhang Hangrui Hu Ting He Xinfa Zhu Xiong Wang Yongqi Wang Jiapeng Wang Wenxiang Guo Zhifang Guo Chenfei Wu Dayiheng Liu Jin Xu †*†Team Lead. 
+
+> *
+
+Corresponding Author. 
+
+13 7 Appendix 
+
+7.1 Model Configuration 
+
+For completeness and reproducibility, Table 11 reports the full configuration of the main Qwen-Audio-VAE model in signal-flow order; its key values also appear inline in Section 2.2. Table 11: Main Qwen-Audio-VAE configuration (24 kHz, mono). Ablated variants are described in Section 4 and Appendix 7.4. 
+
+Module Hyperparameter Value I/O Audio 24 kHz, mono Latent 12.5 Hz, 128-d, diagonal Gaussian Encoder (causal) Downsampling strides 8,5,4,3 (480 ×, → 50 Hz) Channels 24 →128 →256 →512 →1024 Residual units / block 1 (dilation 1) Bottleneck Extra downsampling 4× (50 Hz → 12.5 Hz) Window Transformer (pre & post) 8 layers, dim 1024, 16 heads, window 72 Decoder (causal) Upsampling strides 8,5,4,3 (480 ×, → 24 kHz) Base channels 1536 Residual units / block 3 (dilations 1,3,9) Discriminators Types multi-period, multi-resolution STFT, multi-scale STFT, sub-band CQT 
+
+7.2 Training Details 
+
+The model is trained from scratch on the full multi-domain corpus. Table 12 lists the complete setup, including the optimizer, the separate generator/discriminator learning rates, the learning-rate schedule, and the hardware. Table 12: Training configuration of Qwen-Audio-VAE. 
+
+Hyperparameter Value Training data 5M hours, multi-domain (speech / music / sound) Sample rate 24 kHz (mono) Training segment length 6 s (144,000 samples) Optimizer AdamW, β = ( 0.5, 0.9 ), ϵ = 10 −9
+
+Learning rate (G / D) 2 × 10 −4 / 1 × 10 −4
+
+LR schedule linear warmup 8,000 steps; decay from step 400,000 Batch size 2 per GPU, gradient accumulation 1 Total steps 2.4M Gradient clipping max-norm 1.0 GPUs 32 ×A100 80G Latent frame rate / dim 12.5 Hz / 128 
+
+7.3 Discriminator Configuration 
+
+Section 2.2 introduced the four discriminators used for adversarial training; Table 13 gives their exact periods, FFT sizes, and constant-Q resolutions. Table 13: Discriminator configuration. 
+
+Discriminator Configuration Multi-period (Kong et al., 2020) periods = {2, 3, 5, 7, 11 }
+
+Multi-resolution STFT (Kumar et al., 2023) FFT sizes = {334, 542, 876, 1418, 2296 }; 5 sub-bands Multi-scale STFT (Défossez et al., 2022) filters = 72; nFFT = {206, 334, 542, 876, 1418, 2296 }
+
+Sub-band CQT filters = 128; dilations {1, 2, 4 }; octaves {9, 9, 9 }; bins/oct. {24, 36, 48 }
+
+14 7.4 Model Variants 
+
+Table 14 maps the ablation rows reported in Section 4.3 to the configuration fields that distinguish them. All variants share the main model’s 24 kHz encoder/decoder topology (strides 8, 5, 4, 3) and differ only in the latent dimension (set by the bottleneck projection), the encoder-side window Transformer, the decoder width, and the bottleneck downsampling factor that sets the final frame rate. Table 14: Configuration of model variants.                            
+
+> Variant Frame rate Latent dim Decoder dim Note
+> Qwen-Audio-VAE (main) 12.5 Hz 128 1536 full model w/o Encoder Transformer 12.5 Hz 128 1536 encoder-side window Transformer re-moved 64 dim 12.5 Hz 64 1536 smaller latent 64 dim + big decoder 12.5 Hz 64 2048 smaller latent + wider decoder 50 Hz variant 50 Hz 128 1536 no extra bottleneck downsampling
+
+15
