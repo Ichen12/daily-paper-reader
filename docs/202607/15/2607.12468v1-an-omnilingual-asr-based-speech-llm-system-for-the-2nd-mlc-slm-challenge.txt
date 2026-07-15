@@ -1,0 +1,168 @@
+Title: An Omnilingual-ASR-Based Speech-LLM System for the 2nd MLC-SLM Challenge
+
+URL Source: https://arxiv.org/pdf/2607.12468v1
+
+Published Time: Wed, 15 Jul 2026 11:58:56 GMT
+
+Number of Pages: 4
+
+Markdown Content:
+# An Omnilingual-ASR-Based Speech-LLM System for the 2nd MLC-SLM Challenge 
+
+# Shuming Fang 1, Shuifei Zeng 21UGREEN AI Lab, Shenzhen, China 
+
+2School of Computer Science (National Pilot Software Engineering School), Beijing University of Posts and Telecommunications, Beijing, China 
+
+simon.fang@ugreen.com 
+
+# Abstract 
+
+We describe our submission to Task 1 of the 2nd MLC-SLM Challenge: a cascaded diarization-then-recognition sys-tem that combines DiariZen-Large-s80 (WavLM-Large) seg-mentation, CAM++ embedding-based two-speaker clustering, and a LoRA-adapted omniASR LLM 7B v2 recognizer, with no oracle segmentation or speaker labels at test time. On the of-ficial Development set (150 conversations, 21 language/accent categories) the system attains a macro tcpMER of 29.27% , ver-sus 79 .15% for the official baseline; on the Evaluation set it scores 50 .23% . We also analyze two engineering choices that substantially affect tcpMER. First, embedding-based speaker clustering outperforms an end-to-end-style alternative that as-signs speakers from ASR <sc> turn markers alone. Second, overlap-aware segmentation, although intended to raise diariza-tion recall, increases tcpMER because overlapped speech is transcribed twice. 
+
+Index Terms : speaker diarization, multilingual conversational speech, speaker assignment, time-constrained evaluation, cas-caded systems 
+
+# 1. Introduction 
+
+Conversational speech in realistic, multilingual settings re-mains challenging for both automatic speech recognition (ASR) and speaker diarization (SD). The Multilingual Conversational Speech Language Model (MLC-SLM) Challenge [1] targets this gap by releasing a real-world, multi-language conversa-tional corpus. In its second edition, Task 1 asks participants to jointly perform speaker diarization (“who spoke when”) and recognition (“what was said”) on raw recordings, with-out any oracle segmentation or speaker labels at evaluation time. Systems are ranked by the time-constrained minimum-permutation error rate (tcpMER), i.e. tcpWER for most lan-guages and tcpCER for Japanese, Korean and Thai [2]; speaker permutations are resolved before concatenating transcripts for scoring. The official Task-1 baseline fine-tunes Microsoft’s open-source VibeVoice-ASR with LoRA on the challenge train-ing set [3]. This paper describes our Task 1 submission and the Development-set ablations used to select it. The system is a cas-caded pipeline—neural segmentation, CAM++-based speaker clustering, and LoRA-adapted ASR—so that each stage can be tuned and compared under the official tcpMER protocol. The remainder of the paper is organized as follows: Section 2 details the implementation, Section 3 the evaluation setup, and Sec-tion 4 reports Development results, component ablations (Ta-ble 3), and the Evaluation-set leaderboard score. In summary: 
+
+Accepted to INTERSPEECH 2026.             
+
+> Raw conversation (no oracle SD/ASR)
+> Diarization front-end
+> FunASR FSMN-VAD →DiariZen-Large-s80 seg.
+> Speaker assignment
+> pre-trained CAM++ embeddings →spectral clustering (2 spk)
+> Recognition
+> LoRA-adapted omniASR LLM 7B v2 ,language-constrained decoding
+> Post-processing
+> <sc> split + per-clause times, hyp. de-dup
+> Submission hyp.stm
+> Main findings from component ablations. (1) Cascaded embed-ding assignment beats end-to-end <sc> assignment; (2) DiariZen-Large-s80 segmentation yields the lowest tcpMER; (3) overlap-aware segmentation hurts tcpMER.
+
+Figure 1: Overview of the submitted cascaded pipeline (top to bottom) and the main outcomes of our Development-set abla-tions (Table 3). 
+
+• We describe the final cascaded system submitted to the challenge (Exp4 in Table 3). • We compare embedding-based clustering with end-to-end <sc> -based speaker assignment on the Develop-ment set. • We compare overlap-enabled and overlap-disabled seg-mentation fronts under the same scoring protocol. • We report the Evaluation-set leaderboard score and dis-cuss the gap to Development tuning. 
+
+# 2. System Description 
+
+Figure 1 summarizes the pipeline. A raw conversation is (1) segmented into single-speaker regions, (2) assigned speaker identities by embedding extraction and clustering, (3) transcribed segment-by-segment by the ASR model, and (4) cleaned and packed into the submission format. The four stages are decoupled so that each can be replaced and ablated independently. arXiv:2607.12468v1 [cs.SD] 14 Jul 2026 2.1. Speaker diarization front-end 
+
+We build on the 3D-Speaker toolkit [4] with a cascaded lay-out: segmentation is handled separately from speaker assign-ment . This separation matches our implementation and makes the Exp1–Exp4 comparisons in Section 4 straightforward— each stage can be swapped without retraining the recognizer. 
+
+Voice activity detection. All diarization config-urations first apply the FunASR feedforward se-quential memory network (FSMN) voice-activity detector [5, 6], using the ModelScope checkpoint 
+
+speech fsmn vad zh-cn-16k-common-pytorch .VAD is a shared module in every inference run and is not part of the segmentation-model comparison below. 
+
+Segmentation. On top of VAD we compare two publicly re-leased neural segmenters, both integrated via the 3D-Speaker 
+
+pyannote.audio inference stack [4]: (a) the Hugging-Face checkpoint pyannote/segmentation-3.0 [7, 8], a 
+
+PyanNet powerset segmentation model (SincNet + BiLSTM head; 10 s windows, 10% hop) used as a segmenter only— we do not use the pyannote speaker-embedding pipeline, and instead pair it with CAM++ clustering below; overlapped-speech decoding from the powerset head is enabled in Exp2 and disabled in Exp3; and (b) the DiariZen-Large-s80 check-point ( BUT-FIT/diarizen-wavlm-large-s80-md ), a WavLM-Large + Conformer EEND segmentation model [9], run with 12 s windows and a 10% hop (Exp4, submitted). The raw segments are post-processed by (i) dropping segments shorter than 0.7 s, (ii) merging same-speaker segments sepa-rated by gaps ≤ 1.5 s, and (iii) splitting any segment longer than 25 s, which keeps the per-segment duration within the ASR model’s stable input range. 
+
+Speaker embedding. We use the publicly released, pre-trained 
+
+CAM++ [10] checkpoint from the 3D-Speaker toolkit [4] (campplus cn en common ): it is lightweight, supports mul-tilingual telephone speech out of the box, and fits our two-speaker clustering stage without additional speaker-model train-ing. For each candidate segment we slice 1.5 s sub-windows with a 0.75 s hop and extract 192 -dimensional embeddings from an 80 -dimensional log-filter-bank front-end. 
+
+Clustering. All sub-window embeddings of a recording are grouped by spectral clustering [11] with the number of speakers fixed to two, matching the two-party telephone conversations of the corpus. Each candidate segment then receives a single anonymous speaker ID ( Speaker1 /Speaker2 ), and adja-cent same-speaker segments are merged. Because the DiariZen front-end can hypothesize concurrent speakers, a further post-processing step resolves any residual cross-speaker time overlap (the shorter segment yields the overlapped region), so the seg-ments passed to the recognizer are effectively non-overlapping. 
+
+2.2. Multilingual ASR with LoRA adaptation 
+
+The recognizer is Meta’s publicly released 
+
+omniASR LLM 7B v2 checkpoint from the Omnilingual ASR family [12] (a wav2vec2-style encoder with a CTC head). We adapt it to the conversational, telephone-channel domain with Low-Rank Adaptation [13] rather than full fine-tuning: with a single GPU and a 7B backbone, LoRA is the only practical option, and freezing the acoustic encoder also guards a strong multilingual model against over-fitting the compara-tively small in-domain set. Only the low-rank adapters (rank 
+
+r=8 , α=16 , dropout 0.05 ) are updated, under a CTC objective. Adaptation runs in fairseq2 for 50 k steps with FSDP and bfloat16; utterances are filtered to 2–15 s and length-bucketed (up to 4×10 5 audio elements per batch, gradient accumulation 
+
+16 ). We use AdamW (lr 2×10 −4, β=(0 .9, 0.98) , no weight decay) with a tri-stage warm-up/hold/decay schedule (ratios 
+
+0.1/0.4/0.5). All reported systems use the same 50 k-step checkpoint. Training utterances are packed from consecutive reference-segmented turns in the challenge training set (oracle boundaries available only during adaptation, not at test time) subject to the length filter; transcripts concatenate segment text and insert a speaker-change token ( <sc> ) between adjacent segments from different speakers (but not between consecutive segments of the same speaker), so the model learns to predict turn boundaries alongside lexical content. At inference, each diarized segment is decoded with the target language supplied explicitly as a decoding constraint (lang=<lang> ), which confines the decoder to the target lan-guage’s token space and effectively eliminates spurious lan-guage switching. 
+
+2.3. Post-processing 
+
+Two inference-time steps reduce time-constrained errors with-out changing the acoustic model. (1) Speaker-change split-ting : the recognizer outputs the <sc> markers it was trained on; within a segment we split on these markers and allocate per-sub-clause timestamps proportional to character length, in-stead of sharing a single timestamp across the whole seg-ment. (2) Repeated-hypothesis de-duplication : within a seg-ment, near-duplicate sub-clauses (identical, substring, or ≥ 0.9
+
+sequence similarity after NFKC + case folding) are removed to suppress decoder echo. All Development-set numbers in this paper, including Exp1–Exp4, are scored with the same official symmetric normalization applied to references and hypothe-ses (NFKC, then strict tokenization aligned with the challenge WER/CER scripts, with punctuation removal for word cohorts); see Section 3. 
+
+# 3. Experimental Setup 
+
+Data. All results are reported on the official MLC-SLM De-velopment set: 150 long conversational recordings ( ∼ 30 min telephone-channel sessions) spanning 21 language/accent cate-gories (English is split into five accents, following the official breakdown). The final system is submitted on the Evaluation 
+
+set. LoRA adaptation uses the official challenge training mani-fest with reference turn boundaries (available for training only). 
+
+Metrics. Following the challenge, we report tcpWER for 18 categories and tcpCER for Japanese, Korean and Thai, with a collar of 5 s computed by MeetEval [2]. For each cohort we re-port the micro rate (total errors over total reference tokens); the overall macro score is the mean of per-category micro rates over all 21 categories. All results reported in this paper —main re-sults, Exp1–Exp4, and baseline comparisons—apply this iden-tical scoring-time normalization (Unicode NFKC compatibility normalization, which maps full-width and other compatibility-variant characters to their canonical forms, followed by strict tokenization aligned with the challenge WER/CER scripts, with punctuation removal for word cohorts) symmetrically to refer-ences and hypotheses, so neither side gains from one-sided text cleaning. The official baseline Development scores (Table 2) are quoted from the released repository [3], where the authors likewise apply their text normalization 2nd.py (NFC, lowercasing, punctuation removal) symmetrically to both sides under the same collar and tcpMER protocol; we do not re-score their system. The ∼ 50 point gap to our 29 .27% therefore re-Table 1: Per-language results of the final system on the Devel-opment set, following the official 21 -category breakdown (En-glish reported by accent). Japanese/Korean/Thai are scored with tcpCER, the rest with tcpWER (micro, %). 
+
+Language tcpMER Language tcpMER Spanish (MX) 11.1 Eng. (British) 27.8 Eng. (Australian) 17.8 Vietnamese 33.0 Eng. (Indian) 18.2 French 34.6 Thai † 18.7 Korean † 34.8 Italian 19.9 Tagalog 34.9 Spanish 20.0 German 37.8 Eng. (Filipino) 20.1 Portuguese 39.4 Portuguese (BR) 20.3 Japanese † 40.3 Russian 22.9 French (CA) 46.7 Urdu 24.0 Turkish 65.8 Eng. (American) 26.6 Word cohort micro tcpWER (18 categories): 29.41 
+
+Char cohort micro tcpCER (3 categories): 27.38 
+
+Macro tcpMER (21 categories): 29.27   
+
+> †scored with tcpCER. The five English accents average 22 .2% .
+
+flects architecture, not asymmetric normalization. 
+
+Hardware. ASR LoRA adaptation was performed on a single NVIDIA RTX 6000 Ada GPU. 
+
+# 4. Results and Analysis 
+
+4.1. Main results 
+
+Table 1 reports per-language results of the final sys-tem (DiariZen-Large-s80 segmentation + pre-trained CAM++ + two-speaker clustering + LoRA-adapted 
+
+omniASR LLM 7B v2 ). Following the official scoring protocol we report over all 21 language/accent categories (English is broken down by accent). The system attains a macro tcpMER of 29.27% , with a word-cohort micro tcpWER of 29.41% and a character-cohort micro tcpCER of 27.38% .For reference, the official Task-1 baseline—a LoRA-fine-tuned VibeVoice-ASR recognizer [3]—reports a macro tcpMER of 79 .15% on the same Development set under the identical 21-category protocol; our cascaded system lowers this to 
+
+29 .27% , a relative reduction of roughly 63% .
+
+4.2. Comparison with the official baseline 
+
+For context, Table 2 lists the per-language Development-set scores of the official Task-1 baseline as released in the repos-itory of [3]; the baseline is a LoRA-fine-tuned VibeVoice-ASR recognizer evaluated under the same 5 s collar with tcpCER for Japanese/Korean/Thai and tcpWER elsewhere, with sym-metric text normalization as above. Its scores are high across the board—no single category falls below 60% and the eas-iest cohorts still sit above 63% —yielding a 79 .15% average over its 21 language/accent categories. Using the same 21-category protocol, our cascaded system reaches a macro tcp-MER of 29 .27% ; even our hardest cohort (Turkish, 65 .8% )is comparable to the baseline’s single best category ( 63 .4% ). This gap indicates that the combination of a strong segmen-tation front-end, embedding-based two-speaker clustering, and a LoRA-adapted multilingual recognizer is markedly more ef-fective than a single fine-tuned speech-LLM recognizer on this Table 2: Official 2nd MLC-SLM Task-1 baseline (LoRA-fine-tuned VibeVoice-ASR) per-language tcpMER on the Develop-ment set, as reported in the official baseline repository [3] (col-lar 5 s; tcpCER for Japanese/Korean/Thai, tcpWER otherwise). For comparison, our system attains a macro tcpMER of 29.27% 
+
+under the same 21-category protocol. 
+
+Language tcpMER Language tcpMER Eng. (American) 77.39 Portuguese 75.64 Eng. (Australian) 81.50 Portuguese (BR) 73.02 Eng. (British) 67.60 Russian 83.84 Eng. (Filipino) 63.36 Spanish 82.51 Eng. (Indian) 72.12 Spanish (MX) 78.81 French 83.39 Tagalog 81.09 French (CA) 78.56 Thai † 83.67 German 84.23 Turkish 92.97 Italian 78.16 Urdu 89.63 Japanese † 81.46 Vietnamese 71.81 Korean † 81.33 Baseline average (21 categories): 79.15 
+
+Our system (macro, 21 categories): 29.27  
+
+> †scored with tcpCER.
+
+conversational, telephone-channel data. 
+
+4.3. Cascaded-system ablations 
+
+Table 3 summarizes the main component ablations on the full Development set ( 150 conversations, macro tcpMER over the official 21 language/accent categories). All four experiments are scored under the same official protocol (NFKC + strict symmetric normalization, collar 5 s). Following the incremen-tal ablation style of [14], each experiment adds or changes one pipeline stage while keeping the same LoRA-adapted ASR checkpoint and scoring procedure. Exp1 is an end-to-end-style baseline: FunASR FSMN-VAD cuts the audio, the recognizer emits <sc> turn mark-ers, and speakers are assigned by alternating O1 /O2 at each marker—without neural segmentation or embedding-based clustering. Its macro tcpMER is 141 .2% (values above 100% are possible when insertions dominate un-der the time-constrained metric). Exp2–Exp4 replace this with a cascaded design: a neural segmentation model (pyannote/segmentation-3.0 or DiariZen-Large-s80) followed by CAM++ embedding clustering with two speakers forced. This change alone lowers tcpMER from 141 .2% to 
+
+35 .3% (Exp2), showing that speaker identity cannot be inferred reliably from turn markers alone. Within the cascaded family, disabling overlap-aware segmentation (Exp3, 30 .6% ) improves over Exp2 ( 35 .3% ) because overlapped regions are otherwise transcribed twice; switching the segmenter to DiariZen-Large-s80 (Exp4, 29.27% ) yields a further 1.3 point gain. Exp4 is the configuration submitted to the challenge. 4.4. Leaderboard submission and error analysis 
+
+Under team name fangshuming , our Evaluation-set submis-sion scored a tcpMER of 50.23% , markedly higher than the 
+
+29 .27% macro tcpMER on the Development set. We ruled out several formatting artifacts: speaker-ID style ( 1/2 vs O1/O2 )is score-neutral under tcpMER, and overlap is negligible on Evaluation (only two overlapping segment pairs in 20 ,914 seg-Table 3: Incremental ablations on the Development set (macro tcpMER over 21 categories; official NFKC + strict normaliza-tion). Lower is better. 
+
+Exp System tcpMER (%) Exp1 End-to-end: VAD + ASR 141.2 Exp2 + pyannote/seg.-3.0 , CAM++ 35.3 Exp3 + overlap disabled 30.6 Exp4 + DiariZen-Large-s80 (repl. pyannote) 29.27 
+
+ments). Although Evaluation references are not released and we cannot analyze per-utterance errors, the observed behavior suggests that the remaining gap is likely due to domain shift: the Development set was used to tune pipeline hyperparam-eters, while Evaluation differs in speaker, channel, and lan-guage mix—especially on already difficult cohorts (e.g. Turk-ish, French (CA)). We also tried an automatic translation / “de-code-switching” post-step, which degraded tcpMER because references retain code-switched words; it was not used in the final submission. 
+
+# 5. Discussion 
+
+Our Development-set ablations suggest three practical lessons for building systems under the challenge tcpMER metric: 
+
+Overlap-aware segmentation. Overlap detection is commonly used to improve diarization recall but hurt our tcpMER score: duplicated overlap regions are transcribed twice and count as errors under a time-constrained metric. We therefore disable overlap in the submitted system (Exp3/Exp4). 
+
+Speaker embedding. Segmentation alone does not identify 
+
+who is speaking. On the Development set, <sc> -only as-signment (Exp1, 141 .2% ) remains far above cascaded CAM++ clustering (Exp3, 30 .6% ); we keep a separate embedding stage in the submitted system. 
+
+Metric optimization. Choices that improve diarization recall (e.g. overlap) and choices that improve the challenge ranking metric are not the same problem; component choices should be validated on tcpMER directly. 
+
+# 6. Conclusion 
+
+We presented our Task 1 submission to the 2nd MLC-SLM Challenge: a cascaded system with DiariZen-Large-s80 seg-mentation, CAM++ two-speaker clustering, and LoRA-adapted 
+
+omniASR LLM 7B v2 . On the official Development set it reaches 29 .27% macro tcpMER ( 50 .23% on Evaluation). De-velopment ablations showed that (i) a separate embedding-clustering stage is essential compared with <sc> -only speaker assignment, and (ii) overlap-aware segmentation should be turned off for this metric. Exp4 in Table 3 is the submitted configuration. These observations may help guide future engi-neering choices for multilingual conversational speech systems evaluated under tcpMER. 
+
+# 7. References 
+
+[1] B. Mu, P. Guo, Z. Sun, S. Wang, H. Liu, M. Shao, L. Xie, E. S. Chng, L. Xiao, Q. Feng, and D. Wang, “Summary on The multilingual conversational speech language model chal-lenge: Datasets, tasks, baselines, and methods,” arXiv preprint arXiv:2509.13785 , 2025. [2] T. von Neumann, C. Boeddeker, M. Delcroix, and R. Haeb-Umbach, “MeetEval: A toolkit for computation of word error rates for meeting transcription systems,” in Proc. 7th Interna-tional Workshop on Speech Processing in Everyday Environments (CHiME 2023) , 2023, pp. 27–32. [3] alanshaoTT, “MLC-SLM-2nd-Task1-Baseline,” GitHub repository, 2026, available: https://github.com/alanshaoTT/ MLC-SLM-2nd-Task1-Baseline. [4] Y. Chen, S. Zheng, H. Wang, L. Cheng, T. Zhu, R. Huang, C. Deng, Q. Chen, S. Zhang, W. Wang, and X. Li, “3D-Speaker-Toolkit: An open-source toolkit for multimodal speaker verifica-tion and diarization,” arXiv preprint arXiv:2403.19971 , 2024. [5] Z. Gao, Z. Li, J. Wang, H. Luo, X. Shi, M. Chen, Y. Li, L. Zuo, Z. Du, and S. Zhang, “FunASR: A fundamental end-to-end speech recognition toolkit,” in Proc. Interspeech , 2023. [6] Alibaba DAMO Academy, “speech fsmn vad zh-cn-16k-common-pytorch,” ModelScope model hub, 2023, available: https://www.modelscope.cn/models/iic/ speech fsmn vad zh-cn-16k-common-pytorch. [7] A. Plaquet and H. Bredin, “Powerset multi-class cross entropy loss for neural speaker diarization,” in Proc. Interspeech , 2023. [8] H. Bredin, “pyannote.audio 2.1 speaker diarization pipeline: Prin-ciple, benchmark, and recipe,” in Proc. Interspeech , 2023. [9] J. Han, F. Landini, J. Rohdin, A. Silnova, M. Diez, and L. Burget, “Leveraging self-supervised learning for speaker diarization,” in 
+
+Proc. ICASSP , 2025. [10] H. Wang, S. Zheng, Y. Chen, L. Cheng, and Q. Chen, “CAM++: A fast and efficient network for speaker verification using context-aware masking,” in Proc. Interspeech , 2023. [11] T. J. Park, K. J. Han, M. Kumar, and S. Narayanan, “Auto-tuning spectral clustering for speaker diarization using normalized max-imum eigengap,” IEEE Signal Processing Letters , vol. 27, pp. 381–385, 2020. [12] G. Keren et al. , “Omnilingual ASR: Open-source multilin-gual speech recognition for 1600+ languages,” arXiv preprint arXiv:2511.09690 , 2025. [13] E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, and W. Chen, “LoRA: Low-rank adaptation of large language models,” in Proc. International Conference on Learn-ing Representations (ICLR) , 2022. [14] S. Ding, R. Rikhye, Q. Liang, Y. He, Q. Wang, A. Narayanan, T. O’Malley, and I. McGraw, “Personal VAD 2.0: Optimizing per-sonal voice activity detection for on-device speech recognition,” 
+
+arXiv preprint arXiv:2204.03793 , 2022.
