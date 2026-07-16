@@ -1,0 +1,278 @@
+Title: Auditing Protocol-Level Shortcuts in Large Audio Language Model Judges for Speech Evaluation
+
+URL Source: https://arxiv.org/pdf/2607.13477v1
+
+Published Time: Thu, 16 Jul 2026 00:36:13 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+# Auditing Protocol-Level Shortcuts in Large Audio Language Model Judges for Speech Evaluation 
+
+Joonyong Park †, David M. Chan ‡, Yuki Saito †, Hiroshi Saruwatari ††Graduate School of Information Science and Technology, The University of Tokyo, Tokyo, Japan 
+
+‡Berkeley AI Research (BAIR), University of California, Berkeley, CA, USA 
+
+joonyong-park@g.ecc.u-tokyo.ac.jp 
+
+Abstract —Large audio-language models (LALMs) are increas-ingly used as automatic judges for speech evaluation. However, high agreement with human ratings does not guarantee that their verdicts are grounded in the audio. A judge may instead rely on specialist labels or reference data supplied by the evaluation protocol itself, taking a shortcut in place of listening to the audio. In this paper, we audit such protocol-level “shortcuts” in LALM judges across three common deployment protocols: feature-blueprint judging, where the audio is replaced by a struc-tured text description of acoustic features, reference-conditioned judging, and pairwise A/B comparison. Across six judges and four attributes, we find that several LALMs rely on protocol-level shortcuts. For example, in feature-blueprint judging, incorrect specialist labels reduce five judges’ emotion accuracy to 0.10 or below, and in concatenated A/B comparisons, Qwen3-Omni-Thinking often picks the same slot regardless of order swaps. These results indicate that aggregate agreement can overstate the validity of LALM judges unless the model and the evaluation protocol are assessed jointly, and that each model-protocol pair should be evaluated with a matched shortcut probe. 
+
+Index Terms —LALMs, LALM-as-judge, evaluation protocols, pairwise judging. 
+
+I. I NTRODUCTION 
+
+Large audio-language models (LALMs) process spoken audio, non-speech sound, music, and text instructions within one interface [1]–[5], and can reach human-comparable accu-racy on many audio understanding tasks. This capability has motivated their use as automatic judges for speech evaluation, i.e., LALM-as-a-judge , following the broader LLM-as-a-judge paradigm [6]–[8]. In this paradigm, an LALM can serve as a proxy for human raters on mean opinion score (MOS) prediction, A/B preference, style-instruction following, and paralinguistic assessment [9]–[12]. Researchers typically validate these judges using aggre-gate agreement with human labels. However, this validation can overlook agreement induced by the evaluation protocol. Although the side information supplied by each protocol is meant to help with evaluation, we observe that this information can function as a label-informative side channel that leads to shortcuts. Examples include reference following, positional biases in pairwise audio judging [13], and specialist-field shortcuts in feature-mediated judging [14]. Such non-audio reliance is already documented outside LALMs as a judge. For example, in understanding tasks, several LALMs retain their audio accuracy when the audio is removed or contradicts the text, relying on transcript semantics or language priors [15]–[18]. Within judging itself, prior audits examine one channel at a time—position bias in a single pairwise recipe [13], or modality stability in a single pointwise setup [19]. None asks, however, across the protocols used to deploy these judges, which shortcut each one opens. In this paper we investigate LALM-as-a-judge at the pro-tocol level, treating each judge as a measurement protocol, examining whether the side information it supplies is used as evidence or as a shortcut. We study three evaluation protocols (Fig. 1), leading to three overall research questions:  
+
+> •
+
+RQ1 (feature-blueprint): given a text description of acoustic features that includes a label predicted by a separate specialist classifier, does the judge reason over the features, or copy that classifier’s label?  
+
+> •
+
+RQ2 (reference-conditioned): given a reference label alongside the target clip, does the judge use it to inform its own audio judgment or does the verdict shift toward the reference, even when the reference is wrong?  
+
+> •
+
+RQ3 (pairwise): given two clips to compare, does the verdict follow which clip sounds better, or which one is presented first? In each evaluation, we pair a protocol with a matching counter-condition that should not change a valid audio-based verdict, and evaluate the output of the judges across four attributes: emotion, naturalness, language, and speaker similarity probes. Overall, we find both the reference-anchor and pairwise-position shortcuts appear across multiple attributes, suggesting that they are protocol-level effects. Wrong reference labels are followed at similar prompt positions for both emotion and language judgments, and A/B position bias appears in both naturalness and speaker-similarity comparisons. Furthermore, judges often copy a wrong emotion label even when audio is present, while they reject a wrong language label as they can infer language directly from the audio. We make three contributions: (i) a protocol-level reframing of LALM-as-a-judge that maps each deployment protocol to a characteristic shortcut, (ii) a matched diagnostic for each protocol that identifies which judges are usable under it, and (iii) a cross-attribute analysis separating protocol-level shortcuts from a capability-dependent one. II. R ELATED WORK 
+
+A. LLM-as-judge: position, reference, and audio reliance 
+
+In the LLM-as-judge paradigm, a strong model scores or compares candidate outputs in place of human raters, provid-arXiv:2607.13477v1 [cs.SD] 15 Jul 2026 Format Control         
+
+> Evaluation: reference-follow rate (output = wrong ref.) Evaluation: lock (same-slot rate) and accuracy Evaluation: wrong-label + audio accuracy
+
+RQ2: Reference-Conditioned 
+
+> How often does the judge output wrong references?
+
+RQ1: Feature-Blueprint              
+
+> Does audio override a wrong label?
+> ①before: the reference label is (wrong-label)
+> ②after: the reference label is (wrong-label)
+> ③system: [INSTRUCTIONS: the reference label is (wrong-label) ]
+> ④rubric: Hint: a classifier has labeled this clip as (wrong-label)
+> “You’re given a structured description of a spoken utterance:
+> Description: {blueprint}
+> Identify the speaker’s (emotion / language).
+> transcript
+> Which clip sounds more (cleaner/emotive/natural/*same-speaker) ?
+> Reply with A or B.
+> metadata acoustic descriptors
+> affect label: (e.g.) • ‘happy’ ‘english’ (true-label) • ‘sad’ ‘french’ (wrong-label)
+> Order Swap
+> AB:
+> BA:
+> concat:
+> native:
+> Identify the speaker’s (emotion/language).
+
+RQ3: Pairwise A/B  
+
+> Will judge choose same slot or same audio?
+> beep
+> *speaker:
+> (triplet) Given reference, does speaker same or different?
+> |
+
+Fig. 1. Overview of protocol-level shortcut audits for LALM judges: feature-blueprint copying, reference-label following, and pairwise slot or format bias. 
+
+ing a scalable and reproducible proxy for human evaluation. It was introduced for text evaluation by MT-Bench [6] and extended to multimodal settings such as caption evaluation by CLAIR and CLAIR-A [7], [8]. More recently, the same framework has been applied to speech, where LALMs serve as judges for MOS prediction, A/B preference, and paralinguistic assessment [9], [10], [12]. However, a recurring concern is that the verdict tracks features of the prompt rather than answer quality. Position bias is the most studied failure mode in text LLM judges, where swapping the order of two candidates can flip the ranking [20]. For audio judges, AudioJudge [13] further shows that audio-LLMs trained on single-audio inputs default to po-sitional heuristics when two clips are concatenated. Although it characterizes the concatenation recipe, it does not address how the bias behaves across judges, as the quality gap widens, or under native multi-audio input. Beyond position, supplied side information can affect text LLM judges’ verdicts. They exhibit authority bias by follow-ing an authoritative or fabricated reference even when it is wrong [21]. They also show sycophancy , by conforming to a provided answer or rebuttal [22], [23]. These reference effects are documented for text candidates and are neither localized to a prompt position nor measured when the evidence is audio. In parallel, work on audio reliance shows that several LALMs retain much of their full-audio score when the audio is removed [15]. They also follow lexical over acoustic cues un-der controlled conflicts [16], [17], and select language-implied answers in paralinguistic tasks [18]. However, these studies measure models answering questions, not judges operating through protocols that supply side information. This tendency is an instance of shortcut learning , in which models can prefer the simplest cue sufficient for the an-swer [24], [25]. At inference time, they may follow shortcuts in the prompt rather than information in the weights [26]. How-ever, whether such prompt shortcuts depend on the model’s capability has not been examined for audio judges. 
+
+B. Feature-mediated judging and specialist label copying 
+
+Feature-mediated judging converts speech into structured acoustic descriptions for a text LLM. TRACE constructs textual “blueprints” of audio cues for LLM judges [14], which cover content, voice quality, and paralinguistics. This format makes the evidence explicit and reduces dependence on the perceptual component of audio-language models. A blueprint, however, can contain target-proximal fields produced by specialist classifiers that predict the same label the judge must output. In this case, a reported gain may reflect the judge reproducing the specialist’s label rather than reasoning over the lower-level acoustic descriptors. Existing feature-mediated evaluations report the score without separating these two sources, and without examining when the copy occurs. III. M ETHOD 
+
+A trustworthy judge should treat the audio as the ground truth and the protocol’s side information as, at most, a hint: when the two agree, accuracy should stay high, and when the side information is deliberately wrong, a good judge should ignore it and remain audio-grounded rather than follow it. Prior audits, however, leave two gaps: they probe a single protocol at a fixed prompt position, and they do not separate a copied specialist label from genuine acoustic reasoning. To address these gaps, we treat each judge as a measurement protocol : a procedure that, to be trustworthy, must return a verdict that is stable under irrelevant changes and grounded in the audio. We audit three deployment protocols and pair each with a matched counter-condition that should leave a valid audio-based verdict unchanged. If a judge instead tracks the side information under this condition, the counter-condition exposes a shortcut. We define each protocol over a target 
+
+attribute , a property of the clip the judge must evaluate, and run it on more than one attribute. By doing so, we can tell whether a shortcut is tied to a particular task or is a property of the protocol itself. 
+
+A. Notation and metrics 
+
+A judge M maps an input to a prediction ˆyM (x) for clip 
+
+x, which we compare against the ground-truth attribute value 
+
+y(x). Each experiment contrasts the audio-grounded verdict with a counter-condition that adds or alters a text channel; the conditions are named where they are used (§III-B–§III-D). For a clip set C and a categorical attribute, predictions are scored by top-1 accuracy against y(x). For naturalness, which is continuous, the pairwise protocol treats the higher-MOS clip as the gold choice. Also, a judge’s output is unparseable when no valid label can be extracted from it (e.g. an empty response, a refusal, or free text that names none of the K classes), which TABLE I ATTRIBUTES , CORPORA , SPECIALIST , AND ITS TOP -1 ACCURACY ON THAT ATTRIBUTE ’S PROBE SET AGAINST GROUND -TRUTH LABELS . ‘G OLD ’                     
+
+> INDICATES THAT THE CORPUS IS LABELED BY HUMANS ,SO NO ACCURACY IS REPORTED .
+> Attribute Corpus Specialist Accuracy Protocols
+> Emotion RAVDESS emotion2vec +0.80 RQ1, RQ2, RQ3 Language FLEURS whisper-LID 1.00 RQ1, RQ2 Naturalness BVCC human MOS Gold RQ3 Speaker VoxCeleb1 ECAPA-TDNN 1.00 RQ3
+
+is different from a parseable but incorrect label. We report the parse rate , the fraction of parseable outputs, and treat an unparseable output as a miss for accuracy and as not following the cue for the reference-follow rate of §III-C. 
+
+B. RQ1: specialist-copy probes for blueprint judging 
+
+Following TRACE-style mediated judging [14], we replace the raw audio with a structured text blueprint of the clip: tran-script, speaker metadata, and acoustic descriptors —eGeMAPS functionals [27] rendered as natural-language phrases such as “mean pitch is high.” The with-specialist blueprint adds one further field, a specialist block carrying the top-1 prediction of an expert classifier for the attribute under evaluation. As that classifier predicts the same attribute the judge must output, a judge can achieve high accuracy by reproducing the block instead of reasoning over the descriptors. We compare seven conditions: first, we use two reference points. audio is the audio-only verdict with no blueprint. 
+
+skeleton is the blueprint with every acoustic field removed, leaving only the transcript and metadata. It measures what the prompt format alone yields. acoustic descriptors reintro-duces the acoustic descriptors but no specialist block, mea-suring what the descriptors contribute with no label to copy. 
+
+true inserts the classifier’s correct prediction, the primary with-specialist condition. wrong instead inserts a deliberately wrong prediction that a listening judge should reject: for a categorical attribute with K classes, the wrong value is chosen by a fixed permutation in which no class maps to itself, so the wrong-label distribution is uniform across the probe set. no frame is the same wrong-label block with the “a classifier says” wrapper dropped, testing whether the copy needs stated authority. The wrong +audio condition supplies the wrong-label blueprint together with the audio, the most stringent test of whether audio evidence overrides the specialist block. 
+
+C. RQ2: placement-anchor probes for reference judging 
+
+We supply a verbal reference label r(x) alongside the audio. Under the match condition we set r(x)= y(x), the true label. Under the wrong-label conditions, we set r(x) to the wrong label defined in §III-B. The diagnostic is the reference-follow rate ( RF ), measuring how often the judge emits a supplied label that it should reject: 
+
+RF( M ) = Pr  ˆyM (x) = r(x) r(x)̸ = y(x) . (1) We compute it over clips whose reference is wrong. Thus, 
+
+RF=0 means the judge never repeats a wrong reference, while 
+
+RF=1 means it always does. Also, since the chance level of RF is 1/(K−1) for a K-class attribute, we report the chance-normalized reference-follow rate: 
+
+fRF( M ) = max 
+
+
+
+0, RF( M )−(1 /(K−1)) 1−(1 /(K−1)) 
+
+
+
+. (2) This value is 0 at chance and 1 when the wrong label is always emitted, making the rate comparable across attributes with different label-space sizes. We also test whether the anchor depends on where the label appears, rather than only on whether it appears. We place the same wrong label in four prompt positions: before the question, after the question, in the system instruction, and in a rubric “hint” sentence. We report RF at each position. A judge that uses the reference for calibration improves under match 
+
+and keeps RF low at every position; a placement-dependent anchor shows a wide spread of RF across the four positions on identical inputs. 
+
+D. RQ3: position-lock and format probes for pairwise judging 
+
+A trial presents two clips, xa and xb, in both orders AB and BA; let ans( ·) ∈ { A, B } be the chosen slot . For attributes that are intrinsically comparative (e.g. speaker similarity), the trial is a triplet —a reference clip and two candidates—and the chosen candidate plays the role of the chosen clip below; the definitions are otherwise unchanged. Choosing the same slot in both orders means that the chosen clip changes when the order changes. We therefore define the position-lock rate as follows: 
+
+ℓ(M ) = Pr  ans( AB ) = ans( BA ) . (3) This is the fraction of trials whose verdict follows the slot rather than the audio. The complement e(M )=1 − ℓ(M ) is the fraction of trials where the judge picks the same clip in both orders; only those trials admit a genuine preference interpretation. Let s(·) be a gold score whose higher value marks the better clip (e.g. the clean clip, the emotive clip, the same-speaker clip, or the clip with higher human MOS). We report the gold-aligned rate :
+
+g(M ) = Pr  the selected slot holds the gold clip , (4) which is computed over all ordered trials in both AB and BA. A judge can fail either by locking to a slot (high ℓ)or by choosing the wrong clip when it does engage. A fully slot-locked judge obtains g ≈ 0.5 on balanced AB/BA orders, since its fixed slot holds the gold clip on only half the trials, even though it never forms an order-consistent preference. The marginal slot-A rate pA(M )= Pr[ans= A], measured on identical-clip trials, exposes which slot a locked judge defaults to. We separate protocol-induced failure from missing capabil-ity by changing the input format. In concat , the two clips are joined into one stream with a 0.6 s 880 Hz tone, which is the single-audio mode that AudioJudge identifies as a source of positional heuristics [13]. In native , the clips are passed as separate audio inputs. We report native results only for judges whose API or chat template accepts this format. TABLE II RQ1 SPECIALIST -COPY , ACCURACY ON TWO ATTRIBUTES (EMOTION , 8-WAY ; LANGUAGE , 4-WAY ). VARIANTS ARE DEFINED IN §III-B; THE DECISIVE METRIC WRONG +AUDIO HAS BEEN BOLDED .                                                                                                        
+
+> Emotion (RAVDESS, K=8 )Language (FLEURS, K=4 )
+> Judge audio skeleton a.desc. true wrong no frame wrong +audio audio skeleton a.desc. true wrong no frame wrong +audio
+> Gemini-3-Flash 0.47 0.13 0.18 0.80 0.00 0.05 0.10 1.00 1.00 1.00 1.00 1.00 1.00 1.00
+> GPT-Audio †0.29 0.13 0.19 0.80 0.00 0.55 0.00 0.99 1.00 1.00 1.00 1.00 0.99 0.99
+> Qwen3-Omni-Instruct 0.35 0.13 0.13 0.80 0.00 0.53 0.00 1.00 0.99 0.99 1.00 0.86 0.78 1.00
+> Qwen3-Omni-Thinking 0.13 0.13 0.14 0.69 0.03 0.53 0.05 0.36 0.47 0.47 0.78 0.56 0.68 0.64
+> Audio-Flamingo-3 0.68 0.13 0.13 0.80 0.00 0.22 0.38 0.99 0.96 0.96 0.99 0.80 0.65 0.97
+> Voxtral-Small-24B 0.17 0.13 0.16 0.80 0.00 0.63 0.00 0.03 0.99 0.99 1.00 0.85 0.74 0.72
+> †GPT-Audio rejects text-only input; its no-audio cells (skeleton, a.desc., true, wrong, no frame) run on gpt-4o-2024-11-20 .
+
+E. Cue-conflict synthesis 
+
+The blueprint and reference protocols each introduce a shortcut in isolation; to rank their relative strength we present them together on the same audio. We hold the audio at its true label y(x). We then set one wrong cue to the wrong label of 
+
+y(x), which is either the specialist block, the verbal reference, or both. We report FOLLOW -CUE , the rate at which the verdict matches the wrong cue rather than the audio. A channel that increases FOLLOW -CUE on its own is the stronger shortcut; the both-channel condition shows which cue has greater influence when they disagree. IV. E XPERIMENTAL SETUP 
+
+A. Judges 
+
+We evaluate a panel of six LALMs, closed and open-weight, treating each as a black box under identical prompts, corpora, and protocol perturbations. The closed judges are Gemini-3-Flash (gemini-3-flash-preview )and GPT-Audio (gpt-audio-1.5 ). The open judges are Qwen3-Omni-30B-A3B-Instruct and Qwen3-Omni-30B-A3B-Thinking [3], Audio-Flamingo-3 [4], and Voxtral-Small-24B [5]. The Qwen3-Omni models share a base model and audio interface while differing only in their post-training stage, providing a matched-family contrast within the panel. Audio-Flamingo-3 is a general audio-language model; Voxtral-Small-24B is an instruction-tuned audio model. 
+
+B. Attributes and corpora 
+
+We apply the three protocols to four speech-evaluation at-tributes, each with its own corpus and specialist. The protocols are identical across attributes, which lets us read a shortcut as attribute-specific or protocol-level. Table I shows the mapping. 
+
+Emotion (RAVDESS). RAVDESS [28] has 1,440 acted clips from 24 actors over eight emotions and two semantically neutral transcripts. We use a balanced 240 -clip subset ( 30 per emotion, stratified across actors and gender) and use it for the RQ1 blueprint probe, the RQ2 placement sweep, and the cue-conflict synthesis. For RQ3, we construct three RAVDESS pair controls: Cleanness contains 40 clean vs. 0 dB-SNR-noisy pairs, with clean as the gold answer. Emotion contains 30 
+
+angry vs. neutral pairs, with angry as gold. Identical uses 
+
+A=B and has no gold answer, yielding the slot-A rate pA.
+
+Naturalness (BVCC). From the BVCC naturalness test set [29], we construct 60 pairs with human-MOS gap ≥ 1.0
+
+for the RQ3 naturalness probe, each presented in both orders; human MOS is the gold score. The mean gap was ≈ 1.7.
+
+Language (FLEURS). We use four languages (English, French, German, Japanese), up to 60 clips of 3–15 s each. Lan-guage drives the RQ1 blueprint and RQ2 placement probes. 
+
+Speaker similarity (VoxCeleb1). From the test split [30], we construct 100 triplets. Each triplet contains a reference clip, a same-speaker clip from a different recording, and a different-speaker clip. We present each triplet in both orders, yielding 
+
+200 RQ3 trials; the same-speaker clip is the gold choice. 
+
+C. Specialist models 
+
+Each categorical attribute is predicted by an expert clas-sifier whose top-1 prediction populates the specialist block (RQ1) and the reference label (RQ2), and whose accuracy bounds the “true-label” reading. Emotion is predicted by emotion2vec + [31], whose top-1 accuracy is 0.80 on the subset. For language prediction, we use whisper-large-v3 language-ID [32], whose accuracy is 1.00 as the four lan-guages are separable in this setting. Speaker similarity is calculated by ECAPA-TDNN [33] cosine scoring against the reference clip, with 1.00 same-vs-different triplet accuracy and mean cosine margin 0.57 between same- and different-speaker clips. Acoustic descriptors in the blueprints are eGeMAPS functionals [27] rendered as natural-language phrases. V. R ESULTS 
+
+We apply each protocol to two attributes and read each shortcut by whether it recurs when the attribute changes. If a shortcut arises on both attributes, we treat it as a property of the protocol. If it arises only when the judge cannot infer the attribute from audio, we treat it as capability-dependent. 
+
+A. Sufficiency: pointwise accuracy is not enough 
+
+Before the protocol audits, we confirm that aggregate point-wise accuracy is not by itself a sufficient diagnostic on our panel. Prior work shows that LALMs can retain much of their full-audio accuracy when the audio is removed or contradicts the text [15]–[18]. On the emotion classification task using RAVDESS, audio-only accuracy spans a wide range under the eight-way label set, from near the 0.125 base rate of a transcript-only classifier up to 0.68 for the strongest judge. This spread reappears as a covariate in the tables shown in following subsections: TABLE III RQ2 PLACEMENT -ANCHOR : WRONG REFERENCE -FOLLOW RATE (E Q. 1) AT FOUR PROMPT PLACEMENTS , ON EMOTION (K=8 ) AND LANGUAGE (K=4 ). EACH CELL IS RAW RATE WITH CHANCE -NORMALIZED RATE (E Q. 2) IN PARENTHESIS ( fRF ). THE BOLD CELL IS EACH JUDGE ’S most-following PLACEMENT , THE PROMPT POSITION AT WHICH IT FOLLOWS THE WRONG REFERENCE MOST OFTEN .                                                                                           
+
+> Emotion (RAVDESS, K=8 , chance 0.14 )Language (FLEURS, K=4 , chance 0.33 )
+> Judge match parse before after system rubric match parse before after system rubric Gemini-3-Flash 0.96 1.00 0.68 (.63) 0.63 (.57) 0.85 (.82) 0.58 (.51) 1.00 1.00 0.00 (.00) 0.00 (.00) 0.00 (.00) 0.00 (.00) GPT-Audio 0.98 1.00 0.95 (.94) 0.45 (.36) 0.87 (.85) 0.99 (.99) 1.00 0.97 0.12 (.00) 0.10 (.00) 0.12 (.00) 0.27 (.00)
+> Qwen3-Omni-Instruct 1.00 1.00 0.77 (.73) 0.87 (.85) 0.64 (.58) 0.97 (.96) 1.00 1.00 0.00 (.00) 0.04 (.00) 0.00 (.00) 0.18 (.00)
+> Qwen3-Omni-Thinking 0.25 1.00 0.30 (.18) 0.49 (.41) 0.18 (.04) 0.57 (.50) 1.00 1.00 0.15 (.00) 0.11 (.00) 0.09 (.00) 0.33 (.00)
+> Audio-Flamingo-3 0.83 1.00 0.16 (.02) 0.41 (.31) 0.27 (.15) 0.33 (.21) 1.00 0.99 0.07 (.00) 0.60 (.39) 0.34 (.01) 0.89 (.83)
+> Voxtral-Small-24B 0.32 1.00 0.05 (.00) 0.25 (.12) 0.04 (.00) 0.09 (.00) 0.20 0.10 0.08 (.00) 0.08 (.00) 0.04 (.00) 0.11 (.00)
+
+judges that already engage the audio tend to resist the protocol shortcuts, and judges near the text baseline tend to follow them. Thus, we treat audio-only accuracy as a background diagnostic and focus on the additional effect by each protocol. 
+
+B. RQ1: specialist copying depends on audio capability 
+
+We examine whether a structured blueprint of acoustic features supports acoustic reasoning. We also test whether it becomes a channel for copying the embedded specialist block, and compare an attribute the judge can infer from audio with one it cannot. Table II shows emotion (left) and language (right) results across the matched variants. The two no-signal variants show the same pattern on both attributes: the skeleton leaves every judge at the base rate, and inserting the true block raises every judge to the specialist’s own accuracy, whether or not the judge could have read the attribute unaided. The variants diverge in the wrong-label columns: on emo-tion, wrong reduces accuracy to near 0 for five of six judges, since a judge that copies the wrong label scores zero against the truth. The most diagnostic condition, wrong-label +audio ,remains at or below 0.10 for those five, with only Audio-Flamingo-3 partially recovering to 0.38 . On language, the same wrong-label +audio column instead is near 1.00 for four judges: audio evidence overrides the incorrect block, the opposite of the emotion result under an identical protocol. 
+
+Language exceptions and capability dependence. The two language exceptions make this dependence explicit. Voxtral-Small cannot infer language from audio (audio-only 0.03 )as its wrong-label +audio accuracy is furthest below ceiling (0.72 ). Qwen3-Omni-Thinking has partial language inference (audio-only 0.36 ) as its wrong-label +audio accuracy is at an intermediate 0.64 . The four judges with near-ceiling language audio-only accuracy ( 0.99 –1.00 ) are the four that reject the wrong block. Capability and copying correspond: when the target attribute is recoverable from the audio, the wrong spe-cialist block is ignored; when it is not, the block is followed. Therefore, the blueprint protocol does not introduce a fixed shortcut but introduces one only for attributes that a given judge cannot infer from audio. This explains why the emotion and language panels diverge under the same construction. 
+
+Robustness across decoding seeds and best-of-N . A
+
+T =0 .7 seed sweep over the judges shows that Table II is stable: the maximum per-cell range is 0.038 , and 5-run majority vote shifts any cell by at most 0.008 .
+
+C. RQ2: the placement-anchor recurs across attributes but is localized per judge and per placement 
+
+We examine whether a verbal reference calibrates the ver-dict or becomes an anchor whose strength depends on where in the prompt it appears, and whether that anchor behaves the same on an attribute the judge infers easily as one it does not. Table III reports the reference-follow rate at four placements with the chance-normalized value in parentheses. On emotion the anchor is broad: five of six judges reach a chance-normalized rate above 0.30 in at least one placement. Place-ment matters as much as the label, as the gap between a judge’s most- and least-following slot reaches 0.54 raw for GPT-Audio, and around 0.30 for the Qwen3-Omni pair and Gemini-3-Flash. The most-following slot is the rubric hint for GPT-Audio and the Qwen3-Omni pair and the system instruction for Gemini-3-Flash, so the channel is amplified by authoritative framing rather than by a fixed position. Two judges resist on emotion: Audio-Flamingo-3 keeps every chance-normalized rate at or below 0.31 , and Voxtral-Small keeps three of four below chance. On language, Audio-Flamingo-3 is the only judge whose reference-follow rate exceeds chance, reaching 0.83 at the rubric slot—the same slot and the same judge-amplifying-framing pattern as on emotion, and the largest single above-chance rate in the table. Every other judge remains at chance at all four placements. The anchor thus recurs across attributes as a mechanism. The rubric slot triggers the largest reference-follow rate on both attributes, and Audio-Flamingo-3 anchors on both. On language, however, only Audio-Flamingo-3 reaches above-chance rate. The protocol opens the channel, while the mag-nitude depends on the judge and prompt placement. 
+
+D. RQ3: position-lock is format-sensitive, while engagement is task-dependent 
+
+We test whether pairwise A/B judging tracks audio identity or instead tracks the A/B slot and the input format, and whether the same pattern holds for a different comparative attribute, speaker similarity. Table IV reports a same-slot rate ( lock ) and a gold-aligned rate ( g) for each judge. Reading the two together partitions the panel into four modes. TABLE IV RQ3 PAIRWISE JUDGING UNDER AB/BA ORDER SWAPS .EACH TASK REPORTS lock AND g: lock IS THE SAME -SLOT RATE , AND g IS THE GOLD -ALIGNED RATE OVER ALL TRIALS IN BOTH ORDERS .                                                                                        
+
+> pAIS THE SLOT -A RATE ON THE IDENTICAL CONTROL .
+> Cleanness Emotion BVCC Speaker Judge pAlock glock glock glock g
+> CONCAT
+> Gemini-3-Flash 0.35 0.05 0.98 0.17 0.92 0.42 0.69 0.17 0.88
+> GPT-Audio 0.10 0.97 0.51 0.36 0.54 0.76 0.52 0.82 0.51 Qwen3-Omni-Instruct 0.88 0.38 0.26 0.27 0.87 0.55 0.58 0.49 0.64 Qwen3-Omni-Thinking 1.00 1.00 0.50 1.00 0.50 1.00 0.50 1.00 0.50 Audio-Flamingo-3 1.00 1.00 0.50 0.10 0.95 0.87 0.53 1.00 0.50 Voxtral-Small-24B 0.83 0.60 0.60 0.47 0.60 0.87 0.48 0.80 0.51
+> NATIVE
+> Gemini-3-Flash 0.48 0.20 0.85 0.21 0.90 0.40 0.67 1.00 0.50 GPT-Audio 0.33 0.61 0.39 0.37 0.34 0.42 0.49 1.00 0.50
+> •
+
+Engaged (Gemini-3-Flash): lock remains low and g remains high, so the evaluation setup can elicit audio-grounded verdicts from it.  
+
+> •
+
+Intermediate (Qwen3-Omni-Instruct): it shows moderate lock, but its gold-aligned rate varies strongly by task, from 
+
+0.26 (below chance) on Cleanness to 0.87 on Emotion.  
+
+> •
+
+Locked (GPT-Audio across all tasks; Voxtral-Small on BVCC and Speaker): lock remains at or above 0.76 and 
+
+g falls to about 0.5, the chance value a fixed slot produces. Voxtral-Small decreases to lock 0.47 –0.60 on Cleanness and Emotion, so the mode is task-dependent for this judge.  
+
+> •
+
+Fully locked (Audio-Flamingo-3, Qwen3-Omni-Thinking): lock is 1.00 and g is 0.50 , since every verdict is assigned the same slot and matches the gold clip only when the gold clip occupies that slot. Similar mode tendencies recur on the speaker triplets and the Cleanness control. Gemini-3-Flash engages on both and Audio-Flamingo-3 and Qwen3-Omni-Thinking are fully locked on both, while GPT-Audio stays locked on both; Voxtral-Small and Qwen3-Omni-Instruct shift between the two tasks, so the lock structure recurs while engagement does not, even though the two tasks share no clips and ask different questions. The pA column shows the locked rows are fixed slot preferences rather than prompt-template effects. Two further effects appear within this split: 
+
+Engagement is task-specific. On the Emotion control, Audio-Flamingo-3 reaches g = 0 .95 despite locking com-pletely on Cleanness, and Qwen3-Omni-Instruct reaches g =0.87 despite partial locking on Cleanness. Thus, a single control would mis-describe a judge on another task. 
+
+The format matters for one judge. Switching to NATIVE 
+
+multi-audio input lowers GPT-Audio’s lock on Cleanness (0.97 → 0.61 ) and BVCC ( 0.76 → 0.42 ). Yet, g remains near 
+
+0.5, so the CONCAT lock was in part a format artifact. Thus, removal does not by itself yield gold-aligned verdicts. 
+
+E. Synthesis: the specialist block is the most influential 
+
+As blueprint and reference protocols each introduce a short-cut in isolation, we examine which exerts greater influence                                 
+
+> TABLE V CUE -CONFLICT GRID ON RAVDESS. C ELLS ARE follow-cue ,THE RATE OF EMITTING THE WRONG LABEL ;NONE IS THE AUDIO -ONLY BASELINE .THE MOST -FOLLOWED SINGLE CHANNEL PER JUDGE IS IN BOLD .
+> Judge none conf-spec conf-ref conf-both Gemini-3-Flash 0.44 0.86 0.68 0.87
+> GPT-Audio 0.23 1.00 0.95 1.00
+> Qwen3-Omni-Instruct 0.36 1.00 0.77 1.00
+> Qwen3-Omni-Thinking 0.13 0.91 0.30 0.95
+> Audio-Flamingo-3 0.70 0.52 0.16 0.68
+> Voxtral-Small-24B 0.32 0.86 0.41 0.88
+
+when both compete on the same audio. Table V reports the grid. The specialist block ( CONF -SPEC )is followed more often than the verbal reference ( CONF -REF )in every row. GPT-Audio and Qwen3-Omni-Instruct reach the ceiling under CONF -SPEC . The difference is substantial for Gemini-3-Flash ( 0.86 vs. 0.68 ). Wider differences are observed for Audio-Flamingo-3 ( 0.52 vs. 0.16 ) and Qwen3-Omni-Thinking ( 0.91 vs. 0.30 ), the two judges with the lowest 
+
+> CONF
+
+-REF in the grid and thus the most resistant to the reference channel. For them, the reference is followed less than half as often as the specialist block on the same clip. The matched wrong +audio and wrong-reference columns of Tables II and III show the same ordering, so it holds across two independent sweeps. Supplying both channels at once (CONF -BOTH ) adds little over the specialist block alone. The two ceiling judges cannot increase further: Gemini-3-Flash, Audio-Flamingo-3, and Qwen3-Omni-Thinking rise only to 
+
+0.87 , 0.68 , and 0.95 . Once the specialist block is present, the reference contributes minimally toward the same wrong label. VI. C ONCLUSION 
+
+We audited three LALM-as-a-judge deployment protocols for speech evaluation: feature-blueprint judging, reference-conditioned judging, and pairwise A/B comparison. Across six closed and open LALMs, the results show that judge validity depends on the model–protocol pair, not on the model alone. Reference-conditioned judging becomes a prompt-placement-dependent anchor, and pairwise judging often becomes a slot-or format-dependent comparison. Because both patterns recur on a second attribute, we treat them as protocol-level effects. Feature-blueprint judging shows a different pattern. Judges copy a wrong specialist label on emotion even when audio is present, but reject the label on language when they can infer the attribute from audio. This contrast suggests a capability-dependent shortcut: the blueprint channel becomes unreliable when the judge cannot verify the specialist field acoustically. These results indicate that aggregate agreement with human labels is insufficient for diagnosing protocol-induced behavior. Each deployment protocol should be paired with its own shortcut probe: wrong-label specialist blocks for blueprint judges, placement sweeps for reference judges, and order-swapped positive controls with concat/native format contrasts for pairwise judges. Future work should extend the audit to a wider panel of judges and to harder attributes, to test how far the protocol-level and capability-dependent split generalizes. REFERENCES [1] Y. Chu, J. Xu, Q. Yang, H. Wei, X. Wei, Z. Guo, Y. Leng, Y. Lv, J. He, J. Lin, C. Zhou, and J. Zhou, “Qwen2-audio technical report,” arXiv preprint arXiv:2407.10759 , 2024. [2] J. Xu, Z. Guo, J. He, H. Hu, T. He, S. Bai, K. Chen, J. Wang, F. Yang, K. Dang et al. , “Qwen2.5-omni technical report,” arXiv preprint arXiv:2503.20215 , 2025. [3] J. Xu, Z. Guo, H. Hu, Y. Chu, X. Wang, J. He, Y. Wang, X. Shi, T. He, X. Zhu et al. , “Qwen3-omni technical report,” arXiv preprint arXiv:2509.17765 , 2025. [4] A. Goel, S. Ghosh, J. Kim, S. Kumar, Z. Kong, S.-g. Lee, C.-H. H. Yang, R. Duraiswami, D. Manocha, R. Valle, and B. Catanzaro, “Audio flamingo 3: Advancing audio intelligence with fully open large audio language models,” in Proceedings of Advances in Neural Information Processing Systems (NeurIPS) , 2025, spotlight. [5] A. H. Liu et al. , “Voxtral,” arXiv preprint arXiv:2507.13264 , 2025. [6] L. Zheng, W.-L. Chiang, Y. Sheng, S. Zhuang, Z. Wu, Y. Zhuang, Z. Lin, Z. Li, D. Li, E. P. Xing, H. Zhang, J. E. Gonzalez, and I. Stoica, “Judging LLM-as-a-judge with MT-Bench and chatbot arena,” in Proceedings of Advances in Neural Information Processing Systems (NeurIPS) , vol. 36, 2023, pp. 46 595–46 623. [7] D. M. Chan, S. Petryk, J. E. Gonzalez, T. Darrell, and J. Canny, “CLAIR: Evaluating image captions with large language models,” in Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing (EMNLP) , 2023, pp. 13 638–13 646. [8] T.-H. Wu, J. E. Gonzalez, T. Darrell, and D. M. Chan, “CLAIR-A: Lever-aging large language models to judge audio captions,” in Proceedings of the IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) , 2025. [9] C. Chen, Y. Hu, S. Wang, H. Wang, Z. Chen, C. Zhang, C.-H. H. Yang, and E. S. Chng, “Audio large language models can be descriptive speech quality evaluators,” in Proceedings of the International Conference on Learning Representations (ICLR) , 2025. [10] R. R. Manku, Y. Tang, X. Shi, M. Li, and A. Smola, “EmergentTTS-Eval: Evaluating TTS models on complex prosodic, expressiveness, and linguistic challenges using model-as-a-judge,” in Proceedings of Advances in Neural Information Processing Systems (NeurIPS) , 2025. [11] K. Huang, Q. Tu, L. Fan, C. Yang, D. Zhang, S. Li, Z. Fei, Q. Cheng, and X. Qiu, “InstructTTSEval: Benchmarking complex natural-language instruction following in text-to-speech systems,” arXiv preprint arXiv:2506.16381 , 2025. [12] H. Wang et al. , “SpeechLLM-as-judges: Towards general and inter-pretable speech quality evaluation,” in Proceedings of the Annual Meeting of the Association for Computational Linguistics (ACL) , 2026. [13] P. Manakul, W. H. Gan, M. J. Ryan, A. S. Khan, W. Sirichotedumrong, K. Pipatanakul, W. Held, and D. Yang, “AudioJudge: Understanding what works in large audio model based speech evaluation,” arXiv preprint arXiv:2507.12705 , 2025. [14] A. Chandra, K. Miller, V. Ravichandran, C. Papayiannis, and V. Saligrama, “Hearing between the lines: Unlocking the reasoning power of LLMs for speech evaluation,” in Proceedings of the Findings of the Association for Computational Linguistics: EACL 2026 , 2026. [15] L. H.-Y. Foo, C.-K. Yang, C.-A. Li, K.-H. Lu, and H.-y. Lee, “All that glitters is not audio: Rethinking text priors and audio reliance in audio-language evaluation,” arXiv preprint arXiv:2604.24401 , 2026. [16] J. Chen, Z. Guo, J. Chun, P. Wang, A. Perrault, and M. Elsner, “Do audio LLMs really LISTEN, or just transcribe? measuring lexical vs. acoustic emotion cues reliance,” in Proceedings of the Conference of the European Chapter of the Association for Computational Linguistics (EACL) , 2026. [17] J. Billa, “When audio-LLMs don’t listen: A cross-linguistic study of modality arbitration,” arXiv preprint arXiv:2602.11488 , 2026. [18] J. Pang, A. Chaubey, and M. Soleymani, “Do audio LLMs listen or read? analyzing and mitigating paralinguistic failures with VoxParadox,” in Proceedings of the International Conference on Machine Learning (ICML) , 2026. [19] A. Ivry and S. Watanabe, “LALM-as-a-Judge: Benchmarking large audio-language models for safety evaluation in multi-turn spoken di-alogues,” in Proceedings of the International Conference on Machine Learning (ICML) , 2026. [20] P. Wang, L. Li, L. Chen, Z. Cai, D. Zhu, B. Lin, Y. Cao, L. Kong, Q. Liu, T. Liu, and Z. Sui, “Large language models are not fair evaluators,” in 
+
+Proceedings of the 62nd Annual Meeting of the Association for Com-putational Linguistics (Volume 1: Long Papers) . Bangkok, Thailand: Association for Computational Linguistics, 2024, pp. 9440–9450. [21] J. Ye, Y. Wang, Y. Huang, D. Chen, Q. Zhang, N. Moniz, T. Gao, W. Geyer, C. Huang, P.-Y. Chen, N. V. Chawla, and X. Zhang, “Justice or prejudice? quantifying biases in LLM-as-a-judge,” in Proceedings of the International Conference on Learning Representations (ICLR) , 2025. [22] M. Sharma, M. Tong, T. Korbak, D. Duvenaud, A. Askell, S. R. Bowman, E. Durmus, Z. Hatfield-Dodds, S. R. Johnston, S. M. Kravec 
+
+et al. , “Towards understanding sycophancy in language models,” in Pro-ceedings of the International Conference on Learning Representations (ICLR) , 2024. [23] A. Fanous et al. , “SycEval: Evaluating LLM sycophancy,” in Proceed-ings of the AAAI/ACM Conference on AI, Ethics, and Society (AIES) ,2025, pp. 893–900. [24] R. Geirhos, J.-H. Jacobsen, C. Michaelis, R. Zemel, W. Brendel, M. Bethge, and F. A. Wichmann, “Shortcut learning in deep neural networks,” Nature Machine Intelligence , vol. 2, no. 11, pp. 665–673, 2020. [25] H. Shah, K. Tamuly, A. Raghunathan, P. Jain, and P. Netrapalli, “The pitfalls of simplicity bias in neural networks,” in Proceedings of Advances in Neural Information Processing Systems (NeurIPS) , vol. 33, 2020, pp. 9573–9585. [26] R. Tang, D. Kong, L. Huang, and H. Xue, “Large language models can be lazy learners: Analyze shortcuts in in-context learning,” in Findings of the Association for Computational Linguistics: ACL 2023 . Toronto, Canada: Association for Computational Linguistics, 2023, pp. 4645– 4657. [27] F. Eyben, K. R. Scherer, B. W. Schuller, J. Sundberg, E. Andr´ e, C. Busso, L. Y. Devillers, J. Epps, P. Laukka, S. S. Narayanan, and K. P. Truong, “The Geneva minimalistic acoustic parameter set (GeMAPS) for voice research and affective computing,” IEEE Transactions on Affective Computing , vol. 7, no. 2, pp. 190–202, 2016. [28] S. R. Livingstone and F. A. Russo, “The Ryerson Audio-Visual Database of Emotional Speech and Song (RAVDESS): A dynamic, multimodal set of facial and vocal expressions in North American English,” PLoS ONE ,vol. 13, no. 5, p. e0196391, 2018. [29] E. Cooper, W.-C. Huang, Y. Tsao, H.-M. Wang, T. Toda, and J. Ya-magishi, “The VoiceMOS Challenge 2022,” in Proceedings of INTER-SPEECH , 2022. [30] A. Nagrani, J. S. Chung, and A. Zisserman, “VoxCeleb: A large-scale speaker identification dataset,” in Proceedings of INTERSPEECH , 2017, pp. 2616–2620. [31] Z. Ma, Z. Zheng, J. Ye, J. Li, Z. Gao, S. Zhang, and X. Chen, “emotion2vec: Self-supervised pre-training for speech emotion rep-resentation,” in Proceedings of the Findings of the Association for Computational Linguistics: ACL 2024 , 2024, pp. 15 747–15 760. [32] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak super-vision,” in Proceedings of the International Conference on Machine Learning (ICML) , ser. Proceedings of Machine Learning Research, vol. 202. PMLR, 2023, pp. 28 492–28 518. [33] B. Desplanques, J. Thienpondt, and K. Demuynck, “ECAPA-TDNN: Emphasized channel attention, propagation and aggregation in TDNN based speaker verification,” in Proc. Interspeech , 2020, pp. 3830–3834.
