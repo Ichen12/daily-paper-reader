@@ -6,70 +6,53 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-16
-- 运行时间：2026-07-16 20:50:57 UTC
+- 最新运行日期：2026-07-17
+- 运行时间：2026-07-17 21:10:26 UTC
 - 运行状态：成功
-- 本次总论文数：16
+- 本次总论文数：10
 - 精读区：5
-- 速读区：11
+- 速读区：5
 
 ### 今日简报（AI）
-今日聚焦长语音合成与可控语音生成，两篇满分论文领衔。
-最值得关注方向：ZipL-Dialog实现高效内存的长对话合成，AutoSIFT实现任意风格语音的灵活控制。
-建议普通读者关注语音合成中风格可控性与计算效率的前沿趋势。
-- 详情：[/202607/16/README](/202607/16/README)
+- 今日共生成 10 篇推荐（精读 5 篇，速读 5 篇）
+- 精读：《Dialogs: a studio-quality expressive conversational Russian speech corpus for dialog assistants》（9.0/10）, 《RW-Voice-EQ Bench: A Real World Benchmark for Evaluating Voice AI Systems》（9.0/10）
+- 速读：《GigaChat Audio: Time-aware Large Audio Language Model》（7.0/10）, 《Neural Morphing: Sequence-Optimized Token-Level Morphing in Neural Audio Codecs》（7.0/10）, 《Rethinking Speech Foundation Model Fine-tuning: Better SFT or Better Match?》（7.0/10）
+- 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
+- 详情：[/202607/17/README](/202607/17/README)
 
 ### 精读区论文标签
-1. [ZipL-Dialog: Memory-Efficient Long-Form Spoken Dialog Synthesis via Latent Flow Matching](/202607/16/2607.12496v2-zipl-dialog-memory-efficient-long-form-spoken-dialog-synthesis-via-latent-flow-matching)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：长时口语对话合成，文本转语音
-2. [AutoSIFT: Automatic Style Sifting for Controllable Speech Generation with Arbitrary Style Infilling](/202607/16/2607.12706v2-autosift-automatic-style-sifting-for-controllable-speech-generation-with-arbitrary-style-infilling)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：可控语音生成，TTS风格编辑
-3. [Adapting a Diffusion-Based Music Synthesis Model to Human Voice Conversion](/202607/16/2607.13278v1-adapting-a-diffusion-based-music-synthesis-model-to-human-voice-conversion)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：将扩散音乐合成模型改造为人类语音转换
-4. [Efficient Text-to-Audio Generation via Pruning](/202607/16/2607.13330v1-efficient-text-to-audio-generation-via-pruning)  
+1. [Dialogs: a studio-quality expressive conversational Russian speech corpus for dialog assistants](/202607/17/2607.14310v1-dialogs-a-studio-quality-expressive-conversational-russian-speech-corpus-for-dialog-assistants)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：剪枝扩散文本到音频模型以提高效率
-5. [Improving Text-to-Audio Instruction Following via Fine-Grained Feedback from Audio-Aware Large Language Models](/202607/16/2607.13408v1-improving-text-to-audio-instruction-following-via-fine-grained-feedback-from-audio-aware-large-language-models)  
+   evidence：面向对话助手的工作室质量俄语对话语音语料库
+2. [RW-Voice-EQ Bench: A Real World Benchmark for Evaluating Voice AI Systems](/202607/17/2607.14846v1-rw-voice-eq-bench-a-real-world-benchmark-for-evaluating-voice-ai-systems)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：语音和音频数据集与基准
+3. [Diarization-Guided Qwen-ASR Adaptation for Multilingual Two-Speaker Conversational Speech](/202607/17/2607.08208v2-diarization-guided-qwen-asr-adaptation-for-multilingual-two-speaker-conversational-speech)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：文本到音频指令遵循
+   evidence：多语言对话语音的ASR适应结合说话人分离
+4. [Adapting Diffusion-Based Music Synthesis to Speech and Singing Voice Conversion](/202607/17/2607.13278v2-adapting-diffusion-based-music-synthesis-to-speech-and-singing-voice-conversion)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：语音转换技术
+5. [SLT 2026 REAL-TSE Challenge: Real-world Target Speaker Extraction from Conversational Recordings](/202607/17/2607.15198v1-slt-2026-real-tse-challenge-real-world-target-speaker-extraction-from-conversational-recordings)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：真实对话中的目标说话人提取挑战与基准
 
 ### 速读区论文标签
-1. [Transformer-based segmentation of prosodic boundaries in Brazilian Portuguese](/202607/16/2607.07408v2-transformer-based-segmentation-of-prosodic-boundaries-in-brazilian-portuguese)  
+1. [GigaChat Audio: Time-aware Large Audio Language Model](/202607/17/2607.10387v1-gigachat-audio-time-aware-large-audio-language-model)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：使用Transformer模型进行韵律边界分割（语音处理）
-2. [TVTA: Trajectory-Aware Viseme-Guided Temporal Aggregation for Event-Based Lip Reading](/202607/16/2607.08236v1-tvta-trajectory-aware-viseme-guided-temporal-aggregation-for-event-based-lip-reading)  
+   evidence：时间感知的音频大语言模型，用于录音的时间定位
+2. [Neural Morphing: Sequence-Optimized Token-Level Morphing in Neural Audio Codecs](/202607/17/2607.12725v1-neural-morphing-sequence-optimized-token-level-morphing-in-neural-audio-codecs)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：基于事件相机的唇读用于视觉语音识别
-3. [Breaking the Quality--Intelligibility Trade-off in Streaming Target Speaker Extraction via Deep-Feature-Anchored Preference Optimization](/202607/16/2607.10191v1-breaking-the-quality--intelligibility-trade-off-in-streaming-target-speaker-extraction-via-deep-feature-anchored-preference-optimization)  
+   evidence：token级音频渐变技术，可应用于语音和音乐变换
+3. [Rethinking Speech Foundation Model Fine-tuning: Better SFT or Better Match?](/202607/17/2607.13864v1-rethinking-speech-foundation-model-fine-tuning-better-sft-or-better-match)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：目标说话人提取，语音处理
-4. [GigaChat Audio: Time-aware Large Audio Language Model](/202607/16/2607.10387v1-gigachat-audio-time-aware-large-audio-language-model)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：时间感知音频语言模型，发布数据集
-5. [Teaching Speech Enhancement Models to Sing: Domain Adaptation from Speech Enhancement to Singing Voice Separation](/202607/16/2607.11630v1-teaching-speech-enhancement-models-to-sing-domain-adaptation-from-speech-enhancement-to-singing-voice-separation)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：从语音增强到歌声分离的域自适应
-6. [Synchronized Three-Dimensional Vocal-Tract Motion for Speech Synchronization via Joint-Embedding Predictive Architecture Alignment](/202607/16/2607.11772v1-synchronized-three-dimensional-vocal-tract-motion-for-speech-synchronization-via-joint-embedding-predictive-architecture-alignment)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：用于语音合成的同步声道运动
-7. [CoFi-Lite: Pushing the Limits of Ultra-Lightweight Speech Enhancement](/202607/16/2607.10142v1-cofi-lite-pushing-the-limits-of-ultra-lightweight-speech-enhancement)  
+   evidence：在SUPERB任务上对语音基础模型微调方法的系统研究
+4. [Encoder-Side Neuron Identification and Amplification for Acoustic Perception in Large Audio-Language Models](/202607/17/2607.11801v1-encoder-side-neuron-identification-and-amplification-for-acoustic-perception-in-large-audio-language-models)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：语音增强
-8. [Audio Diarization: A New Paradigm for Exploring Audio Recordings with Unknown Event Classes](/202607/16/2607.12703v1-audio-diarization-a-new-paradigm-for-exploring-audio-recordings-with-unknown-event-classes)  
+   evidence：识别并放大LALM音频编码器中声学神经元的方法，用于细粒度语音感知
+5. [Large Audio Language Models for Spoofing-Aware Speaker Verification](/202607/17/2607.14753v1-large-audio-language-models-for-spoofing-aware-speaker-verification)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：提出音频说话人分割任务用于未知声音事件
-9. [Neural Morphing: Sequence-Optimized Token-Level Morphing in Neural Audio Codecs](/202607/16/2607.12725v1-neural-morphing-sequence-optimized-token-level-morphing-in-neural-audio-codecs)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：词元域音频变形方法，可应用于语音变换
-10. [Auditing Protocol-Level Shortcuts in Large Audio Language Model Judges for Speech Evaluation](/202607/16/2607.13477v1-auditing-protocol-level-shortcuts-in-large-audio-language-model-judges-for-speech-evaluation)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：审计语音评估中LALM判断器的捷径，与基准评估相关
-11. [Self-supervised Speech Comparison for L2 Phone, Rhythm, and Intonation Scoring](/202607/16/2607.13721v1-self-supervised-speech-comparison-for-l2-phone-rhythm-and-intonation-scoring)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：使用自监督特征进行二语语音评估
+   evidence：大型音频语言模型用于对抗TTS/VC欺骗的说话人验证
 
 
 <div class="dpr-home-promo-card">
