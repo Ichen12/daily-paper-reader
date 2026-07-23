@@ -1,0 +1,450 @@
+Title: Transcription Policy as a Latent Variable: Activating Controllable Verbatim ASR with Word-Level Timing
+
+URL Source: https://arxiv.org/pdf/2607.18934v1
+
+Published Time: Wed, 22 Jul 2026 00:49:15 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Transcription Policy as a Latent Variable: Activating Controllable Verbatim ASR with Word-Level Timing 
+
+# Laurin Wagner 1,∗∗ , Mario Zusag 1, Bernhard Thallinger 11 nyra labs, Austria 
+
+lwagner@nyra-labs.com, mzusag@nyra-labs.com, bthallinger@nyra-labs.com 
+
+# Abstract 
+
+Modern ASR models trained on heterogeneously annotated data treat transcription style (verbatim vs. intended) as an uncon-trolled latent variable, causing measurable decoding instabil-ity, evaluation confounding (up to 60% of reported WER from style mismatch), and unreliable word-level timing. We show models already encode both styles, the challenge is controlled activation. Using coverage-aware decoder task tokens trained on parallel verbatim/intended transcript pairs, we raise Ger-man disfluency F1 from 10% to 79% zero-shot from English-only training. Full English-only fine-tuning surpasses all base-lines in verbatim accuracy, disfluency detection, and intended-mode quality across both languages. We introduce supervised cross-attention finetuning improving word-level timestamps on disfluent speech beyond forced alignment baselines. Finally we introduce a new task: verbatimize, enabling scalable cre-ation/enrichment of speech corpora with high quality canonical verbatim transcriptions. 
+
+Index Terms : verbatim transcription, transcription policy, dis-fluency detection, word-level timing, cross-lingual transfer 
+
+# 1. Introduction 
+
+Speech transcription requires a policy decision that most train-ing pipelines leave implicit: should the output preserve what was said verbatim , including filled pauses, repetitions, self-corrections, cut-offs, and paralinguistic sounds (e.g., “I i [uh] li- like intended transcripts”) or should it produce intended text that retains only the speaker’s fluent content (“I like intended transcripts”)? Intended transcripts improve downstream text processing and readability [1], while verbatim transcripts pre-serve clinically and linguistically meaningful structure in spon-taneous speech [2]. Disfluency patterns serve as diagnostic markers in neurological and speech disorders [3, 4, 5], paralin-guistic annotations improve naturalness in expressive speech synthesis [6, 7, 8, 9], and people who stutter experience sys-tematic ASR failures including truncations and elevated error rates [10, 11, 12]. Despite the importance of this distinction, large-scale ASR systems are typically trained on data that mixes both conven-tions without a control signal. Whisper [13], trained on 680,000 hours of heterogeneously annotated data, may omit, incon-sistently transcribe, or hallucinate disfluencies depending on acoustic context [14]. Annotated disfluency corpora remain scarce, particularly beyond English [15, 16, 17], and large mul-tilingual datasets [6, 18] typically derive their labels from ASR pipelines trained on similarly heterogeneous data. Transcrip-tion style thus becomes an uncontrolled latent variable : the 
+
+> ** indicates the corresponding author.
+
+same hesitation may be emitted, omitted, or rendered in non-canonical surface forms (um, uuumm, uhmm...) depending on surrounding context complicating downstream analysis. This latent policy ambiguity causes a cascade of measurable failures. First, it produces decoding instability : beam search yields substantially different transcripts for the same audio on disfluent speech, with median character-level beam divergence around 15% (subsection 3.2), because the model inherently maintains competing transcription strategies with no signal for which to select. Second, it confounds evaluation : we show that standard word error rate (WER) conflates content errors with style differences, and that up to 60% of reported WER on conversational benchmarks reflects style mismatch rather than recognition failure (subsection 3.3). Third, it renders timing ill-defined : if a model inconsistently transcribes word repetitions word-level timestamps become conceptually undefined rather than merely imprecise. We argue that the core challenge is capability control , not capability acquisition . Prior work has shown that small-scale fine-tuning [19] and soft-prompt approaches [20, 21] can re-cover disfluencies from pretrained ASR models without archi-tectural changes. We provide direct evidence: training only mode-tag embeddings with all encoder and decoder weights frozen raises German disfluency event F1 from 10% to 79%, a large capability gain with zero updates to the model’s learned representations. We activate this capability through three complementary mechanisms. (1) Explicit transcription policy via mode tags. 
+
+We introduce discrete decoder-prefix tokens that parameterize the transcription policy as a binary choice between verbatim and intended output. Trained with paired supervision-verbatim and intended transcripts for the same audio-and partitioned to reflect annotation coverage, mode tags disentangle what was said from what to emit . English-only verbatim supervision en-ables controling German output zero-shot, achieving 94% dis-fluency event F1. (2) Supervised cross-attention for word-level timing. Once the transcription policy is explicit and the output token sequence is stable, timing becomes well-defined. We directly supervise selected cross-attention heads with word-boundary targets, yielding 36 ms mean absolute boundary er-ror on read speech and 102 ms on disfluent speech, for the first time outperforming forced-alignment baselines, which degrade to 142–200 ms on disfluent input, with purely attention based methods. (3) Verbatimize: transcript-conditioned disfluency recovery. Given audio and any intended transcript, verbatimize reconstructs a canonical verbatim version by inserting acousti-cally grounded disfluencies, raising rare-word recall from 6.8% to 96.1% and enabling cost efficient verbatim annotations at scale. (4) A language-agnostic evaluation framework. We introduce an alignment-based protocol that automatically ex-arXiv:2607.18934v1 [cs.CL] 21 Jul 2026 Table 1: Capability comparison with related work. Verba-tim (VB) : produces verbatim transcripts with disfluencies. In-tended (IN) : produces clean intended transcripts. Control-lable (CT) : explicit switching between verbatim and intended modes. Multilingual (ML) : supports languages beyond En-glish. Sounds (SD) : inline paralinguistic event tokens. Timing (TG) : word-level timestamps. ∼ = partial or unstable support. 
+
+VB IN CT ML SD TG 
+
+Whisper [13] ∼ ✓ – ✓ – ∼
+
+WhisperX [22] ∼ ✓ – ✓ – ✓a
+
+CrisperWhisper [19] ✓ – – ∼ – ✓
+
+Reverb [23] ✓ ✓ ✓b – – –Soft-prompt [20, 21] ✓ – – – – –Disfluency systems [24, 25, 26] ✓ – – ∼ ∼ –Post-hoc detection [27, 28, 29] ∼ – – ∼ – ✓
+
+NVSpeech [9] – – – – ✓ –Disfluency removal [30, 10, 1] – ✓ – ∼ – –
+
+Ours ✓ ✓ ✓ ✓ ✓ ✓ 
+
+> aVia forced alignment bContinuous style parameter (English only)
+
+tracts typed disfluency labels from verbatim transcripts, disam-biguates repetitions, and decomposes WER into content and style components, enabling consistent evaluation across lan-guages and transcription conventions. 
+
+# 2. Related Work 
+
+Table 1 summarizes how existing approaches compare on tran-scription style control, timing, and multilingual support. We highlight the key gaps our work addresses. 
+
+Transcription style. Most ASR systems produce tran-scripts under a single implicit policy, and approaches that target verbatim output typically do so unidirectionally-without bidi-rectional control between modes. Prompting and Soft-prompt approaches [20, 21] can elicit disfluencies from foundation models but do not address stable switching under paired su-pervision. CrisperWhisper [19] fine-tunes Whisper on English verbatim data with tokenizer modifications that require multi-lingual verbatim training data for effective cross-lingual trans-fer, which is generally unavailable. Reverb [23] introduces a continuous verbatimicity parameter but is restricted to English and does not address timing. In contrast, our mode tags ex-plicitly parameterize the output policy and are trained on paired intended/verbatim targets for the same audio, making style an explicit interface rather than an uncontrolled latent variable 
+
+Word-level timing. Cross-attention heads in encoder-decoder models develop alignment-like behavior, and prior work extracts timestamps from these unsupervised patterns via dynamic time warping [13, 19]. The unreliable nature of these emergent alignments has motivated external compo-nents: WhisperX [22] and Canary [31] add separate forced aligners, improving accuracy at the cost of language-specific model dependencies. CrisperWhisper [19] improves attention-based alignment via explicit space tokens that function as word-boundary detectors, but this tokenizer modification limits cross-lingual generalization. A key observation motivates our ap-proach: timing and transcription policy are coupled problems. When a model inconsistently transcribes disfluencies, cross-attention for those temporal regions has no stable target, mak-ing word-level timestamps conceptually ill-defined. We address both jointly: mode tags stabilize the output token sequence, and supervised cross-attention transforms emergent alignment into a trainable capability without external components or tokenizer changes. 
+
+Disfluency modeling and evaluation. End-to-end and multitask systems incorporate disfluency tags or non-lexical sound labels during training [24, 25, 26, 32, 15], and inline speech sound event tokens have been explored in speech gen-eration pipelines such as NVSpeech [9], typically assuming a fixed labeling policy and targeting a narrower event inven-tory compared to our unified set of typed repetitions, cut-offs, filled pauses, and paralinguistic events. Post-hoc meth-ods detect disfluencies after decoding: Zhu et al. [28] lever-age ASR/VAD mismatch to propose timestamped filler candi-dates, Amann et al. [27] localize open-set disfluency regions via modified CTC alignment and gap classification, and forced-alignment methods model transcript audio mismatch in disflu-ent speech [29, 5]. These provide useful primitives but depend on additional classification components and do not resolve the fundamental verbatim-versus-intended ambiguity. On the in-tended side, disfluency removal [30, 10, 1] is complementary to our work. Standard WER itself is part of the problem: pro-fessional transcripts of the same audio exhibit substantial stylis-tic variance [33], and reference choice alone can shift reported WER by several points [34, 35]. Our mode-conditioned ap-proach complements these efforts: by explicitly controlling out-put style via tags, evaluation can use style-matched references, isolating genuine errors from style mismatch. 
+
+# 3. The Transcription Policy Problem 
+
+Before presenting our method in Section 4, we establish that transcription policy ambiguity is not a theoretical concern but a measurable source of instability, evaluation error, and ill-defined timing in current ASR systems. 
+
+3.1. Policy ambiguity under mixed supervision 
+
+To isolate the effect of annotation inconsistency, we vary the fraction of verbatim vs. intended annotated samples in the train-ing data from 0% to 100%, training Whisper-medium models with and without mode tags (Figure 3) on each mixture for one epoch. Figure 1 reports disfluency event F1 on English (Disflu-encySpeech [7]) and German (our German DisfluencySpeech evaluation set; Section 5). Without mode tags, an “ambiguous zone” between 15–85% fraction of verbatim data produces inconsistent behavior: disflu-encies are sometimes transcribed and sometimes omitted, with no user-facing control. The model has learned competing tran-scription strategies from the mixed supervision and the out-put becomes unpredictable. With mode tags, event F1 remains around 80% across all mixing ratios, including at 10% verbatim where the untagged model achieves only 2%. German exhibits the same pattern despite no German data in the training data. 
+
+3.2. Decoding instability 
+
+If transcription policy is unresolved, the ambiguity should man-ifest as decoding uncertainty-particularly on speech contain-ing disfluencies, where verbatim and intended transcriptions di-verge most. We measure this via beam divergence : the median of the maximum pairwise character error rate (CER) among 10 beam hypotheses (temperature 0.7), averaged over samples. Table 2 confirms this prediction. On disfluent speech sam-ples from the AMI test set [36], containing atleast one speech 0 20 40 60 80 100 
+
+> Verbatim Training Probability (%)
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Event F1 (%)
+> Ambiguous Zone
+> (Without tags: inconsistent
+> mixed transcription style)
+> With Tags
+> No Tags
+> English
+> German
+
+Figure 1: Disfluency event F1 vs. verbatim training fraction: without mode tags, the ambiguous range (15–85%) leads to un-stable transcription behavior; with mode tags, performance re-mains stable across all data mixes. German shows the same pattern, even with no German verbatim training data. 
+
+Table 2: Beam divergence (median of maximum pairwise CER across 10 beam hypotheses, temperature 0.7). High values indi-cate that the model produces substantially different transcripts for the same audio across decoding paths. 
+
+Divergence (%) ↓
+
+Model AMI (disfluent) LibriSpeech (clean) 
+
+Canary-1B [31] 14.6 5.0 Whisper [13] 15.1 0.0 Ours (intended) 11.2 1.0 Ours (verbatim) 8.1 0.0 disfluency event (subsection 6.2), Whisper’s beam divergence is 15.1% CER, indicating that the model has internalized com-peting transcription strategies. NVIDIA Canary-1B [31], a 1B-parameter multilingual encoder-decoder model, shows com-parable divergence (14.6%). Our model with verbatim mode tags reduces divergence to 8.1% (a 46% reduction), and even intended-mode conditioning reduces it to 11.2%, confirming that explicit policy directives resolve ambiguity in both direc-tions. On clean speech (LibriSpeech), divergence is near zero for all Whisper-based models; Canary remains elevated at 5.0%. 
+
+3.3. Evaluation confounding 
+
+Undefined transcription policy compromises not only model outputs but also their evaluation. When both the model pre-diction and the reference transcript carry implicit style choices, standard WER conflates content errors with style differences. To quantify this, we decompose WER into a content compo-nent, measured by the content loss rate (CLR)-the fraction of intended-reference words absent from the prediction-and a style 
+
+component (WER − CLR), capturing differences due to disflu-ency inclusion ( fillers, repetitions, stutters, false starts). Figure 2 presents this decomposition for TED-LIUM and AMI, two widely used benchmarks from the Open ASR Leader-board [37]. Two findings emerge. First, verbatim and intended reference transcripts of the same audio , which share 100% of content words by construction (subsection 5.2), disagree by 3.7% WER on TED-LIUM and 12.1% on AMI. This disagree-V→I W →V W →I
+
+0
+
+5
+
+10 
+
+15 
+
+20   
+
+> 3.7
+> 1.93.5
+> 3.83.8
+> Word Error Rate (%)
+
+TED-LIUM 
+
+V→I W →V W →I  
+
+> 12 .1
+> 11 .611
+> 7.77.7
+
+AMI  
+
+> Content (CLR) Style (WER −CLR)
+
+Figure 2: WER decomposition into content loss (CLR, blue) and style mismatch (red) on TED-LIUM and AMI. V → I = verbatim vs. intended reference; W → V = Whisper vs. verbatim; W → I= Whisper vs. intended. Bold totals show reported WER. 
+
+ment is entirely stylistic. Second, this style difference propa-gates into model evaluation: Whisper’s reported WER on TED-LIUM shifts from 5.7% to 7.3% depending solely on reference choice, while its content loss is identical (a = 3.8%). On AMI, approximately 60% of reported WER reflects style mismatch rather than information loss. Closer inspection reveals that TED-LIUM transcribes repetitions but omits fillers and cut-offs while AMI transcribes fully verbatim without sounds. Further incosistencies in the popular Leaderboard have recently been noted in [38] suggesting that style-aware evaluation should become standard practice for conversational ASR benchmarks [35]. Mode-conditioned transcription offers a path forward: by making output style an explicit parameter, evaluation can use style-matched references, verbatim predictions against verba-tim ground truth, intended against intended isolating genuine recognition errors from annotation convention differences, fur-ther CLR is a stable metric to evaluate content indenpendent of style. 
+
+3.4. Timing is ill-defined under policy ambiguity 
+
+The three failures above have a direct consequence for word-level timing. If the model may or may not emit a disfluency, the cross-attention distribution for that temporal region has no consistent target. Base Whisper’s cross-attention yields 203 ms mean absolute boundary error (MAE) on read speech (TIMIT) and 568 ms on disfluent speech (FluencyBank)-effectively un-usable. Reliable timing therefore requires a stable output token sequence and explicit alignment supervision; our method ad-dresses both. 
+
+# 4. Method 
+
+We present three mechanisms to unambiguously activate la-tent capabilities in large-scale ASR model: explicit style con-trol via mode tags, supervised cross-attention for word-level timing, and transcript-conditioned disfluency recovery. All ex-periments initialize from the official OpenAI Whisper-medium checkpoint [13]. We extend Whisper’s vocabulary with atomic tokens for phenomena absent from the original tokenizer. 
+
+Filled pauses (2 tokens): [uh] , [um] .
+
+Paralinguistic sound events (12 tokens): [laughter] ,
+
+[cough] , [sigh] , [breath] , [lipsmack] , [sniff] ,[throat-clearing] , [yawn] , [noise] , [crying] ,
+
+[scream] , [sneeze] .
+
+Mode tags (10 tokens): [verbatim 1,2,3] ,
+
+[sound 1,2] ,[intended 1,2,3,4,5] .
+
+Verbatimize delimiters (2 tokens): <sot> and <eot> .Following prior work [9, 19], sound and filler tokens appear at their temporal position within the transcript. 
+
+4.1. Activating style control: mode tags 
+
+4.1.1. Mode tag design 
+
+We condition the decoder on an explicit transcription policy 
+
+s ∈ { verbatim , intended } via prefix tokens prepended to the de-coder input. In verbatim mode , the model transcribes all audible content including disfluencies and paralinguistic sounds. In in-tended mode , it produces clean fluent text, omitting reparanda, interregna, and paralinguistic events [2, 39]: 
+
+Verbatim: I i [uh] [laughter] li- like, yeah [um] ilike intended transcripts. 
+
+Intended: I like intended transcripts. We use five tokens per mode [verbatim 1,2,3] and 
+
+[sound 1,2] for verbatim, [intended 1..5] ) for in-tended; multiple prefix tokens provide a stronger conditioning signal than a single token and enable compositional control, as described below. 
+
+4.1.2. Coverage-aware tag partitioning 
+
+Real-world training data is heterogeneously annotated: some corpora mark disfluencies but not sounds, others include in-jected sound events but lack reliable disfluency labels. Naively training on all data with a single set of verbatim tags produces contradictory gradients, the model is penalized for predicting a sound event in one sample and for omitting the identical event in another, solely because annotations are incomplete rather than because the events are absent. We resolve this by partitioning the verbatim tags by an-notation coverage. Tags [verbatim 1..3] control dis-fluency transcription (fillers, repetitions, cut-offs) and tags 
+
+[sound 1,2] control paralinguistic sound detection. Dur-ing training, each sample receives only the tags matching its annotation coverage: verbatim corpora with disfluency la-bels but no sound annotations use [verbatim 1..3] ; clean samples with injected sound events (Section 5.2) use only 
+
+[sound 1,2] ; fully annotated corpora use all five. This par-titioning gives the model a learnable signal that distinguishes incomplete label coverage from absent phenomena, allowing it to attribute missing annotations to the data rather than to the audio. 
+
+4.2. Vocabulary extension 
+
+4.2.1. Paired training 
+
+For each training sample, we randomly select verbatim or in-tended mode, prepend the corresponding tags, and supervise with the matching transcript. The same audio thus appears under both transcription policies across training, distinguished only by the mode tags. This teaches a clean separation of roles: the encoder representations determine all available transcription content (words, disfluencies, sounds), while the mode tags de-termine the emission policy -which content to include in the out-put. 
+
+Figure 3: Decoder prompt structure. Mode tags control tran-scription style, followed by an optional intended transcript hint (for verbatimize), then standard Whisper tokens. The model outputs time-aligned transcription in the prompted style 
+
+4.3. Activating timing: supervised cross-attention 
+
+With transcription policy resolved and token outputs stable, word-level timing becomes well-defined. Yet cross-attention alignment remains emergent and unreliable in the base model (Section 3.4). By directly training selected cross-attention alignment heads in a supervised fashion, we enable systematic improvements in timing accuracy. 
+
+4.3.1. Training objective 
+
+Let W = {(wi, s i, e i)}Ni=1 denote a transcript of N words, where word wi spans the interval [si, e i] in seconds. The en-coder produces F frames at 20 ms resolution ( F = 1500 for 30 s input). The decoder generates T tokens (y1, . . . , y T ), each belonging to exactly one word wπ(t) via the mapping function 
+
+π(t). For each token yt and attention head h, cross-attention yields a distribution a(h) 
+
+> t
+
+∈ RF over encoder frames. For token yt belonging to word wπ(t) with time span 
+
+[sπ(t), e π(t)], we construct a binary target gt ∈ { 0, 1}F that is one for frames within the word span and zero elsewhere: 
+
+gt(f ) = 1⌊sπ(t)/∆⌋ ≤ f ≤ ⌊ eπ(t)/∆⌋, (1) where ∆ = 0 .02 s is the frame shift. In other words, gt is one inside the span of word wπ(t) and zero everywhere else. We select the k=10 cross-attention heads whose unsupervised at-tention patterns best correlate with ground-truth alignments on TIMIT [40], adding heads greedily by marginal improvement. Let H denote this head subset. During training, we compute their averaged attention: 
+
+¯at = 1
+
+|H| 
+
+X
+
+> h∈H
+
+a(h) 
+
+> t
+
+, (2) and minimize the mean cosine distance between averaged atten-tion and ground truth: 
+
+Ltiming = 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+
+
+1 − ¯at · gt
+
+∥¯at∥ ∥ gt∥
+
+
+
+. (3) Cosine distance is scale-invariant, comparing distribution shape rather than magnitude. Optimizing the averaged attention is critical: it allows individual heads to specialize in complemen-tary acoustic aspects of the predicted token, whereas per-head loss optimizes each head in isolation, preventing cooperative specialization. We validate this empirically in Section 7.2. 
+
+4.3.2. Word-level timing extraction at inference 
+
+Whisper’s tokenizer merges preceding whitespace into word-initial tokens (e.g., “ meeting”), causing untrained cross-attention to conflate preceding pauses with word onsets. Prior work addresses this via explicit space tokens [19], requiring to-kenizer modifications that limit cross-lingual generalization and slow inference. We instead decouple pause detection from the attention mechanism at inference time, requiring no architec-tural changes. 
+
+Energy-based pause model. We construct a virtual blank (pause) emission probability from the utterance-normalized frame-wise mel energy: 
+
+p(blank | f ) = max  0, min  1, 1 − Emel (f )−p10 
+
+> p90 −p10
+
+ , (4) where p10 and p90 are the 10th and 90th energy percentiles of the current utterance. 
+
+Attention sharpening. We sharpen attention distributions via temperature scaling: attn ′ 
+
+> ij
+
+= (attn ij )τ / P 
+
+> k
+
+(attn ik )τ , with 
+
+τ =3 at inference. 
+
+Word-level aggregation. Sharpened token-level attention is aggregated into word-level emission log-probabilities via log-sum-exp over the tokens comprising each word. 
+
+Viterbi alignment. We align words to frames using Viterbi de-coding over a state space that strictly alternates between virtual blank states and word states. Blank states absorb pauses when acoustic energy is low; transitions into word states follow the aggregated attention. 
+
+4.4. Activating transcript-conditioned generation: verba-timize 
+
+Explicit policy control enables a further capability: retroac-tive annotation. High-quality intended transcripts are abundant, but verbatim transcripts with consistent disfluency annotation are scarce and costly to create. Verbatimize bridges this gap: given audio and any intended transcript, the model reconstructs a canonical verbatim version by copying the intended content while inserting acoustically grounded disfluencies at their tem-poral locations. 
+
+Prompt format. The decoder input contains the intended tran-script wrapped in delimiters, preceded by verbatim mode tags: 
+
+[verbatim 1..5] <sot> intended text <eot> 
+
+The models task is to reconstruct the verbatim transcript as output, inserting disfluency markers ( [uh] , [um] , repetitions, cut-offs, sound tags) at audio-detected positions. 
+
+Training modes. In standard verbatimize , the prompt contains the intended transcript and the target is the verbatim transcript. We validate that the intended transcript forms a subsequence of the verbatim transcript for valid training pairs, ensuring that disfluencies are strictly insertions. In verbatimize-copy , clean samples use identical prompt and target, teaching the model not to hallucinate disfluencies when none are present in the audio. 
+
+Casing perturbation. To encourage the model to attend closely to the prompt rather than relying solely on acoustics, we apply symmetric casing perturbation: 1–3 content words (selected by length, excluding stop words) are randomly uppercased in both 
+
+prompt and target. This forces the model to consult the prompt for exact spelling, while relying on the audio for disfluency lo-calization. 
+
+4.5. Staged training 
+
+To preserve Whisper’s pretrained multilingual capabilities, we train in two stages. Stage 1 freezes all pretrained parameters and trains only the newly added token embeddings (mode tags, delimiters, sound markers) for 1 epoch. This stage also serves as the latent-capability experiment reported in Section 7.1: even Table 3: Datasets used in this work. Role : Train = training, Eval = evaluation. Annotation : V = verbatim transcripts, C = clean transcripts, T = word-level timestamps. 
+
+Corpus Lang. Hours Ann. Role 
+
+ICSI [41] EN 72 V Train, Eval AMI [36] EN 100 V Train CORAAL [42] EN 150 V Train NSC [43] EN 2,000 V Train LibriSpeech [44] EN 960 C Train Common Voice [45] Multi var. C Train DisfluencySpeech [7] EN 10 V, T Eval FluencyBank [48] EN 4 V, T Eval TIMIT [40] EN 5 C, T Eval Thorsten [49] DE 23 C, T Eval GDS (ours) DE 2 V Eval without any updates to the encoder or decoder, mode-tag em-beddings alone substantially activate verbatim transcription. 
+
+Stage 2 unfreezes the decoder and continues training with a re-duced learning rate. The pre-learned tag embeddings provide stable initialization and mitigate catastrophic forgetting. 
+
+# 5. Data 
+
+Our training procedure requires paired transcripts: each audio sample needs both a verbatim and an intended reference. 
+
+5.1. Corpora 
+
+Table 3 summarizes all datasets and their roles. For English verbatim data, we use the ICSI Meeting Corpus [41] (72 h), the AMI Meeting Corpus [36] (100 h), CORAAL [42] (150 h), and the National Speech Corpus [43] (2,000 h), however we only train on 40h subset with high quality verbatim labels. For clean read speech, we use LibriSpeech [44] (960 h) and Com-mon Voice [45] (multilingual). We additionally contribute a 
+
+German DisfluencySpeech (GDS) evaluation set 1: following the English DisfluencySpeech design [7], native German speak-ers recorded 202 utterances containing controlled disfluencies (fillers, repetitions, cut-offs, vocal sounds, self-corrections), each with parallel verbatim and intended transcripts. For sound augmentation, we use VocalSound [46] (21k samples) and Non-speech7k [47] (7k samples). 
+
+5.2. Paired transcript construction and preprocessing 
+
+For corpora with verbatim annotations (ICSI, AMI, CORAAL, NSC), we generate intended transcripts using GPT-4o [50] by stripping fillers and sound tags, collapsing repetitions and false starts to their repairs, removing fragments, and reformatting numbers and dates for readability. For clean corpora, ver-batim and intended transcripts are treated as identical since these recordings hardly contain any disfluencies. To provide supervision for paralinguistic sound detection, we augment 30,000 clean samples by injecting 1–2 vocal events from Vo-calSound or Nonspeech7k into pauses exceeding 200 ms, iden-tified via Montreal Forced Aligner (MFA) [51] alignments. Sound tags are added to the verbatim transcript only; augmented samples receive only sound-detection tags ( [sound 1,2] ),  
+
+> 1Models, Data and evaluation code: https://github.com/ nyrahealth/CrisperWhisper
+
+consistent with coverage-aware partitioning (Section 4.1.2). For quality filtering on clean corpora, we transcribe each sample with Whisper-medium and retain only those achieving 
+
+<3% WER against the Whisper prediction, removing misla-beled or acoustically degraded samples. Word-level timestamps for cross-attention supervision are generated via MFA [51, 52] for 500 hours. All transcripts are normalized to a canonical form: filled pauses as [uh] /[um] , fragments/cutoffs with trail-ing hyphens, sound events as single-token tags at their temporal position, and numbers in spoken-word form. To evaluate verbatimize (Section 4.4), we use GPT-4o to identify ICSI transcripts containing rare or domain-specific words (technical jargon, proper nouns) unlikely to be recover-able from acoustics alone. We manually verify 1,843 rare-word occurrences across 1,342 samples (1,591 unique word types), confirming that none appear elsewhere in the training corpus. 
+
+# 6. Experimental Setup 
+
+6.1. Evaluation datasets 
+
+We evaluate three capabilities on separate benchmarks. Dis-fluency detection: DisfluencySpeech [7] (English, n=4 ,707 )and German DisfluencySpeech (German, n=202 ). Word-level timing: TIMIT [40] (English, read speech), FluencyBank [48] (English, disfluent speech), and Thorsten [49] (German, read speech). Verbatimize: the ICSI rare-word evaluation set (n=1 ,342 ; Section 5.2). 
+
+6.2. Disfluency evaluation protocol 
+
+Our canonical verbatim format enables automatic extraction of gold disfluency labels via edit-distance alignment between pre-dicted and reference verbatim transcripts. Matched tokens are classified as fluent; unmatched tokens are assigned a disfluency type deterministically by surface pattern: a trailing hyphen in-dicates a CUTOFF , a bracketed filler indicates a FILLER , any other bracketed token indicates a SOUND , a consecutive dupli-cate preceding a matched token indicates a REPETITION , and any remaining unmatched sequence is classified as OTHER (e.g. self-corrections, restarts, or novel disfluencies not captured by the above rules). 
+
+Repetition disambiguation. Consecutive identical tokens (e.g., “the the the problem”) create alignment ambiguity, since repeated and fluent instances are equally valid edit-distance tar-gets. Following Lou and Johnson [30], we use modified align-ment costs that prefer matching fluent words over disfluent copies. The last instance before a non-duplicate is tagged as fluent; all preceding duplicates are tagged as repetitions. Ta-ble 4 illustrates this procedure. 
+
+6.3. Metrics 
+
+All metrics are micro-averaged at corpus level. Text is lower-cased and punctuation removed before computation. 
+
+Transcription quality. We report verbatim word error rate (vWER) and character error rate (vCER) against verbatim ref-erences, and intended word error rate (iWER) against clean references, decomposed into substitution rate (iSR, indicating misrecognition), deletion rate (iDR, indicating over-removal of content), and insertion rate (iIR, indicating retained disfluencies or hallucinations). 
+
+Disfluency detection. Per-type F1 scores for fillers (fF1), sounds (sF1), cut-offs (cF1), and repetitions (rF1), computed via the alignment procedure above. Cut-off F1 requires a trail-Table 4: Repetition disambiguation via modified edit-distance alignment. The fluent instances of “I” and “the” are anchored first (last duplicate before a non-duplicate). The prediction in-correctly produces a cut-off “I-” where the reference has a rep-etition “I” (false positive for CUTOFF , false negative for REPE -
+
+> TITION
+
+) and deletes one repetition of “the” (false negative for 
+
+> REPETITION
+
+). 
+
+Reference I I [um] the the problem is 
+
+Label REP FLU FILL REP FLU FLU FLU 
+
+Prediction I- I [um] - the problem is 
+
+Label CUT FLU FILL - FLU FLU FLU 
+
+Result FP cut      
+
+> FN rep
+> TP flu TP fill FN rep TP flu TP flu TP flu
+
+ing hyphen at the aligned position; lenient cut-off recall (lcR) accepts any token at gold cut-off positions. Event F1 (eF1) is the type-agnostic F1 over all disfluency types. 
+
+Verbatimize. Content loss rate (CLR): the fraction of intended-reference words not recovered in the prediction. Rare-word re-call (RWR): the fraction of manually verified rare words cor-rectly preserved. 
+
+Timing. Mean absolute boundary error (MAE): the mean of start and end offset errors across all aligned word pairs, in mil-liseconds. F1@ X ms: the fraction of aligned pairs where both start and end offsets fall within a tolerance of X ms (collars: 50, 100, 200 ms), following [19]. 
+
+6.4. Baselines 
+
+We compare against Whisper-medium [13], Canary-1B [31], Reverb [23] (English only), AssemblyAI Universal-3-Pro [53], and CrisperWhisper [19]. For timing, we additionally compare against MFA [51] and WhisperX [22]. 
+
+6.5. Training details 
+
+We fine-tune Whisper-medium using Hugging Face Transform-ers. Stage 1: new embeddings only, 1 epoch, lr 5×10 −4.Stage 2: decoder unfrozen, 3 epochs, lr 1×10 −5. Batch size 160 with 4-step gradient accumulation, fp16, single NVIDIA A100. The timing loss Ltiming (Equation 3) is weighted at 0.2 relative to cross-entropy. 
+
+# 7. Results 
+
+We present results organized by the three capabilities activated in Section 4: style control, word-level timing and verbatimize. 
+
+7.1. Style control: latent capability and cross-lingual trans-fer 
+
+Tables 5 and 6 present disfluency detection and intended tran-script quality on English and German. We report our model at two key stages: S1 (Stage 1: frozen model, only tag embed-dings trained) and FT 0 (Stage 2: full decoder fine-tuning, zero German verbatim training data). For FT 0, we report results both with and without mode tags to isolate the effect of explicit pol-icy control. Adding 10k German verbatim samples (from a pro-prietary inhouse dataset) yields marginal gains over FT 0 (e.g., 93.8% →95.2% German eF1); we report the fully trained model FT all as the final system. 
+
+Evidence for latent capability. Unmodified Whisper detects Table 5: Disfluency detection on English ( n=4 ,957 ) and Ger-man ( n=202 ). Best per column and language in bold. Reverb is English-only.                                                                                                                                                        
+
+> Model LvWER ↓eF1 ↑fF1 ↑sF1 ↑cF1 ↑rF1 ↑lcR ↑
+> Whisper EN 10.9 12.0 14.3 0.0 4.8 7.6 29.6 DE 24.7 10.3 13.7 0.0 0.0 4.1 0.3 Canary-1B EN 9.6 19.9 24.2 0.0 0.0 30.4 33.7 DE 24.5 10.5 13.9 0.0 0.0 2.8 0.8 Reverb EN 5.2 86.3 93.3 54.2 33.5 86.5 83.3 AssemblyAI EN 4.9 85.8 92.5 68.8 17.0 84.8 71.0 DE 18.1 44.5 22.3 70.9 28.2 74.7 24.3 CrisperWhisper EN 6.4 73.2 81.7 0.0 0.0 68.0 73.2 DE 15.1 60.0 71.7 0.0 0.0 60.2 45.8 S1, with tags EN 9.1 53.0 60.6 26.8 17.6 45.4 88.3 DE 12.9 78.9 78.6 51.5 22.8 82.7 45.6 FT 0, with tags EN 4.0 90.7 90.1 87.3 43.2 87.2 95.4 DE 5.1 93.8 95.3 89.5 81.5 88.5 89.9 FT 0, without tags EN 5.5 80.7 85.4 55.7 20.4 78.6 79.7 DE 16.2 60.1 64.2 44.7 21.6 59.0 29.4 FT 10k , with tags EN 4.8 87.9 88.2 88.2 39.1 87.1 95.1 DE 4.5 95.0 97.0 89.7 88.7 86.0 96.2
+> FT 10k , without tags EN 4.8 83.9 80.0 63.2 17.2 71.3 78.0 DE 13.1 74.2 78.3 62.0 66.9 65.4 59.0
+
+disfluencies at 12.0% event F1 on English and 10.3% on Ger-man, despite no explicit verbatim training. Stage 1 (S1), which freezes the entire model and trains only mode-tag embeddings, raises event F1 to 53.0% on English and 78.9% on German-a large capability gain with zero weight updates to encoder or decoder. Full decoder fine-tuning with zero German verbatim data (FT 0) further improves performance to 90.7% English and 93.8% German. The progression 12% →53% →91% (English) and 10% →79% →94% (German) demonstrates that the capabil-ity is progressively unlocked rather than learned from scratch. 
+
+Mode tags are the critical structural signal. The tags-versus-no-tags comparison on FT 0 shows the benefit of explicit policy control. With tags, the model achieves 93.8% German event F1 zero-shot; without tags, the same model reaches only 60.1%. This 34 percentage point gap, which could be arbitarily ex-treme by adjusting the data mixture 1 demonstrates that target-language data cannot substitute for explicit policy parameteri-zation: further mode tags enable the model to reliably leverage its multilingual pretraining for cross-lingual transfer. 
+
+Intended quality is preserved. The iWER decomposition (Ta-ble 6) reveals that insertion rate (iIR) dominates intended-mode errors. Models without tags leak disfluencies into intended out-put (iIR ¡15%), whereas mode tags strongly suppress this leak-age (iIR 3–4%). Substitution and deletion rates remain stable below 3% and 1% respectively, confirming that explicit style control does not compromise recognition accuracy. 
+
+7.2. Word-level timing 
+
+Table 7 compares timing accuracy across three evaluation sets: TIMIT (English, read speech), FluencyBank (English, disfluent speech), and Thorsten (German, read speech). We report results both without and with inference-time sharpening ( τ =3 ). 
+
+Supervision transforms attention into a precise aligner. 
+
+Without timing supervision, base Whisper’s cross-attention is too diffuse for boundary extraction: 203 ms MAE on TIMIT, 568 ms on FluencyBank. Applying sharpening without supervi-sion helps marginally on read speech (203 →197 ms) but wors-ens performance on disfluent speech (568 →944 ms), because concentrating mass on incorrectly positioned attention ampli-fies errors. Supervised training reduces MAE by 5–6 × (to 36– Table 6: Intended transcript quality (same models and condi-tions as Table 5). iIR dominates errors for untagged models, reflecting disfluency leakage into intended output. 
+
+Model L iWER ↓ iSR ↓ iDR ↓ iIR ↓
+
+Whisper EN 14.2 2.6 1.4 10.1 DE 5.7 1.1 0.4 4.2 Canary-1B EN 15.4 2.6 1.1 11.6 DE 4.6 0.9 0.3 3.4 Reverb EN 11.5 2.9 2.2 6.4 AssemblyAI EN 21.1 3.3 0.7 17.1 DE 15.4 1.0 0.1 14.3 CrisperWhisper EN 20.5 2.9 1.0 16.5 DE 19.6 1.2 0.0 18.4 S1, with tags EN 12.3 2.4 2.0 7.9 DE 5.5 1.1 0.3 4.2 FT 0, with tags EN 9.4 2.5 2.7 4.2 DE 4.9 1.0 0.2 3.6 FT 0, without tags EN 18.8 2.1 0.8 15.9 DE 17.0 1.0 0.1 15.9 FT 10k , with tags EN 9.3 2.5 2.8 4.1 
+
+DE 4.7 1.0 0.3 3.4 
+
+FT 10k , without tags EN 19.2 2.2 0.8 16.3 DE 23.2 1.0 0.1 22.1 102 ms), demonstrating that attention based alignment methods can outperform strong force alignment baselines. 
+
+Supervised attention outperforms forced alignment on dis-fluent speech. MFA achieves the lowest MAE on read speech (19 ms on TIMIT) but degrades to 142 ms on FluencyBank— worse than both CrisperWhisper+s (122 ms) and our method (102 ms). Forced alignment relies on canonical pronunciation models that fail on repetitions, repairs, and filled pauses. Whis-perX shows the same limitation: 66 ms on TIMIT but 200 ms on FluencyBank. By training cross-attention heads alongside transcription policy allows our method to extracts boundary in-formation from non-canonical speech naturally. 
+
+Cross-lingual timing transfer. On Thorsten (German), our English-trained model achieves 55 ms MAE with zero Ger-man timing supervision, outperforming WhisperX (89 ms) and Canary-1B (103 ms). CrisperWhisper+s reaches 57 ms on this dataset but was extensively trained on german. Our attention-based method generalizes well across languages without language-specific components, while WhisperX’s wav2vec 2.0 German model proves less accurate than its English counterpart. 
+
+Averaged-head loss enables cooperative specialization. 
+
+Computing the timing loss on the averaged attention (ah) con-sistently outperforms per-head loss (ph): 36 vs. 45 ms on TIMIT, 102 vs. 119 ms on FluencyBank. Averaging before the loss allows individual heads to attend to complementary as-pects of each token; per-head loss prevents this cooperation. We saw that MAE decreases consistently as more heads are added (78 →39 ms on TIMIT with 1 →10 heads), with diminishing re-turns beyond 8. 
+
+Inference-time sharpening. Raising cross-attention to the power τ =3 consistently improves all attention-based methods. The learned distributions are correctly centered but slightly dif-fuse around boundaries; sharpening suppresses tail mass with-Table 7: Word-level timing comparison. MAE (ms; lower is better) and F1 (%; higher is better) at boundary tolerance thresholds. ”+s” indicates inference-time sharpening ( τ =3 ). ”ah”: averaged-head loss (Eq. 3); ”ph”: per-head loss. Best per column in bold. 
+
+TIMIT (EN, read) FluencyBank (EN, disfluent) Thorsten (DE, read) Method MAE ↓ F1@50 F1@100 F1@200 MAE ↓ F1@50 F1@100 F1@200 MAE ↓ F1@50 F1@100 F1@200 
+
+Base Whisper 203 0.4 4.0 32.9 568 0.6 5.5 26.3 218 0.5 2.8 25.7 Base Whisper+s 197 1.5 7.3 33.5 944 0.9 6.3 25.9 222 0.4 2.8 25.3 MFA 19 84.6 97.0 99.8 142 56.1 75.5 85.1 — — — —WhisperX 66 12.5 60.7 97.8 200 8.9 48.0 80.2 89 9.8 51.2 91.5 CrisperWhisper 59 41.5 70.1 92.8 162 23.1 48.5 70.8 67 34.2 63.9 86.3 CrisperWhisper+s 47 50.1 81.8 95.9 122 29.9 54.8 75.6 57 38.8 72.1 90.2 Canary-1B 78 14.9 46.1 94.0 166 9.5 31.7 75.8 103 5.6 29.9 84.1 Ours (ph) 57 42.8 71.2 93.2 159 24.0 49.2 71.5 65 35.1 64.8 87.0 Ours (ah) 49 50.5 76.0 95.2 141 26.7 52.0 72.9 60 38.6 68.0 88.3 Ours (ph)+s 45 51.2 82.9 96.4 119 30.8 55.7 76.3 56 39.6 73.0 90.9 Ours (ah)+s 36 64.0 87.4 97.3 102 38.6 61.1 80.3 55 42.8 74.0 90.9 
+
+out shifting centers. The technique requires no retraining and appears broadly applicable. 
+
+7.3. Verbatimize 
+
+Table 8 evaluates verbatimize on the ICSI rare-word evalu-ation set ( n=1 ,342 ). Without verbatimize, the model tran-scribes from acoustics alone (9.4% CLR, 6.8% RWR). Ver-batimize training reduces CLR to 1.5% and raises RWR to 94.1%, demonstrating that the model learns to faithfully copy prompted content while inserting disfluencies from the audio. Casing perturbation further improves all metrics (CLR 1.3%, RWR 96.1%) by forcing closer attention to exact surface forms. The near equality of vWER and vCER for trained models in-Table 8: Verbatimize results on the ICSI rare-word set (n=1 ,342 ). B and B+V share weights; B uses standard verba-tim mode, B+V adds the intended transcript as prompt. B+V+C adds casing perturbation during training. 
+
+Model CLR ↓ RWR ↑ vWER ↓ vCER ↓
+
+B 9.4 6.8 12.8 7.7 B+V 1.5 94.1 4.6 4.3 B+V+C 1.3 96.1 4.4 4.2 
+
+dicates predominantly single-character residual errors; man-ual inspection confirms these are largely cut-off transcription ambiguities (e.g., “ t- trr- transformer ” vs. “ d- tr-transformer ”), inherently ambiguous. 
+
+# 8. Discussion and Conclusion 
+
+Across Sections 7.1–7.3, we find a consistent pattern: pre-trained ASR models often already contain the needed capabil-ity, but require an explicit interface to reliably express it. The frozen-model experiment (S1) is the clearest example: training only 27 new token embeddings, with no updates to the 764M encoder/decoder parameters, raises German event F1 from 10% to 79%. Likewise, when a large-scale pretrained model behaves inconsistently, the right intervention may be a control signal rather than more data: our dilution experiment (Figure 1) shows that adding verbatim data without tags does not resolve the am-biguous zone, whereas tags resolve it even with only 10% ver-batim data. We also address the data scarcity that constrains disfluency-aware speech processing. Annotated disfluency corpora remain scarce [15, 8, 16, 17], and large multilingual datasets [6, 18] often derive labels from ASR pipelines trained on hetero-geneously annotated data, propagating labeling errors across generations of corpora and models. Verbatimize helps break this cycle by decoupling verbatim transcription from intended-transcript accuracy: the 96.1% rare-word recall indicates that the model preserves prompted content while inserting acous-tically grounded disfluency events, enabling scalable corpus enrichment without costly manual re-annotation or hybrid pipelines where one component produces high quality intended transcripts that verbatimize upgrades to highly accurate canon-ical verbatim transcripts. Overall, transcription style is an uncontrolled latent vari-able in current large-scale ASR, contributing to decoding in-stability, evaluation confounding, and ill-defined timing. Dis-crete mode tags make transcription policy controllable; super-vised cross-attention provides precise word-level timing once outputs are stable; and verbatimize enables scalable data en-richment. The jump from 10% to 94% zero-shot German dis-fluency F1 and to 79% with zero weight updates supports the view that mode-specific transcription largely requires activation rather than acquisition, as quantified by our language-agnostic evaluation framework. 
+
+Limitations. We evaluated cross-lingual transfer exclusively on German, a typologically close language to English; evaluation on distant language pairs is needed. The German evaluation set was recorded by the authors, who are not trained speakers, so disfluencies may be less naturalistic than in the wild. Tim-ing supervision relies on MFA-generated alignments rather than hand-annotated boundaries for most training data. 
+
+Future work. Tag-based conditioning could be unified with speaker diarization, using speaker embeddings as additional de-coder prefix tokens to jointly control style and attribution. For timing, training dedicated alignment heads from scratch rather than repurposing pretrained cross-attention and more sophisti-cated losses with VAD or pause detection could improve preci-sion. Finally, Verbatimize with beam search and heuristic fil-tering enables large-scale bootstrapping of consistent verbatim corpora, unlocking high quality weakly supervised data for bet-ter verbatim ASR, speech analysis and expressive TTS. 9. Generative AI Use Disclosure 
+
+Some code used in the experiments was written with help from a coding assistant (Claude by Anthropic). The experiments were run manually and results were manually verified. Generative AI was also used in the formatting of tables and plots. The paper was manually written. The authors assume full responsibility and accountability for the content of this submission. 
+
+# 10. References 
+
+[1] J. Liu, C. Deng, Q. Zhang, S. Zhou, Q. Chen, H. Yu, and W. Wang, “Recording for eyes, not echoing to ears: Contextu-alized spoken-to-written conversion of ASR transcripts,” in Pro-ceedings of AAAI , 2025, demonstrates that downstream NLP tasks benefit from converting verbatim ASR to clean text. [2] E. E. Shriberg, “Preliminaries to a theory of speech disfluencies,” 
+
+PhD dissertation, University of California, Berkeley , 1994. [3] S. Ash and M. Grossman, “Clinical applications of disfluency analysis in neurological populations,” Aphasiology , 2021. [4] B. Thallinger, L. Wagner, T. Bloder, and M. Zusag, “A multi-stage feature pipeline on timestamped speech transcriptions for demen-tia assessment,” in ICASSP 2025 - 2025 IEEE International Con-ference on Acoustics, Speech and Signal Processing (ICASSP) ,2025, pp. 1–2. [5] M. Zusag, L. Wagner, and T. Bloder, “Careful whisper – lever-aging advances in automatic speech recognition for robust and interpretable aphasia subtype classification,” in Proceedings of INTERSPEECH , 2023, pp. 3933–3937, achieves human-level aphasia classification by combining CTC (acoustic/verbatim) and encoder-decoder (clean) ASR outputs. [6] H. He, Z. Shang, C. Wang, X. Li, Y. Gu, H. Hua, L. Liu, C. Yang, J. Li, P. Shi, Y. Wang, K. Chen, P. Zhang, and Z. Wu, “Emilia: A large-scale, extensive, multilingual, and diverse dataset for speech generation,” IEEE Transactions on Audio, Speech and Language Processing , 2025, 101k+ hours of spontaneous speech; models produce more human-like output than audiobook-trained models. [7] K. Wang and D. Herremans, “DisfluencySpeech: Single-speaker conversational speech dataset with paralanguage,” arXiv preprint arXiv:2406.08820 , 2024, 10h studio-quality single-speaker dataset derived from Switchboard with filled pauses, dis-course markers, restarts, and non-speech sounds; provides paral-lel verbatim/intended transcripts at three levels of disfluency re-moval. [8] W. Li, P. Yang, Y. Zhong, Y. Zhou, Z. Wang, Z. Wu, X. Wu, and H. Meng, “Spontaneous style text-to-speech synthesis with controllable spontaneous behaviors based on language models,” 
+
+arXiv preprint arXiv:2407.13509 , 2024, addresses data scarcity for spontaneous speech TTS. [9] H. Liao, Q. Ni, Y. Wang, Y. Lu, H. Zhan, P. Xie, Q. Zhang, and Z. Wu, “NVSpeech: An integrated and scalable pipeline for human-like speech modeling with paralinguistic vocalizations,” 
+
+arXiv preprint arXiv:2508.04195 , 2025. [10] Q. Xu, “StutterZero and StutterFormer: End-to-end speech con-version for stuttering transcription and correction,” IEEE Access ,vol. 13, pp. 208 773–208 787, 2025, converts stuttered wave-forms to fluent waveforms; 24–28% WER reduction vs Whisper-Medium on converted output. [11] C. Lea, Z. Huang, L. Tooley, J. Narain, D. Yee, P. Georgiou, T. D. Tran, J. P. Bigham, and L. Findlater, “From user perceptions to technical improvement: Enabling people who stutter to better use speech recognition,” ACM Transactions on Accessible Comput-ing , vol. 15, no. 2, pp. 1–27, 2023, reports 19.8% WER and 23.8% truncation rate on production ASR for people who stutter. [12] C. Sridhar and S. Wu, “J-j-j-just stutter: Benchmarking whisper’s performance disparities on different stuttering patterns,” 08 2025, pp. 3753–3757. [13] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak su-pervision,” International Conference on Machine Learning , pp. 28 492–28 518, 2023. [14] A. Koenecke, A. S. G. Choi, K. X. Mei, H. Schellmann, and M. Sloane, “Careless whisper: Speech-to-text hallucination harms,” in Proceedings of ACM FAccT , 2024. [15] D. Mujtaba, N. R. Mahapatra, M. Arney, J. S. Yaruss, C. Herring, and J. Bin, “Inclusive ASR for disfluent speech: Cascaded large-scale self-supervised learning with targeted fine-tuning and data augmentation,” in Proceedings of INTERSPEECH , 2024, states “a critical barrier to progress is the scarcity of large, annotated disfluent speech datasets”. [16] P. Mohapatra, A. Pandey, B. Islam, and Q. Zhu, “Speech disfluency detection with contextual representation and data distillation,” in Proceedings of the 1st ACM International Workshop on Intelligent Acoustic Systems and Applications ,ser. IASA ’22. New York, NY, USA: Association for Computing Machinery, 2022, p. 19–24. [Online]. Available: https://doi.org/10.1145/3539490.3539601 [17] J.-K. Lin, H.-C. Lu, C.-C. Wang, H.-Y. Lin, and B. Chen, “Acous-tically precise hesitation tagging is essential for end-to-end verba-tim transcription systems,” in arXiv preprint arXiv:2506.04076 ,2025, states manual annotation is prohibitively expensive; used LLM labeling at $5 for entire dataset vs high cost of human anno-tators. [18] N. R. Koluguri, M. Sekoyan, G. Zelenfroynd, S. Meister, S. Ding, S. Kostandian, H. Huang, N. Karpov, J. Balam, V. Lavrukhin, Y. Peng, S. Papi, M. Gaido, A. Brutti, and B. Ginsburg, “Granary: Speech recognition and translation dataset in 25 european languages,” 2025. [Online]. Available: https://arxiv.org/abs/2505.13404 [19] L. Wagner, B. Thallinger, and M. Zusag, “CrisperWhisper: Accu-rate timestamps on verbatim speech transcriptions,” in Proceed-ings of INTERSPEECH , 2024. [20] R. Ma, M. Qian, M. J. F. Gales, and K. M. Knill, “Adapting an ASR foundation model for spoken language assessment,” in Pro-ceedings of INTERSPEECH , 2023, soft prompt tuning for verba-tim output; English-only, unidirectional, no timing. [21] G. D. Smith, D. Yee, J. K. Chen, and L. Findlater, “Prompting Whisper for improved verbatim transcription and end-to-end mis-cue detection,” arXiv preprint arXiv:2505.23627 , 2025. [22] M. Bain, J. Huh, T. Han, and A. Zisserman, “WhisperX: Time-accurate speech transcription of long-form audio,” in Proceedings of INTERSPEECH , 2023. [23] N. Bhandari, D. Chen, M. ´ Angel del R´ ıo Fern´ andez, N. Delworth, J. D. Fox, M. Jett´ e, Q. McNamara, C. Miller, O. Novotn´ y, J. Profant, N. Qin, M. Ratajczak, and J.-P. Robichaud, “Reverb: Open-source asr and diarization from rev,” 2025. [Online]. Available: https://arxiv.org/abs/2410.03930 [24] P. Mihajlik, Y. Meng, M. K´ ad´ ar, J. Linke, B. Schuppler, and K. Mady, “On disfluency and non-lexical sound labeling for end-to-end automatic speech recognition,” in Proceedings of INTER-SPEECH , 2024, systematic comparison of disfluency/non-lexical labeling strategies on conversational Hungarian and Austrian Ger-man; distinguishes filled pauses from meaningful backchannels. [25] K. Horii, M. Fukuda, K. Ohta, R. Nishimura, A. Ogawa, and N. Kitaoka, “End-to-end spontaneous speech recognition using disfluency labeling,” in Proceedings of INTERSPEECH , 2022, joint ASR with disfluency tags for spontaneous speech. [26] H. Futami, E. Tsunoo, K. Shibata, Y. Kashiwagi, T. Okuda, S. Arora, and S. Watanabe, “Streaming joint speech recogni-tion and disfluency detection,” in Proceedings of ICASSP , 2023, streaming encoder-decoder joint ASR and disfluency detection (multitask / tag-based variants). [27] R. Amann, Z. Li, B. Bruno, and J. Niehues, “Augmenting auto-matic speech recognition models with disfluency detection,” arXiv preprint arXiv:2409.10177 , 2024. [28] G. Zhu, J.-P. Caceres, and J. Salamon, “Filler word detection and classification: A dataset and benchmark,” in Proceedings of IN-TERSPEECH , 2022, introduces PodcastFillers (145h, 35K fillers) and an ASR+VAD+classifier pipeline for timestamped filler de-tection in podcasts. [29] T. Kouzelis, G. Paraskevopoulos, A. Katsamanis, and V. Kat-souros, “Weakly-supervised forced alignment of disfluent speech using phoneme-level modeling,” in Proceedings of INTER-SPEECH , 2023, forced alignment under transcript–audio mis-match due to disfluencies; avoids requiring fully verbatim tran-scripts. [30] P. J. Lou and M. Johnson, “End-to-end speech recognition and disfluency removal,” in Findings of the Association for Computa-tional Linguistics: EMNLP 2020 , 2020, pp. 2051–2061. [31] M. Sekoyan, N. R. Koluguri, N. Tadevosyan, P. Zelasko, T. Bart-ley, N. Karpov, J. Balam, and B. Ginsburg, “Canary-1B-v2 & Parakeet-TDT-0.6B-v3: Efficient and high-performance models for multilingual ASR and AST,” arXiv preprint arXiv:2509.14128 , 2025, nVIDIA’s 1B multilingual encoder-decoder ASR trained on 1.7M hours; uses NFA for timestamps due to cross-attention limitations. [32] J. Lian, C. Feng, N. Farooqi, S. Li, A. Kashyap, C. J. Cho, P. Wu, R. Netzorg, T. Li, and G. K. Anumanchipalli, “Unconstrained dysfluency modeling for dysfluent speech transcription and detec-tion,” in Proceedings of the IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) , 2023, defines and models dysfluent speech transcription and detection; introduces simulated dysfluent dataset (VCTK++). [33] A. Heuser, T. Kendall, M. Rio, Q. McNamara, N. Bhandari, C. Miller, and M. Jett´ e, “Quantification of stylistic differences in human- and asr-produced transcripts of african american english,” 09 2024, pp. 4538–4542. [34] A. Faria, A. Janin, K. Riedhammer, and S. Adkoli, “Toward zero oracle word error rate on the switchboard benchmark,” in Proc. INTERSPEECH , 2022, pp. 3973–3977. [35] Q. McNamara, M. ´ A. del R´ ıo Fern´ andez, N. Bhandari, M. Rata-jczak, D. Chen, C. Miller, and M. Jett´ e, “Style-agnostic evalu-ation of asr using multiple reference transcripts,” arXiv preprint arXiv:2412.07937 , 2024. [36] J. Carletta, S. Ashby, S. Bourban, M. Flynn, M. Guillemot, T. Hain, J. Kadlec, V. Karaiskos, W. Kraaij, M. Kronenthal et al. ,“The AMI meeting corpus,” in International Conference on Meth-ods and Techniques in Behavioral Research , 2005. [37] Hugging Face, “Open ASR leaderboard,” https://huggingface.co/ spaces/hf-audio/open asr leaderboard, 2024. [38] Artificial Analysis, “AA-WER v2.0: Speech to text accuracy benchmark,” Feb. 2026, accessed: 2026-02-21. [Online]. Available: https://artificialanalysis.ai/articles/aa-wer-v2 [39] W. J. M. Levelt, “Monitoring and self-repair in speech,” Cogni-tion , vol. 14, no. 1, pp. 41–104, 1983. [40] J. S. Garofolo, L. F. Lamel, W. M. Fisher, J. G. Fiscus, and D. S. Pallett, “The DARPA TIMIT acoustic-phonetic continuous speech corpus (TIMIT),” Linguistic Data Consortium , 1993. [41] A. Janin, D. Baron, J. Edwards, D. Ellis, D. Gelbart, N. Mor-gan, B. Peskin, T. Pfau, E. Shriberg, A. Stolcke et al. , “The ICSI meeting corpus,” in IEEE International Conference on Acoustics, Speech, and Signal Processing , 2003. [42] T. Kendall and C. Farrington, “The corpus of regional african american language,” Eugene, OR, 2023. [Online]. Available: https://doi.org/10.7264/1ad5-6t35 [43] J. X. Koh, A. Mislan, K. Khoo, B. Ang, W. Ang, C. Ng, and Y.-Y. Tan, “Building the singapore english national speech corpus,” in 
+
+Interspeech 2019 , 2019, pp. 321–325. [44] V. Panayotov, G. Chen, D. Povey, and S. Khudanpur, “Lib-rispeech: An asr corpus based on public domain audio books,” in Proceedings of ICASSP , 2015, pp. 5206–5210. [45] R. Ardila, M. Branson, K. Davis, M. Henretty, M. Kohler, J. Meyer, R. Morais, L. Saunders, F. M. Tyers, and G. We-ber, “Common Voice: A massively-multilingual speech corpus,” in Proceedings of the 12th Language Resources and Evaluation Conference , 2020, pp. 4211–4215. [46] Y. Gong, J. Yu, and J. Glass, “VocalSound: A dataset for improv-ing human vocal sounds recognition,” in IEEE International Con-ference on Acoustics, Speech and Signal Processing (ICASSP) ,2022, pp. 151–155. [47] M. M. Rashid, G. Li, and C. Du, “Nonspeech7k dataset: Clas-sification and analysis of human non-speech sound,” IET Signal Processing , vol. 17, no. 6, p. e12233, 2023. [48] A. Romana, M. Niu, M. Perez, and E. Mower Provost, “Fluency-Bank timestamped: An updated data set for disfluency detection and automatic intended speech recognition,” Journal of Speech, Language, and Hearing Research , vol. 67, no. 11, pp. 4203–4215, 2024, provides word-level timestamps and disfluency labels for stuttered speech; enables benchmarking of disfluency detection models. [49] T. M¨ uller and D. Kreutz, “Thorsten - open german voice (neutral) dataset,” 2021. [50] OpenAI, “Hello GPT-4o,” https://openai.com/index/ hello-gpt-4o/, 2024. [51] M. McAuliffe, M. Socolof, S. Mihuc, M. Wagner, and M. Son-deregger, “Montreal forced aligner: Trainable text-speech align-ment using kaldi,” in Proceedings of Interspeech , 2017, pp. 498– 502. [52] R. Rousso, E. Cohen, J. Keshet, and E. Chodroff, “Tradition or in-novation: A comparison of modern asr methods for forced align-ment,” 09 2024, pp. 1525–1529. [53] AssemblyAI, “Introducing Universal-3 Pro: A new class of speech language model optimized for voice AI,” https://www. assemblyai.com/blog/introducing-universal-3-pro, 2026.

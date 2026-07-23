@@ -1,0 +1,299 @@
+Title: Cumsum-Composable Phase Transport for Low-Cost Streaming Keyword Spotting
+
+URL Source: https://arxiv.org/pdf/2607.20086v1
+
+Published Time: Thu, 23 Jul 2026 00:51:00 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+# Cumsum-Composable Phase Transport for Low-Cost Streaming Keyword Spotting 
+
+Mahesh Godavarti 
+
+A Carrot, Inc 
+
+# Abstract 
+
+State-space sequence models are attractive for streaming speech because they carry a com-pact state through time, but their training cost can depend on scan-style kernels whose constant factors are unfavorable for short audio tasks and commodity GPUs. We study a simpler streaming-native alternative for keyword spotting: phase-transport layers whose products reduce to cumulative sums. Each layer maps frame features to complex channels, transports them by learned rotations, accumulates over a finite window by prefix differences, and then applies a gated residual update. The same representation has an exact batched training form and an exact online inference form: batch training uses ordinary cumulative sums, while streaming inference maintains the same prefix state with one update per frame and recovers rolling windows by prefix differences. The key structural assumption is unitary transport: inverse rotations used to build the prefix state are norm-preserving, so finite memory is introduced by window or block readouts rather than by ill-conditioned inverse decay factors. On Google Speech Commands v2 with 12 labels, mel+cumsum models are competitive with our compact convolutional baseline. The strongest single-seed mel+cumsum run reaches 97.3% test accuracy; a 51.6K-parameter tied variant reaches the same value, and a 24.8K-parameter tied model reaches 96.8%, comparable to a 25.6K-parameter MelCNNMaxPool baseline at 97.1%. In a matched cumsum-versus-scan benchmark with the same mel front end, tied projections, normalization, and gating, cumsum+window gives comparable test accuracy, 94.82% versus 94.33% for a learned-decay scan, while training 1.07x faster and reducing single-example latency from 7.09 ms to 5.01 ms on a Tesla T4. An optimized raw-audio cumsum front end matches mel front-end single-example latency in this setup, 337 microseconds versus 359 microseconds. Overall, cumsum-composable local transport retains competitive keyword-spotting accuracy while replacing scan-style temporal aggregation with ordinary cumulative sums, prefix differences, and a small streaming state. 
+
+# 1 Introduction 
+
+Streaming speech systems need to preserve temporal evidence while processing audio under tight latency and cost constraints. Modern state-space models (SSMs) are one answer: they replace all-pairs attention over long histories with a compact recurrent state, and selective variants can choose what to retain or forget as input arrives (Gu et al., 2022a; Smith et al., 2023; Gu & Dao, 2023). For short-window keyword spotting, however, the practical tradeoff is different. A one-second command is a finite local pattern, and compact CNNs already map well to commodity hardware (Zhang et al., 2018; Choi et al., 2019; Kim et al., 2021). If an SSM-like model requires scan kernels, repeated state updates, and nontrivial backward passes, its asymptotic linearity may not translate into low training cost on small tasks. This paper studies a cumsum-composable alternative. The central operation is a transported finite-window sum. Given complex value channels zt ∈ Cn and phase operators Ut = diag( eiϕ t, 1 , . . . , e iϕ t,n ), define 
+
+yt = Utt∑  
+
+> τ=max(1 ,t −W+1)
+
+U −1 
+
+> τ
+
+zτ . (1) 1arXiv:2607.20086v1 [cs.SD] 22 Jul 2026 This is a local phase-transport analogue of a recurrent memory: evidence from time τ is carried into the coordinate frame at time t before aggregation. When the phases are fixed or are cumulative sums of per-frame increments, eq. (1) is computed by prefix sums and prefix differences, one of the standard primitives for parallel sequence computation (Blelloch, 1990). It is therefore easy to train in parallel and easy to run in streaming mode. The transport makes this more expressive than an ordinary cumulative sum over frames. The contribution of frame τ to output time t is UtU −1 
+
+> τ
+
+zτ , so the layer computes learned relative-phase evidence as a function of lag while still admitting a prefix representation. The experiments in this paper are deliberately modest. We use Google Speech Commands v2 (Warden, 2018), a short-command benchmark, to ask whether this architecture is worth studying before scaling to full ASR. Fixed-frequency mel+cumsum models are strong and efficient. The contribution is a practical architectural result: finite-memory unitary transport gives a useful class of streaming sequence layers whose recurrence factors exactly into prefix accumulators. The experiments show that this simpler batch and streaming implementation remains accurate enough to be viable on this task. 
+
+Contributions. We make six claims, all scoped to the local experiments reported here. 
+
+• We formulate a phase-transport layer whose finite-window representation is computed by cumulative sums and has an exact streaming equivalent. 
+
+• We explain why unitary transport is the structural assumption that makes the prefix factorization nu-merically well conditioned: the inverse transports remain bounded. 
+
+• We describe the corresponding streaming front end: audio is converted to low-latency mel or learned spectral frames, each frame updates the cumsum state once, and rolling keyword scores are emitted from finite-window states. 
+
+• We show that stacked local mel+cumsum layers are competitive with the compact CNN baseline in our local Speech Commands setup, reaching up to 97.3% test accuracy. 
+
+• We show that tied local cumsum layers retain strong accuracy with small parameter counts, including a 24.8K-parameter model at 96.8%. 
+
+• We report a matched systems benchmark against a learned-decay scan layer, showing lower latency and comparable accuracy without a custom scan kernel. 
+
+# 2 Cumsum Phase Transport 
+
+2.1 Windowed Transport by Prefix Differences 
+
+Let zt ∈ Cn be the complex value produced from an input feature vector at time t. Let Ut ∈ Cn×n be a diagonal unitary transport operator. The transported finite-window sum in eq. (1) can be written with a prefix accumulator 
+
+pt =
+
+> t
+
+∑ 
+
+> τ=1
+
+U −1 
+
+> τ
+
+zτ . (2) Then 
+
+yt = Ut (pt − pt−W ) , ps = 0 for s ≤ 0. (3) This is the entire computational advantage: the layer uses a cumulative sum of transported values, a delayed prefix subtraction, and an elementwise rotation back to the current frame. 
+
+Proposition 1 (Exact batch/streaming equivalence) . For fixed model parameters and a fixed input sequence, eq. (3) produces the same yt whether pt is computed by a batched cumulative sum over the whole sequence or by the streaming update 
+
+pt = pt−1 + U −1 
+
+> t
+
+zt.
+
+Proof. The streaming recurrence expands to pt = ∑tτ =1 U −1 
+
+> τ
+
+zτ , which is exactly the batched cumulative sum. Substituting this prefix into eq. (3) gives the same finite-window transported sum. 22.2 Why Transport Before Accumulation? 
+
+An ordinary cumulative sum aggregates values in a fixed coordinate system. Temporal order enters only through window membership and through nonlinear layers after the sum. Phase transport changes the operation: the contribution from time τ to time t is 
+
+UtU −1 
+
+> τ
+
+zτ .
+
+For fixed learned phases ϕt,k = tω k, the kth complex coordinate is weighted by ei(t−τ )ωk . The layer therefore implements learned oscillatory kernels over relative lag, but all such kernels share a cumsum implementation because each term can be moved into a common prefix coordinate system before accumulation. This is the modeling role of complex rotations: they make the accumulated evidence depend on relative phase, not only on the unordered sum of local values. Complex exponentials and rotations are standard tools in sequence models, appearing in sinusoidal and rotary position representations as well as diagonal complex state-space parameterizations (Vaswani et al., 2017; Su et al., 2021; Gupta et al., 2022; Gu et al., 2022b). The contribution here is narrower: a finite-window, unitary transport parameterization whose online recurrence and batched training computation are exactly the same prefix representation. 
+
+2.3 Streaming Front End 
+
+The cumsum layer is naturally paired with a streaming acoustic front end. At deployment, incoming wave-form samples are held in a short analysis buffer. Every hop, for example 80 samples (5 ms) or 160 samples (10 ms) at 16 kHz, the front end emits one acoustic frame. That frame can be a conventional log-mel vec-tor, as in the strongest experiments here, or a learned cumsum spectral vector as in the learned-front-end experiments. The online pipeline is: 
+
+x1: t → mt → zt → pt = pt−1 + U −1 
+
+> t
+
+zt → yt = Ut(pt − pt−W ) → st.
+
+Here mt is the acoustic frame, zt is the complex value injected into the transport layer, pt is the maintained prefix state, yt is the current finite-window transported state, and st is a keyword logit or trigger score. The model therefore does not need to wait for a full one-second clip. It can update a rolling score at the frame hop rate and emit when the score crosses a task-specific threshold. Continuous-stream keyword spotting normally requires additional trigger metrics such as false accepts, false rejects, and detection latency (Rybakov et al., 2020; Jose et al., 2022); the present experiments evaluate the model first as a clip classifier with an exact streaming implementation. Figure 1 summarizes the resulting streaming layer. The memory needed per layer is small. For a hard window, the implementation stores the current prefix pt
+
+and a ring buffer of old prefixes needed to form pt − pt−W . For block decay, it stores block summaries and updates them at block boundaries. In both cases, online inference uses the same representation as batched training; the difference is only whether prefixes are produced by a full-sequence cumulative sum or by the one-frame recurrence. 
+
+2.4 Fixed Learned Phases 
+
+The fixed-frequency models use one learned frequency per complex channel and layer: 
+
+ϕt,k = tω k. (4) This gives each complex channel a learned local oscillator. The resulting rotations are unitary, so the transport part is norm-preserving; finite memory is supplied by the window or block-decay readout rather than by continuously damping the oscillator. Because the phases are deterministic functions of time within a layer, the whole sequence can be processed by cumulative sums during training and by a one-step prefix update during streaming inference. 3Table 1: Simple fixed mel+cumsum architecture. The main experiments vary d, L, W , hop length, and whether the projection/GLU are tied across layers. 
+
+Component Implementation Acoustic front end 40-bin log-mel spectrogram, 16 kHz audio, 400-sample FFT window, hop 80 or 160 samples; SpecAugment during training. Embedding Linear map mt ∈ R40 to ht ∈ Rd.Value projection Linear map ht 7 → (at, b t) ∈ Rd/ 2 × Rd/ 2, interpreted as zt = at + ib t.Fixed phase bank Per-layer learned frequencies ωℓ,k with ϕt,k = tω ℓ,k and Ut = diag( eiϕ t,k ).Cumsum transport Compute pt = ∑  
+
+> τ≤t
+
+U −1 
+
+> τ
+
+zτ and read out yt = Ut(pt − pt−W ).Layer update Concatenate [ℜyt, ℑyt], apply BatchNorm, GLU, and residual addition. Classifier Convert final real/imaginary channels to magnitudes, max-pool over time, and apply a linear 12-way classifier. Tied variant Share the value projection and GLU across all layers; keep frequencies and BatchNorm separate per layer. 
+
+2.5 Why Unitary Transport? 
+
+The prefix construction requires applying an inverse transport to each incoming value before accumulation. For unitary rotations, U −1 
+
+> t
+
+= U ∗ 
+
+> t
+
+and ∥U −1 
+
+> t
+
+z∥ = ∥z∥, so the prefix terms remain on the same numerical scale as the projected values. This is the algebraic reason that batch cumsums and streaming prefix updates are both simple and stable. The contrast with decaying transport clarifies the design choice. Suppose one tried to use At = ρtUt
+
+with 0 < ρ < 1 in the same prefix form. The prefix accumulator would contain terms A−1 
+
+> τ
+
+zτ = ρ−τ U −1 
+
+> τ
+
+zτ .Although the final readout could multiply by a small forward factor and cancel this scaling in exact arithmetic, the prefix state itself would involve division by progressively smaller numbers. In finite precision this can create large scale separation, overflow risk, and loss of low-order information. Unitary transport avoids this class of conditioning issues because the inverse used to build prefixes has norm one. For this reason, forgetting is introduced outside the transport inversion, through hard-window subtraction or block-level weighting. 
+
+2.6 Layer Form 
+
+The main mel+cumsum layer follows the implementation in the local experiment code. A log-mel frame 
+
+mt ∈ R40 is embedded into ht ∈ Rd. At each cumsum layer, a linear projection creates real and imaginary channels: 
+
+(at, b t) = Pℓht, zt = at + ib t.
+
+The transported window sum yt is computed by eq. (3), converted back to real coordinates, normalized, and passed through a gated residual update: 
+
+ht ← ht + GLU(BN([ ℜyt, ℑyt])) . (5) For windowed classification, the model collapses the final complex channels to magnitudes and applies tem-poral max pooling. Tied variants share the projection and GLU across layers while retaining per-layer frequency and normalization parameters. Table 1 summarizes the simple fixed-frequency architecture used for the main mel+cumsum results. 
+
+2.7 Block Decay 
+
+Hard finite windows are efficient but can be unstable because the representation changes discontinuously when an old term exits the window. The block-decay variant replaces a single hard window with a geometrically weighted sum of blocks: 
+
+yt = UtK−1∑
+
+> b=0
+
+λb (pt−bW − pt−(b+1) W
+
+) . (6) 4streaming frames mt    
+
+> complex projection zt
+> inverse transport
+> prefix update pt
+> window difference
+> transport to time t
+> BN + GLU residual
+> rolling score st
+
+Figure 1: Streaming phase-transport layer. Batch training computes all prefixes by a cumulative sum; streaming inference maintains the same prefix state one frame at a time. This keeps the computation cumsum-based while adding smooth forgetting. The main mel experiments in this paper use hard windows; block decay is a cumsum-compatible alternative for settings where smoother forgetting is useful. 
+
+# 3 Experimental Setup 
+
+Dataset. All experiments use Google Speech Commands v2 with one-second 16 kHz clips. The label set has 12 classes: ten commands ( yes , no , up , down , left , right , on , off , stop , go ) plus unknown and silence .Unknown examples are subsampled to match the average number of target-command examples; silence is generated from the dataset background-noise clips. 
+
+Baselines. We compare three families. First, compact convolutional baselines use either log-mel fea-tures or raw waveform convolutions. The strongest mel baseline is MelCNNMaxPool, a TC-ResNet-style one-dimensional temporal CNN over log-mel channels with SpecAugment (Choi et al., 2019; Park et al., 2019). Published KWS systems include DS-CNN-style embedded models and stronger broadcast-residual CNNs (Zhang et al., 2018; Kim et al., 2021); the local MelCNNMaxPool model serves as the controlled compact reference for the experiments below. Second, learned spectral front ends replace the fixed FFT/mel transform with learned sinusoidal cumsum filters, connecting this part of the study to learned audio front ends such as LEAF (Zeghidour et al., 2021). Third, a matched scan baseline keeps the same mel front end, tied projections, normalization, and gating as the cumsum model, but replaces each hard-window cumsum with a learned exponential-decay scan. 
+
+Training. Full runs use the full local training set, approximately 36K examples, for 40 or 80 epochs depending on the experiment. Smoke tests use a two-epoch subset of roughly 4K training examples and are used only for architectural deconstruction. Mel/CNN models use Adam with learning rate 10 −3 and weight decay 10 −4. All reported results in this draft are single-seed unless otherwise stated. The cumsum-versus-scan systems benchmark was run on a Tesla T4 with CUDA 12.4, PyTorch 2.6, Torchaudio 2.6, and batch size 128 for training. 
+
+# 4 Results 
+
+4.1 Mel+Cumsum Is Competitive 
+
+Table 2 shows the strongest local mel+cumsum and CNN results. The strongest single-seed cumsum runs reach 97.3% test accuracy. A cumsum-composable temporal primitive remains comparable to the local CNN baseline while using an exact streaming prefix representation. Tying and small local windows preserve most of the performance with much lower parameter counts. The 24.8K-parameter fixed tied model is the cleanest efficiency result: it is close to the 25.6K-parameter MelCNNMaxPool baseline while replacing temporal convolutions after the mel front end with cumsum-composable phase transport. The 51.6K-parameter tied model reaches the same observed accuracy as the 160.9K-parameter untied variant. 5Table 2: Main Speech Commands results from the local architecture comparison. All numbers are single-seed test accuracies. Model Configuration Test acc. Params MelCumsumFixed W=5, 8L, n=80, hop=160, untied, 40ep 97.3 160,892 MelCumsumFixedTied W=10, 8L, n=120, hop=80, 80ep 97.3 51,612 MelCNNMaxPool hop=160, 40ep 97.1 25,628 MelCumsumFixedTied W=5, 8L, n=100, hop=160, 40ep 97.0 37,012 MelCumsumBidirTied W=10, 8L, n=80, hop=80, 40ep 96.8 31,612 MelCumsumFixedTied W=10, 8L, n=80, hop=80, 80ep 96.8 24,812 Table 3: Front-end comparison. Cumsum spectral front ends provide a streaming acoustic representation before the sequence model.                   
+
+> Model Front end Test acc. Params MelCNNMaxPool FFT + log-mel 97.1 25,628 CumsumSpecCNN cumsum, frozen mel phases, log-mag+re+im 95.2 46,828 CumsumSpecCNN cumsum, learned phases, log-mag+re+im 93.9 30,508 LearnedSpecCNN cumsum, learned phases, log-mag 94.1 25,668 RawCNN raw waveform Conv1d 91.0 25,228
+
+4.2 Small Local Windows and Depth Matter 
+
+The final results favor repeated local windows over shallow wide aggregation. For example, W=10 with eight tied layers reaches 96.8–97.3% depending on width and training length, making repeated tight windows the strongest configuration in the local sweep. Table 7 gives the fixed-model ablation behind this claim: at a comparable 40-frame nominal span, moving from two W=20 layers to eight W=5 layers improves test accuracy from 94.4% to 96.2%. This supports the interpretation that cumsum is best used as a local temporal building block with nonlinear gating between layers, rather than as one large undifferentiated accumulator. 
+
+4.3 Tying Preserves Performance 
+
+The tied variants are important because they separate architectural structure from raw parameter count. The untied W=5, eight-layer model reaches 97.3% with 160.9K parameters. A tied W=10, eight-layer model with n=120 reaches the same 97.3% test accuracy with 51.6K parameters, a reduction of about 3.1x. At nearly the same parameter count as the MelCNNMaxPool baseline, the tied W=10, n=80 model reaches 96.8% with 24.8K parameters. This suggests that repeated local transport with shared projections is a compact temporal mixer rather than merely a larger alternative to convolution. 
+
+4.4 Cumsum Acoustic Front Ends 
+
+Replacing the FFT/mel front end with sinusoidal cumsum filters gives a direct streaming acoustic front end. Table 3 shows representative results with the same CNN backend used for the mel reference. The cumsum front end is important because it shows that the same prefix-sum primitive can act before the mel stage as well as after it. The strongest cumsum front end uses mel-spaced frozen phases and keeps phase-carrying features, reaching 95.2% before the sequence model. The detailed ablation in tables 11 and 12 shows that retaining real and imaginary channels is especially helpful when the hop is large. On short commands, the fixed FFT/mel/log pipeline still supplies a strong inductive bias. The strongest architecture in this draft therefore uses cumsum transport after mel features, rather than replacing mel features entirely. 6Table 4: Matched cumsum-versus-scan benchmark. Both models use the same mel front end and tied eight-layer architecture.                  
+
+> Model Temporal primitive Params Best val Test B=1 latency MelCumsumFixed cumsum + hard window W= 10 24,812 94.8 94.82 5.01 ms MelScanFixed Triton scan + learned decay 25,132 94.2 94.33 7.09 ms
+
+Table 5: Primitive timing at the mel-layer sequence size, T = 200 , N = 40 , on a Tesla T4.                
+
+> Batch torch.cumsum Triton scan Ratio 184.9 us 270.6 us 3.2x 884.9 us 273.6 us 3.2x 32 73.4 us 331.8 us 4.5x 128 140.5 us 514.5 us 3.7x
+
+4.5 Cumsum Versus Learned-Decay Scan 
+
+The most direct systems comparison keeps the mel front end and model shape fixed. Both models use 40-bin log-mel frames at hop 80, d = 80 , eight tied layers, the same projections, BatchNorm, GLU residual updates, and max-pooling readout. The only substantive difference is the temporal primitive: MelCumsumFixed uses a hard window W = 10 implemented by torch.cumsum and prefix subtraction, while MelScanFixed replaces the window with learned per-channel exponential decay implemented by a custom Triton scan. The scan model has 320 extra parameters, one decay scalar per frequency per layer. Table 4 shows comparable accuracy in this single matched run. The primary difference is implementation cost: the cumsum model uses ordinary cumulative sums and prefix subtraction, trains in 16.2 seconds per epoch versus 17.4 seconds per epoch, and has 1.42x lower single-example inference latency. The raw primitive benchmark gives the cleaner implementation signal. At the mel-layer size T = 200 , N = 40 , torch.cumsum 
+
+is 3.2–4.5x faster than the Triton scan across batch sizes 1–128. The scan model learns short effective memories. Across layers, the learned decay values imply effective windows between roughly 3 and 21 frames. This supports the finite-memory hypothesis: for this keyword-spotting configuration, the learned recurrent memory behaves like a short local filter, which the cumsum window supplies directly. 
+
+4.6 Streaming Front-End Timing 
+
+The cumsum acoustic front end is also sensitive to implementation details. The initial raw-audio cumsum front end used a strided time dimension and performed window subtraction before downsampling, which made torch.cumsum the bottleneck. Using a contiguous (B, N, T ) layout and indexing stride positions before downstream operations changes the layer-1 single-example latency from 5.8 ms to 284 us. After these optimizations, the cumsum front end matches the mel front end at batch size one: 337 us for the cumsum front end versus 359 us for FFT+log+embedding. At large training batches, the cumsum front end remains memory heavier because it materializes the full-resolution complex rotation tensor; fusing rotation, cumsum, window subtraction, and striding is the natural next implementation step. 
+
+# 5 Discussion 
+
+What the results support. The reliable finding is that cumsum-composable local transport is a simple and effective temporal aggregation layer for keyword spotting. It works best after a mel front end, with small windows, multiple layers, gating, and weight tying. It has an exact streaming update and a simple batched implementation. The matched scan benchmark supports the systems argument: when the learned scan converges to short effective memories, the hard-window cumsum version has similar accuracy and lower latency in the measured setup. This is a useful combination for low-cost streaming speech research. 7Table 6: Positioning of cumsum phase transport relative to common streaming sequence model families.               
+
+> Model family Memory assumption Training primitive Streaming form CNN/TCN finite local receptive field convolution causal buffer S4/S5 long or decaying linear state scan or structured convolution recurrence Mamba input-selective state selective scan recurrence This work finite unitary transport cumulative sum and prefix dif-ferences prefix state, ring buffer
+
+Relation to SSMs. SSMs remain natural for long-context streaming models and production voice systems. Finite-window speech tasks expose a complementary regime. When the relevant memory is local and the transport operators are rotations, cumulative sums can recover the useful prefix/window structure without the full machinery of selective scan. The closest SSM relatives are diagonal complex models, which also use per-channel complex dynamics to generate sequence kernels (Gupta et al., 2022; Gu et al., 2022b; Smith et al., 2023). This work restricts the transport to unit-modulus rotations and supplies memory length explicitly through prefix differences, so the inverse transport used inside the accumulator remains bounded. 
+
+Scope. The experiments focus on keyword spotting. The next step is to measure whether the same cumsum transport layer retains its cost and latency advantages under stronger baselines, replicated runs, additional hardware, and streaming trigger metrics used in mobile KWS evaluation (Rybakov et al., 2020; Jose et al., 2022). 
+
+# 6 Limitations and Next Experiments 
+
+The current draft has several important limitations. All reported results are single-seed. The SSM compar-isons use local research implementations. The current systems benchmark is limited to one GPU environment and one matched architecture. Speech Commands is a keyword-spotting benchmark. A fuller perturbation suite would add pitch shift, reverberation, codec distortion, speaker holdout, and event-triggered onset met-rics. The immediate next experiments are: 1. Replicate the best fixed tied mel+cumsum and MelCNNMaxPool runs over at least three seeds. 2. Extend wall-clock, memory, throughput, and profiler logging to CPU, Apple Silicon, and embed-ded/mobile targets. 3. Compare against standard optimized KWS baselines such as DS-CNN, TC-ResNet, BC-ResNet, CRNN/TCN, and small Conformer variants. 4. Separate three families cleanly: mel+cumsum, learned spectral cumsum, and raw/sample-clocked cum-sum. 5. Add event-triggered command onset detection so the model is tested on latency and sparse emissions as well as clip-level accuracy. 6. Expand perturbation tests to pitch shift, reverberation, background noise, codec artifacts, speaker hold-out, and controlled phase/magnitude perturbations. 
+
+# 7 Conclusion 
+
+Cumsum-composable phase transport gives a simple way to build finite-window streaming speech represen-tations with exact batched training and exact online updates. On the local Speech Commands experiments, the strongest evidence supports fixed-frequency mel+cumsum models: they are competitive with the local compact CNN baseline, benefit from small local windows and depth, and retain strong performance under 8parameter tying. The matched benchmark against a learned-decay scan strengthens the systems claim: in the short-memory regime observed here, the cumsum layer is simpler and lower-latency while retaining com-parable accuracy. This makes the next research question concrete: can the cumsum transport layer retain its simplicity, cost advantages, and competitive accuracy under multi-seed evaluation, optimized baselines, broader hardware, and harder acoustic distribution shifts? 9A Additional Ablations 
+
+The appendix reports additional ablations from the local experiment notes. All entries are single-seed Speech Commands v2 results under the same general training setup described in the main text. The first tables focus on the simple fixed mel+cumsum architecture; the final tables summarize the cumsum acoustic front-end sweep. 
+
+A.1 Window Size and Depth 
+
+Table 7 decomposes the tied fixed model by local window size and depth. The main pattern is that a stack of small windows is stronger than a shallow model with a wider window. This is consistent with the intended use of the cumsum layer as a local aggregation primitive followed by nonlinear gating. Table 7: Fixed tied mel+cumsum window/depth ablation. The nominal span is L × W in mel frames and is used only as a rough comparison of temporal coverage.                               
+
+> Configuration Nominal span Layers Params Best val Test W=20, 2L 40 223,612 94.6 94.4 W=10, 4L 40 424,012 95.7 95.8 W=5, 8L 40 824,812 96.3 96.2 W=20, 4L 80 424,012 94.9 95.2 W=20, 8L 160 824,812 95.0 95.5
+
+A.2 Weight Tying 
+
+Table 8 isolates the effect of sharing the value projection and GLU across cumsum layers. The tied model keeps per-layer frequencies and normalization, reducing parameters by about 3.4x in this setting while staying close to the untied model and the compact CNN reference. Table 8: Fixed mel+cumsum weight-tying ablation for W=20, 4-layer models.             
+
+> Model Params Best val Test MelCumsumFixed, untied 82,252 96.0 96.3 MelCumsumFixedTied 24,012 94.9 95.2 MelCNNMaxPool reference 25,628 95.4 95.4
+
+A.3 Fixed-Frequency Sweep 
+
+Table 9 lists representative fixed-frequency mel+cumsum variants from the later local architecture sweep. The best tied model reaches the same 97.3% test accuracy as the larger untied model at a substantially smaller parameter count. Table 9: Representative fixed-frequency mel+cumsum sweep.                            
+
+> Model Configuration Test Params MelCumsumFixed W=5, 8L, n=80, hop=160, 40ep, untied 97.3 160,892 MelCumsumFixedTied W=10, 8L, n=120, hop=80, 80ep 97.3 51,612 MelCumsumFixedTied W=5, 8L, n=100, hop=160, 40ep 97.0 37,012 MelCumsumBidirTied W=10, 8L, n=80, hop=80, 40ep 96.8 31,612 MelCumsumFixedTied W=10, 8L, n=80, hop=80, 80ep 96.8 24,812 MelCumsumFixedTied W=10, 8L, n=80, hop=80, 40ep 96.5 24,812 MelCumsumFixedTied W=5, 8L, n=80, hop=160, 40ep 96.2 24,812 MelCumsumFixedTied W=40, 2L, n=80, hop=80, 80ep 94.5 23,612
+
+10 A.4 Architecture Alternatives 
+
+Table 10 summarizes additional architecture variants from the same local sweep. These runs address a natural reviewer question: whether the gain is simply from stacking many small nonlinear stages or from a more generic progressive architecture. The tied fixed cumsum model with constant width remains stronger than the progressive cumsum-ResNet variants at similar parameter counts. The comparison places the main model against nearby compact cumsum architectures and helps separate the fixed phase-transport design from generic compact cumsum variants. Table 10: Architecture alternatives from the local mel+cumsum sweep.                      
+
+> Model Configuration Test Params MelCNNMaxPool hop=160, 40ep 97.1 25,628 MelCumsumFixedTied W=10, 8L, n=80, hop=80, 80ep 96.8 24,812 MelCumsumFixedTied W=5, 8L, n=80, hop=160, 40ep 96.2 24,812 MelCumsumResNet W=3, channels [24,24,32,48], 40ep 94.9 25,380 MelCumsumResNet W=3, channels [16,24,32,48], 40ep 94.6 22,852 MelCumsumMagDeepTied W=5, 8L, n=90, 40ep 93.0 25,032
+
+A.5 Cumsum Acoustic Front End 
+
+The main paper uses log-mel features because they remain the strongest acoustic representation in the current experiments. The cumsum front-end experiments test a separate question: whether the same prefix-sum mechanism can replace the FFT/mel front end while preserving streaming computation from raw audio. The front end maintains running complex sinusoidal sums over waveform samples and emits either log magnitude alone or log magnitude together with the real and imaginary channels. Table 11 summarizes the standard 10 ms hop setting. The strongest cumsum front end uses frozen mel-spaced phases and a learned linear bottleneck from [log |c|, Re c, Im c] to the CNN input channels. This reaches 95.2% test accuracy. Within the cumsum front-end family, frozen mel-spaced phases outperform learned phases in this sweep, and retaining phase-carrying real and imaginary channels improves over log magnitude alone. Table 11: Cumsum front-end ablation at hop 160 samples. All rows use 80 acoustic channels and the same CNN backend.                                         
+
+> Model Front-end features Window Best val Test MelCNNMaxPool FFT + log-mel 400 96.4 97.1 CumsumSpec, frozen phases [log |c|,Re c, Im c]400 95.2 95.2 CumsumSpec, frozen phases [log |c|,Re c, Im c]160 95.2 94.8 CumsumSpec, learned phases [log |c|,Re c, Im c]400 94.0 93.9 LearnedSpecCNN log |c|400 –93.4
+
+Table 12 repeats the comparison in a no-overlap hop-400 setting. This setting makes the phase channels more visible: with learned phases, adding real and imaginary channels raises test accuracy from 90.8% to 93.6%; with frozen phases, it raises test accuracy from 92.0% to 94.0%. Table 13 adds a related learned-filterbank diagnostic. The convolutional sin-cos filterbank uses Hann-windowed filters rather than a running rectangular cumsum window. The strongest configuration in this sweep is the frozen mel-spaced log-magnitude filterbank. This contrasts with the cumsum front end in ta-ble 12, where real and imaginary channels help because the running cumsum magnitude is a noisier spectral estimate. Table 14 reports the corresponding end-to-end cumsum sequence models that replace both the acoustic front end and the temporal backend with cumsum layers. The same pattern appears there: log magnitude is 11 Table 12: Cumsum front-end ablation at hop 400 samples, where adjacent acoustic frames do not overlap.                                     
+
+> Model Front-end features Phases Best val Test MelCNNMaxPool FFT + log-mel fixed mel 95.3 95.4 CumsumSpec [log |c|,Re c, Im c]frozen mel 94.1 94.0 CumsumSpec [log |c|,Re c, Im c]learned 94.0 93.6 CumsumSpec log |c|frozen mel 92.7 92.0 CumsumSpec log |c|learned 92.2 90.8
+
+Table 13: Sin-cos convolutional filterbank front-end ablation at hop 160 samples. All rows use the same CNN backend.                          
+
+> Model Front-end features Test Params FilterbankSinCos Frozen log(sin 2+ cos 2), frozen mel filters 95.7 25,628 FilterbankSinCosMagReIm Frozen [log |c|,sin ,cos] →Linear, frozen mel filters 95.4 30,468 FilterbankSinCos Learned log(sin 2+ cos 2), learned filters 94.7 57,628 FilterbankSinCosCombined Learned [log |c|,sin ,cos] , learned filters 94.5 61,468
+
+a useful anchor, while carrying real and imaginary channels gives the next layer access to within-window phase. Table 14: Mag+re+im ablation for raw-audio cumsum stacks. These models use cumsum front ends followed by cumsum temporal layers.                               
+
+> Model Test Params Feature path CumsumE2EMag 93.5 62,732 mag+log front end; complex cumsum layers MagDeep V2 92.8 71,556 [log |c|,Re c, Im c]all layers, with projection MagDeep V2 92.5 63,812 log-mag first layer, then [log |c|,Re c, Im c]
+> MagDeep V1 90.5 65,084 log-mag only, wider model MagDeep V1 89.2 33,692 log-mag only, smaller model
+
+# References 
+
+Guy E. Blelloch. Prefix sums and their applications. Technical Report CMU-CS-90-190, School of Computer Science, Carnegie Mellon University, 1990. Seungwoo Choi, Seokjun Seo, Beomjun Shin, Hyeongmin Byun, Martin Kersner, Beomsu Kim, Dongyoung Kim, and Sungjoo Ha. Temporal Convolution for Real-time Keyword Spotting on Mobile Devices. In 
+
+Proc. Interspeech 2019 , pp. 3372–3376, 2019. doi: 10.21437/Interspeech.2019-1363. Albert Gu and Tri Dao. Mamba: Linear-time sequence modeling with selective state spaces. arXiv preprint arXiv:2312.00752 , 2023. Albert Gu, Karan Goel, and Christopher Ré. Efficiently modeling long sequences with structured state spaces. In Proc. International Conference on Learning Representations , 2022a. Albert Gu, Ankit Gupta, Karan Goel, and Christopher Ré. On the parameterization and initialization of diagonal state space models. arXiv preprint arXiv:2206.11893 , 2022b. Ankit Gupta, Albert Gu, and Jonathan Berant. Diagonal state spaces are as effective as structured state spaces. In Advances in Neural Information Processing Systems , volume 35, 2022. Christin Jose, Joe Wang, Grant Strimel, Mohammad Omar Khursheed, Yuriy Mishchenko, and Brian Kulis. Latency Control for Keyword Spotting. In Proc. Interspeech 2022 , pp. 1891–1895, 2022. doi: 10.21437/ Interspeech.2022-10608. 12 Byeonggeun Kim, Simyung Chang, Jinkyu Lee, and Dooyong Sung. Broadcasted Residual Learning for Efficient Keyword Spotting. In Proc. Interspeech 2021 , pp. 4538–4542, 2021. doi: 10.21437/Interspeech. 2021-383. Daniel S Park, William Chan, Yu Zhang, Chung-Cheng Chiu, Barret Zoph, Ekin D Cubuk, and Quoc V Le. SpecAugment: A simple data augmentation method for automatic speech recognition. In Proc. Interspeech 2019 , pp. 2613–2617, 2019. doi: 10.21437/Interspeech.2019-2680. Oleg Rybakov, Natasha Kononenko, Niranjan Subrahmanya, Mirkó Visontai, and Stella Laurenzo. Streaming Keyword Spotting on Mobile Devices. In Proc. Interspeech 2020 , pp. 2277–2281, 2020. doi: 10.21437/ Interspeech.2020-1003. Jimmy T. H. Smith, Andrew Warrington, and Scott W. Linderman. Simplified state space layers for sequence modeling. In Proc. International Conference on Learning Representations , 2023. Jianlin Su, Yu Lu, Shengfeng Pan, Ahmed Murtadha, Bo Wen, and Yunfeng Liu. RoFormer: Enhanced transformer with rotary position embedding. arXiv preprint arXiv:2104.09864 , 2021. Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. In Advances in Neural Information Processing Systems ,volume 30, 2017. Pete Warden. Speech commands: A dataset for limited-vocabulary speech recognition. arXiv preprint arXiv:1804.03209 , 2018. Neil Zeghidour, Olivier Teboul, Félix de Chaumont Quitry, and Marco Tagliasacchi. LEAF: A learnable frontend for audio classification. In Proc. International Conference on Learning Representations , 2021. Yundong Zhang, Naveen Suda, Liangzhen Lai, and Vikas Chandra. Hello edge: Keyword spotting on microcontrollers. In Proceedings of Machine Learning and Systems , 2018. 13

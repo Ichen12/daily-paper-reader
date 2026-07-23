@@ -1,0 +1,210 @@
+Title: Content is What Remains: Invariant Speech Tokenization from Parallel Utterances
+
+URL Source: https://arxiv.org/pdf/2607.19033v1
+
+Published Time: Wed, 22 Jul 2026 00:56:57 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# Content is What Remains: Invariant Speech Tokenization from Parallel Utterances 
+
+# Laurin Wagner 1,∗∗ , Bernhard Thallinger 1, Miroslav Stankovic 1, Mario Zusag 11 nyra labs, Austria 
+
+lwagner@nyra-labs.com, bthallinger@nyra-labs.com, mzusag@nyra-labs.com 
+
+# Abstract 
+
+Discrete speech tokenizers aim to disentangle semantic from acoustic information, yet targets from self-supervised learn-ing (SSL) models like HuBERT retain non-linguistic variation: speaker identity, prosody, and channel conditions leak into to-kens, inflating entropy. Our insight: when enough speakers utter the same words under varying conditions, linguistic con-tent is the only shared factor. We propose PINT (Parallel IN-variant Tokenization), fine-tuning an SSL encoder with align-ment losses across parallel utterances and augmentations to dis-till this shared residual. PINT collapses identical words onto consistent token sequences, drastically reducing conditional en-tropy. Unlike ASR text, PINT tokens preserve frame-level tem-poral grounding and serve as drop-in semantic targets for au-dio codecs. Experiments show a 98 .7% relative reduction in speaker probe accuracy ( 93 .1% →1.2% ), 42% lower ABX er-ror rate, and 27 –30% lower LM perplexity versus baselines, confirming that the right invariance is key to efficient learning. 
+
+> 1
+
+Index Terms : speech coding, speech tokenization, discrete rep-resentations, speech compression, robust content representa-tions 
+
+# 1. Introduction 
+
+Subword tokenization in NLP succeeds partly because dis-cretization that respects a signal’s latent structure yields se-quences that are highly compressible and predictable for au-toregressive models. Discrete speech tokenization extends this premise to audio, supporting LM-based speech generation, di-alogue, and cross-modal reasoning [1, 2, 3, 4]. In contempo-rary speech-codecs and speech generation systems, tokens of-ten appear in a factorized representation (per timestep/frame): 
+
+semantic tokens should capture linguistic content, while acous-tic residual layers model speaker, prosody, and other signal de-tails [5, 6, 3]. 
+
+The nuisance-leakage problem. Semantic tokens in tokenizers commonly discretize intermediate SSL features, typically Hu-BERT [7] or WavLM [8], via distillation [5, 3] into codebooks or dual encoders where one encodes semantics and the other fills in the gaps [9]. However, these encoders leak non-linguistic variation: speaker identity remains recoverable [10, 11], and token sequences can change by > 40% under acoustic pertur-bations alone [12], a brittleness that has been found to correlate with downstream degradation [13, 14, 15]. Formally, let c denote linguistic content and z the token se-quence. When different realizations of the same c yield differ-ent z, the conditional entropy H(z | c) is bounded away from  
+
+> ** indicates the corresponding author.
+> 1Models: https://github.com/nyrahealth/PINT
+
+zero by non-linguistic variation. This leakage hinders both se-quence compressibility and applications that benefit from disen-tangled content and style representations such as accent conver-sion [15], voice conversion [10], and expressive synthesis [16], where downstream models are forced to undo entanglement that a cleaner representation would have prevented. A cleanly dis-entangled representation would instead allow models to manip-ulate style independently of content. 
+
+Related work. ContentVec [10] and DC-Spin [14] pursue speaker invariance via contrastive or clustering objectives; Gat et al. [12] and NAST [17] target augmentation robustness; Sta-bleToken [18] achieves noise invariance through multi-branch voting but does not address speaker or prosodic variation. On the codec side, SpeechTokenizer [5], Moshi/Mimi [3], Dual-Codec [19], XY-Tokenizer [20], and SAC [21] each improve se-mantic–acoustic disentanglement through distillation, dual en-coders, or split-stream quantization. Yet all inherit features (Hu-BERT, WavLM, Whisper [22] or w2v-BERT [23]) as semantic targets without addressing the nuisance leakage already present in those representations. PINT is orthogonal: rather than re-designing codec architectures, it cleans the encoder upstream, producing invariant representations that serve as drop-in targets for any of these frameworks. 
+
+PINT: formulation and approach. We argue that a token is only truly semantic if it satisfies a dual criterion: content cap-ture : it carries sufficient phonetic information and nuisance in-variance: it discards everything else. nuisance invariance drives 
+
+H(z | c)→0, ensuring identical content maps to identical token sequences. This allows run-length encoding (RLE) and byte pair encoding (BPE) to collapse redundant frames, drastically improving bit rate efficiency and predictability for autoregres-sive modeling, since the remaining entropy reflects genuine lin-guistic structure discarding other factors. We introduce PINT to operationalize this through parallel data: when multiple speakers utter the same sentence under dif-ferent conditions, linguistic content is the only shared factor. By fine-tuning a HuBERT encoder with parallel-data alignment losses and aggressive augmentations, PINT distills this shared residual, leaving content as the only consistent signal. Unlike ASR-derived text tokens, PINT preserves frame-level temporal grounding facilitating integration into modern audio codec ar-chitectures. The payoff is measurable and model-agnostic: an identical 85 M-parameter decoder-only transformer achieves 27–30 % lower perplexity on PINT tokens than on HuBERT or WavLM tokens, reaching WavLM’s final perplexity in 23 × fewer steps - evidence that invariance, not architecture, is the binding con-straint on token quality. 
+
+Contributions. 
+
+(1) We formalize semantic speech tokenization through a arXiv:2607.19033v1 [cs.CL] 21 Jul 2026 dual criterion of content capture and nuisance invariance, show-ing that nuisance leakage directly inflates conditional entropy and hurts compressibility. (2) We propose PINT, a training framework leveraging parallel data and augmentation to jointly optimize continuous and discrete representations, satisfying both criteria simultaneously. (3) We show that PINT yields highly compressible content tokens, reducing speaker probe ac-curacy by 98.7 % (93.1 % → 1.2 %), improving ABX discrim-inability by 42 %, and lowering LM perplexity by 27–30 % vs. HuBERT/WavLM (test perplexity 1.95 vs. 2.78/2.67). 
+
+# 2. Method 
+
+2.1. Data and Parallel Supervision 
+
+Training and evaluation draw on four categories of English speech, summarized in Table 1. True-parallel corpora (ARC-TIC, CHAINS, CSTR-VCTK, EnDialects, ESD, TIMIT) pro-vide multiple recordings of the same transcripts across speak-ers, accents, speaking styles, and emotional conditions, yield-ing naturally aligned utterance groups that span a wide range of variability. Non-parallel corpora (LibriSpeech 960 h, Tedlium-3 374 h) extend linguistic and acoustic coverage; since they lack shared transcripts, pseudo-parallel pairs are formed on-the-fly via stochastic augmentations like additive noise (white, brown, pink), reverberation, speed/pitch perturbation, and channel distortion applied to the same utterance within a batch. Further we synthesize multiple parallel samples for these datasets using Kokoro [24] Evaluation-only : RAVDESS [25] (emotion probes) and 6k hours clean subset of Librilight for LM training. Noise : We treat noise [26] as parallel data with empty transcripts during training. All corpora are force-aligned with the Montreal Forced Aligner (MFA) [27] for word-level timestamps. Evaluations use data strictly excluded from train-ing: CSTR-VCTK holds out 10 % of speakers; TIMIT and Lib-riSpeech use standard non-overlapping partitions; for corpora without official splits, all utterances sharing a normalized tran-script are assigned to the same split to prevent transcript leak-age. 2
+
+2.2. Model Overview 
+
+PINT starts from HuBERT-base [7]. Given a waveform x, the encoder produces continuous frame-level features that serve as input to a decoder branch predicting phoneme sequences via cross-entropy (CE). In Stage B, an additional id-sequence head outputs logits over K=200 discrete codes plus a blank symbol for connectionist temporal classification (CTC) training [38]. 
+
+2.3. Stage A: Parallel Invariance Training 
+
+Mini-batches contain utterances indexed by b ∈ { 1, . . . , B },where gb denotes the transcript-group index. 
+
+(1) Sequence-level soft dynamic time warping (DTW) loss. 
+
+Let Hb = [ hb, 1, . . . , hb,T b ] ∈ RTb×D denote encoder frame features for utterance b, where Tb is the number of frames and 
+
+D is the feature dimension. For each positive parallel pair (i, j )
+
+with gi=gj , let P be the set of all such pairs in the mini-batch. Soft-DTW [39] computes a distance dsdtw  
+
+> ij
+
+between Hi and Hj ,
+
+> 2The Use column in Table 1 codes each corpus’s role: T=Stage A training, KM= k-means fitting, I=invariance evaluation, LM=language model.
+
+Table 1: Dataset statistics and parallel properties. Hours: total audio length used; #S: parallel samples; #G: parallel groups. Use codes: T=Stage A; KM= k-means; I=invariance evalua-tion; LM=language model.                                                         
+
+> Dataset Hours #S #G Parallel properties Use ARCTIC [28] 13.7 15 k1134 accents/ dialects TCHAINS [29] 9.6 6k56 accents, speed, style TCSTR-VCTK [30] 82.5 88 k13615 accents/ dialects T I EnDialects [31] 30.4 17 k2273 accents/ dialects TESD (EN) [32] 13.3 17 k383 emotions TRAVDESS [25] 1.4 720 2emotions ISynSpeech [33] 196.6 109 k109 TTIMIT [34] 3.7 4.4k452 T KM Noise [26] 30.0 10 k1T I LibriSpeech [35] 120.4 73 k——T I Tedlium-3 [36] 374.8 244 k——TLibriLight [37] 6000 ——LM
+
+normalized by the maximum sequence length: 
+
+Lsdtw = 1
+
+|P| 
+
+X
+
+> (i,j )∈P
+
+dsdtw 
+
+> ij
+
+max( Ti, T j ) . (1) Since parallel pairs share only linguistic content while differ-ing in speaker, style, recording conditions etc. minimizing this loss forces the encoder to output consistent representations for content and suppress nuisance variation. 
+
+(2) Word-level contrastive loss. Using word boundaries from forced alignment, we compute word representations by averaging encoder frames over each word span: vb,m =
+
+> 1
+> |T b,m |
+
+P 
+
+> t∈T b,m
+
+hb,t . Positive pairs V+ consist of the same word position across parallel utterances; negative pairs V− con-sist of words whose phoneme sets have Jaccard similarity below a threshold τneg .3 The loss attracts same-word representations and repels different ones: 
+
+Lword = 1 − cos( V+)+ λneg cos( V−), (2) where cos( ·) is the duration-weighted mean cosine similarity. This attraction-repulsion prevents the trivial collapse that the sDTW loss alone would suffer from and further encourages rep-resentations that are aligned on the word level. 
+
+(3) Decoder CE loss. A two-layer Transformer decoder trained with teacher-forced CE over phoneme targets from transcript phonemization, attending to the encoder output via cross-attention ensures content capture .The Stage A objective combines all three losses (all λ∗ are scalar weights): 
+
+LA = λsdtw Lsdtw + λword Lword + λce Lce . (3) We set λsdtw = .5, λword = 2 , λneg = 1 , and λce = 10 .
+
+> 3Jaccard-based gating avoids contradictory gradients from phoneti-cally similar negatives.
+
+2.4. Stage B: Discrete Token Training 
+
+Stage A captures content with invariant continuous embeddings, yet converting them to tokens via a post-hoc k-means codebook does not guarantee sequence-level optimality since the cluster-ing objective is agnostic to sequential consistency across paral-lel utterances. Stage B addresses this via end-to-end optimiza-tion that directly targets discrete sequence consistency while jointly fine-tuning all components, enforcing invariance in both continuous and discrete form: Following Lee et al. [40], we at-tach a linear layer that maps encoder frames to logits over a dis-crete unit vocabulary. For each transcript group, the teacher (an EMA copy of the student) processes an anchor utterance (syn-thetic for synth-aug), obtains token IDs by framewise argmax decoding of these logits, and then applies deduplication to form a discrete target sequence. This yields a common reference se-quence per group. The student is trained with CTC to align every utterance in the group to this shared target. Because CTC permits many-to-one alignments, variation in duration and speaking rate is absorbed without penalty, pushing all speak-ers toward the same discrete output. Unlike Lee et al., who freeze the encoder, we train end-to-end via a student-teacher framework [41, 42]. Joint updates allow the semantic encoder to co-adapt with the discrete partition; (blanks are disallowed, as deduplication makes them unnecessary). Lmarg promotes a uniform argmax distribution on the batch level to avoid collapse, while Lorth discourages correlations among its prototype vec-tors to improve code separability. We downweight the discrete losses relative to the Stage A terms ( λid =0 .6, λm,o=0 .3) so that continuous invariance training remains the dominant learn-ing signal. 
+
+# 3. Experiments 
+
+We evaluate PINT along three axes that directly test the dual criterion: content capture (§3.1) and invariance and robust-ness (§3.2). Further we evaluate the downstream compres-sion benefit unlocked by the above. Baselines are HuBERT-base layer 9 and WavLM-base layer 12 since these layers have been found to correspond most closly to phonemes [7, 8]. Un-less noted, discrete tokens use k-means ( k=200 ) fit on TIMIT for baselines. PINT remains strong at far smaller vocabu-laries, while the baselines degrade more quickly and saturate around 200; we therefore use K=200 for all systems for di-rect comparability. Ablations: dec-AR uses exclusively auto-regressive phoneme decoding as loss; dec-CTC uses exclusively a CTC loss for training; synth-only uses only synthetic data from Kokoro [33] and all losses; synth-aug uses all losses and real data, but all parallel data for the real data is synthetically generated meaning real samples only interact with synthetic ones in DTW and Word level losses but never with other real ones; w/o noise drops noise augmentation and noise as parallel data. 
+
+3.1. Content Capture 
+
+We measure content capture via ASR performance, phoneme discriminability (ABX), and phone-normalised mutual infor-mation (PNMI). Word error rate (WER) / character error rate (CER) : following [5] we train a 2-layer bidirectional long short-term memory (BLSTM) network (hidden dimen-sion 1024) with CTC on LibriSpeech train-clean-360, evaluated on test-clean; in continuous mode the BLSTM receives frame features directly, in discrete mode a k means model maps to ids or in PINT’s case the argmax logit output of the last lin-Table 2: Content capture on LibriSpeech. Each cell shows cts / dis: continuous vs. k-means discrete ( k=200 ). ↓ lower is bet-ter; ↑ higher is better. Bold : best per sub-column.                                                
+
+> cts / dis ABX ↓
+> Model CER WER PNMI ↑wit. acr.
+> Baselines
+> HuBERT 4.33 / 7.55 10.99 / 21.37 0.79 0.055 0.066 WavLM 4.03 / 6.40 11.53 / 18.42 0.81 0.047 0.059 PINT(ours) 3.84 / 4.65 9.79 / 12.13 0.78 0.040 0.042
+> Ablations
+> dec-AR 3.90 / 6.00 10.08 / 17.93 0.78 0.076 0.086 synth-only 5.87 / 7.37 14.95 / 18.55 0.75 0.055 0.062 w/o noise 3.80 / 4.75 9.71 / 12.52 0.78 0.043 0.050 dec-CTC 4.20 / 4.73 / 10.77 / 12.01 0.77 0.073 0.086 synth-aug 3.79 / 4.67 9.91 / 12.41 0.78 0.042 0.044
+
+Table 3: Invariance and noise robustness. Probes: lower ↓ =more invariant. Invar.: lower ↓ = more consistent. Noise: con-centration higher ↑,Noise : normalised token-distribution en-tropy / ids used (Ent/Ids, lower ↓ is better) RMS SD lower ↓.
+
+Bold : best per column.                                                           
+
+> Probes (%) ↓Invar. ↓Noise Model Spk Emo DTW Edit Ent/Ids ↓RMS SD ↓
+> Baselines
+> HuBERT 93.1 55.4 0.1609 0.2275 0.499/139 0.9051 WavLM 78.9 54.6 0.1218 0.2096 0.642/191 1.0010 PINT (ours) 1.2 32.1 0.0092 0.0659 0.000/1 0.0049
+> Ablations
+> dec-AR 20.1 44.2 0.0269 0.1654 0.470/153 0.7092 synth-only 4.1 32.9 0.0089 0.2485 0.488/175 0.6055 w/o noise 1.2 27.5 0.0370 0.1412 0.566/198 0.7527 dec-CTC 43.0 43.1 0.0485 0.3176 0.329/65 0.4989 synth-aug 2.3 32.3 0.0075 0.0869 0.000/1 0.0053
+
+ear layer. ABX [43]: minimal-pair phonetic discriminability on LibriSpeech dev-clean via the zrc abx2 toolkit (20 ms frame rate); we report within-speaker and across-speaker error (lower is better). PNMI as defined in [7]. Results are shown in Ta-ble 2. PINT outperforms both baselines on CER and WER in con-tinuous and discrete mode while achieving substantially better ABX discriminability (0.040 vs. 0.042 across-speaker), demon-strating that our invariance training does not sacrifice content. Among the ablations, synth-only degrades both ASR and ABX, showing that real data is essential for real world performance; 
+
+dec-CTC and dec-AR underperform on ABX, confirming that the full multi-loss training is beneficial for phoneme discrim-inability. Most importantly synth-aug performs very well. Since the required parallelism can be generated synthetically, extend-ing PINT to languages without parallel human corpora appears feasible. 
+
+3.2. Invariance and Robustness 
+
+We evaluate invariance through probes, parallel-utterance con-sistency, and noise robustness. Speaker/emotion probes : x-vector time-delay neural network (TDNN) classifiers [44] on frozen representations; speaker identity on CSTR-VCTK held-out speakers, emotion+intensity on RAVDESS; lower accu-Table 4: Encoding compressibility: tok/s / b/s per cell (lower ↓
+
+= more compact). Hu : HuBERT-L9; WL : WavLM-L12; PI :PINT-L12. Tx : character-level BPE on transcripts.                                      
+
+> tok/s / b/s
+> Enc. VHu WL PI Tx
+> Raw 50/400 50/400 50/400 14.6/116 Dedup 24.6/197 24.8/198 12.6 /101 —RLE 24.6/246 24.8/273 12.6/152 —BPE-orig 4k 15.0/180 15.3/183 10.0/120 4.1/50 BPE-orig 8k 13.2/172 13.4/175 8.8/114 3.7/48 BPE-dedup 4k 9.3/112 9.4/113 4.9/59 —BPE-dedup 8k 8.2/107 8.3/108 4.3/56 —
+
+racy indicates greater invariance. Parallel invariance (CSTR-VCTK test set): DTW cosine ratio (mean intra-group DTW-aligned cosine distance normalized by inter-group distance) and average normalized edit distance between deduplicated token sequences of parallel utterances normalized by the longer se-quences length. Noise robustness : Entropy for discrete: En-tropy of the distribution of discrete id’s when feeding 2 noise classes [26] not seen in training through the encoders, this is paired with the number of unique ids used atleast once; For continuous: RMS standard deviation ratio (RMS SD) root-mean-square of per-dimension standard deviations for noise vs. speech embeddings (near zero = negligible noise variation). Re-sults are shown in Table 3. PINT reduces speaker probe accuracy from 93 % (Hu-BERT) to 1.2 %, demonstrating near-complete speaker invari-ance. Emotion (7 emotions + neutral) accuracy also drops substantially (55 % → 32–33 %), though some signal persists. Parallel-corpus DTW distances confirm that continuous repre-sentations collapse intra/inter group distance by ∼20 × relative to HuBERT with a much lower sequence variablity also at the discrete level. Noise robustness is essentially perfect for PINT (entropy = 0 , RMS SD < 0.02 ), whereas baselines exhibit sub-stantial drift. The ablations reveal that each component and the data contribute distinctly. Using sDTW without word level loss leads to collapse. The dec-AR variant retains 20.1 % speaker accuracy which is ∼16 .8× worse than full PINT. synth-only 
+
+achieves low speaker leakage but high edit distance (0.25 vs. 0.06), indicating that while synthetic variation removes speaker signal, atleast some real data is needed for discrete sequence consistency. w/o noise achieves the lowest emotion leakage but poor noise concentration and high DTW distance, confirming that noise augmentation is important for robustness without sac-rificing invariance. 
+
+3.3. Compression Efficiency 
+
+When identical content consistently maps to identical (sim-ilar) tokens, sequences contain clear patterns that compres-sion algorithms can exploit. We test this prediction with pro-gressive compression schemes (Table 4), reporting tokens per second and bits per second ( ⌈log 2 V ⌉× tok/s). The Tx col-umn applies the same formula to characters and character level BPE on transcripts, providing a text-grounded compressibility reference. PINT RLE achieves 152,bits/s —a 2.6× reduction from 400,bits/s—just 31,% above raw text (116,bits/s), while retaining frame-level time alignment. HuBERT and WavLM reach only 246–273,bits/s ( ∼1.6× compression), as speaker and channel variability disrupt token runs with surface-level changes rather than true content shifts. 0 5 10 15 20 25 30   
+
+> Training steps (k)
+> 1.5
+> 2.0
+> 2.5
+> 3.0
+> 3.5
+> 4.0
+> 4.5
+> 5.0
+> 5.5
+> Train perplexity
+> 1.4k steps
+> (23 ×fewer)
+> HuBERT
+> WavLM
+> PINT (ours)
+
+Figure 1: Training perplexity on LibriLight for an identical 85 M-parameter transformer LM on HuBERT L9, WavLM L12, and PINT L12 ( k=200 ) tokens. Dashed lines: final test per-plexity. PINT converges to 27–30 % lower perplexity, consistent with its superior sequence compressibility (Table 4). 
+
+The deduplication rate (74.8 % for PINT vs. 50.7 % for Hu-BERT) is the most direct fingerprint of nuisance invariance: it teases out precisely the consistent structure that both RLE and BPE can exploit. After deduplication and BPE at V =8 ,192 ,PINT reaches 56 bits/s approaching text BPE (48 bits/s) while baselines stall at 107-108 bits/s. BPE merges token n-grams that recur consistently across the corpus; because PINT mini-mizes dependence on speaker and acoustic conditions, the same content more reliably maps to the same token sequence, and BPE discovers stable patterns just as it finds recurring character sequences in text. In HuBERT and WavLM, the same content uttered under different conditions produces different token se-quences, fragmenting these patterns and blocking the merges. 
+
+Autoregressive LM perplexity. The ultimate test of token quality is whether an autoregressive model finds them easy to predict. We train identical 85 M-parameter decoder-only Trans-formers (12 layers, hidden dimension 1024, 16 heads, context 3072 tokens, weight-tied embeddings) on raw token id streams from each tokenizer using LibriLight. Figure 1 shows the train-ing curves. PINT achieves test perplexity 1.95 , versus 2.78 for HuBERT and 2.67 for WavLM, a 27–30 % reduction un-der identical architecture and data. Strikingly, PINT already matches WavLM’s perplexity after only ∼1,400 steps, roughly 
+
+23 × fewer iterations and continues to improve far below the baseline ceiling. PINTs supperior token consistency directly re-duces the burden that nuisance leakage forces on the LM. 
+
+# 4. Conclusion 
+
+PINT shows that enforcing invariance yields audio content com-pressibility close to text, providing a cleaner interface to NLP techniques. By treating parallel utterances as natural super-vision and jointly satisfying invariance and discriminability, the resulting tokens are speech-grounded and speaker-agnostic, with a 27–30 % perplexity reduction confirming that nuisance leakage bottlenecks learning efficiency. As invariant, frame-aligned representations, PINT tokens serve as drop-in targets for codec architectures and disentanglement-sensitive tasks. Future work includes multilingual extension via synthetic data, codec integration, and duration-factorized generation schemes that ex-ploit PINT’s RLE compressibility. 5. Generative AI Use Disclosure 
+
+Some code used in the experiments was written with help from a coding assistant (Claude by Anthropic). The experiments were run manually and results were manually verified. Generative AI was also used in the formatting of tables and plots. The paper was manually written. The authors assume full responsibility and accountability for the content of this submission. 
+
+# 6. References 
+
+[1] Z. Borsos, R. Marinier, D. Vincent, E. Kharitonov, O. Pietquin, M. Sharifi, D. Roblek, O. Teboul, D. Grangier, M. Tagliasac-chi, and N. Zeghidour, “AudioLM: a language modeling approach to audio generation,” IEEE/ACM Transactions on Audio, Speech, and Language Processing , vol. 31, pp. 2523–2533, 2023. [2] D. Zhang, S. Li, X. Zhang, J. Zhan, P. Wang, Y. Zhou, and X. Qiu, “SpeechGPT: Empowering large language models with intrinsic cross-modal conversational abilities,” in Findings of the Association for Computational Linguistics: EMNLP 2023 , H. Bouamor, J. Pino, and K. Bali, Eds. Singapore: Association for Computational Linguistics, Dec. 2023, pp. 15 757–15 773. [Online]. Available: https://aclanthology.org/ 2023.findings-emnlp.1055/ [3] A. D´ efossez, L. Mazar´ e, M. Orsini, A. Royer, P. P´ erez, H. J´ egou, E. Grave, and N. Zeghidour, “Moshi: a speech-text foundation model for real-time dialogue,” 2024. [Online]. Available: https://arxiv.org/abs/2410.00037 [4] T. Wang, L. Zhou, Z. Zhang, Y. Wu, S. Liu, Y. Gaur, Z. Chen, J. Li, and F. Wei, “Viola: Unified codec language models for speech recognition, synthesis, and translation,” 2023. [Online]. Available: https://arxiv.org/abs/2305.16107 [5] X. Zhang, D. Zhang, S. Li, Y. Zhou, and X. Qiu, “SpeechTok-enizer: Unified speech tokenizer for speech language models,” in The Twelfth International Conference on Learning Representa-tions , 2024. [6] Y.-C. Wu, I. D. Gebru, D. Markovi´ c, and A. Richard, “AudioDec: An open-source streaming high-fidelity neural audio codec,” in 
+
+ICASSP 2023 - 2023 IEEE International Conference on Acous-tics, Speech and Signal Processing (ICASSP) , 2023. [7] W.-N. Hsu, B. Bolte, Y.-H. H. Tsai, K. Lakhotia, R. Salakhut-dinov, and A. Mohamed, “Hubert: Self-supervised speech rep-resentation learning by masked prediction of hidden units,” 
+
+IEEE/ACM Transactions on Audio, Speech, and Language Pro-cessing , vol. 29, pp. 3451–3460, 2021. [8] S. Chen, C. Wang, Z. Chen, Y. Wu, S. Liu, Z. Chen, J. Li, N. Kanda, T. Yoshioka, X. Xiao, J. Wu, L. Zhou, S. Ren, Y. Qian, Y. Qian, J. Wu, M. Zeng, X. Yu, and F. Wei, “Wavlm: Large-scale self-supervised pre-training for full stack speech processing,” 
+
+IEEE Journal of Selected Topics in Signal Processing , vol. 16, no. 6, pp. 1505–1518, 2022. [9] Y. Gong, L. Jin, R. Deng, D. Zhang, X. Zhang, Q. Cheng, Z. Fei, S. Li, and X. Qiu, “Xy-tokenizer: Mitigating the semantic-acoustic conflict in low-bitrate speech codecs,” 2025. [Online]. Available: https://arxiv.org/abs/2506.23325 [10] K. Qian, Y. Zhang, H. Gao, J. Ni, C.-I. Lai, D. Cox, M. Hasegawa-Johnson, and S. Chang, “ContentVec: An improved self-supervised speech representation by disentangling speakers,” in Proceedings of the 39th International Conference on Machine Learning , ser. Proceedings of Machine Learning Research, K. Chaudhuri, S. Jegelka, L. Song, C. Szepesvari, G. Niu, and S. Sabato, Eds., vol. 162. PMLR, 17–23 Jul 2022, pp. 18 003–18 017. [Online]. Available: https: //proceedings.mlr.press/v162/qian22b.html [11] S.-L. Yeh and H. Tang, “Estimating the completeness of discrete speech units,” 2024 IEEE Spoken Language Technology Work-shop (SLT) , pp. 415–422, 2024. [12] I. Gat, F. Kreuk, T. Anh Nguyen, A. Lee, J. Copet, G. Synnaeve, E. Dupoux, and Y. Adi, “Augmentation invariant discrete representation for generative spoken language modeling,” in 
+
+Proceedings of the 20th International Conference on Spoken Language Translation (IWSLT 2023) , E. Salesky, M. Federico, and M. Carpuat, Eds. Toronto, Canada (in-person and online): Association for Computational Linguistics, Jul. 2023, pp. 465– 477. [Online]. Available: https://aclanthology.org/2023.iwslt-1. 46/ [13] S. Vashishth, H. Singh, S. Bharadwaj, S. Ganapathy, C. Asawaro-engchai, K. Audhkhasi, A. Rosenberg, A. Bapna, and B. Ramab-hadran, “Stab: Speech tokenizer assessment benchmark,” 2024. [Online]. Available: https://arxiv.org/abs/2409.02384 [14] H.-J. Chang, H. Gong, C. Wang, J. Glass, and Y.-A. Chung, “Dc-spin: A speaker-invariant speech tokenizer for spoken language models,” 08 2025, pp. 5723–5727. [15] J. Zhong, Y. Wang, K. Richmond, and P. Bell, “Rethinking discrete speech representation tokens for accent generation,” 2026. [Online]. Available: https://arxiv.org/abs/2601.19786 [16] X. Zhang, X. Zhang, K. Peng, Z. Tang, V. Manohar, Y. Liu, J. Hwang, D. Li, Y. Wang, J. Chan, Y. Huang, Z. Wu, and M. Ma, “Vevo: Controllable zero-shot voice imitation with self-supervised disentanglement,” ArXiv , vol. abs/2502.07243, 2025. [17] S. Messica and Y. Adi, “Nast: Noise aware speech tokenization for speech language models,” ArXiv , vol. abs/2406.11037, 2024. [18] Y. Song, L. Zhang, C. Wu, A. Liu, W. Jia, H. Wang, and X. Zhou, “Stabletoken: A noise-robust semantic speech tokenizer for resilient speechllms,” 2025. [Online]. Available: https://arxiv.org/abs/2509.22220 [19] J. Li, X. Lin, Z. Li, S. Huang, Y. Wang, C. Wang, Z. Zhan, and Z. Wu, “Dualcodec: A low-frame-rate, semantically-enhanced neural audio codec for speech generation,” arXiv preprint arXiv:2505.13000 , 2025. [20] Y. Gong, L. Jin, R. Deng, D. Zhang, X. Zhang, Q. Cheng, Z. Fei, S. Li, and X. Qiu, “Xy-tokenizer: Mitigating the semantic-acoustic conflict in low-bitrate speech codecs,” 2025. [Online]. Available: https://arxiv.org/abs/2506.23325 [21] W. Chen, X. Wang, R. Yan, Y. Chen, Z. Niu, Z. Ma, X. Li, Y. Liang, H. Wen, S. Yin, M. Tao, and X. Chen, “Sac: Neural speech codec with semantic-acoustic dual-stream quantization,” 2025. [Online]. Available: https://arxiv.org/abs/2510.16841 [22] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak supervision,” 2022. [Online]. Available: https: //arxiv.org/abs/2212.04356 [23] Y.-A. Chung, Y. Zhang, W. Han, C.-C. Chiu, J. Qin, R. Pang, and Y. Wu, “W2v-bert: Combining contrastive learning and masked language modeling for self-supervised speech pre-training,” 2021. [Online]. Available: https://arxiv.org/abs/2108.06209 [24] Hexgrad, “Kokoro-82m,” https://huggingface.co/hexgrad/ Kokoro-82M, 2024, accessed: November 11, 2025. [25] S. R. Livingstone and F. A. Russo, “The ryerson audio-visual database of emotional speech and song (ravdess): A dynamic, multimodal set of facial and vocal expressions in north american english,” PLoS ONE , vol. 13, 2018. [26] E. Fonseca, M. Plakal, D. P. W. Ellis, F. Font, X. Favory, and X. Serra, “Learning sound event classifiers from web audio with noisy labels,” ICASSP 2019 - 2019 IEEE International Confer-ence on Acoustics, Speech and Signal Processing (ICASSP) , pp. 21–25, 2019. [27] M. McAuliffe, M. Socolof, S. Mihuc, M. Wagner, and M. Son-deregger, “Montreal forced aligner: Trainable text-speech align-ment using kaldi,” 08 2017, pp. 498–502. [28] J. Kominek and A. Black, “The cmu arctic speech databases,” 
+
+SSW5-2004 , 01 2004. [29] F. Cummins, M. Grimaldi, T. Leonard, and J. Simko, “The chains corpus: Characterizing individual speakers,” Proc. SPECOM , pp. 431–435, 01 2006. [30] J. Yamagishi, C. Veaux, and K. MacDonald, “CSTR VCTK Corpus: English multi-speaker corpus for CSTR voice cloning toolkit (version 0.92),” 2019. [Online]. Available: https: //doi.org/10.7488/ds/2645 [31] I. Demirsahin, O. Kjartansson, A. Gutkin, and C. Rivera, “Open-source multi-speaker corpora of the English accents in the British isles,” in Proceedings of the Twelfth Language Resources and Evaluation Conference , N. Calzolari, F. B´ echet, P. Blache, K. Choukri, C. Cieri, T. Declerck, S. Goggi, H. Isahara, B. Maegaard, J. Mariani, H. Mazo, A. Moreno, J. Odijk, and S. Piperidis, Eds. Marseille, France: European Language Resources Association, May 2020, pp. 6532–6541. [Online]. Available: https://aclanthology.org/2020.lrec-1.804 [32] K. Zhou, B. Sisman, R. Liu, and H. Li, “Seen and unseen emo-tional style transfer for voice conversion with a new emotional speech dataset,” 02 2021. [33] Y. Brima, U. Krumnack, S. Pika, and G. Heidemann, “Learning disentangled speech representations,” 2025. [Online]. Available: https://arxiv.org/abs/2311.03389 [34] J. S. Garofolo, L. F. Lamel, W. M. Fisher, J. G. Fiscus, D. S. Pallett, and N. L. Dahlgren, “Darpa timit acoustic phonetic con-tinuous speech corpus cdrom,” 1993. [35] V. Panayotov, G. Chen, D. Povey, and S. Khudanpur, “Lib-rispeech: an asr corpus based on public domain audio books,” in 2015 IEEE international conference on acoustics, speech and signal processing (ICASSP) . IEEE, 2015, pp. 5206–5210. [36] F. Hernandez, V. Nguyen, S. Ghannay, N. Tomashenko, and Y. Est` eve, “Ted-lium 3: Twice as much data and corpus repartition for experiments on speaker adaptation,” in Speech and Computer .Springer International Publishing, 2018, pp. 198–208. [37] J. Kahn, M. Riviere, W. Zheng, E. Kharitonov, Q. Xu, P. Mazare, J. Karadayi, V. Liptchinsky, R. Collobert, C. Fuegen, T. Likhomanenko, G. Synnaeve, A. Joulin, A. Mohamed, and E. Dupoux, “Libri-light: A benchmark for asr with limited or no supervision,” in ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, May 2020, p. 7669–7673. [Online]. Available: http://dx.doi.org/10.1109/ICASSP40776.2020.9052942 [38] A. Graves, S. Fernandez, F. Gomez, and J. Schmidhuber, “Con-nectionist temporal classification: Labelling unsegmented se-quence data with recurrent neural networks,” in Proceedings of the 23rd International Conference on Machine Learning , 2006, pp. 369–376. [39] M. Cuturi and M. Blondel, “Soft-dtw: a differentiable loss func-tion for time-series,” in Proceedings of the 34th International Conference on Machine Learning - Volume 70 , ser. ICML’17. JMLR.org, 2017, p. 894–903. [40] A. Lee, H. Gong, P.-A. Duquenne, H. Schwenk, P.-J. Chen, C. Wang, S. Popuri, Y. Adi, J. Pino, J. Gu, and W.-N. Hsu, “Textless speech-to-speech translation on real data,” in 
+
+Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies , M. Carpuat, M.-C. de Marneffe, and I. V. Meza Ruiz, Eds. Seattle, United States: Association for Computational Linguistics, Jul. 2022, pp. 860–872. [Online]. Available: https://aclanthology.org/2022.naacl-main.63/ [41] A. Tarvainen and H. Valpola, “Mean teachers are better role models: Weight-averaged consistency targets improve semi-supervised deep learning results,” in Neural Information Process-ing Systems , 2017. [42] A. Baevski, A. Babu, W.-N. Hsu, and M. Auli, “Efficient self-supervised learning with contextualized target representations for vision, speech and language,” 2023. [Online]. Available: https://arxiv.org/abs/2212.07525 [43] T. Schatz, V. Peddinti, F. Bach, A. Jansen, H. Hermansky, and E. Dupoux, “Evaluating speech features with the minimal-pair ABX task: Analysis of the classical MFC/PLP pipeline,” in Proc. Interspeech 2013 , 2013, pp. 1781–1785. [44] D. Snyder, D. Garcia-Romero, G. Sell, D. Povey, and S. Khudan-pur, “X-vectors: Robust dnn embeddings for speaker recognition,” in 2018 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2018, pp. 5329–5333.
