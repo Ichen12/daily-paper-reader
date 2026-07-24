@@ -6,89 +6,71 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-23
-- 运行时间：2026-07-23 21:24:44 UTC
+- 最新运行日期：2026-07-24
+- 运行时间：2026-07-24 20:42:22 UTC
 - 运行状态：成功
-- 本次总论文数：23
-- 精读区：13
-- 速读区：10
+- 本次总论文数：17
+- 精读区：6
+- 速读区：11
 
 ### 今日简报（AI）
-今日聚焦两篇满分论文，分别从情感建模和上下文感知维度突破语音合成自然度瓶颈，值得重点关注。同时，三篇速读论文展示多语言实时翻译、语音智能透明化等前沿方向。建议优先精读两篇满分研究，并关注X-Translator的多语言说话人感知技术思路。
-- 详情：[/202607/23/README](/202607/23/README)
+今日精读聚焦非人声转换与TTS加速，速读覆盖音频字幕评估及跨语言说话人验证。重点推荐《Designed Vocalizations》设计声音数据集和《Faster IndexTTS-2》GPU流式合成，前者开辟声学转换新领域，后者突破零样本实时性能。建议普通读者关注非人声转换应用场景，如虚拟角色配音或动物声音交互。
+- 详情：[/202607/24/README](/202607/24/README)
 
 ### 精读区论文标签
-1. [AuEmoChat: Authentic Emotion Understanding and Rendering for Conversational Speech Synthesis](/202607/23/2607.15755v1-auemochat-authentic-emotion-understanding-and-rendering-for-conversational-speech-synthesis)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：具有真实情感渲染的对话语音合成
-2. [Harness TTS: Towards Context-Aware Expressive Speech Synthesis with Harness Layer](/202607/23/2607.17900v1-harness-tts-towards-context-aware-expressive-speech-synthesis-with-harness-layer)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：直接提出上下文感知的表现力语音合成系统
-3. [Harness TTS: Towards Context-Aware Expressive Speech Synthesis with Harness Layer](/202607/23/2607.17900v2-harness-tts-towards-context-aware-expressive-speech-synthesis-with-harness-layer)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：直接提出上下文感知的表现力语音合成系统（与v1相同）
-4. [A Situational Speech Synthesizer for Yoruba: System Design, Phonological Rule Architecture, and Orthographic Extensions for Contour](/202607/23/2607.18317v1-a-situational-speech-synthesizer-for-yoruba-system-design-phonological-rule-architecture-and-orthographic-extensions-for-contour)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：约鲁巴语基于规则的拼接语音合成
-5. [Staged Depth-Pruning Distillation of a Flow-Matching Text-to-Speech Teacher: A Compact Hindi Speech Synthesizer](/202607/23/2607.18662v1-staged-depth-pruning-distillation-of-a-flow-matching-text-to-speech-teacher-a-compact-hindi-speech-synthesizer)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：印地语文本转语音合成
-6. [From a Multilingual Streaming ASR Backbone to Kenyan-Language Systems: Data-Centric Adaptation of Nemotron 3.5 for Kikuyu, Dholuo, and Kalenjin](/202607/23/2607.18912v1-from-a-multilingual-streaming-asr-backbone-to-kenyan-language-systems-data-centric-adaptation-of-nemotron-35-for-kikuyu-dholuo-and-kalenjin)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：肯尼亚语言语音识别适配
-7. [StellarTTS: Sparse Temporal Embedding for Low-Latency and Robust Speech Synthesis](/202607/23/2607.19859v1-stellartts-sparse-temporal-embedding-for-low-latency-and-robust-speech-synthesis)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：直接提出低延迟语音合成框架StellarTTS
-8. [Re-Sonance: A Dysarthric Asynchronous Real-Time Speech Conversion System Based on a Three-Stage Cascaded ASR-LLM-TTS Architecture](/202607/23/2607.17615v1-re-sonance-a-dysarthric-asynchronous-real-time-speech-conversion-system-based-on-a-three-stage-cascaded-asr-llm-tts-architecture)  
+1. [Designed Vocalizations Dataset: Sound-Designed Human and Animal Voices for Non-human Voice Conversion](/202607/24/2607.20951v1-designed-vocalizations-dataset-sound-designed-human-and-animal-voices-for-non-human-voice-conversion)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：使用ASR-LLM-TTS的构音障碍语音转换
-9. [ESCUCHA: A Spanish Speech Benchmark for Heterogeneous Acoustic Conditions](/202607/23/2607.17812v1-escucha-a-spanish-speech-benchmark-for-heterogeneous-acoustic-conditions)  
+   evidence：用于非人类声音转换的数据集，直接支持声音转换技术
+2. [Faster IndexTTS-2: Accelerating and Streaming Autoregressive Zero-Shot Text-to-Speech Synthesis on GPUs](/202607/24/2607.21042v1-faster-indextts-2-accelerating-and-streaming-autoregressive-zero-shot-text-to-speech-synthesis-on-gpus)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：西班牙语语音基准，针对异构声学条件
-10. [Summary of DCASE 2026 Task 5: Audio-Dependent Question Answering](/202607/23/2607.18718v1-summary-of-dcase-2026-task-5-audio-dependent-question-answering)  
+   evidence：加速自回归文本到语音合成
+3. [VibeVoice-ASR-BitNet Technical Report](/202607/24/2607.21075v1-vibevoice-asr-bitnet-technical-report)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：音频依赖的问答基准
-11. [Transcription Policy as a Latent Variable: Activating Controllable Verbatim ASR with Word-Level Timing](/202607/23/2607.18934v1-transcription-policy-as-a-latent-variable-activating-controllable-verbatim-asr-with-word-level-timing)  
+   evidence：用于边缘CPU实时语音识别的压缩ASR模型
+4. [DONDO: Open w2v-BERT Speech-Recognition Base Models for African Languages](/202607/24/2607.21540v1-dondo-open-w2v-bert-speech-recognition-base-models-for-african-languages)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：研究可控逐字转录的自动语音识别
-12. [Benchmarking Human and Automatic Speech Recognition of Diverse Speech: Initial Results](/202607/23/2607.19049v1-benchmarking-human-and-automatic-speech-recognition-of-diverse-speech-initial-results)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：在包括儿童、老年人和方言的多样化荷兰语语音上基准测试ASR系统
-13. [Pushing the Frontier of Full-Song Generation: Hierarchical Autoregressive Planning Meets Flow-Matching Rendering](/202607/23/2607.20253v1-pushing-the-frontier-of-full-song-generation-hierarchical-autoregressive-planning-meets-flow-matching-rendering)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：文本到歌曲生成
+   evidence：面向非洲语言的开放ASR基模型，基于w2v-BERT 2.0。
+5. [Large Audio Language Models for Spoofing-Aware Speaker Verification](/202607/24/2607.14753v1-large-audio-language-models-for-spoofing-aware-speaker-verification)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：使用大型音频语言模型进行欺骗感知说话人验证，应对TTS和语音克隆威胁。
+6. [A Situational Speech Synthesizer for Yoruba: System Design, Phonological Rule Architecture, and Orthographic Extensions for Contour](/202607/24/2607.18317v2-a-situational-speech-synthesizer-for-yoruba-system-design-phonological-rule-architecture-and-orthographic-extensions-for-contour)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：基于规则拼接的约鲁巴语文本转语音合成器
 
 ### 速读区论文标签
-1. [X-Translator: A Real-Time Multilingual Speaker-Aware Speech-to-Speech Translation System](/202607/23/2607.17544v1-x-translator-a-real-time-multilingual-speaker-aware-speech-to-speech-translation-system)  
+1. [An Evaluation Framework for Structured Audio Captions Validated by Controlled Perturbations](/202607/24/2607.21424v1-an-evaluation-framework-for-structured-audio-captions-validated-by-controlled-perturbations)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：实时语音翻译系统结合ASR和TTS
-2. [The tttAI System for the TSA-ASR Task of the SmartGlasses Challenge 2026](/202607/23/2607.17867v1-the-tttai-system-for-the-tsa-asr-task-of-the-smartglasses-challenge-2026)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：面向说话人标注语音识别的TSA-ASR系统
-3. [What the Waveform Knows: Transparent-first Speech and Audio Intelligence with Caption Studio](/202607/23/2607.18704v1-what-the-waveform-knows-transparent-first-speech-and-audio-intelligence-with-caption-studio)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：语音与音频智能平台
-4. [SimulS2ST-Omni: Data-Efficient Streaming Speech-to-Speech Translation via Explicit Trajectory Supervision](/202607/23/2607.19810v1-simuls2st-omni-data-efficient-streaming-speech-to-speech-translation-via-explicit-trajectory-supervision)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：流式语音到语音翻译系统
-5. [Robust Summarization of Doctor-Patient Conversations: TalTech Systems for the Beyond Transcription Challenge](/202607/23/2607.17230v1-robust-summarization-of-doctor-patient-conversations-taltech-systems-for-the-beyond-transcription-challenge)  
+   evidence：针对结构化音频描述提出评估框架和AudioCards数据集
+2. [AMECxSV: Adaptive Metadata-Driven Embedding-Fusion Calibration for X-Lingual Speaker Verification](/202607/24/2607.16532v1-amecxsv-adaptive-metadata-driven-embedding-fusion-calibration-for-x-lingual-speaker-verification)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：医患对话的语音识别与生成
-6. [Content is What Remains: Invariant Speech Tokenization from Parallel Utterances](/202607/23/2607.19033v1-content-is-what-remains-invariant-speech-tokenization-from-parallel-utterances)  
+   evidence：跨语言说话人验证
+3. [SALMONN-2: Advancing General-Purpose Hearing Abilities with Self-Supervised Representations](/202607/24/2607.17079v1-salmonn-2-advancing-general-purpose-hearing-abilities-with-self-supervised-representations)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：对非语言因素不变的语音分词
-7. [Efficient Chain-of-Modality Reasoning via Progressive Compression for Spoken Language Models](/202607/23/2607.19932v1-efficient-chain-of-modality-reasoning-via-progressive-compression-for-spoken-language-models)  
+   evidence：自监督音频表示用于通用听觉
+4. [Constrained CTC Decoding for Efficient Diacritic Restoration](/202607/24/2607.18946v1-constrained-ctc-decoding-for-efficient-diacritic-restoration)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：口语语言模型的推理方法
-8. [Cumsum-Composable Phase Transport for Low-Cost Streaming Keyword Spotting](/202607/23/2607.20086v1-cumsum-composable-phase-transport-for-low-cost-streaming-keyword-spotting)  
+   evidence：使用CTC的阿拉伯语语音转录变音符号恢复
+5. [TF-MossFormer: Integrating Convolution Gated Local-Global Attentions for Enhanced Time-Frequency Domain Monaural Speech Separation](/202607/24/2607.21128v1-tf-mossformer-integrating-convolution-gated-local-global-attentions-for-enhanced-time-frequency-domain-monaural-speech-separation)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：使用相位传输的流式关键词识别
-9. [Large Audio Language Models for Spoofing-Aware Speaker Verification](/202607/23/2607.14753v1-large-audio-language-models-for-spoofing-aware-speaker-verification)  
+   evidence：语音分离模型结合局部与全局注意力，可迁移至语音识别/合成管道
+6. [HARP: Harmonic-Aware Residual Partitioning for Neural Audio Codecs](/202607/24/2607.16657v1-harp-harmonic-aware-residual-partitioning-for-neural-audio-codecs)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：评估大型音频语言模型在欺骗感知说话人验证中的表现，涉及TTS威胁
-10. [NABEATs: Noise-Aware Audio Representation Learning](/202607/23/2607.16688v1-nabeats-noise-aware-audio-representation-learning)  
+   evidence：谐波感知残差划分的神经音频编解码器
+7. [NABEATs: Noise-Aware Audio Representation Learning](/202607/24/2607.16688v1-nabeats-noise-aware-audio-representation-learning)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：噪声感知的音频自监督学习，适用于语音任务
+   evidence：噪声感知的音频自监督学习，用于鲁棒表示
+8. [Layer-Wise Decision Fusion for Fake Audio Detection Using XLS-R](/202607/24/2607.20023v1-layer-wise-decision-fusion-for-fake-audio-detection-using-xls-r)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：利用XLS-R逐层融合进行假音频检测。
+9. [Pushing the Frontier of Full-Song Generation: Hierarchical Autoregressive Planning Meets Flow-Matching Rendering](/202607/24/2607.20253v2-pushing-the-frontier-of-full-song-generation-hierarchical-autoregressive-planning-meets-flow-matching-rendering)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：通过层次规划和流匹配实现从文本到歌曲生成
+10. [Toward Interpretable Speech Deepfake Detection using Artifact-Specific Experts and Calibrated Detection Scores](/202607/24/2607.21127v1-toward-interpretable-speech-deepfake-detection-using-artifact-specific-experts-and-calibrated-detection-scores)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：使用伪影特定专家进行可解释语音深度伪造检测，针对合成语音
+11. [X$^3$-OPD: Distilling Reasoning into Large Audio-Language Models via On-Policy Alignment](/202607/24/2607.21550v1-x3-opd-distilling-reasoning-into-large-audio-language-models-via-on-policy-alignment)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：通过在线对齐将推理能力蒸馏到音频语言模型中
 
 
 <div class="dpr-home-promo-card">

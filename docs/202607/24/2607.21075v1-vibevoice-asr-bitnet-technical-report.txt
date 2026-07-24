@@ -1,0 +1,169 @@
+Title: VibeVoice-ASR-BitNet Technical Report
+
+URL Source: https://arxiv.org/pdf/2607.21075v1
+
+Published Time: Fri, 24 Jul 2026 00:41:44 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# VIBE VOICE -ASR-B IT NET Technical Report 
+
+Songchen Xu ∗ Ting Song Shaohan Huang Zhiliang Peng Yan Xia Yujie Tu Xin Huang Jianwei Yu Li Dong Furu Wei ⋄
+
+https://aka.ms/GeneralAI 
+
+We present VibeVoice-ASR-BitNet, a compressed variant of VibeVoice-ASR optimized for real-time inference on edge CPUs. We apply heterogeneous quantization tailored to the computational characteristics of each stage: the VAE acoustic tokenizer uses full-pipeline INT8 quantization (I8_S) with kernel fusion and SIMD optimization, while the autoregressive language model adopts BitNet-style ternary weights (I2_S). To preserve accuracy under aggressive compression, we employ a progressive quantization-aware training strategy. For inference, we implement custom SIMD kernels and fused operators within the ggml framework targeting both ARM and x86 platforms, achieving real-time recognition with RTF < 1 using as few as 3 CPU threads. VibeVoice-ASR-BitNet is 
+
+1.6–2.3× faster than Whisper.cpp at comparable model sizes ( ∼1.6 GB), with only modest accuracy degradation compared to the FP16 baseline. 
+
+Code: github.com/microsoft/VibeASR.cpp 
+
+Models: huggingface.co/microsoft/VibeVoice-ASR/tree/cpu 
+
+Figure 1: Overview of the V IBE VOICE -ASR-B IT NET system: heterogeneous quantization enables real-time CPU inference with 2.9× model compression relative to FP16. 
+
+> ∗
+
+Main contribution. ⋄ Corresponding author: fuwei@microsoft.com. Z. Peng, T. Song, Y. Xia, S. Huang, J. Yu, L. Dong and F. Wei are with Microsoft Research. S. Xu is with Shanghai Jiao Tong University. X. Huang is with Fudan University. Y. Tu is with University of Chinese Academy of Sciences. arXiv:2607.21075v1 [cs.SD] 23 Jul 2026 1 Introduction 
+
+Automatic Speech Recognition (ASR) has advanced rapidly in recent years, with two dominant paradigms emerging. Traditional lightweight approaches—such as transducer models [ 7], CTC-based systems [ 8 ], and compact encoder-decoder architectures like Conformer [ 9 ] and Zipformer [ 16 ]— offer fast inference suitable for streaming scenarios, but typically suffer from limited accuracy on diverse domains and lack robust multilingual capabilities. In contrast, Large Language Model (LLM)-based ASR systems [ 15 , 13 , 17 , 14 ] achieve state-of-the-art accuracy by leveraging the powerful sequence modeling capacity of billion-parameter transformers, but at the cost of significantly higher computational demands. LLM-based ASR models are predominantly deployed on GPUs in cloud environments. Systems such as Whisper [ 15 ], Qwen-Audio [ 3], SeamlessM4T [ 2], and VibeVoice-ASR [ 13 ] rely on server-grade hardware to meet latency requirements. However, cloud-based inference introduces privacy concerns— sensitive audio data must leave the device—and network-dependent latency that is unacceptable for real-time applications. While CPU-based inference engines such as Whisper.cpp [ 6] and llama.cpp [ 5] have made local deployment feasible, they typically fail to achieve real-time performance (RTF 
+
+< 1) for large models on resource-constrained devices, or require high thread counts that saturate the CPU budget of edge hardware. In this work, we present VibeVoice-ASR-BitNet (Figure 1), which addresses these challenges through heterogeneous quantization co-designed with the computational profile of each model component. The VAE tokenizer, encompassing both acoustic and semantic encoders, is IO-bound due to its convolutional architecture and is quantized to full-pipeline I8_S to reduce memory bandwidth by 
+
+2× relative to FP16. The autoregressive language model adopts BitNet-style ternary weights I2_S [ 11 ], compressing weights by 8× relative to FP16 and leveraging INT8 multiply-add kernels to reduce memory bandwidth pressure during both prefill and decode stages. Combined with custom SIMD kernels and operator fusion in the ggml framework, the total model size is compressed from 4.62 GB to 1.58 GB, a 2.9× reduction, and the system achieves real-time inference with RTF < 1 on commodity CPUs with as few as 3 threads, while maintaining competitive accuracy with only modest degradation relative to the FP16 baseline. 
+
+## 2 Method 
+
+2.1 Model Architecture Overview 
+
+VibeVoice-ASR-BitNet inherits the architecture of VibeVoice-ASR [ 13 ]: a VAE tokenizer—acoustic encoder + semantic encoder, both 7-stage ConvNeXt [ 10 ] backbones with 3200 × temporal down-sampling from 24 kHz to 7.5 Hz—followed by an autoregressive language model decoder. To reduce memory footprint for edge CPU deployment, we replace the original Qwen2.5-7B decoder with Qwen2.5-1.5B. The full architecture is shown in Figure 2. We refer readers to Peng et al. [13] for details of the base model. 
+
+2.2 Heterogeneous Quantization 
+
+The two stages of VibeVoice-ASR exhibit fundamentally different computational profiles, motivating a heterogeneous quantization strategy rather than a uniform precision reduction. 
+
+2.2.1 I8_S: Full-Pipeline INT8 for VAE Tokenizer Memory Traffic Analysis. Each ConvNeXt block consists of a depthwise mixer convolution (implemented via im2col + matrix multiply) and a two-layer FFN ( D → 4D → D). For channel dimension D, sequence length L, and kernel size k = 8 , the per-block weight parameter count and activation data volume are: 
+
+W = Dk |{z} 
+
+> mixer
+
++ 8 D2
+
+|{z} 
+
+> FFN
+
+(1) 
+
+A = 2 DkL | {z } 
+
+> im2col
+
++ 12 DL | {z } 
+
+> FFN I/O
+
+(2) 2Figure 2: Model architecture of VibeVoice-ASR-BitNet. Left: VAE tokenizer, 7-stage ConvNeXt with I8_S fused operators. Right: LM decoder, 28-layer Transformer with I2_S ternary weights. Specifically, W sums the depthwise convolution kernel ( D × k parameters) and the two FFN matrices (D × 4D + 4 D × D = 8 D2). A sums the im2col read/write traffic ( D × k × L elements read, plus 
+
+D × k × L elements written to the intermediate buffer) and all FFN activation I/O ( 4DL per linear layer × 3 passes: input, intermediate, output). Table 1 shows the per-stage breakdown for a 20 s audio input (480k samples at 24 kHz).                                                    
+
+> Stage DLDepth Weights (M) Activations (M) Act / W 032 480,000 30.03 1,290 50,909 164 240,000 30.10 1,290 12,923 2128 120,000 30.40 1,290 3,256 3256 30,000 31.6 645 409 4512 6,000 36.3 258 41 51,024 1,200 325.2 103 462,048 150 8268.6 69 0.3
+> Total 302 4,946 16.4
+
+Table 1: Per-stage weight parameters and activation data volume of the VAE tokenizer (20 s audio, 
+
+k = 8 ). The Act/W ratio reveals that activation data volume exceeds weight parameters by 16 .4× in aggregate, and by up to 50 ,000 × for early stages. This means weight-only quantization (e.g., W8A32) leaves the dominant memory traffic path uncompressed, yielding negligible speedup. Furthermore, activation data must be kept in INT8 throughout the entire forward pass—if activations were stored in higher precision and quantized on-the-fly at each layer boundary, the conversion overhead on billions of elements would be prohibitive. I8_S therefore enforces a uniform INT8 datapath across the entire forward pass—weights, activations, intermediate buffers, and all operator boundaries operate in INT8, eliminating all precision format conversions. 3Why INT8 and Not Lower. Sub-byte formats (e.g., INT4) require pack/unpack operations that partially offset IO savings, lack native SIMD instruction support on most CPU architectures, and cause rapid accuracy degradation in the ConvNeXt architecture. INT8 provides native hardware support (AVX2/NEON) with negligible accuracy loss. 
+
+2.2.2 I2_S: BitNet Ternary Weights for Language Model 
+
+The LM decoder is weight-dominated during autoregressive decoding—each token reads the full 1.5B weight matrix but only a single activation vector. We adopt the BitNet approach [ 11 ]: weights are quantized to ternary {− 1, 0, +1 } stored in 2 bits, and activations are quantized to INT8 online per token. This reduces weight memory traffic by 8× vs. FP16. The embedding and LM head layers are quantized to Q6_K (6-bit) rather than ternary, since these layers map between the full vocabulary space and hidden states, where ternary precision causes unacceptable degradation. Following the multiply-add computation method in BitNet, our I2_S kernel unpacks ternary weights to INT8 values and computes via the same maddubs pipeline as I8_S, unifying the kernel design for both quantization schemes while retaining the memory bandwidth advantage of 2-bit weight packing. 
+
+2.3 Progressive Quantization-Aware Training 2.3.1 VAE Tokenizer 
+
+The VAE tokenizer undergoes two modifications before QAT. First, all GELU activations are replaced with ReLU, since GELU is difficult to implement efficiently under INT8 arithmetic. The model is briefly finetuned after this substitution to recover accuracy. Second, fake-quantize nodes are inserted at all weight and activation boundaries. To avoid the training instability caused by direct quantization, we adopt a progressive schedule controlled by a blending parameter α ∈ [0 , 1] :
+
+ˆx = (1 − α) · x + α · FakeQuant (x) (3) where α is linearly increased from 0 to 1 over the course of training. At α = 0 the model operates in full precision; at α = 1 it is fully quantized. Once α reaches 1, training continues at full quantization to further stabilize the quantized weights. This three-stage progressive transition ensures stable loss descent—in our experiments, direct QAT ( α = 1 from the start) fails to converge, with loss oscillating around 3.3 indefinitely. Figure 3 compares the two strategies. 
+
+Figure 3: Training loss comparison: direct QAT fails to converge (loss ≈ 3.3), while progressive QAT converges to ≈ 0.91 in three stages (GELU →ReLU finetune, α: 0 →1 blending, α = 1 full quantization). 
+
+2.3.2 Language Model 
+
+To reduce memory footprint for edge CPU deployment, we replace the original Qwen2.5-7B decoder in VibeVoice-ASR with Qwen2.5-1.5B. Despite the 4.7× parameter reduction, experiments show that 4this substitution causes only modest accuracy degradation on ASR tasks (typically 1–4% absolute WER increase; see Section 3.3), confirming that a 1.5B-class LM is sufficient for speech recognition. After the INT8 VAE tokenizer is trained, it is frozen and integrated into the full ASR pipeline. The LM decoder is then trained with BitNet ternary weights following the two-stage procedure of VibeVoice-ASR [ 13 ]: large-scale pretraining on speech-text pairs followed by supervised finetuning on target domains. 
+
+2.4 Inference Optimization 2.4.1 Operator Fusion 
+
+To reduce intermediate memory traffic, we fuse frequently co-occurring operators into single kernels. The fused operators for the VAE tokenizer include: • im2col_asym : fused asymmetric padding + im2col expansion • mul_mat_add_relu : fused matrix multiply + bias + ReLU activation • add_scaled : fused residual addition with layer-scale multiplication • rms_norm_scaled : fused RMS normalization with scale parameter Each fused kernel eliminates one or more intermediate tensor materializations, avoiding redundant memory round-trips. For the VAE tokenizer where activation IO dominates (Section 2.2.1), this fusion is critical—it reduces the effective activation traffic by eliminating temporary buffers between adjacent operations. 
+
+2.4.2 Custom SIMD Kernels I8_S / I2_S GEMM Kernel. The I8_S kernel processes data in blocks of QK = 32 elements, using 
+
+_mm256_maddubs_epi16 on AVX2 or NEON smull /sadalp to perform 32 INT8 multiply-add operations per instruction. The I2_S kernel unpacks 2-bit ternary values from packed bytes into INT8 format, then feeds them through the same maddubs pipeline, with QK = 128 on x86 or QK = 64 
+
+on ARM. Figure 4 illustrates the N ×1 parallel vec_dot dataflow for both kernels. Both kernels support multiple tiling strategies— 1×N, N×1, and batch variants—selected at runtime based on matrix dimensions to maximize register utilization. 
+
+Figure 4: I8_S and I2_S GEMM kernel: N ×1 parallel vec_dot with SIMD multiply-add instructions. Both share the same maddubs → madd → hsum accumulation pipeline; I8_S uses the sign trick for signed multiplication, while I2_S adds an online unpack stage to convert 2-bit packed weights to INT8 before entering the same pipeline. 5Other Kernels. Additional SIMD-optimized kernels include INT8 RMS normalization and layer-scale multiplication, which complement the GEMM kernels to form a complete INT8 computation pipeline. 
+
+## 3 Experiments 
+
+3.1 Experimental Setup Platform. All experiments are conducted on a server equipped with an AMD EPYC 7V13 processor (24 cores, 3.1 GHz base clock, no SMT), 216 GB DDR4 memory, and 96 MB L3 cache. The CPU supports AVX2 and FMA instruction sets. 
+
+Datasets. We evaluate on two categories of benchmarks: (1) MLC (Multilingual LibriSpeech Corpus) covering 6 languages—English, French, Italian, Korean, Portuguese, and Vietnamese; (2) standard benchmarks including AISHELL4, AMI (ihm/sdm), AliMeeting, Fleurs (English/Chinese), LibriSpeech (clean/other), and VoxPopuli. These cover read speech, meeting/conversational speech, and multilingual scenarios. 
+
+Metrics. We report Character Error Rate (CER) and Word Error Rate (WER) for accuracy evalua-tion. For inference speed, we use Real-Time Factor (RTF = inference time / audio duration); RTF 
+
+< 1 indicates real-time capability. 
+
+3.2 Inference Performance 
+
+Table 2 summarizes the model size before and after heterogeneous quantization. The total model footprint is reduced from 4.62 GB (FP16) to 1.58 GB, a 2.9× compression that enables deployment on memory-constrained edge devices.             
+
+> Component FP16 Quantized Compression
+> VAE Tokenizer 1.31 GB 0.65 GB (I8_S) 2.0 ×
+> LM Decoder 3.32 GB 0.92 GB (I2_S + Q6_K embed) 3.6 ×
+> Total 4.62 GB 1.58 GB 2.9 ×
+
+Table 2: Model size before and after quantization. Table 3 reports the end-to-end RTF across different audio durations and thread counts. The system achieves real-time inference (RTF < 1) with as few as 3 threads across all tested durations (5–40 s). RTF decreases slightly as audio length increases, because the fixed overhead of pipeline initialization is amortized over longer inputs.                               
+
+> Audio Duration 1 Thread 2 Threads 3 Threads 4 Threads 6 Threads 8 Threads 5 s 2.11 1.22 0.89 0.76 0.60 0.54
+> 10 s 2.05 1.13 0.82 0.69 0.53 0.47
+> 20 s 1.98 1.08 0.77 0.63 0.49 0.42
+> 40 s 1.96 1.05 0.76 0.61 0.47 0.41
+
+Table 3: End-to-end Real-Time Factor under different audio durations and thread counts. Bold indicates real-time, RTF < 1.To understand the source of speedup, we profile the VAE tokenizer and LM decoder separately. Figure 5 compares the VAE inference time under FP16 and I8_S quantization. The I8_S VAE achieves 1.3×–2.0× speedup, with the gain increasing at higher thread counts due to better SIMD utilization under reduced data width. Figure 6 presents the LM decoder profiling results. I2_S achieves ∼2.5× speedup on prefill and 
+
+∼4× on decode. The higher decode speedup is expected: decode is purely weight-IO bound at batch 6Figure 5: VAE tokenizer inference time (s) vs. thread count (20 s audio). Numbers above I8_S bars indicate speedup over FP16. size 1, where the 8× weight compression of I2_S relative to FP16 is most effective. FP16 decode scales poorly beyond 4 threads due to memory bandwidth saturation, while I2_S continues to benefit from additional threads. 
+
+Figure 6: LM decoder inference time (s) vs. thread count (20 s audio). (a) Prefill stage. (b) Decode stage. Numbers above I2_S bars indicate speedup over FP16. 
+
+3.3 Accuracy 
+
+Table 4 compares WER and CER across 15 benchmarks. We include VibeVoice-ASR-7B as an upper-bound reference to quantify the accuracy gap introduced by model compression; however, since its 7B LM is 4.7× larger than the other models in this comparison, it does not participate in the ranking. Among models of comparable size, V IBE VOICE -ASR-B IT NET achieves the lowest WER/CER on MLC-EN, AMI-ihm, AMI-sdm, and VoxPopuli. Despite the aggressive compression from 7B to 1.5B with ternary quantization, the accuracy degradation remains modest, typically 1–4% absolute WER increase on most benchmarks. Parakeet leads on read-speech English benchmarks due to its English-specialized design, while SenseVoice and FunASR dominate Chinese benchmarks with Chinese-focused training data. 7Notably, as an LM-based architecture, V IBE VOICE -ASR natively supports multilingual recognition across 6+ languages—a capability absent in traditional ASR architectures such as Parakeet and FunASR-Nano, which are typically restricted to one or two languages. V IBE VOICE -ASR-B IT NET 
+
+is also the only model in this comparison that runs entirely on CPU with heterogeneous quantization; all others require GPU inference for practical deployment. Benchmark VibeVoice-ASR-7B VibeVoice-ASR-BitNet ∗ Parakeet Whisper SenseVoice FunASR WER CER WER CER WER CER WER CER WER CER WER CER MLC EN 7.82 4.51 8.25 4.87 8.40 5.03 13.57 10.34 12.39 7.56 11.36 7.53 FR 16.03 9.78 17.41 10.62 — — — — — — — —IT 15.67 6.94 17.23 7.58 — — — — — — — —KO 9.83 9.83 11.15 11.15 — — — — — — — —PT 22.41 12.68 24.87 14.03 — — — — — — — —VI 20.15 12.87 22.38 14.21 — — — — — — — —AISHELL4 (ZH) 19.83 19.83 27.45 27.45 — — — — 22.52 22.52 20.41 20.41                                                                                                 
+
+> AMI-ihm (EN) 17.42 13.56 21.36 16.91 21.92 17.68 27.07 21.91 30.81 25.71 32.07 26.13 AMI-sdm (EN) 24.18 18.73 25.87 20.94 26.33 21.26 36.92 31.37 48.11 42.67 40.17 32.39 AliMeeting (ZH) 36.21 36.21 40.58 40.58 ————38.75 38.75 39.27 39.27 Fleurs-en (EN) 4.73 2.05 5.21 2.28 4.09 1.67 3.99 1.64 6.84 2.81 4.93 2.20 Fleurs-zh (ZH) 7.92 7.92 8.35 8.35 ————5.56 5.56 7.00 7.00 Libri-clean (EN) 2.17 0.88 2.41 0.95 1.49 0.46 1.98 0.77 2.78 1.07 1.58 0.56 Libri-other (EN) 5.84 2.94 6.27 3.18 3.13 1.16 3.60 1.52 6.81 3.31 4.01 1.77 VoxPopuli (EN) 4.92 2.73 5.18 2.96 5.26 3.04 7.19 4.43 8.63 4.71 6.46 3.71
+
+Table 4: WER/CER (%) comparison. ∗This work. Parakeet: Nvidia Parakeet-TDT-0.6B-v2 [ 12 ]; Whisper: OpenAI Whisper Large-v3 [ 15 ]; SenseVoice: SenseVoice-small [ 1]; FunASR: FunASR-Nano [ 4]. “—” indicates unsupported language or abnormally high error rate. Bold marks the best excluding VibeVoice-ASR-7B. 
+
+3.4 Comparison 
+
+To compare V IBE VOICE -ASR-B IT NET ’s runtime efficiency with existing LM-based CPU ASR frameworks, we benchmark against Whisper.cpp on the same hardware using a 20-second English speech clip. Both systems share a similar architecture—encoder + autoregressive decoder—and comparable model sizes of ∼1.6 GB, making this a direct comparison of quantization and runtime efficiency. Table 5 reports the results: • VIBE VOICE -ASR-B IT NET : VAE-I8_S + LM-I2_S, 1.6 GB, 24 kHz input. • Whisper.cpp large-v3-turbo : INT8 quantization, ∼1.6 GB, 16 kHz input [15]. 
+
+Framework 1T 2T 4T 6T 8T 
+
+VibeVoice-ASR-BitNet ∗ (1.6 GB) 44.8 25.2 15.3 11.5 10.0 Whisper.cpp large-v3-turbo (1.6 GB) 102.1 53.3 28.4 19.7 15.5 Speedup 2.28 × 2.12 × 1.86 × 1.71 × 1.55 ×
+
+Table 5: End-to-end inference time (s) on 20 s audio across thread counts. ∗This work. VIBE VOICE -ASR-B IT NET is 1.6–2.3× faster than Whisper.cpp across all thread configurations. The speedup is most pronounced at low thread counts, where the I2_S ternary weight format maximally reduces memory bandwidth pressure. Both frameworks support multilingual recognition, but V IBE VOICE -ASR-B IT NET achieves this with a more aggressive quantization scheme—I8_S + I2_S vs. INT8-only—demonstrating that heterogeneous quantization can simultaneously improve both compression ratio and inference speed without sacrificing accuracy. 
+
+## 4 Conclusion 
+
+We present VibeVoice-ASR-BitNet, a heterogeneous quantization framework that enables real-time LLM-based ASR inference on commodity CPUs. By applying full-pipeline INT8 quantization I8_S 8to the activation-dominated VAE tokenizer and BitNet ternary weights I2_S to the weight-dominated LM decoder, combined with a progressive QAT procedure using α-blending and custom SIMD multiply-add kernels tailored to both data formats, the system compresses model size from 4.62 GB to 1.58 GB, a 2.9× reduction, while achieving real-time inference with RTF < 1 using as few as 3 CPU threads and retaining competitive multilingual accuracy across 6+ languages. 
+
+Limitations. (1) The heterogeneous quantization strategy (I8_S for VAE, I2_S for LM) has only been validated on the VibeVoice-ASR architecture; its applicability to other VAE-LM or encoder-decoder ASR models (e.g., Whisper, Qwen-Audio) remains unexplored. (2) The current implementation supports offline (batch) inference only. Streaming mode—which requires chunked VAE encoding and incremental LM decoding—is not yet supported, limiting deployment in real-time interactive scenarios. 9References 
+
+[1] Keyu An, Qian Chen, Zhihao Huang, et al. Funaudiollm: Voice understanding and gener-ation foundation models for natural interaction between humans and llms. arXiv preprint arXiv:2407.04051 , 2024. [2] Loïc Barrault, Yu-An Chung, Mariano Coria Meglioli, David Dale, Ning Dong, et al. Seamlessm4t: Massively multilingual & multimodal machine translation. arXiv preprint arXiv:2308.11596 , 2023. [3] Yunfei Chu, Jin Xu, Xiaohuan Zhou, Qian Yang, Shiliang Zhang, Zhijie Yan, Chang Zhou, and Jingren Zhou. Qwen-audio: Advancing universal audio understanding via unified large-scale audio-language models. arXiv preprint arXiv:2311.07919 , 2023. [4] Zhifu Gao, Zerui Li, Jiaming Wang, Haoneng Li, Shiliang Zhang, et al. Funasr: A fundamental end-to-end speech recognition toolkit. Proceedings of Interspeech , 2023. [5] Georgi Gerganov. llama.cpp: Llm inference in c/c++, 2023. URL https://github.com/ ggerganov/llama.cpp .[6] Georgi Gerganov. Whisper.cpp: Port of openai’s whisper model in c/c++, 2023. URL https: //github.com/ggerganov/whisper.cpp .[7] Alex Graves. Sequence transduction with recurrent neural networks. arXiv preprint arXiv:1211.3711 , 2012. [8] Alex Graves, Santiago Fernández, Faustino Gomez, and Jürgen Schmidhuber. Connectionist temporal classification: Labelling unsegmented sequence data with recurrent neural networks. 
+
+Proceedings of the International Conference on Machine Learning , 2006. [9] Anmol Gulati, James Qin, Chung-Cheng Chiu, Niki Parmar, Yu Zhang, Jiahui Yu, Wei Han, Shibo Wang, Zhengdong Zhang, Yonghui Wu, and Ruoming Pang. Conformer: Convolution-augmented transformer for speech recognition. Proceedings of Interspeech , 2020. [10] Zhuang Liu, Hanzi Mao, Chao-Yuan Wu, Christoph Feichtenhofer, Trevor Darrell, and Saining Xie. A convnet for the 2020s. Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022. [11] Shuming Ma, Hongyu Wang, Lingxiao Ma, Lei Wang, Wenhui Wang, Shaohan Huang, Li Dong, Ruiping Wang, Jilong Xue, and Furu Wei. The era of 1-bit llms: All large language models are in 1.58 bits. arXiv preprint arXiv:2402.17764 , 2024. [12] NVIDIA NeMo Team. Parakeet: A family of large, powerful, and multilingual asr models. 
+
+NVIDIA Technical Blog , 2024. [13] Zhiliang Peng, Jianwei Yu, Yaoyao Chang, Zilong Wang, Li Dong, et al. Vibevoice-asr technical report. arXiv preprint arXiv:2601.18184 , 2025. [14] Vineel Pratap, Andros Tjandra, Bowen Shi, Paden Tober, Arun Babu, Sayani Kunber, Alex Graves, and Michael Auli. Scaling speech technology to 1,000+ languages. Journal of Machine Learning Research , 2024. [15] Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision. Proceedings of the International Conference on Machine Learning , 2023. [16] Zengwei Yao, Liyong Guo, Xiaoyu Yang, Wei Kang, Fangjun Kuang, Yifan Yang, Zengrui Jin, Long Lin, and Daniel Povey. Zipformer: A faster and better encoder for automatic speech recognition. Proceedings of ICLR , 2024. [17] Nat Zhang and Ava Birch. Moonshine: Speech recognition for live transcription and voice commands. arXiv preprint arXiv:2410.15608 , 2024. 10
