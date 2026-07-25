@@ -1,0 +1,444 @@
+Title: X^3-OPD: Distilling Reasoning into Large Audio-Language Models via On-Policy Alignment
+
+URL Source: https://arxiv.org/pdf/2607.21550v1
+
+Published Time: Fri, 24 Jul 2026 01:14:32 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# X3-OPD: Distilling Reasoning into Large Audio-Language Models via On-Policy Alignment 
+
+Dongjie Fu 1,2 , Di Cao 1, Xize Cheng 2, Zihan Zhang 2, Wenxu Jia 2,Yifu Chen 2, Shengpeng Ji 1,2 , Yu Zhang 2, Tao Jin 2*1Tencent Hunyuan 2Zhejiang University 
+
+Abstract 
+
+While audio large language models have achieved remarkable progress in auditory per-ception, they still lag behind text-based large language models in deep logical reasoning ca-pabilities. This performance disparity primarily stems from the scarcity of high-quality audio reasoning data. To bridge this modality gap, we propose a novel cross-modal on-policy distilla-tion framework. Our approach leverages a pow-erful text model as a teacher to provide dynamic correction and guidance to the audio founda-tional model during on-policy exploration. Fur-thermore, we construct a three-tier symmetric dataset encompassing logical reasoning, com-plex audio reasoning, and speech dialogue. By dynamically aligning the student model’s rea-soning trajectories within the high-noise audi-tory space with the teacher model’s prior knowl-edge in the clean text space, our method ef-fectively distills robust reasoning capabilities into the audio domain. Extensive experiments demonstrate that our model achieves substan-tial improvements on the audio and speech un-derstanding benchmarks, paving a new path for comprehensive audio-language understanding. 
+
+1 Introduction 
+
+Recent advances in Large Audio-Language Mod-els (LALMs) mark a significant shift from the tra-ditional cascaded paradigm of pairing Automatic Speech Recognition with text-only Large Language Models (LLMs)(Zhang et al., 2023; Tang et al., 2023; Xu et al., 2025b). At the perceptual level, LALMs natively model continuous acoustic signals and thereby preserve paralinguistic and environ-mental cues, including intonation, emotion, speaker turns, and sound events, that are irreversibly lost in intermediate transcription. More fundamentally, this native interface also reshapes the reasoning paradigm: instead of inferring over a sanitized tex-tual transcript, the model can ground its inferences 
+
+> *Corresponding author.
+
+directly in the acoustic signal, leveraging prosodic emphasis, ambient context, and temporally struc-tured sound events that have no faithful textual surrogate(Xu et al., 2025c; Tian et al., 2025). In do-ing so, LALMs open a path toward comprehensive audio-language understanding, in which perception and reasoning are unified end-to-end rather than fractured across a lossy transcription boundary. Despite this perceptual advantage, a substan-tial reasoning gap persists between LALMs and text-only LLMs. The root cause is a fundamental data asymmetry: while modern LLMs are opti-mized over trillions of logically dense textual to-kens(OpenAI et al., 2024; Guo et al., 2025), audio foundation models are trained predominantly on shallow alignment objectives such as transcription, captioning, or short-form question answering. Elic-iting multi-step reasoning over acoustic input there-fore demands large-scale Audio Chain-of-Thought supervision, yet manually annotating step-wise log-ical trajectories over highly variable continuous au-dio is computationally intractable and prohibitively costly. A natural alternative is to transfer reasoning capability from a strong text teacher into an acous-tic student via knowledge distillation, exploiting the abundance of textual logical supervision that LLMs already encode. Early attempts in this direction adopt offline distillation, in which a frozen text teacher gener-ates static reasoning trajectories that the student is trained to imitate(Xie et al., 2025). The supervision is then strictly tied to states the student never pro-duces, and once the student’s acoustic perception diverges from the teacher’s textual premise, the of-fline target is out of distribution exactly where the student needs corrective signal the most. This cross-modal exposure bias is what motivates a recent line of on-policy distillation work in the audio–text set-ting (Cao et al., 2026; Hu et al., 2026), which lets the student roll out under its own acoustic condi-tioning and aligns the resulting trajectories with the 1arXiv:2607.21550v1 [cs.LG] 23 Jul 2026 teacher through token-level KL-style supervision. Despite these algorithmic advances, the cross-modal regime addressed by existing on-policy methods remains narrow. The teacher signal is sourced almost exclusively from text-only logical reasoning corpora, so the resulting student inherits chain-of-thought competence over textually tran-scribable content but remains under-supervised on two reasoning regimes that are constitutive of au-dio understanding: reasoning grounded in non-linguistic acoustic events whose evidence is not recoverable from a transcript, and reasoning con-ditioned on paralinguistic cues such as prosody, hesitation, and emotional shifts in spoken dialogue. Therefore, closing the audio-text reasoning gap demands a unified approach: advancing the distilla-tion algorithm while fundamentally expanding the supervision distribution to encompass the regimes unique to the acoustic modality. This work addresses both fronts jointly un-der a single framework, X3-OPD, targeting three distinct tiers of audio reasoning. On the data side, a three-tier symmetric corpus is constructed—spanning textual reasoning rendered into speech, caption-grounded audio-event reason-ing, and prosody-aware spoken dialogue—so that every instance admits both a text-side and an audio-side input under a uniform (xt, x a, q, a ⋆) schema. On the algorithmic side, a cross-modal on-policy distillation procedure is built on top of this corpus: the acoustic student rolls out reasoning trajecto-ries conditioned on its own acoustic perception of xa, while the text teacher scores those trajec-tories token-by-token under the matched xt. Cru-cially, the teacher is granted privileged access to the ground-truth answer alongside xt, allowing it to guide the student along a provably correct reason-ing path. Furthermore, for open-ended queries, this token-level scoring allows the teacher to dynami-cally impart its own robust reasoning trace, rather than rigidly forcing the student to memorize a static target. This dynamic realignment occurs exactly at the steps where the student’s perceptual premise drifts off the teacher’s logical manifold. The two components are complementary: on-policy rollouts ensure the supervision lands at states the student actually visits, while the three-tier paired corpus ensures the teacher’s supervision remains appli-cable across logical, acoustic, and paralinguistic reasoning alike. • A three-tier symmetric reasoning corpus 
+
+covering textual reasoning, audio-event rea-soning, and paralinguistic spoken dialogue with paired text and audio inputs, extend-ing cross-modal distillation supervision be-yond the text-logical regime of prior on-policy methods. • A cross-modal on-policy distillation frame-work that scores trajectories from the stu-dent’s acoustic-conditioned policy using the text teacher under matched text inputs, an-choring supervision at on-policy states while preserving robust text-conditioned signals. • Comprehensive empirical evidence on MMAU, MMSU, and BIG Bench Audio demonstrating substantial gains over strong offline and on-policy baselines, alongside text-domain capability preservation and robustness analyses isolating the contributions of cross-modal alignment. 
+
+2 Related Work 
+
+2.1 Reasoning in Large Audio Language Models 
+
+The transition from cascaded speech systems to LALMs has fundamentally transformed the modal-ity interface, preserving rich acoustic and paralin-guistic nuances within continuous representations (Ji et al., 2024; Luo et al., 2026; Fu et al., 2025). Early systems (Zhang et al., 2023; Huang et al., 2024) couple discrete speech tokens or expert audio modules with an LLM, while end-to-end models (Chu et al., 2023, 2024; Tang et al., 2023; Kong et al., 2024) align continuous audio encoders with pretrained LLMs via lightweight adapters. More recent omni-modal systems (Xu et al., 2025b,c; OpenAI, 2024; Comanici et al., 2025) unify speech, audio, vision and text in a single backbone. The remarkable reasoning capabilities of Large Language Models (Yang et al., 2025; OpenAI et al., 2024) have catalyzed a paradigm shift in LALMs, extending the research focus from fundamental au-dio perception to complex reasoning. CoT prompt-ing, which has demonstrated profound efficacy in textual reasoning, is increasingly recognized as equally pivotal for audio-centric tasks (Guo et al., 2026). Unlike purely text-based reasoning, audio reasoning necessitates extrapolating answers from continuous acoustic cues, such as speech emotion, prosody, and audio events. To address this, some existing methodologies construct audio-specific 2CoT datasets for Supervised Fine-Tuning (SFT) (Xie et al., 2025; Li et al., 2026). Moreover, Rein-forcement Learning (RL) techniques have been re-cently introduced to encourage models (Tian et al., 2025; Zhong et al., 2025), which aim to culti-vate genuine audio-driven reasoning, mitigating the model’s over-reliance on textual priors. However, the heavy reliance on SFT is bottle-necked by the prohibitive cost and complexity of audio CoT annotation, while biased data distribu-tions further degrade generalization. Meanwhile, RL approaches are still hindered by sparse rewards (Fan et al., 2025). Therefore, exploring new train-ing paradigms for reasoning in LALMs remains an urgent necessity. 
+
+2.2 Knowledge Distillation for Large Language Models 
+
+Knowledge distillation (KD) (Hinton et al., 2015) has traditionally served to transfer large teacher ca-pabilities into compact students. Early text-domain extensions adopted offline forms, where students learned from static, teacher-generated corpora or reasoning traces (Kim and Rush, 2016; Sanh et al., 2020). Such supervision is strictly tied to se-quences the student never produces, exposing the student to a train–inference distribution mismatch— commonly referred to as exposure bias—whose errors compound at test time. This motivates on-policy distillation, in which the student samples its own continuations and receives per-token teacher feedback at the states it actually visits. Generalized Knowledge Distillation (GKD) (Tan et al., 2023) and MiniLLM (Gu et al., 2026) formalize this view and show that on-policy updates substantially miti-gate exposure bias and provide a strictly stronger supervision signal once the inference policy drifts from any static training distribution. More recent work further unifies the dense token-level super-vision of distillation with the on-policy nature of reinforcement learning, achieving substantial effi-ciency gains over reward-only RL while retaining its trajectory-level objective (Lu and Lab, 2025; Song and Zheng, 2026). The speech and audio community, by contrast, has historically employed distillation primarily for representation compression or self-distillation (Chang et al., 2022; Baevski et al., 2022), with limited engagement with generative reasoning. Al-though recent LALMs have extended distillation to speech-to-text generation (Milbich et al., 2020; Li et al., 2026), they still rely on static, offline teacher traces and therefore inherit the exposure bias doc-umented in the textual setting, which manifests as a pronounced reasoning gap between LALMs and their text-only counterparts. Very recent works begin to lift on-policy distillation beyond the uni-modal text setting. X-OPD (Cao et al., 2026) addresses the cross-modal case, aligning the two modalities through token-level KL on the student’s on-policy rollouts. CORD (Hu et al., 2026) ap-plies an importance-weighted reverse-KL at the to-ken level to prioritize critical early-step deviations. Both methods establish that on-policy KL-based supervision can effectively bridge the audio-text reasoning gap. However, these advances are largely confined to distilling text-based logical reasoning, neglecting the fundamental essence of audio models: percep-tion and reasoning grounded in continuous acoustic signals. When the student ingests an acoustic sig-nal, the supervisory boundary becomes genuinely cross-modal, requiring the student’s trajectories to be corrected under residual perceptual uncertainty, a regime that existing on-policy distillation meth-ods fail to explicitly account. To bridge this critical gap, X 3-OPD is proposed to systematically extend the on-policy distillation paradigm into the cross-modal regime, aligning the student’s reasoning tra-jectories directly within the continuous acoustic space. 
+
+3 Preliminaries 
+
+3.1 Problem Setting 
+
+This work targets reasoning distillation across the text–audio modality boundary. Let πT (· |
+
+xt, q, a ⋆; θT ) denote a frozen text teacher with pa-rameters θT , taking a text input xt, a question q and ground truth answer a⋆ and let πS (· | xa, q ; θS ) de-note a trainable audio student with parameters θS ,taking an acoustic input xa and the same question. Throughout this work, a symmetric sample is a tu-ple (xt, x a, q, a ⋆) in which xt and xa encode the same underlying content in their respective modal-ities, and a⋆ is the ground truth. A reasoning tra-jectory y = ( y1, . . . , y L) is the concatenation of an intermediate chain-of-thought and a final answer, sampled autoregressively from either πT or πS .
+
+3.2 Offline Distillation and its Limitation 
+
+The standard offline distillation objective trains the student to imitate teacher trajectories sampled once and held fixed: 3Logical reasoning      
+
+> Symmetric Data
+> Construction
+> Audio reasoning
+> Dialogue reasoning
+> TQA*
+> T
+
+—>
+
+> — — — — — — — — — — — —
+
+— — — — — — — — — — — — — — — — 
+
+> Offline Warm -Start
+
+—>Q —> 
+
+> Cross -modal On -policy Distillation
+> Q
+
+—> 
+
+> T
+> QA*
+
+—>
+
+—>
+
+—>
+
+> Teacher Scoring
+> A
+> A*
+
+> ℒoff 
+
+> ℒon   
+
+> audio
+> log -probability
+> text question answer
+
+—>
+
+—> 
+
+> T
+
+—> 
+
+> refine TTS
+
+—> 
+
+> T
+> caption
+> T
+> ASR
+> T
+> annotate
+> )logical
+> filter
+
+Figure 1: Overview of X 3 -OPD. Left: a three-tier symmetric corpus—Logical (text + TTS speech), Audio (audio + refined caption), and Dialogue (dialogue + prosody-aware meta-caption)—providing (xt, x a, q, a ⋆) for every instance. Right: an offline warm-start ( Loff , Eq. 1) followed by cross-modal on-policy distillation, where the student rolls out under (xa, q ) and the frozen teacher scores the same trajectories under (xt, q, a ⋆) to compute Lon (Eq. 3). 
+
+Loff (θS ) = E(xt,x a,q )∼D 
+
+Ey∼πT (·| xt,q )[− log πS (y | xa, q ; θS )] .
+
+(1) In the unimodal text setting, where xt = xa and 
+
+πT , πS share an input space, Eq. (1) is a faithful proxy for the population KL between teacher and student. Once the input modalities diverge, two issues emerge with this offline objective that neither standard unimodal distillation nor prior on-policy work in text (Lu and Lab, 2025) is equipped to handle. 
+
+Perception–text divergence The student’s input 
+
+xa is an acoustic signal whose semantic content is recovered only up to a posterior p(s | xa) over la-tent percepts s. The teacher reasons over xt, which is by construction a single point in this posterior; its trajectories therefore implicitly assume a per-ceptual premise that the student rarely matches token-for-token at training time and almost never matches under noise or accent shift at test time. 
+
+Exposure bias across modalities Because the teacher trajectories in Eq. (1) are independent of 
+
+θS , the student is supervised only at states it would not have visited on its own. As soon as the student commits to a different intermediate token, which frequently occurs when its acoustic perception di-verges from xt, the offline target is out of distri-bution with respect to the student’s induced state distribution, a cross-modal instance of the exposure bias studied in sequence modeling (Bengio et al., 2015). The supervisory signal is then strongest exactly where it is least informative. A direct consequence of these two failure modes is that Loff cannot teach the student how to reason given that its own perception may be wrong. Sec-tion 4 addresses both by sampling trajectories from 
+
+πS itself and scoring them with πT on the matched text input. 
+
+4 Method 
+
+The proposed framework has three components: (i) a three-tier modality-paired corpus that estab-lishes a uniform (xt, x a, q, a ⋆) schema across tex-tual reasoning, audio-event reasoning, and spoken dialogue; (ii) a cross-modal on-policy distillation objective that scores student rollouts under the matched text input; and (iii) a training recipe that combines a brief offline warm-start with on-policy optimization. An overview is given in Figure 1. 
+
+4.1 Three-Tier Symmetric Data Construction 
+
+To comprehensively enhance the model’s reason-ing capabilities in multimodal environments, we construct a dataset encompassing three distinct lev-els of difficulty and modal emphases. Specifically, this dataset defines a three-tier hierarchy of rea-soning tasks: pure logical reasoning based on tex-tual semantic transcription, audio event reasoning grounded in complex acoustic scenes, and spoken dialogue interaction reasoning contingent on par-alinguistic and social cues. Through this three-tier data construction, we aim to guide the model to progressively transition from fundamental seman-4tic and logical understanding to the deep parsing of real-world physical acoustic scenes. 
+
+Tier 1: Textual reasoning rendered into speech. 
+
+Large-scale text-only reasoning corpora (Lambert et al., 2025; Shao et al., 2023) provide the textual side xt, the question q, and the gold answer a⋆. To ensure the naturalness of the data, the generation of the acoustic side xa undergoes a rigorous pipeline: first, the original text corpora are rewritten into a format more suitable for spoken expression. Subse-quently, they are rendered using a high-fidelity text-to-speech (TTS) system and subjected to closed-loop validation via an automatic speech recogni-tion (ASR) system to filter out audio data with poor generation quality. This tier supplies dense logical supervision and serves as the primary foundational source for the model’s reasoning signals. 
+
+Tier 2: Audio reasoning grounded in captions. 
+
+Tier 2 samples real audio clips paired with struc-tured captions that describe salient acoustic events, sound sources, and temporal structures. These captions initially derive from existing open-source datasets (Drossos et al., 2019; Kim et al., 2019) and are subsequently reconstructed using advanced captioning models (Xu et al., 2025c), followed by rigorous human verification to ensure the preci-sion and dimensional richness of the acoustic fea-ture descriptions. On this basis, we strictly fil-ter the data according to the logical consistency among the acoustic descriptions, questions, and answers, removing samples with unreasonable rea-soning chains or factual errors. The teacher model is queried with these high-quality captions as xt
+
+to generate a chain-of-thought that explicitly cites acoustic evidence at each reasoning step; con-versely, the student model directly receives the raw audio as xa alongside the same question q.
+
+Tier 3: Spoken dialogue with prosody-aware captions. Tier 3 covers reasoning that hinges on paralinguistic cues—such as turn boundaries, hes-itations, emphases, tonal shifts, and subtle emo-tional fluctuations—complex semantic dimensions that ordinary plain-text transcripts fail to convey. Each instance pairs a multi-turn spoken dialogue from a real-world scenario with a meta-caption, which deeply augments the transcript with precise prosodic and turn-level annotations. The teacher model processes the meta-caption as xt, enabling it to capture the underlying subtext behind the dia-logue; the student model learns directly from the raw speech waveform as xa. The design of this tier requires the model not only to understand what is said but also to comprehend how it is said, signif-icantly enhancing the model’s empathic capacity and its acuity in recognizing dialogue intentions within complex human-computer interaction sce-narios. During the actual training process, data from these three distinct tiers are fully shuffled and mixed. This joint optimization strategy allows the student model to seamlessly integrate textual logi-cal reasoning, audio feature parsing, and spoken di-alogue interaction capabilities under a single train-ing objective, effectively facilitating knowledge transfer across different modal features. 
+
+4.2 Offline Warm-start 
+
+On-policy optimization is unstable when the stu-dent’s initial rollouts are far from the teacher’s dis-tribution. To stabilize the early phase, πS is first fine-tuned for a short SFT pass on Eq. (1) using teacher-generated trajectories. The warm-start is deliberately short, to seat the student inside the teacher’s reasoning style, but not long enough to entrench the offline failure modes analyzed in Sec-tion 3. 
+
+4.3 Cross-modal On-policy Distillation On-policy Multi-path Rollout. For each sym-metric sample, the student model first performs autoregressive generation under its current policy 
+
+πS (θS ), conditioned on its own acoustic perception 
+
+xa and the question q. To mitigate the high vari-ance inherent in gradient estimation from single-trajectory rollouts and to explore the policy space more extensively, we independently sample K can-didate trajectories Y = {y(1) , y (2) , . . . , y (K)} for each input. Because these trajectories are drawn directly from the student model, they accurately reflect the actual state space visited under the cur-rent acoustic premise, ensuring that the subsequent supervisory signals strictly adhere to on-policy con-ditions. 
+
+Cross-Modal Teacher Scoring. To ensure that the student model πS faithfully inherits the logi-cal reasoning capabilities of the teacher model πT ,we introduce a cross-modal advantage function. For the k-th sampled trajectory y(k), let y(k) 
+
+> t
+
+be the t-th token. The highly capable teacher model evaluates this exact trajectory token-by-token, con-ditioned on the matched text input xt together with 5the gold answer a⋆, so that its token-level log-probabilities form a high-confidence reference dis-tribution anchored to the correct conclusion. The cross-modal advantage A(y(k) 
+
+> t
+
+) is defined to bridge the log-probability gap between the teacher’s text-driven logical distribution and the student’s speech-conditioned output: 
+
+A(y(k) 
+
+> t
+
+) = log πT (y(k) 
+
+> t
+
+| xt, q, a ∗, y (k) 
+
+> <t
+
+)
+
+− log πS (y(k) 
+
+> t
+
+| xa, q, y (k) 
+
+> <t
+
+)
+
+(2) By calculating this advantage, the text-driven teacher model provides real-time cross-modal guid-ance signals at the exact states where the student’s acoustic representations push it off the correct logi-cal manifold. 
+
+Cross-Modal Distillation Objective. Integrating the multi-path rollout and the cross-modal advan-tage, we formulate a policy gradient-based distil-lation loss. Utilizing the K sampled trajectories, the optimization objective is formulated to maxi-mize the expected cross-modal advantage, achiev-ing cross-modal reasoning transfer: 
+
+Lon (θS ) = −E(xt,x a,q )
+
+"
+
+1
+
+K
+
+> K
+
+X
+
+> k=1
+
+1
+
+|y(k)|
+
+> |y(k)|
+
+X
+
+> t=1
+
+rk,t (θS )A(y(k) 
+
+> t
+
+)
+
+# (3) where rk,t (θS ) = πS (y(k)      
+
+> t|xa,q,y (k)
+> <t ;θS)
+> πold (y(k)
+> t|xa,q,y (k)
+> <t )
+
+represents the probability ratio between the current policy 
+
+πS and the sampling policy πold . This formula-tion yields a single, highly efficient objective: it is strictly on-policy and suited for open-ended in-structional data lacking gold standard answers, en-abling the student model to internalize the teacher’s open-ended reasoning capabilities purely through cross-modal alignment. 
+
+5 Experiments 
+
+5.1 Experimental Setup Backbones. The student is initialized from Qwen3-Omni-30B-A3B-Thinking (Xu et al., 2025c), whose acoustic encoder and LLM back-bone are kept jointly trainable while the speech tokenizer is frozen. The teacher is Qwen3-235B-A22B-Thinking (Yang et al., 2025), held frozen throughout. The teacher reads xt and the student reads xa under the modality-paired schema of Sec-tion 4.1. 
+
+Training data. The three-tier corpus contains 27.8K Tier-1, 32K Tier-2, and 12K Tier-3 instances, fully shuffled at the batch level. Tier-1 takes text prompts from Tulu 3 (Lambert et al., 2025) and NaturalReasoning (Yuan et al., 2025), rewrites them into spoken style with Gemini-3-Flash-Preview, synthesizes audio via CosyVoice 3 (Du et al., 2025) at 24 kHz, and filters with Sen-seVoice (SpeechTeam, 2024) ASR back-translation at WER ≤ 5% . Tier-2 draws audio and cap-tions from AudioCaps (Kim et al., 2019) and Clotho v2.1 (Drossos et al., 2019), with cap-tions reconstructed by Qwen3-Omni-30B-A3B-Captioner and human-verified on a 5% subset be-fore caption–question–answer consistency filtering. Tier-3 is built on dyadic and multi-party spoken dialogues from IEMOCAP (Busso et al., 2008) and MELD (Poria et al., 2019), augmented with prosody- and turn-level meta-captions. The offline warm-start SFT pass uses a 12K subset sampled under a tier ratio of 5 : 3 : 2 , deliberately over-weighting Tier-1 and Tier-3 to anchor the model’s logical reasoning format and sensitivity to paralin-guistic cues before the RL stage. 
+
+Training configuration. Offline warm-start: 1
+
+epoch, batch size 128 , learning rate 1×10 −5, cosine schedule. Cross-modal on-policy stage: K = 4 
+
+rollouts per sample, AdamW with constant learning rate 2×10 −6. Rollouts use vLLM (Kwon et al., 2023) at temperature 1.0. All runs are in the verl (Sheng et al., 2025) framework on 32 ×NVIDIA H20. For a fair comparison, we additionally train two baselines, all initialized from the same Qwen3-Omni-30B-A3B-Thinking student checkpoint: (1) Standard SFT, fine-tuned on a supervised corpus in which each prompt is paired with a reasoning trace produced offline by the text-only teacher Qwen3-235B-A22B-Thinking together with the ground-truth answer, so that the student learns to imitate the teacher’s chain-of-thought and to emit the correct final response; (2) Generalized Knowledge Distil-lation (GKD) (Tan et al., 2023), which optimizes the student policy against the same teacher under the forward KL divergence on on-policy student rollouts. 
+
+Evaluation benchmarks. We evaluate our frame-work across three levels of domain shift. The in-domain evaluation covers benchmarks that directly probe audio-grounded reasoning: MMSU (Wang et al., 2026) along its four axes (Semantics, Phonol-ogy, Style, Traits), MMAU (Sakshi et al., 2024) 6MMSU MMAU BIG Bench Model Sem. Phon. Style Traits Sound Speech Music Audio                                                                                   
+
+> Closed-Source LALMs
+> GPT-4o-Audio(OpenAI, 2024) 59.7 41.6 21.4 39.7 64.6 66.7 56.3 88.5 Gemini-3-Flash(Comanici et al., 2025) 70.2 53.6 38.5 46.1 75.4 80.6 71.0 80.8
+> Open-Weight LALMs
+> Qwen2-Audio-Instruct(Xu et al., 2025b) 38.5 29.4 21.7 26.1 55.0 42.0 51.0 32.5 GLM-4-Voice(Zeng et al., 2024) 41.2 31.8 24.5 28.4 52.4 50.6 49.1 35.2 Qwen2.5-Omni-7B(Xu et al., 2025a) 55.1 37.3 39.4 42.5 67.9 59.8 69.2 62.2 Qwen3-Omni-Instruct(Xu et al., 2025c) 81.6 70.0 54.0 35.3 80.5 78.1 74.3 85.7 Qwen3-Omni-Thinking(Xu et al., 2025c) 81.8 73.2 65.2 42.7 85.7 81.5 74.9 87.9
+> Ablation Baselines
+> SFT ( Loff )82.1 69.7 62.4 42.8 86.4 81.9 70.7 86.7 GKD 80.2 68.4 63.1 41.1 85.1 82.3 69.2 84.3
+> X3-OPD (ours) 83.7 72.1 64.2 42.9 88.3 82.9 72.4 93.6
+
+Table 1: Main evaluation results on MMSU, MMAU, and BIG Bench Audio. MMSU evaluation dimensions include Semantics (Sem.), Phonology (Phon.), Style, and Traits. Bold indicates the best performance in each column. 
+
+on Sound/Speech/Music, and BIG Bench Audio aggregating acoustic QA, multi-event reasoning, audio-temporal grounding, and paralinguistic infer-ence. We then stress-test intermediate reasoning quality on the held-out MMAR benchmark, where we evaluate two CoT-quality metrics, Rubrics and 
+
+CRS . Finally, we evaluate out-of-distribution gen-eralization on benchmarks with significant domain shifts, including the audio-visual WorldSense (Xu et al., 2025c), video reasoning DailyOmni. 
+
+5.2 Main Results 
+
+Table 1 contrasts X 3-OPD with state-of-the-art closed- and open-source systems, as well as con-trolled in-house baselines. We summarize our core observations below. 
+
+Significant Enhancements in Cross-Modal Rea-soning. Built upon the Qwen3-Omni-Thinking baseline, X 3-OPD demonstrates substantial im-provements in complex audio-grounded reason-ing. Compared to its base model, X 3-OPD not only pushes the BIG Bench Audio (BAB) score from 87 .9 to 93 .6 (a +5 .7 improvement) but also achieves solid gains in semantic and acoustic event understanding (e.g., +1 .9 on MMSU-Semantics and +2 .6 on MMAU-Sound). Furthermore, X 3-OPD exhibits highly competitive performance against proprietary systems, surpassing GPT-4o-Audio on BAB by +5 .1 points. 
+
+Mitigating Perceptual Regression via On-Policy Distillation. A comparison with off-policy meth-ods reveals a structural exposure bias in static align-ment. While off-policy SFT slightly improves high-signal semantic tasks over the Qwen3-Omni-Thinking baseline, it actively regresses on low-signal perceptual axes (Phonology −3.5, Style 
+
+−2.8, Music −4.2). X 3-OPD effectively mitigates this degradation. By allowing the student to receive teacher feedback on its own trajectory, on-policy distillation substantially reduces these performance drops on perceptual tasks while achieving remark-able gains on reasoning-heavy axes like BAB. 
+
+Residual Gaps on Perceptual Axes. Despite the overall improvements, X 3-OPD still slightly trails the base model on three purely perceptual axes: MMSU-Phonology, MMSU-Style, and MMAU-Music. We attribute this to the intrinsic properties of cross-modal distillation: the reward signals pro-vided by the text-side teacher propagate predomi-nantly along semantic and logical pathways, leav-ing non-semantic acoustic representations (such as music and pure paralinguistic style) with insuf-ficient gradient updates during optimization. Re-markably, even though the model is trained on syn-thesized data streams specifically designed to elicit logical reasoning—presenting an inevitable distri-bution shift—the performance degradation on these pure perception benchmarks remains exceptionally minimal (drop ≤ 2.6). 
+
+5.3 CoT-quality Evaluation 
+
+To rigorously assess the intermediate reasoning quality of the model on multi-step audio tasks, we evaluate X 3-OPD on the MMAR benchmark (Ma et al., 2025). Our evaluation specifically focuses on the unambiguous Sound and Speech splits, 7MMAR Acc. (%) CoT Quality Model Sound Speech Rubrics CRS Step-Audio-R1 32.5 68.7 46.6 0.79 Audio-Reasoner 42.4 42.5 28.4 0.68 Qwen3-Omni-Thinking 64.2 79.3 58.0 0.85     
+
+> X3-OPD (ours) 65.8 80.6 60.4 0.86
+
+Table 2: MMAR results and CoT-quality scores. Bold 
+
+marks the best result in each column. 
+
+with a primary emphasis on assessing the qual-ity of the CoT itself. Beyond standard accuracy, we adopt the Rubrics and CRS (Correct Reason-ing Score) metrics (Ma et al., 2026) to quantify whether the generated reasoning steps are well-grounded in the acoustic premise. As shown in Table 2, X 3-OPD steadily improves accuracy over the Qwen3-Omni-Thinking baseline (Sound +1 .6,Speech +1 .3) while simultaneously elevating the CoT quality scores (Rubrics +2 .4, CRS +0 .01 ). This concurrent gain in both correct predictions and reasoning structure confirms that on-policy distillation genuinely anchors intermediate steps to the acoustic input, rather than merely exploit-ing statistical shortcuts to reach a final answer. Furthermore, compared to contemporary baselines like Step-Audio-R1—which suffers a severe per-formance collapse on the non-speech Sound split (32 .5% ) due to speech-biased reward signals—X 3-OPD maintains robust and balanced audio reason-ing capabilities, demonstrating that it effectively enhances how to reason without relying on any MMAR-specific domain supervision. 
+
+5.4 Capability Preservation under Domain Shift 
+
+A critical concern when fine-tuning on modality-specific data is the catastrophic forgetting of un-observed domains. Table 3 stress-tests the models on two out-of-distribution benchmarks absent from our corpus: audio-visual reasoning (WorldSense) and video reasoning (DailyOmni). We report both the raw score and the absolute performance drop (∆) relative to the base model. The results demonstrate that off-policy imitation methods suffer from severe cross-modal degrada-tion. Both SFT and GKD lose substantial ground across visual and video tasks, dropping by 5.3 to 
+
+6.6 points. This indicates that static token-level imitation of a text teacher induces a global policy drift within the shared LLM backbone. In contrast, X3-OPD preserves the base model’s initialization                       
+
+> WorldSense DailyOmni Model Score ∆Score ∆
+> Qwen3-Omni-Thinking 54.0 —75.8 —SFT ( Loff )48.7 −5.369.2 −6.6
+> GKD 47.9 −6.169.5 −6.3
+> X3-OPD (ours) 52.8 −1.273.5 −2.3
+
+Table 3: Capability preservation under domain shift. WorldSense (audio-visual) and DailyOmni (video) rep-resent modalities completely absent from our fine-tuning corpus. 
+
+almost perfectly, with marginal variations ( −1.2
+
+and −2.3). By dynamically scoring the student’s on-policy rollouts using the cross-modal advantage (Eq. 3), X 3-OPD inherently minimizes the reverse-KL divergence against the highly capable, frozen text teacher. Because this teacher maintains strong general-purpose reasoning capabilities across un-observed domains, its dense token-level feedback acts as a continuous capability anchor, effectively restricting the student from drifting into degenerate, modality-specific shortcuts. This confirms that ad-vanced audio reasoning can be cultivated without paying a multimodal tax on pre-existing vision or video capabilities. 
+
+6 Conclusion 
+
+In this work, we introduced X 3-OPD, a novel cross-modal on-policy distillation framework de-signed to bridge the reasoning gap between text-based Large Language Models and Large Audio-Language Models (LALMs). To address the expo-sure bias and perception-text divergence inherent in standard offline distillation, our approach dynami-cally aligns the student’s acoustic-conditioned rea-soning trajectories with the teacher’s text-grounded prior knowledge. Supported by a newly constructed three-tier symmetric corpus—spanning textual rea-soning, audio-event understanding, and paralinguis-tic spoken dialogue—X 3-OPD provides compre-hensive supervision across multiple acoustic rea-soning regimes. Extensive experiments demon-strate that our framework achieves substantial gains on major audio-reasoning benchmarks while miti-gating catastrophic forgetting, ultimately establish-ing a robust paradigm for cross-modal reasoning directly from continuous acoustic signals. 8Limitations 
+
+While X3-OPD significantly advances audio-grounded reasoning, several limitations remain to be addressed in future work. First, our cur-rent three-tier symmetric corpus does not yet en-compass the full spectrum of acoustic phenom-ena. Specifically, complex musical reasoning and highly specialized, non-linguistic soundscapes are underrepresented in the training data, which is re-flected in the residual performance gaps on purely perceptual axes like MMAU-Music. Expanding the dataset construction pipeline to encompass a broader diversity of audio domains is a critical next step. Second, the current framework relies exclu-sively on a text-based teacher’s token-level log-probabilities as the supervisory signal. Because the text teacher is inherently blind to non-semantic acoustic cues that cannot be perfectly captured by captions or transcripts, this reward signal is some-what constrained. It tends to bias the learning pro-cess toward semantic logic while under-penalizing perceptual errors in pure acoustic or paralinguistic contexts. To overcome this limitation, future work must introduce more multi-dimensional reward mechanisms. Incorporating direct audio-based re-ward models (RM), environmental verifiers, or rule-based multi-objective signals will be vital for cul-tivating a truly comprehensive and autonomous reasoning capability in LALMs. 
+
+References 
+
+Alexei Baevski, Wei-Ning Hsu, Qiantong Xu, Arun Babu, Jiatao Gu, and Michael Auli. 2022. data2vec: A general framework for self-supervised learn-ing in speech, vision and language. Preprint ,arXiv:2202.03555. Samy Bengio, Oriol Vinyals, Navdeep Jaitly, and Noam Shazeer. 2015. Scheduled sampling for sequence prediction with recurrent neural networks. Preprint ,arXiv:1506.03099. Carlos Busso, Murtaza Bulut, Chi-Chun Lee, Abe Kazemzadeh, Emily Mower, Samuel Kim, Jean-nette N Chang, Sungbok Lee, and Shrikanth S Narayanan. 2008. Iemocap: Interactive emotional dyadic motion capture database. Language resources and evaluation , 42:335–359. Di Cao, Dongjie Fu, Hai Yu, Siqi Zheng, Xu Tan, and Tao Jin. 2026. X-opd: Cross-modal on-policy distilla-tion for capability alignment in speech llms. Preprint ,arXiv:2603.24596. Heng-Jui Chang, Shu wen Yang, and Hung yi Lee. 2022. Distilhubert: Speech representation learn-ing by layer-wise distillation of hidden-unit bert. 
+
+Preprint , arXiv:2110.01900. Yunfei Chu, Jin Xu, Qian Yang, Haojie Wei, Xipin Wei, Zhifang Guo, Yichong Leng, Yuanjun Lv, Jinzheng He, Junyang Lin, and 1 others. 2024. Qwen2-audio technical report. arXiv preprint arXiv:2407.10759 .Yunfei Chu, Jin Xu, Xiaohuan Zhou, Qian Yang, Shil-iang Zhang, Zhijie Yan, Chang Zhou, and Jingren Zhou. 2023. Qwen-audio: Advancing universal audio understanding via unified large-scale audio-language models. arXiv preprint arXiv:2311.07919 .Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Mar-cel Blistein, Ori Ram, Dan Zhang, Evan Rosen, and 1 others. 2025. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 .Konstantinos Drossos, Samuel Lipping, and Tuomas Virtanen. 2019. Clotho: An audio captioning dataset. 
+
+Preprint , arXiv:1910.09387. Zhihao Du, Changfeng Gao, Yuxuan Wang, Fan Yu, Tianyu Zhao, Hao Wang, Xiang Lv, Hui Wang, Xian Shi, Keyu An, and 1 others. 2025. Cosyvoice 3: Towards in-the-wild speech generation via scaling-up and post-training. arXiv preprint arXiv:2505.17589 .Jiajun Fan, Roger Ren, Jingyuan Li, Rahul Pandey, Prashanth Gurunath Shivakumar, Ivan Bulyko, Ankur Gandhe, Ge Liu, and Yile Gu. 2025. Incentivizing consistent, effective and scalable reasoning capability in audio llms via reasoning process rewards. Preprint ,arXiv:2510.20867. Dongjie Fu, Xize Cheng, Linjun Li, Xiaoda Yang, Lujia Yang, and Tao Jin. 2025. PACHAT: Persona-aware speech assistant for multi-party dialogue. In Proceed-ings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 29325–29342, Suzhou, China. Association for Computational Lin-guistics. Yuxian Gu, Li Dong, Furu Wei, and Minlie Huang. 2026. Minillm: On-policy distillation of large language models. Preprint , arXiv:2306.08543. Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu, Shi-rong Ma, Peiyi Wang, Xiao Bi, and 1 others. 2025. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 .Zhihan Guo, Wenqian Cui, Guan-Ting Lin, Daxin Tan, Jingyao Li, Qiyong Zheng, Dingdong Wang, Jing Xiong, Han Shi, Jiaya Jia, and Irwin King. 2026. A survey of audio reasoning in multimodal foundation models. Preprint , arXiv:2605.21008. 
+
+9Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. 2015. Distilling the knowledge in a neural network. 
+
+Preprint , arXiv:1503.02531. Jing Hu, Danxiang Zhu, Xianlong Luo, Dan Zhang, Shuwei He, Yishu Lei, Haitao Zheng, Shikun Feng, Jingzhou He, Yu Sun, Hua Wu, and Haifeng Wang. 2026. Cord: Bridging the audio-text reasoning gap via weighted on-policy cross-modal distillation. 
+
+Preprint , arXiv:2601.16547. Rongjie Huang, Mingze Li, Dongchao Yang, Jia-tong Shi, Xuankai Chang, Zhenhui Ye, Yuning Wu, Zhiqing Hong, Jiawei Huang, Jinglin Liu, and 1 oth-ers. 2024. Audiogpt: Understanding and generating speech, music, sound, and talking head. In Proceed-ings of the AAAI Conference on Artificial Intelligence ,volume 38, pages 23802–23804. Shengpeng Ji, Yifu Chen, Minghui Fang, Jialong Zuo, Jingyu Lu, Hanting Wang, Ziyue Jiang, Long Zhou, Shujie Liu, Xize Cheng, and 1 others. 2024. Wavchat: A survey of spoken dialogue models. arXiv preprint arXiv:2411.13577 .Chris Dongjoo Kim, Byeongchang Kim, Hyunmin Lee, and Gunhee Kim. 2019. AudioCaps: Generating cap-tions for audios in the wild. In Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Hu-man Language Technologies, Volume 1 (Long and Short Papers) , pages 119–132, Minneapolis, Min-nesota. Association for Computational Linguistics. Yoon Kim and Alexander M. Rush. 2016. Sequence-level knowledge distillation. Preprint ,arXiv:1606.07947. Zhifeng Kong, Arushi Goel, Rohan Badlani, Wei Ping, Rafael Valle, and Bryan Catanzaro. 2024. Audio flamingo: A novel audio language model with few-shot learning and dialogue abilities. arXiv preprint arXiv:2402.01831 .Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E. Gonzalez, Hao Zhang, and Ion Stoica. 2023. Ef-ficient memory management for large language model serving with pagedattention. Preprint ,arXiv:2309.06180. Nathan Lambert, Jacob Morrison, Valentina Pyatkin, Shengyi Huang, Hamish Ivison, Faeze Brahman, Lester James Validad Miranda, Alisa Liu, Nouha Dziri, Xinxi Lyu, Yuling Gu, Saumya Malik, Victoria Graf, Jena D. Hwang, Jiangjiang Yang, Ronan Le Bras, Oyvind Tafjord, Christopher Wilhelm, Luca Soldaini, and 4 others. 2025. Tulu 3: Pushing fron-tiers in open language model post-training. In Second Conference on Language Modeling .Longhao Li, Hongjie Chen, Zehan Li, Qihan Hu, Jian Kang, Jie Li, Lei Xie, and Yongxiang Li. 2026. Audio-cogito: Towards deep audio reasoning in large audio language models. Preprint , arXiv:2604.12527. Kevin Lu and Thinking Machines Lab. 2025. On-policy distillation. Thinking Machines Lab: Con-nectionism . Https://thinkingmachines.ai/blog/on-policy-distillation. Kaiwen Luo, Zhenhong Zhou, Leo Wang, Liang Lin, Yang Xiao, Tianyu Shao, Yuanhe Zhang, Yuxuan Li, Miao Yu, Kailin Lyu, Jiaming Zhang, Dongrui Liu, Li Sun, Yueming Wu, Kai Li, Ting Dang, Xiaojun Jia, Rohan Kumar Das, Xinfeng Li, and 15 others. 2026. A survey of large audio language models: Gen-eralization, trustworthiness, and outlook. Preprint ,arXiv:2605.20266. Ziyang Ma, Yinghao Ma, Yanqiao Zhu, Chen Yang, Yi-Wen Chao, Ruiyang Xu, Wenxi Chen, Yuanzhe Chen, Zhuo Chen, Jian Cong, and 1 others. 2025. Mmar: A challenging benchmark for deep reasoning in speech, audio, music, and their mix. arXiv preprint arXiv:2505.13032 .Ziyang Ma, Ruiyang Xu, Yinghao Ma, Chao-Han Huck Yang, Bohan Li, Jaeyeon Kim, Jin Xu, Jinyu Li, Carlos Busso, Kai Yu, Eng Siong Chng, and Xie Chen. 2026. The interspeech 2026 audio reason-ing challenge: Evaluating reasoning process quality for audio reasoning models and agents. Preprint ,arXiv:2602.14224. Timo Milbich, Karsten Roth, Homanga Bharadhwaj, Samarth Sinha, Yoshua Bengio, Björn Ommer, and Joseph Paul Cohen. 2020. Diva: Diverse visual fea-ture aggregation for deep metric learning. Preprint ,arXiv:2004.13458. OpenAI. 2024. Gpt-4o system card. 
+
+https://cdn.openai.com/gpt-4o-system-card.pdf .OpenAI, Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Ale-man, Diogo Almeida, Janko Altenschmidt, Sam Alt-man, Shyamal Anadkat, Red Avila, Igor Babuschkin, Suchir Balaji, Valerie Balcom, Paul Baltescu, Haim-ing Bao, Mohammad Bavarian, Jeff Belgum, and 262 others. 2024. Gpt-4 technical report. Preprint ,arXiv:2303.08774. Soujanya Poria, Devamanyu Hazarika, Navonil Ma-jumder, Gautam Naik, Erik Cambria, and Rada Mi-halcea. 2019. Meld: A multimodal multi-party dataset for emotion recognition in conversations. 
+
+Preprint , arXiv:1810.02508. S Sakshi, Utkarsh Tyagi, Sonal Kumar, Ashish Seth, Ramaneswaran Selvakumar, Oriol Nieto, Ramani Duraiswami, Sreyan Ghosh, and Dinesh Manocha. 2024. Mmau: A massive multi-task audio un-derstanding and reasoning benchmark. Preprint ,arXiv:2410.19168. Victor Sanh, Lysandre Debut, Julien Chaumond, and Thomas Wolf. 2020. Distilbert, a distilled version of bert: smaller, faster, cheaper and lighter. Preprint ,arXiv:1910.01108. 
+
+10 Yunfan Shao, Linyang Li, Junqi Dai, and Xipeng Qiu. 2023. Character-llm: A trainable agent for role-playing. Preprint , arXiv:2310.10158. Guangming Sheng, Chi Zhang, Zilingfeng Ye, Xibin Wu, Wang Zhang, Ru Zhang, Yanghua Peng, Haibin Lin, and Chuan Wu. 2025. Hybridflow: A flexible and efficient rlhf framework. In Proceedings of the Twentieth European Conference on Computer Sys-tems , pages 1279–1297. Mingyang Song and Mao Zheng. 2026. A survey of on-policy distillation for large language models. 
+
+Preprint , arXiv:2604.00626. Tongyi SpeechTeam. 2024. Funaudiollm: Voice un-derstanding and generation foundation models for natural interaction between humans and llms. arXiv preprint arXiv:2407.04051 .Shicheng Tan, Weng Lam Tam, Yuanchun Wang, Wen-wen Gong, Yang Yang, Hongyin Tang, Keqing He, Jiahao Liu, Jingang Wang, Shu Zhao, Peng Zhang, and Jie Tang. 2023. Gkd: A general knowledge distil-lation framework for large-scale pre-trained language model. Preprint , arXiv:2306.06629. Changli Tang, Wenyi Yu, Guangzhi Sun, Xianzhao Chen, Tian Tan, Wei Li, Lu Lu, Zejun Ma, and Chao Zhang. 2023. Salmonn: Towards generic hearing abilities for large language models. arXiv preprint arXiv:2310.13289 .Fei Tian, Xiangyu Tony Zhang, Yuxin Zhang, Haoyang Zhang, Yuxin Li, Daijiao Liu, Yayue Deng, Dong-hang Wu, Jun Chen, Liang Zhao, Chengyuan Yao, Hexin Liu, Eng Siong Chng, Xuerui Yang, Xiangyu Zhang, Daxin Jiang, and Gang Yu. 2025. Step-audio-r1 technical report. Preprint , arXiv:2511.15848. Dingdong Wang, Junan Li, Jincenzi Wu, Dongchao Yang, Xueyuan Chen, Tianhua Zhang, and Helen Meng. 2026. Mmsu: A massive multi-task spoken language understanding and reasoning benchmark. 
+
+Preprint , arXiv:2506.04779. Zhifei Xie, Mingbao Lin, Zihang Liu, Pengcheng Wu, Shuicheng Yan, and Chunyan Miao. 2025. Audio-reasoner: Improving reasoning capability in large audio language models. Preprint , arXiv:2503.02318. Jin Xu, Zhifang Guo, Jinzheng He, Hangrui Hu, Ting He, Shuai Bai, Keqin Chen, Jialin Wang, Yang Fan, Kai Dang, Bin Zhang, Xiong Wang, Yunfei Chu, and Junyang Lin. 2025a. Qwen2.5-omni technical report. 
+
+arXiv preprint arXiv:2503.20215 .Jin Xu, Zhifang Guo, Jinzheng He, Hangrui Hu, Ting He, Shuai Bai, Keqin Chen, Jialin Wang, Yang Fan, Kai Dang, and 1 others. 2025b. Qwen2. 5-omni technical report. arXiv preprint arXiv:2503.20215 .Jin Xu, Zhifang Guo, Hangrui Hu, Yunfei Chu, Xiong Wang, Jinzheng He, Yuxuan Wang, Xian Shi, Ting He, Xinfa Zhu, and 1 others. 2025c. Qwen3-omni technical report. arXiv preprint arXiv:2509.17765 .An Yang, Anfeng Li, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chang Gao, Chengen Huang, Chenxu Lv, and 1 others. 2025. Qwen3 technical report. arXiv preprint arXiv:2505.09388 .Weizhe Yuan, Jane Yu, Song Jiang, Karthik Padthe, Yang Li, Ilia Kulikov, Kyunghyun Cho, Dong Wang, Yuandong Tian, Jason E Weston, and 1 others. 2025. Naturalreasoning: Reasoning in the wild with 2.8 m challenging questions. arXiv preprint arXiv:2502.13124 .Aohan Zeng, Zhengxiao Du, Mingdao Liu, Kedong Wang, Shengmin Jiang, Lei Zhao, Yuxiao Dong, and Jie Tang. 2024. Glm-4-voice: Towards intelligent and human-like end-to-end spoken chatbot. arXiv preprint arXiv:2412.02612 .Dong Zhang, Shimin Li, Xin Zhang, Jun Zhan, Pengyu Wang, Yaqian Zhou, and Xipeng Qiu. 2023. Speechgpt: Empowering large language models with intrinsic cross-modal conversational abilities. arXiv preprint arXiv:2305.11000 .Hao Zhong, Muzhi Zhu, Zongze Du, Zheng Huang, Canyu Zhao, Mingyu Liu, Wen Wang, Hao Chen, and Chunhua Shen. 2025. Omni-r1: Reinforcement learning for omnimodal reasoning via two-system collaboration. Preprint , arXiv:2505.20256. 
+
+11 A Additional Experiment Details 
+
+Training Setup and Hyperparameters. We im-plement our training framework using verl (Sheng et al., 2025) on top of Megatron-LM, with 
+
+vLLM (Kwon et al., 2023) serving as the rollout engine. To accommodate both the 30 B student and the 235 B teacher models within a 32 × H20 GPU budget, we employ hybrid parallelism (PP = 2 , TP 
+
+= 4 , EP = 4 , CP = 1 ) alongside memory optimiza-tions, including teacher parameter offloading and full activation recomputation. During the on-policy optimization stage, we use a batch size of 256 and a micro-batch size of 4
+
+per GPU. We bypass Generalized Advantage Esti-mation (GAE) and instead use a naive advantage estimator, utilizing the per-token signal from our cross-modal log-ratio (Eq. 3). During generation, we sample K = 4 responses per prompt at a tem-perature of 1.0.
+
+Implementation Details. To maintain mathemat-ical consistency with Eq. 3 when rollouts and up-dates are asynchronous, we explicitly track and compute the importance ratio rk,t rather than col-lapsing it to one. Furthermore, to mitigate pre-cision discrepancies in log-probabilities between 
+
+vLLM inference and the training engine, we exactly recompute all teacher and student log-probabilities within the training engine during the update phase. 
+
+B Baseline Descriptions 
+
+For completeness, we provide a concise description of every baseline that appears in the main results (Table 1) and the CoT-quality evaluation (Table 2). Baselines are grouped according to the role they play in our comparison. 
+
+B.1 Closed-Source LALMs GPT-4o-Audio (OpenAI, 2024). The audio-enabled variant of OpenAI’s GPT-4o family, ac-cepting raw speech and audio as a native input modality and producing text (and, in its real-time variant, speech) outputs. It serves as a strong pro-prietary reference for general audio-language un-derstanding and is queried through the public API in single-turn, non-streaming mode. 
+
+Gemini-3-Flash (Comanici et al., 2025). Alatency-oriented member of Google’s Gemini 3 family with native multimodal input over audio, vision, and text. We use it as a representative high-capacity proprietary LALM and evaluate it via its public API under the same single-turn protocol as GPT-4o-Audio. 
+
+B.2 Open-Weight LALMs Qwen2-Audio-Instruct (Xu et al., 2025b). Awidely adopted open-source LALM that couples a Whisper-style audio encoder with a Qwen2 LLM backbone via an audio adapter. Trained predomi-nantly on perception-oriented tasks (ASR, caption-ing, short-form QA), it is a natural reference for the pre-reasoning generation of LALMs. 
+
+GLM-4-Voice (Zeng et al., 2024). An end-to-end speech-text model built on the GLM-4 back-bone that natively tokenizes speech and integrates it with a unified LLM decoder. It is included to contrast a discrete-speech-token paradigm against continuous-audio LALMs. 
+
+Qwen2.5-Omni-7B (Xu et al., 2025a). A 7B omni-modal model that jointly handles audio, vi-sion, and text. It represents the previous generation of the Qwen-Omni line and provides a smaller-scale, instruction-tuned reference under the same model family as our student. 
+
+Qwen3-Omni-Instruct (Xu et al., 2025c). The instruction-tuned 30B-A3B (MoE) variant of Qwen3-Omni. It is the closest non-thinking sib-ling of our student and isolates the contribution of explicit thinking from the contribution of our distillation procedure. 
+
+Qwen3-Omni-Thinking (Xu et al., 2025c). The thinking-mode 30B-A3B variant of Qwen3-Omni and the exact initialization of our student model. It is therefore the primary base-model anchor against which all X 3-OPD improvements should be read. 
+
+B.3 Reasoning-Specialized LALMs (Section 5.3, Table 2) 
+
+For the CoT-quality evaluation we additionally compare against two recent LALMs that are explic-itly designed to produce extended chain-of-thought reasoning over audio. 
+
+Audio-Reasoner (Xie et al., 2025). A Qwen2-Audio-based LALM fine-tuned on C OTA, a 1.2M-sample structured chain-of-thought corpus. Audio-Reasoner adopts a fixed four-stage reasoning template— Planning → Captioning → Reasoning 
+
+→ Summary —and is trained purely by supervised fine-tuning on offline teacher traces, making it 12 a strong representative of the static offline-CoT paradigm. 
+
+Step-Audio-R1 (Tian et al., 2025). A 33B au-dio reasoning model built on a Qwen2 audio en-coder and a Qwen2.5-32B decoder. Step-Audio-R1 explicitly targets the “textual-surrogate reason-ing” problem via its Modality-Grounded Reasoning Distillation (MGRD) framework, an iterative self-distillation procedure that filters reasoning traces grounded in acoustic cues, followed by Reinforce-ment Learning with Verified Rewards. It represents the strongest currently public competitor that com-bines distillation and RL for audio CoT reasoning. Together, these two baselines bracket the reasoning-LALM design space: Audio-Reasoner relies entirely on offline structured-CoT SFT, whereas Step-Audio-R1 augments distillation with on-policy RL but remains uni-source (self-distilled). Neither one performs cross-modal on-policy distillation across a modality-paired sym-metric corpus, which is the gap X 3-OPD closes. 
+
+C Ablation Study 
+
+To attribute the empirical gains of X 3-OPD to its individual design choices, we perform a system-atic ablation along two axes: the composition of the three-tier symmetric corpus (Section 4.1) and the training-recipe choice between offline warm-start and pure on-policy distillation (Section 4.3). All variants share the identical student initializa-tion, optimizer, schedule, and rollout budget as the full model, so that any observed difference is at-tributable solely to the ablated component. To best expose tier-specific contributions, we report four representative columns: MMSU-Sem., MMAU-Sound, MMAU-Music, and BIG Bench Audio. 
+
+Contribution of individual data tiers. Remov-ing Tier-1 (textual reasoning rendered into speech) causes the largest drop on MMSU-Sem. ( −3.1)and BAB ( −4.5), but only marginal regressions on MMAU-Sound/Music. This is the expected sig-nature of Tier-1: it provides the densest source of logical chain-of-thought supervision, and with-out it the student loses the very capability that the framework is designed to distill. Removing Tier-2 (audio-event reasoning grounded in captions) flips the picture: MMAU-Sound drops by 4.1 points and MMAU-Music by 2.9 points, while MMSU-Sem. is essentially preserved. This confirms that caption-grounded audio reasoning is responsible for bind-ing the teacher’s logical signal to non-linguistic acoustic events. Removing Tier-3 (prosody-aware spoken dialogue) yields a surprisingly steep drop on MMSU-Sem. ( −3.3), alongside a significant regression on BAB ( −2.6). This indicates that prosody and conversational context are not merely stylistic wrappers, but rather essential structural cues for deeply parsing the underlying semantics of spoken interactions. Without them, the model’s textual-logical reasoning fails to ground properly in real-world conversational audio. 
+
+Impact of SFT warm-start duration. Remov-ing the offline warm-start entirely ( w/o warm-start )costs 1.9 points on MMSU-Sem. and 3.1 on BAB. Inspecting the training curves, we observe that pure on-policy training without an SFT phase is markedly more unstable in the early phase: the ini-tial rollouts are far enough from the teacher’s distri-bution that the cross-modal advantage in Eq. (3) is dominated by high-variance corrective terms. The warm-start mitigates this by seating the student in-side the teacher’s reasoning style before on-policy optimization begins. 
+
+Exposure bias in full-corpus warm-starts. Astraightforward alternative is to first SFT the stu-dent on the entire three-tier corpus and then run the OPD stage on top (“full-data warm-start →
+
+OPD”). Interestingly, this variant pushes MMAU-Sound even higher than the full model ( +0 .8) but triggers a severe collapse on the held-out MMAU-Music axis ( −4.2). We interpret this dual effect through two mechanisms. First, as discussed in Section 3, a long offline pass on the full corpus over-fits the student to teacher trajectories under teacher-side inputs xt, entrenching states that the student’s acoustic-side rollouts rarely revisit, thereby weak-ening the corrective signal of the subsequent on-policy phase. Second, extensive SFT on a highly structured, domain-specific corpus inevitably in-duces catastrophic forgetting of out-of-distribution acoustic domains. While the model over-fits and excels on in-domain sound events, it overwrites the broader perceptual representations (e.g., mu-sic) inherited from its pre-training. In future work, expanding the data to a more general distribution may unlock the scaling potential of full-data warm-starts without sacrificing generalizability (Lu and Lab, 2025). 13 Variant MMSU-Sem. MMAU-Sound MMAU-Music BAB 
+
+X3 -OPD (full) 83.7 88.3 72.4 93.6 
+
+Data composition (drop one tier from the symmetric corpus) 
+
+w/o Tier-1 (textual reasoning → TTS) 80.6 (−3.1) 87.5 (−0.8) 71.6 (−0.8) 89.1 (−4.5)
+
+w/o Tier-2 (audio + caption) 82.9 (−0.8) 84.2 (−4.1) 69.5 (−2.9) 90.4 (−3.2)
+
+w/o Tier-3 (prosody-aware dialogue) 80.4 (−3.3) 87.6 (−0.7) 71.9 (−0.5) 91.0 (−2.6)
+
+Training recipe 
+
+w/o warm-start (pure on-policy) 81.8 (−1.9) 86.0 (−2.3) 70.7 (−1.7) 90.5 (−3.1)
+
+full-data warm-start → OPD 83.2 (−0.5) 89.1 (+0 .8) 68.2 (−4.2) 92.4 (−1.2)
+
+Table 4: Ablation of the three-tier symmetric corpus and the training recipe. Numbers in parentheses indicate the absolute drop relative to the full X 3 -OPD model. 
+
+D Prompt Templates 
+
+This appendix collects the three prompt templates that play a non-trivial role in the X 3-OPD pipeline: (i) the teacher-side reasoning prompt used during cross-modal on-policy distillation, (ii) the Tier-1 spoken-style rewriting prompt used to convert tex-tual reasoning corpora into TTS-compatible utter-ances, and (iii) the Tier-2 caption-reconstruction prompt used to upgrade existing audio-caption datasets into reasoning-ready acoustic descriptions. Table 5 summarizes where each prompt is used in the pipeline, and the verbatim templates follow.         
+
+> Prompt Stage Consumer
+> P1: Teacher CoT OPD scoring (Sec. 4.3) Qwen3-235B-A22B-Thinking P2: Tier-1 TTS rewrite Tier-1 data construction (Sec. 4.1) Gemini-3-Flash-Preview P3: Caption reconstruction Tier-2 data construction (Sec. 4.1) Qwen3-Omni-Captioner
+
+Table 5: Summary of prompt templates used in the X 3 -OPD pipeline. 
+
+P1: Teacher chain-of-thought prompt (OPD stage). During on-policy distillation, every stu-dent rollout y(k) is re-scored token-by-token by the frozen text teacher under the matched text input xt,the question q, and the gold answer a⋆. The prompt is designed so that the teacher’s resulting per-token log-probabilities form a high-confidence, answer-anchored reference distribution against which the student trajectory is contrasted (Eq. 3). 
+
+P2: Tier-1 spoken-style rewriting prompt. 
+
+Tier-1 takes prompts from Tulu 3 and NaturalRea-soning, which are written in dense textual style with punctuation, formulae, URLs, and markdown that do not survive TTS rendering. The following prompt is used with Gemini-3-Flash-Preview to normalize each instance into a form that the down-stream TTS engine can voice naturally, and that the closed-loop ASR re-checker can verify. 
+
+P3: Tier-2 caption reconstruction prompt. The original AudioCaps and Clotho captions are written for short captioning evaluation and are typically a single under-specified sentence. To turn them into reasoning-ready descriptions, every audio clip is re-captioned by Qwen3-Omni-30B-A3B-Captioner under the following structured prompt. The recon-structed caption is then used as the teacher-side input xt for Tier-2. 14 Prompt 1: Teacher Chain-of-Thought 
+
+You are an expert reasoning teacher. You will be given a description of an acoustic scene or utterance (TEXT), a question about it (QUESTION), and the verified correct answer (ANSWER). Your task is to produce a faithful, step-by-step chain-of-thought that leads from the TEXT and QUESTION to the ANSWER. Strict requirements: 1. Reason only from evidence available in TEXT. Do not invent acoustic content that is not stated. 2. Cite the specific cue (event, prosody, lexical content, speaker turn, temporal order) you rely on at each step. 3. The reasoning chain must terminate in the exact ANSWER provided; do not propose an alternative. 4. Keep the chain concise and logically tight; avoid filler, restatement, or hedging. Output format: <think> ... step-by-step reasoning ... </think> <answer> ... ANSWER ... </answer> TEXT: {x_t} QUESTION: {q} ANSWER: {a ⋆}
+
+Prompt 2: Spoken-Style Rewriting 
+
+You are an expert in text normalization for TTS (Text-to-Speech) systems. Your task is to process the user’s input text according to the following strict rules: 1. Language Check: If the primary language of the text is neither Chinese (ZH) nor English (EN), output exactly the digit 0 and nothing else. 2. TTS Normalization: Identify special characters, symbols, numbers, abbreviations, URLs, or markdown formatting and convert them into their natural spoken equivalents in the corresponding language. Remove pure visual symbols that have no spoken meaning. 3. Keep it Original: Do NOT rewrite, summarize, or translate regular words. If the original text is already fully suitable for TTS reading, output the original text exactly as it is. 4. Output Format: Output ONLY the final processed text or 0. Do not include any explanations, quotes, or markdown formatting. 
+
+Prompt 3: Caption Reconstruction 
+
+You are an expert audio annotator. You will receive a short audio clip together with its existing reference caption. Your task is to produce a single, well-formed acoustic description that is precise enough to support multi-step reasoning over the clip. The description must explicitly cover, in this order, whenever the relevant evidence is present in the audio: 1. Scene :the overall acoustic environment (indoor / outdoor / studio / vehicle / crowd / nature, etc.). 2. Sound events :every salient event, with a concrete noun-phrase label (e.g. “glass breaking”, “female laughter”, “electric guitar riff”). 3. Sources : the inferred source of each event (human / animal / mechanical / musical / environmental) and, if applicable, the speaker’s gender or age band. 4. Temporal structure : the temporal order and relative duration of events (sequential / overlapping / continuous / one-shot). 5. Salient acoustic attributes : pitch, loudness, timbre, tempo, or prosodic cues that are informative for reasoning. Strict requirements: a) Describe only what is audibly present. Do not infer external context, intent, or narrative. b) Do not copy the reference caption verbatim; use it only as a sanity check. c) If an attribute cannot be determined from the audio, omit it rather than guess. d) Output one paragraph of plain text, no bullet points, no markdown. REFERENCE CAPTION: {caption_ref} AUDIO: <audio clip> 
+
+15
