@@ -1,0 +1,188 @@
+Title: TF-MossFormer: Integrating Convolution Gated Local-Global Attentions for Enhanced Time-Frequency Domain Monaural Speech Separation
+
+URL Source: https://arxiv.org/pdf/2607.21128v1
+
+Published Time: Fri, 24 Jul 2026 00:45:34 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# TF-MossFormer: Integrating Convolution Gated Local-Global Attentions for Enhanced Time-Frequency Domain Monaural Speech Separation 
+
+# Shengkui Zhao, Zexu Pan, Haoxu Wang, Biao Tian, Bin Ma, Xiangang Li 
+
+# Token Foundry, Alibaba Group, Singapore 
+
+shengkui.zhao@alibaba-inc.com 
+
+# Abstract 
+
+Transformers with global attention capture long-range depen-dencies but can miss the fine-grained local continuity cru-cial for speech separation. We propose TF-MossFormer, a time–frequency transformer that combines local and global at-tention to jointly model short- and long-range contexts for monaural speech separation. At its core is a content-aware sliding-window attention mechanism that dynamically adapts receptive fields for stronger local interactions, avoiding the rigidity of static convolutions. Unlike time-domain chunk-based methods, TF-MossFormer leverages the 2D spectrogram to model structure along both time and frequency axes. Con-volutional gating between attention layers further improves fea-ture selection and information flow. TF-MossFormer achieves SI-SDRi of 22.6, 24.0, and 24.4 dB on WSJ0-2Mix with 5.9M, 16.9M, and 25.4M parameters, respectively, outperform-ing prior approaches. 
+
+Index Terms : Transformer, local–global self-attention, convo-lutional gated, speech separation 
+
+# 1. Introduction 
+
+Speech separation (SS), which aims to isolate individual sources from a mixture, is a fundamental challenge in audio processing. Recent research reveals that effective modeling re-quires capturing both short-range continuity, such as harmonic structures and phoneme-level transitions, and long-range group-ing, including speaker identity consistency across an utterance [1–4]. Early end-to-end approaches like Conv-TasNet [5] high-lighted the importance of local feature extraction through con-volutional networks. This idea was extended by the time-domain dual-path architecture DPRNN [6], which explicitly decomposed the task into intra-chunk (local) and inter-chunk (global) modeling to jointly address short- and long-range de-pendencies. Transformer-based models such as SepFormer [7] and our previous MossFormer [8] and MossFormer2 [9] further advanced this line of work by leveraging self-attention to en-hance global context modeling, leading to remarkably improved separation performance. Compared with time-domain dual-path methods, time–frequency (TF) approaches offer a distinct advan-tage by leveraging the spectrogram’s two-dimensional structure [10–14]. For example, TF-GridNet [12] outperformed previous time-domain models by explicitly encoding spectro-grams into separate temporal and frequency processing paths, using bidirectional LSTMs to preserve fine-grained continuity and full-band self-attention to capture long-range dependencies across the entire spectrogram. Building on this framework, SP-Mamba [13] replaced recurrent blocks with state-space models, showing that alternative sequential operators can deliver better (a) Global attention (b) Local attention 
+
+Fig. 1: Illustration of the global and local attention patterns in TF-MossFormer. (a) Global attention: captures long-range de-pendencies across the entire spectrogram, (b) Local attention: focuses on fine-grained continuity within sliding windows. 
+
+local modeling at lower cost. Conformer-based methods [10] take a complementary approach by embedding convolutional modules inside attention blocks, explicitly fusing locality and context to improve the modeling of short-range transients. TF-LocoFormer [14] further complements global attention with gated convolutional layers to more tightly integrate local spectral detail and global aggregation, yielding notable gains in separation performance. These prior works motivate our focus on adaptive local mechanisms that enhance spectral continuity while preserving global modeling capabilities based on the TF domain geometry. The shift toward hybrid local–global modeling is a broader trend beyond speech processing. In natural language processing (NLP), models like Longformer [15] and BigBird [16] combine local attention with global tokens to efficiently handle long se-quences. Similarly, in computer vision, PLG-ViT [17] and Bi-Former [18] use parallel attention to capture both fine details and scene-level context. These approaches reflect a broader need to model both local patterns and long-range dependen-cies in sequential data. Inspired by these cross-domain innova-tions, we introduce TF-MossFormer, a time–frequency frame-work for monaural speech separation. Our model integrates hybrid local–global attention in a unified architecture to pre-serve short-range spectral continuity while capturing long-range dependencies in speech spectrograms. As shown in Fig. 1, sliding-window local attention focuses on fine-grained spectral features, retaining subtle temporal and harmonic details, while global attention spans wider regions to capture speaker-specific characteristics. We further enhance both pathways with con-volutional gating to improve representation. We evaluate the performance of TF-MossFormer through extensive experiments on the widely-used WSJ0-2Mix benchmark. arXiv:2607.21128v1 [cs.SD] 23 Jul 2026 STFT Conv2D + gLN Frequency    
+
+> Modeling Temporal
+> Modeling Deconv2D iSTFT
+> Permute Conv-SwiGLU RMSGroupNorm Global
+> MHSA
+> Local
+> MHSA
+> Gate Gate
+> Conv-SwiGLU Permute
+> Input Output
+> Conv1D
+> Swish
+> Local & Global
+> MHSA
+> Local
+> MHSA Gate
+> Gate Global
+> MHSA
+> Local
+> MHSA
+> Gate
+> Gate
+> Global
+> MHSA
+> V1 V2 V3
+
+(a) (b) (c)   
+
+> x TF-TMossFormer blocks
+> Real Imag. Real Imag.
+
+Fig. 2: Overview of TF-MossFormer. (a) Model flowchart with STFT/ISTFT, Conv2D/Deconv2D, gLN, and B stacked TF-MossFormer blocks for interleaved time–frequency modeling. (b) Configuration of the frequency modeling block (the temporal block adopts the same structure). (c) Three variants (V1–V3) of the gated local–global MHSA module. ⊕: element-wise addition, ⊗: element-wise multiplication. 
+
+# 2. The TF-MossFormer Model 
+
+Given a speech mixture x = PCi=1 si, our goal is to estimate the C individual sources si ∈ R1×L, i = 1 , 2, . . . , C using a deep learning model. The proposed TF-MossFormer adopts the dual-path time–frequency separation paradigm [12], preserv-ing the encoder–separator–decoder architecture. Unlike time-domain approaches that operate on two-dimensional chunks and predict time-domain masks, TF-MossFormer operates in the short-time Fourier transform (STFT) domain and directly pre-dicts both the real and imaginary components of the complex spectra. 
+
+2.1. Overview of TF-MossFormer Architecture 
+
+Fig. 2 illustrates our TF-MossFormer architecture. The input mixture waveform x is first transformed into the time–frequency domain using STFT, producing real and imag-inary components XReal ∈ RT ×F and XImag. ∈ RT ×F , where 
+
+T and F are the number of frames and frequency bins. The real and imaginary parts are concatenated as X ∈ R2×T ×F
+
+and passed through a 2D convolutional (Conv2D) encoder fol-lowed by global Layer Normalization (gLN) to project the fea-tures into a feature representative space. The core separator consists of B stacked TF-MossFormer blocks, each compris-ing two sub-modules: the frequency module and the temporal module. Both modules share the same architecture but per-form on alternative sequence dimensions. The frequency mod-ule models spectral dependencies across frequency bins along the frequency path, while the temporal module models tempo-ral dependencies across time frames along the time path. By alternately modeling frequency and time dependencies, the net-work progressively refines the representation while efficiently covering the entire time–frequency context. The decoder uses a transposed convolution (Deconv2D) layer to reconstruct the es-timated real and imaginary spectra, which are then transformed back to the time domain using the inverse STFT (iSTFT) to ob-tain the separated waveform signals. 
+
+2.2. The Encoder and Decoder 
+
+Our TF-MossFormer adopts the encoder and decoder design from TF-GridNet. The encoder consists of a 3 × 3 2D con-volution (Conv2D) layer with D output channels, followed by global layer normalization (gLN). This step projects each time–frequency (T–F) unit into a D-dimensional latent embed-ding, resulting in a tensor of shape D × T × F . The decoder mirrors the encoder by applying a 3 × 3 2D transposed convolu-tion (Deconv2D) with 2C output channels, representing the pre-dicted real and imaginary components for all C target sources. 
+
+2.3. The TF-MossFormer Separator 
+
+The encoded representation is passed to the TF-MossFormer separator, which consists of B stacked TF-MossFormer blocks. Within each block, the spectro-temporal modeling is performed to progressively refine the local–global dependencies for the latent TF embeddings. As depicted in Fig. 2(a), each TF-MossFormer block contains two sequential modeling modules: a frequency modeling module and a temporal modeling mod-ule, both sharing an identical architecture. The module archi-tecture is shown in Fig. 1(b), where the input tensor is first permuted to align the modeling dimension (frequency or time) with the sequence axis. The permuted input is passed through a convolutional SwiGLU feed-forward network (Conv-SwiGLU) [14], followed by a residual connection to preserve the origi-nal representation. Next, Root Mean Square Group Normaliza-tion (RMSGroupNorm) [14] is applied to stabilize training and improve convergence. The normalized features are then pro-cessed by the core Local & Global Multi-Head Self-Attention (MHSA) module, which integrates content-aware local atten-tion (via sliding windows) and global attention to jointly model fine-grained dependencies and long-range context. The output is again passed through a Conv-SwiGLU module and added back via residual connection before being permuted back to its original shape. This design ensures balanced local and global representation learning while maintaining efficiency through Concat Linear    
+
+> Linear Linear Linear
+> Scaled Dot-Product Attention h
+
+Fig. 3: An overview of the local attention module, which per-forms multi-head self-attention using sliding windows. Each attention head operates on a fixed-size window of the input se-quence. 
+
+residual pathways and normalization. 
+
+2.3.1. Convolution Gated Local and Global Attention 
+
+We apply both local and global attention with convolution gat-ing in the TF-MossFormer separator to capture complementary short- and long-range dependencies in speech spectrograms. Our global attention is a standard Multi-Head Self-Attention (MHSA) mechanism [19], every frame in a sequence attends to every other frame as depicted in Fig. 1(a). For the temporal sequence X ∈ RT ×D T, the query ( Qi), key ( Ki), and value (Vi) matrices are the i-th head projections of size T ×dh, where 
+
+dh = D/h is the hidden dimension of each head. Our global MHSA computes the attention of each head as: 
+
+head global ,i = softmax 
+
+ QiK⊤
+
+> i
+
+√dh
+
+
+
+Vi. (1) All heads are concatenated to form the full attention matrix: MHSA global (X) = Concat  head global ,1, . . . , head global ,h 
+
+WO ,
+
+(2) where WO is the output projection matrix. This operation has complexity O(T 2D) due to the dense QK ⊤ computation. Complementing the global attention, we present local at-tention to focus on short-range time–frequency patterns to pre-serve fine-grained continuity. As depicted in Fig. 1(b), it cap-tures context at varying distances from each frame. Our lo-cal attention adopts the sliding-window multi-head attention as depicted in Fig. 3. The local attention restricts each frame 
+
+t to attend only to frames within a local window N (t) =
+
+{t − w−12 , . . . , t, . . . , t + w−12 }, where w is the window size. The attention for head i becomes: 
+
+head local ,i (t) = softmax 
+
+ Qi(t)Ki(N (t)) ⊤
+
+√dh
+
+
+
+Vi(N (t)) ,
+
+(3) where Qi(t) ∈ R1×dh is the query for frame t, Ki(N (t)) ∈
+
+Rw×dh are the keys within the window, and Vi(N (t)) are the corresponding values. This reduces complexity to O(T wD ),which scales linearly with T for a fixed w.We further augment local and global attention with convo-lutional gates as shown in Fig. 2(c). The gate consists of a Conv1D layer followed by Swish activation. Since attention or-dering affects performance, we implemented three block vari-ants (V1-V3) and ran an ablation study to identify the most ef-fective arrangement for our model. Table 1: Hyperparameter notations and model configurations for TF-MambaFormer (S), (M), and (L).                                      
+
+> Symbol Description SML
+> DEmbedding dimension of each TF bin 96 128 128
+> BNumber of TF-MossFormer blocks 469
+> HHidden dimension in Conv-SwiGLU 256 384 384
+> OOutput dimension in Conv-Gate 96 128 128
+> KKernel size in Conv1D and Deconv1D 444
+> SStride in Conv1D and Deconv1D 111
+> hNumber of heads in self-attention 444
+> wFSliding-window length for frequency path 777
+> wTSliding-window length for temporal path 31 31 31
+> −Number of parameters [M] 6.0 16.9 25.4
+
+2.3.2. The Convolution Modules 
+
+Local attention captures nearby context but needs many layers for broader integration. To improve global feature mixing ef-ficiently, we add Conv-SwiGLU blocks (Fig. 2(b)), combin-ing attention’s adaptive weighting with convolutional feature extraction. Each block applies RMSGroupNorm, two parallel 1D convolutions, a Swish-gated element-wise modulation, and a final 1D deconvolution to restore embedding size. Follow-ing [14], we place Conv-SwiGLU before and after the local and global attention layers. 
+
+# 3. Experiments 
+
+3.1. Dataset & Experimental Setup 
+
+We validated our proposed TF-MossFormer on the widely-used WSJ0-2mix dataset, which benchmarks monaural speech sepa-ration. The dataset is comprised of three distinct sets: a training set of 20,000 ( 30 hours), a validation set of 5,000 ( 10 hours), and a test set of 3,000 ( 5 hours) two-speaker mixtures. The clean utterances are sourced from the WSJ0 corpus. In each mixture, the two utterances are randomly selected from WSJ0 and fully overlapped, with their relative energy levels randomly chosen from the signal-to-noise ratios (SNR) between -5 dB and 5 dB. The test set is generated in the same way. Notably, speak-ers in the test set are distinct from those in the training and vali-dation sets, ensuring a non-blind evaluation. All audio clips are sampled at 8 kHz. All experiments were conducted using the ESPnet pipeline with SI-SDR loss [20]. Table 1 summarizes the key hyperpa-rameters and default configurations for our three model sizes. For data preparation, we used a 16 ms STFT window with an 8 ms hop size and segmented all input audio into 4 s clips. Each mixture was normalized by its standard deviation, and the batch size was set to 4. For optimization, we employed the AdamW optimizer [21] with a weight decay of 1 × 10 −2. The learning rate was linearly warmed up to 1 × 10 −3 during the first 4,000 steps, followed by a scheduler that halved the learning rate if the validation loss failed to improve for three consecutive epochs. Training was conducted for up to 150 epochs, with early stop-ping applied after 10 stagnant epochs. To ensure stability, the 
+
+L2 norm of the gradient was clipped to 5. 
+
+3.2. Ablation Study 
+
+As shown in Table 2, we evaluated several sliding-window con-figurations for TF-MossFormer (S) on WSJ0-2Mix, keeping the window length identical across all attention heads for ease of tuning. The setting of wT = 31 and wF = 7 achieves the best Table 2: Ablation study of TF-MossFormer performance with different sliding-window lengths.                            
+
+> Model (S) Sliding-Window( wT, w F) SI-SDRi SDRi MACS [G/s] TF-MossFormer (31, 7) 22.61 22.77 99.5 TF-MossFormer (15, 7) 22.51 22.68 99.4 TF-MossFormer (65, 7) 22.56 22.73 99.7 TF-MossFormer (31, 3) 22.53 22.69 99.5 TF-MossFormer (31, 15) 22.47 22.66 99.5 TF-MossFormer Full Length 22.38 22.58 100.3
+
+Table 3: Ablation study of TF-MossFormer performance with different configurations of local-global attention.                  
+
+> Model (S) Sliding-Window(T-F) SI-SDRi SDRi MACS [G/s] TF-MossFormer(V1) (31, 7) 22.61 22.77 99.5 TF-MossFormer(V2) (31, 7) 22.45 22.60 99.5 TF-MossFormer(V3) (31, 7) 22.49 22.63 99.5 TF-MossFormer(V4) (31, 7) 22.51 22.62 99.3
+
+result, with 22.61 dB SI-SDRi (22.77 dB SDRi) while main-taining manageable computation at 99.5 G MACS/s, slightly outperforming both the narrower 15-frame and the wider 65-frame time windows. A frequency span of 7 bands is also preferable to smaller (3 bands) or larger (15 bands) choices. Us-ing full-length windows yields the weakest performance (22.38 dB). These results indicate that TF-MossFormer favors moder-ate time–frequency window sizes that balance local detail and efficiency. Table 3 evaluates the local–global attention lay-outs and convolution gating for TF-MossFormer (S) on WSJ0-2Mix. All models used the (31,7) sliding window. The cas-cade ordering—local attention followed by global attention (V1)—achieves the best results (22.61 dB SI-SDRi, 22.77 dB SDRi). Reversing the order (V2) reduces SI-SDRi to 22.45 dB, while the parallel local–global design (V3) performs slightly better than V2 (22.49 dB). Removing convolutional gating from V1 (V4) also degrades performance to 22.51 dB. These findings suggest that applying local attention before global aggregation helps preserve fine-grained spectral continuity, and that convo-lutional gating yields measurable gains in feature selection. 
+
+3.3. Experimental Results 
+
+Our experimental results on WSJ0-2Mix, presented in Tables 4 and 5, comprehensively evaluate TF-MossFormer (configura-tion V1) across three model scales. The small-scale variant TF-MossFormer(S), with just 6.0M parameters and 99.5 G MACS/s computational cost, achieves 22.61 dB SI-SDRi (22.77 dB SDRi), demonstrating superior separation quality compared to other compact models. It notably outperforms both the standard TF-Locoformer(S) and our reproduced TF-Locoformer(S*) with increased dimensionality ( D =112), which achieves 22.2 dB SI-SDRi at higher computational cost. The comparison with SPMamba is particularly revealing - TF-MossFormer(S) deliv-ers better performance (by 0.1 dB SI-SDRi) while requiring less than half the computations, highlighting our architecture’s efficiency advantages. At medium scale, TF-MossFormer(M) (16.9M parameters, 283.4 G MACS/s) reaches 24.0 dB SI-SDRi (24.20 dB SDRi), significantly surpassing both TF-GridNet and TF-Locoformer(M) in performance while maintaining substan-tially lower computational requirements than TF-GridNet. This demonstrates excellent scaling properties of our architecture. The large-scale TF-MossFormer(L) (25.4M parameters, 425.0 G MACS/s) establishes new state-of-the-art results with 24.4 dB Table 4: Performance comparison of TF-MossFormer (S) with state-of-the-art models of similar scale on the WSJ0-2Mix dataset.                                                  
+
+> Model (S) Param.[M] SI-SDRi SDRi MACS [G/s] Conv-TasNet [5] 5.6 15.3 15.6 10.23 A-FRCNN [22] 6.1 18.3 18.6 125.3 DualPathRNN [6] 2.6 18.8 19.0 85.3 VSUNOS [23] 7.5 20.1 20.4 -DPTNet [4] 2.6 20.2 20.6 102.5 S4M [24] 3.6 20.5 20.7 38.7 SepMamba+DM [25] 7.2 21.2 21.4 -DPMamba [26] 8.1 21.4 21.6 -TF-Locoformer(S) [14] 5.0 22.0 22.1 85.9 TF-Locoformer(S*) [14] 6.0 22.2 22.3 100.3 SPMamba [13] 6.1 22.5 22.7 238.6
+> TF-MossFormer(S) 6.0 22.6 22.8 99.5
+
+Table 5: Performance comparison of TF-MossFormer (M) and (L) with state-of-the-art models of similar scale on the WSJ0-2Mix dataset.                                                       
+
+> Model (M&L) Param.[M] SI-SDRi SDRi MACS [G/s] TF-GridNet [12] 14.4 23.5 23.6 445.5 TF-Locoformer (M) [14] 15.0 23.6 23.8 251.1
+> TF-MossFormer(M) 16.9 24.0 24.2 283.4 Wavesplit [27] 29.0 22.2 22.3 -SepFormer+DM [7] 25.7 22.3 22.4 257.9 SepMamba+DM [25] 22.0 22.7 22.9 -MossFormer(L)+DM [8] 42.1 22.8 -256.7 DPMamba [26] 59.8 23.4 23.6 -QPDN [28] 200 23.6 --SepTDA 2[29] 21.2 24.0 23.9 -MossFormer2(L)+DM [9] 55.7 24.1 -336.9 TF-Locoformer(L) [14] 22.6 24.2 24.3 377.1
+> TF-MossFormer(L) 25.4 24.4 24.5 425.0
+
+SI-SDRi (24.5 dB SDRi), outperforming all frequency-domain competitors including TF-Locoformer(L) and SepTDA 2, as well as challenging time-domain baselines like MossFormer and MossFormer2 with dynamic mixing. These consistent gains across all model sizes, from compact to large configurations, ro-bustly validate the effectiveness of our local-global attention de-sign in achieving superior separation quality while maintaining computational efficiency. The results particularly highlight our architecture’s advantage in modeling both fine-grained spectro-temporal details and long-range dependencies simultaneously. 
+
+# 4. Conclusion 
+
+We presented TF-MossFormer, a hybrid time–frequency trans-former that combines adaptive local attention with global at-tention for monaural speech separation. Our main contri-butions are: (1) content-aware sliding-window attention for adaptive spectro-temporal modeling; (2) an optimized lo-cal–global attention configuration; and (3) convolutional gat-ing to improve feature selection and information flow. Ex-tensive experiments on WSJ0-2Mix show that TF-MossFormer delivers state-of-the-art separation performance across multi-ple model scales while maintaining favorable parameter and computation efficiency compared to existing time-domain and frequency-domain baselines. 5. References 
+
+[1] H. Erdogan, J. R. Hershey, S. Watanabe, and J. L. Roux, “Phase sensitive and recognition-boosted speech separation using deep recurrent neural networks,” in Proc. ICASSP , 2015, p. 708–712. [2] Y. Luo and N. Mesgarani, “TasNet: time-domain audio separation network for real-time, single-channel speech separation,” in Proc. of ICASSP , 2018. [3] ——, “Real-time single-channel dereverberation and separation with time-domain audio separation network,” in Proc. Inter-speech , 2018. [4] J. Chen, Q. Mao, and D. Liu, “Dual-Path Transformer Network: Direct context-aware modeling for end-to-end monaural speech separation,” in Proc. of Interspeech , 2020. [5] Y. Luo and N. Mesgarani, “Conv-TasNet: Surpassing ideal time–frequency magnitude masking for speech separation,” 
+
+IEEE/ACM transactions on audio, speech, and language process-ing , vol. 27, no. 8, p. 1256–1266, 2019. [6] Y. Luo, Z. Chen, and T. Yoshioka, “Dual-Path RNN: Efficient long sequence modeling for time-domain single-channel speech sepa-ration,” in Proc. of ICASSP , 2020. [7] C. Subakan, M. Ravanelli, S. Cornell, M. Bronzi, and J. Zhong, “Attention is all you need in speech separation,” in Proc. of ICASSP , 2021. [8] S. Zhao and B. Ma, “MossFormer: Pushing the performance limit of monaural speech separation using gated single-head trans-former with convolution-augmented joint self-attentions,” in Proc. of ICASSP , 2023. [9] S. Zhao, Y. Ma, C. Ni, C. Zhang, H. Wang, T. H. Nguyen, K. Zhou, J. Yip, D. Ng, and B. Ma, “MossFormer2: Combin-ing transformer and rnn-free recurrent network for enhanced time-domain monaural speech separation,” in Proc. of ICASSP , 2024. [10] S. Chen, Y. Wu, Z. Chen, J. Wu, J. Li, T. Yoshioka, C. Wang, S. Liu, and M. Zhou, “Continuous speech separation with con-former,” in Proc. of ICASSP , 2021, pp. 5749–5753. [11] L. Yang, W. Liu, and W. Wang, “TFPSNet: Time-frequency do-main path scanning network for speech separation,” in Proc. of ICASSP , 2022. [12] Z.-Q. Wang, S. Cornell, S. Choi, Y. Lee, B.-Y. Kim, and S. Watan-abe, “TF-GridNet: Making time-frequency domain models great again for monaural speaker separation,” arXiv:2209.03952 , 2023. [13] K. Li, G. Chen, R. Yang, and X. Hu, “SPMamba: State-space model is all you need in speech separation,” arXiv:2404.02063 ,2024. [14] K. Saijo, G. Wichern, F. G. Germain, Z. Pan, and J. L. Roux, “TF-Locoformer: Transformer with local modeling by convolution for speech separation and enhancement,” in 2024 18th International Workshop on Acoustic Signal Enhancement (IWAENC) , 2024. [15] I. Beltagy, M. E. Peters, and A. Cohan, “Longformer: The long-document transformer,” arXiv:2004.05150 , 2020. [16] M. Zaheer, G. Guruganesh, K. A. Dubey, J. Ainslie, C. Alberti, S. Ontanon, P. Pham, A. Ravula, Q. Wang, L. Yang et al. , “Big bird: Transformers for longer sequences,” Advances in Neural In-formation Processing Systems , vol. 33, 2020. [17] N. Ebert, L. Reichardt, D. Stricker, and O. Wasenm¨ uller, “Light-weight vision transformer with parallel local and global self-attention,” arXiv:2307.09120 , 2023. [18] L. Zhu, X. Wang, Z. Ke, W. Zhang, and R. Lau, “Biformer: Vision transformer with bi-level routing attention,” Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion (CVPR) , 2023. [19] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, L. Kaiser, and I. Polosukhin, “Attention is all you need,” in Proc. NIPS , 2017. [20] C. Li, J. Shi, W. Zhang, A. S. Subramanian, X. Chang et al. ,“ESPnet-SE: End-to-end speech enhancement and separation toolkit designed for asr integration,” in Proc. SLT , 2021. [21] I. Loshchilov and F. Hutter, “Decoupled weight decay regulariza-tion,” in Proc. ICLR , 2018. [22] X. Hu, K. Li, W. Zhang, Y. Luo, J.-M. Lemercier, and T. Gerk-mann, “Speech separation using an asynchronous fully recurrent convolutional neural network,” in Proc. of NeurIPS , 2021. [23] E. Nachmani, Y. Adi, and L. Wolf, “Voice separation with an un-known number of multiple speakers,” in Proc. of ICML , 2020. [24] C. Chen, C.-H. H. Yang, K. Li, Y. Hu, P.-J. Ku, and E. S. Chng, “A neural state-space model approach to efficient speech separation,” in Proc. of Interspeech , 2023. [25] T. H. Avenstrup, B. Elek, I. L. M´ adi, A. B. Schin, M. Mørup, B. S. Jensen, and K. F. Olsen, “SepMamba: State-space models for speaker separation using mamba,” in Proc. of ICASSP , 2024. [26] X. Jiang, C. Han, and N. Mesgarani, “Dual-path Mamba: Short and long-term bidirectional selective structured state space mod-els for speech separation,” in Proc. of ICASSP , 2025. [27] N. Zeghidour and D. Grangier, “Wavesplit: End-to-end speech separation by speaker clustering,” IEEE/ACM Trans. Audio. Speech, Lang. Process. , vol. 29, 2021. [28] J. Rixen and M. Renz, “QDPN - Quasi-dual-path Network for single-channel Speech Separation,” in Proc. Interspeech 2022 ,2022, pp. 5353–5357. [29] Y. Lee, S. Choi, B.-Y. Kim, Z.-Q. Wang, and S. Watanabe, “Boosting unknown-number speaker separation with transformer decoder-based attractor,” in Proc. of ICASSP , 2024.

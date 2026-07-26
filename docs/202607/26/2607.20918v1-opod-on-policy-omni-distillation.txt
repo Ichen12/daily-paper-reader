@@ -1,0 +1,413 @@
+Title: OPOD: On-Policy Omni Distillation
+
+URL Source: https://arxiv.org/pdf/2607.20918v1
+
+Published Time: Fri, 24 Jul 2026 00:29:09 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# OPOD: On-Policy Omni Distillation 
+
+## Tong Zhao 1∗, Yuyang Hu 1, Reed Li 2, Yu Lu 2, Haibo Shi 2,Yutao Zhu 1, Zhicheng Dou 1†
+
+> 1
+
+Renmin University of China 
+
+> 2
+
+Tencent zhaotong7@ruc.edu.cn, dou@ruc.edu.cn 
+
+Abstract 
+
+Omni-modal models can handle text, images, and audio in one system, but improving all of these abilities together re-mains difficult. Training a single model on pooled multimodal data often fails to match models specialized for individual modalities. On-policy distillation (OPD) offers a way to com-bine such specialists: the student generates a response, and a teacher evaluates that same response, so the student learns directly from behaviors it actually produces. Yet using sev-eral teachers can introduce competing guidance and improve one modality at the expense of another. We present On-Policy Omni Distillation ( OPOD ), which routes each student response to the matching text, image, or audio teacher. OPOD keeps teacher guidance only on tokens where the teacher assigns a higher probability than the student, adjusts the influence of each modality teacher independently during training, and asks the routed teacher to assess both the final answer and whether the reasoning supports the correct answer. Across twelve benchmarks and three backbone sizes, OPOD achieves the best average score at every scale, reaching 70.8, 51.7, and 46.2 and exceeding the strongest comparator by 2.1, 1.8, and 1.7 points. On the 30B model, it outperforms both the base model and a counterpart post-trained jointly on pooled multimodal data on all twelve benchmarks, and ranks first or second on eleven even when the individual specialists are in-cluded. The specialists are discarded after training, leaving one deployable omni-modal model. These results show that coordinating modality-specific teachers is an effective way to improve a shared model while maintaining cross-modal bal-ance. 
+
+## Introduction 
+
+The rapid progress of multimodal pre-training and instruc-tion tuning has enabled foundation models to process lan-guage, images, and audio through a unified interface (Li et al. 2023; Dai et al. 2023; Chu et al. 2024; Xu et al. 2025a,b). Yet sharing one backbone does not guarantee that improvements learned from different modalities will coexist. Text, image, and audio tasks impose different reasoning de-mands (Wang et al. 2024; Yue et al. 2024; Lu et al. 2024; Sak-shi et al. 2025), and reinforcement-learning post-training can strengthen these capabilities while also introducing cross-modal trade-offs (Zhang et al. 2025). This motivates our 
+
+> ∗
+
+Work done during an internship at Tencent. 
+
+> †
+
+Corresponding author. 
+
+central question: How can we integrate modality-specific ex-pertise into one omni-modal policy without degrading its other capabilities? 
+
+The simplest reinforcement-learning strategy is to post-train one model on the union of text, image, and audio data. We examine how well this strategy preserves modality-specific gains in a controlled diagnostic using GRPO as the common policy-optimization algorithm (Shao et al. 2024). Starting from the same base model, we train three special-ists separately on their corresponding modality data and a fourth model on the pooled data. The three specialists, which subsequently serve as our teachers, develop complementary strengths, whereas the pooled model does not consistently match the corresponding specialist, as shown in Figure 1(a). This motivates us to consolidate the specialists rather than rely on pooled training alone. Knowledge distillation offers a direct way to transfer the behavior of several teachers into a single student without re-taining an ensemble at inference (Hinton, Vinyals, and Dean 2015; You et al. 2017; Wan et al. 2024). Conventional se-quence distillation often relies on fixed or teacher-generated responses that may differ from the responses produced by the student. On-policy distillation (OPD) instead lets the stu-dent generate a response and asks the teacher to evaluate that same response (Gu et al. 2024; Agarwal et al. 2024). Among possible consolidation strategies, this makes OPD a natural fit for our setting: each student response can be routed by its modality to the corresponding specialist, while deployment still requires only the shared student. OPD alone does not determine how heterogeneous teach-ers should share one backbone. For the same specialists in Figure 1(a), Figure 1(b) reveals frequent pairwise conflicts among their parameter-displacement directions relative to the common base, indicating that their preferred changes need not align. Recent multi-teacher OPD methods route domain experts or arbitrate between heterogeneous teach-ers (Ma et al. 2026; Yin et al. 2026), but primarily study language-domain teachers or text and vision-language teach-ers. Coordinating text, image, and audio specialists in a native omni-modal backbone therefore remains largely unexplored. We address this problem with On-Policy Omni Distillation (OPOD ), a modality-decoupled framework for coordinating all three teachers in one student. As previewed in Figure 1(c), native OPD and ExOPD (Yang et al. 2026) improve selected arXiv:2607.20918v1 [cs.AI] 23 Jul 2026 (b) Cross-Modal Update Con fl icts (c) Broad Benchmark Gains (a) Complementary Specialist Teachers Figure 1: Motivating observations for OPOD . (a) With GRPO held fixed, text, image, and audio specialists exhibit complementary strengths, whereas a model trained on pooled data does not consistently match them. These specialists subsequently serve as teachers. (b) The same teachers show frequent pairwise conflicts in their parameter-displacement directions relative to the common base model. (c) OPOD produces broader benchmark gains than the base model, native OPD, and ExOPD. capabilities but retain uneven benchmark profiles, whereas 
+
+OPOD produces broad gains across modalities. 
+
+OPOD coordinates teacher guidance at the token, modality, and trajectory levels. At the token level, one-sided guidance is active only when the routed teacher assigns a higher like-lihood than the student, retaining useful correction without pulling the student back after it has caught up. At the modal-ity level, an adaptive controller learns a separate guidance strength for text, image, and audio instead of imposing one shared schedule. At the trajectory level, the routed teacher also serves as a verifier that assesses both the final answer and whether the student’s reasoning makes the correct answer more likely (Lightman et al. 2024; Setlur et al. 2025). This provides feedback beyond final-answer correctness without human step annotations or an auxiliary search tree. Together, these components coordinate heterogeneous teacher signals while consolidating complementary modality expertise into a single student. Our main contributions are threefold: 
+
+• We formulate OPOD , an on-policy omni distillation framework that consolidates text, image, and audio teach-ers through modality-decoupled multi-teacher guidance. 
+
+• We develop one-sided token guidance, modality-specific dual control, and teacher-derived reasoning verification to address teacher ceilings, cross-modal interference, and coarse outcome rewards. 
+
+• Extensive experiments on twelve text, vision, audio, and omni-modal benchmarks show that OPOD achieves the highest average on all three evaluated backbones, exceed-ing the strongest comparator by 2.1, 1.8, and 1.7 points at 30B, 7B, and 3B. 
+
+## Related Work 
+
+On-policy distillation. Knowledge distillation transfers the behavior of a strong teacher to a student by matching softened predictions or learning from teacher-generated se-quences (Hinton, Vinyals, and Dean 2015; Kim and Rush 2016; Sanh et al. 2019). In autoregressive language models, such off-policy distillation suffers from a distribution mis-match because the student is trained on trajectories that may differ from its own generations. On-policy distillation ad-dresses this issue by sampling trajectories from the student and computing teacher feedback on these trajectories (Agar-wal et al. 2024; Gu et al. 2024). Recent work has expanded OPD in several directions, including reward extrapolation for learning beyond the teacher (Yang et al. 2026), black-box OPD without teacher logits (Ye et al. 2025; Wang et al. 2026), analyses of OPD training dynamics (Li et al. 2026d), and data balancing on both the student side and the teacher side (Hou et al. 2026). These methods strengthen OPD as a post-training recipe, while OPOD extends it to coordinated modality specialists that constrain one shared omni-modal backbone. 
+
+Omni-modal post-training. Traditional multimodal train-ing builds generalist models through paired pretraining and supervised instruction tuning, where an LLM is aligned with visual or audio encoders using large-scale curated data (Li et al. 2023; Liu et al. 2023; Dai et al. 2023; Bai et al. 2023; Chu et al. 2024). Recent omni-modal models further extend this recipe to unified text, image, audio, and video inter-faces (Xu et al. 2025a; Li et al. 2026b). The field is now shift-ing from supervised alignment to post-training methods that improve reasoning and task reliability, including multimodal RL pre-alignment, on-policy distillation for video grounding, and offline preference optimization for omni-modal mod-els (Wang et al. 2026; Li et al. 2026a,b; Zhang et al. 2025). These works show the importance of post-training for mul-timodal agents, while OPOD targets joint text, image, and audio consolidation through modality-decoupled on-policy learning. Text Audio Image               
+
+> ctext
+> εtext
+> εaudio
+> caudio
+> cimage
+> εimage
+> βm← clip[ βm+ η( c̄ m−εm)]
+> βtext ↑βaudio ↓βimage →
+
+Ltc = 1/|B| ∑i 
+
+> ∈B
+
+βmᵢ ci   
+
+> Q: Solve the problem step by step. Problem: Let a > 0, and let P(x) ...
+> Q: What web browser is the person using?
+> Q: Are there piano and banjo sound?
+> Omni-Modal Student Model
+> A: Let $Q(x)=P(x)-a$. Then $Q(1)=Q(3)=Q(5)=Q(7)=0$, ... A: The screenshot displays a blue "e" logo in the top-left ... A: The clip contains solo vocals with light percussion and ...
+> Query Student Rollout
+> GRPO GRPO GRPO Routing Of fl ine Trained Teachers One-Sided Teacher Guidance Adaptive Modality Control Veri fi cation Reward
+
+ci,t = ReLU( r opd i,t )                      
+
+> 13…Ti
+> Token position t
+> ropd i,t > 0
+> Teacher ahead
+> ropd i,t ≤ 0
+> Teacher not ahead
+> ci,t
+> Retained signal
+> Routed Teacher Verification
+> Answer Confidence
+> Correctness-gated
+> Ãi= 1[ ai=ai
+> ⋆]· clip( Ai, −C, 0)
+> Reasoning Gain
+> Ungated by correctness
+> xiBi
+> xi, z i
+> B̃ i= clip( Bi, −C, C)
+> ri
+> proc =wAÃi+wBB̃ i
+> ri=ri
+> task +ri
+> proc
+> Update
+
+Joint Student Update    
+
+> R̂ iβmᵢ ciLref
+
+Lrl Ltc αL ref      
+
+> L=Lrl +Ltc + α Lref
+
+OPOD Training Signals Figure 2: Overview of OPOD . Student rollouts are routed by input modality to the corresponding teacher trained offline with GRPO. OPOD combines one-sided token guidance, modality-specific constraint control, and teacher-based verification through answer confidence and reasoning gain. The resulting policy loss, teacher constraint, and reference regularizer jointly update the shared student. 
+
+## On-Policy Omni Distillation 
+
+Preliminaries 
+
+We consider a student policy πθ with a shared omni-modal backbone. The training data consist of prompts from different modalities, denoted as (xi, m i), where mi ∈{text , audio , image }. For each modality m, we assume a specialized teacher policy πmT . At each training iteration, the student samples a response yi = ( yi, 1, . . . , y i,T i ) of length 
+
+Ti from πθ (· | xi), and the teacher selected by mi evaluates the same student-generated trajectory. On-policy distillation optimizes the student on its own sampled responses. Given a prefix (xi, y i,<t ), the teacher provides token-level supervision by comparing the log prob-ability assigned by the teacher and the student: 
+
+ropd  
+
+> i,t
+
+= log πmi 
+
+> T
+
+(yi,t | xi, y i,<t ) − log πθ (yi,t | xi, y i,<t ).
+
+(1) This log-ratio corresponds to the dense token-level reward induced by reverse KL on student rollouts. 
+
+Overview 
+
+Figure 2 summarizes the training pipeline of OPOD . Given a query xi from modality mi, the omni-modal student samples a rollout yi. The known modality label mi routes this rollout to the corresponding offline teacher πmi 
+
+> T
+
+. Each teacher is obtained by applying GRPO to its modality-specific data and evaluates the student-generated trajectory rather than producing a target response. 
+
+OPOD converts this evaluation into three complementary components. One-Sided Teacher Guidance retains only pos-itive token-level teacher–student margins, removing the con-straint where the student already matches or exceeds the routed teacher. Adaptive Modality Control maintains a sepa-rate constraint budget and dual weight for each modality, pro-ducing the modality-controlled teacher loss Ltc . Verification Reward reuses the routed teacher as a trajectory verifier and combines correctness-gated answer confidence with ungated reasoning gain. The verification reward is added to the task reward to form the rollout advantage used by Lrl . Finally, Lrl ,
+
+Ltc , and the reference regularizer αLref are jointly optimized to update the shared student, while the offline teachers re-main fixed. The teachers are discarded after post-training, so inference retains a single student without teacher-ensemble latency or memory. The following subsections detail these components. 
+
+One-Sided Teacher Guidance 
+
+For each sample (xi, m i), the modality label selects the routed teacher πmi 
+
+> T
+
+. We use the OPD reward ropd  
+
+> i,t
+
+defined above as a teacher-student margin on the sampled token. A positive margin means that the routed teacher assigns a higher probability than the student, while a negative margin means that the student already assigns a higher probability. Instead of treating both sides symmetrically, OPOD keeps only the positive part: 
+
+ci,t = ReLU 
+
+
+
+ropd 
+
+> i,t
+
+
+
+. (2) Thus, teacher guidance is applied only where the teacher is ahead of the student. Once the student matches or exceeds the teacher on a token, the constraint becomes zero and no longer pulls the student back. We summarize the remaining teacher guidance on a rollout by 
+
+ci = 1
+
+TiTiX
+
+> t=1
+
+ci,t .
+
+This one-sided form preserves guidance on weak tokens while leaving room for the student to improve beyond satu-rated teachers. 
+
+Adaptive Modality Control 
+
+After obtaining the one-sided constraint, OPOD controls its strength at the modality level. This is important because text, audio, and image teachers can progress at different speeds during on-policy training. We therefore maintain a separate trust-region weight βm for each modality. For a mini-batch B, let Bm = {i ∈ B : mi = m} be the subset of samples from modality m. For each modality represented in the mini-batch, we compute its average routed constraint as 
+
+¯cm = 1
+
+|B m|
+
+X
+
+> i∈B m
+
+ci.
+
+Each modality has a target constraint budget ϵm > 0. We estimate this budget once from the mean warm-up constraint for that modality, lower-bounded by a shared floor ϵmin , and then keep it fixed. The trust-region weight is updated as 
+
+βm ← clip ( βm + η(¯ cm − ϵm), β min , β max ) , (3) where η > 0 is the dual step size and 0 ≤ βmin < β max 
+
+are the lower and upper bounds on the dual weight. This update is applied only when |B m| > 0. When the student is far from a modality teacher, ¯cm exceeds the target budget and the corresponding weight increases; when the constraint is already small, the weight decreases. The current weights define the routed teacher constraint 
+
+Ltc = 1
+
+|B| 
+
+X
+
+> i∈B
+
+βmi ci.
+
+This per-modality control prevents one teacher from domi-nating the shared backbone update and allows each modality to keep its own pace during distillation. 
+
+Verification Reward 
+
+Beyond token-level guidance, the routed teacher can also assess the quality of a complete rollout. We therefore reuse the same modality teacher as a verifier and add a reward that evaluates both the final answer and the reasoning trace produced by the student. Let ai be the final answer extracted from yi, a⋆i be the gold answer, and Si denote the token positions of the final answer. We first measure whether the routed teacher supports the student’s final answer: 
+
+Ai = 1
+
+|Si|
+
+X
+
+> t∈Si
+
+log πmi 
+
+> T
+
+(yi,t | xi, y i,<t ).
+
+To avoid rewarding confident but wrong answers, this term is gated by final correctness: 
+
+˜Ai = 1[ai = a⋆i ] · clip( Ai, −C, 0) .
+
+Here C > 0 is the clipping threshold shared with the reasoning-gain term below. We further measure whether the student’s reasoning trace helps the teacher infer the correct answer. Let zi be the rea-soning trace before the final answer. The reasoning gain is 
+
+Bi = log πmi 
+
+> T
+
+(a⋆i | xi, z i) − log πmi 
+
+> T
+
+(a⋆i | xi).
+
+Unlike the answer-confidence term, this gain is not gated by final correctness. Thus, difficult samples can still provide learning signal when the reasoning trace moves the teacher toward the correct answer, even if the final answer is wrong. We clip it as 
+
+˜Bi = clip( Bi, −C, C ).
+
+The process reward is then 
+
+rproc  
+
+> i
+
+= wA ˜Ai + wB ˜Bi, (4) where wA and wB control the relative strength of answer confidence and reasoning gain. 
+
+Training Objective 
+
+For each rollout, we combine the task reward with the veri-fication reward: 
+
+ri = rtask  
+
+> i
+
++ rproc  
+
+> i
+
+.
+
+For each rollout i, let Gi ⊆ B contain the rollouts sampled from the same prompt. Let μi and σi denote the mean and standard deviation of {rj : j ∈ G i}, respectively. We com-pute the rollout-level advantage as 
+
+ˆRi = ri − μi
+
+σi + δ ,
+
+where δ > 0 is a numerical stabilizer. We then optimize the student with an on-policy objective 
+
+Lrl = − 1
+
+|B| 
+
+X
+
+> i∈B
+
+ˆRi
+
+1
+
+TiTiX
+
+> t=1
+
+log πθ (yi,t | xi, y i,<t ).
+
+Let hi,t = ( xi, y i,<t ) and let πref be the fixed policy before on-policy training. We use the rollout-averaged reference KL 
+
+Lref = 1
+
+|B| 
+
+X
+
+> i∈B
+
+1
+
+TiTiX
+
+> t=1
+
+DKL (πθ (· | hi,t ) ∥ πref (· | hi,t )) .
+
+The overall objective combines the policy loss, the routed teacher constraint, and this reference regularizer: 
+
+L = Lrl + Ltc + αLref . (5) Here α ≥ 0 controls the reference KL strength. In this objec-tive, task rewards determine final correctness, verification re-wards provide process-level guidance, and one-sided teacher constraints keep each modality aligned with its specialized expert. Model Text Vision Audio Omni Overall                                                                                                                                                                                                                                                       
+
+> AIME25 AIME26 HQA MMLU-Pro GPQA MMMU MathV. ChartQA AOKVQA MMAU AVQA OmniBench Avg.
+> Qwen3-Omni-30B-A3B
+> Text teacher 47.9 57.7 41.5 76.8 65.8 67.7 76.3 86.5 87.7 76.0 79.8 61.1 68.7 Image teacher 47.9 52.1 27.3 77.3 64.8 68.2 77.3 87.8 88.6 75.7 80.8 61.5 67.4 Audio teacher 52.1 59.2 27.3 76.9 64.0 67.4 76.4 87.2 88.9 79.1 84.4 55.6 68.2 Base 49.2 52.9 26.8 77.0 65.3 67.9 76.3 85.8 87.6 75.6 79.3 60.3 67.0 GRPO 49.2 53.8 28.0 76.7 65.3 67.9 76.7 86.2 87.9 76.2 80.5 59.7 67.3 Native OPD 51.7 55.8 41.1 77.5 64.9 68.4 76.4 73.4 88.0 75.8 81.2 60.3 67.9 ExOPD 50.0 64.2 41.0 77.1 63.5 68.0 76.5 87.2 88.7 65.1 83.2 58.8 68.6
+> OPOD 55.0 63.3 41.1 78.2 68.7 68.7 77.6 87.6 89.1 76.6 82.6 61.1 70.8
+> Qwen2.5-Omni-7B
+> Base 5.0 3.3 24.1 32.5 31.8 51.7 67.5 66.2 85.1 71.4 76.8 47.2 46.9 GRPO 10.0 3.3 22.9 38.5 32.1 51.4 67.7 67.2 86.5 73.0 80.3 44.8 48.1 Native OPD 6.7 3.3 28.8 52.4 32.3 53.1 66.8 69.1 81.7 73.1 80.0 47.3 49.5 ExOPD 6.7 8.3 29.5 52.4 30.8 51.4 66.4 73.8 82.6 72.0 78.4 46.3 49.9
+> OPOD 11.7 6.7 29.8 52.5 31.1 54.0 67.5 79.7 85.7 75.0 79.1 48.0 51.7
+> Qwen2.5-Omni-3B
+> Base 1.7 1.7 18.1 22.8 24.5 42.8 53.8 57.3 81.9 69.9 72.4 41.2 40.7 GRPO 3.3 1.7 17.4 24.5 29.0 44.6 56.4 59.7 83.8 71.6 74.9 41.7 42.4 Native OPD 1.7 3.3 23.5 36.4 26.5 44.9 59.4 61.2 84.3 69.3 75.4 42.6 44.0 ExOPD 1.7 3.3 24.5 37.9 30.3 43.9 59.9 62.3 83.6 69.9 76.3 40.2 44.5
+> OPOD 5.0 6.7 25.6 41.5 28.5 45.8 60.5 67.5 83.7 70.8 76.9 41.5 46.2
+
+Table 1: Main results across text, visual, audio, and omni-modal benchmarks. All numbers are accuracy in percentage. For each column within a backbone block, the best result is shown in bold and the second-best result is underlined; specialist teachers are included in the upper-block comparison. 
+
+## Experiments 
+
+Experimental Setup 
+
+Models and teachers. Our main experiments use Qwen3-Omni-30B-A3B-Instruct (Xu et al. 2025b) as the student backbone. Starting from the same backbone, we construct three modality-specialized teachers by applying GRPO sep-arately to the corresponding text, image, and audio training data. During distillation, each student rollout is routed to the teacher that matches the modality of the prompt. We also evaluate smaller Qwen2.5-Omni students (Xu et al. 2025a) to test whether the same recipe transfers to dense omni-modal models with a different multimodal tokenizer and processor. 
+
+Baselines. We compare OPOD with several baselines. The base model is the original omni-modal instruction model be-fore further training. GRPO (Shao et al. 2024) trains one stu-dent on the union of the text, image, and audio data using task rewards only, without teacher distillation. Native OPD ap-plies standard on-policy distillation from the routed modality teacher (Agarwal et al. 2024; Gu et al. 2024). ExOPD follows reward extrapolation and uses a stronger teacher direction to encourage improvement beyond the teacher (Yang et al. 2026). We also report the three separately GRPO-trained modality specialists as references rather than as deployable ensemble models. 
+
+Benchmarks. We evaluate text, visual, audio, and omni-modal reasoning. The text benchmarks include AIME25, AIME26, HotpotQA (Yang et al. 2018), MMLU-Pro (Wang et al. 2024), and GPQA (Rein et al. 2023). The visual benchmarks include MMMU (Yue et al. 2024), Math-Vista (Lu et al. 2024), ChartQA (Masry et al. 2022), and A-OKVQA (Schwenk et al. 2022). The audio benchmarks include MMAU (Sakshi et al. 2025) and AVQA (Yang et al. 2022), and we use OmniBench (Li et al. 2026c) for omni-modal evaluation. All results are reported as accuracy, and the overall score is the average over these twelve benchmarks. 
+
+Implementation details. We train on a cluster of 32 NVIDIA H20 GPUs. Unless otherwise specified, student training uses 16 GPUs, while the remaining GPUs host the text, audio, and image teacher servers for online guidance. We use eight samples per prompt, a rollout batch size of 16, and a global batch size of 64. The maximum prompt length and the maximum response length are both 8,192 tokens. For OPOD , we use the verification reward with wA = 0 .2,
+
+wB = 0 .1, and clipping threshold C = 2 .0. The dual con-troller estimates each ϵm from a 10-step warm-up and uses 
+
+ϵmin = 0 .02 . We keep a reference KL regularizer in all on-policy runs to reduce policy drift. 
+
+Main Results 
+
+Overall performance. Table 1 reports the main evalu-ation results. On Qwen3-Omni-30B-A3B, OPOD achieves the best overall average of 70.8, outperforming the base model, mixed-modality GRPO, native OPD, ExOPD, and the strongest modality-specialized teacher by 3.8, 3.5, 2.9, 2.2, and 2.1 points, respectively, while retaining a single de-ployable model. It surpasses both the base model and GRPO Variant Text Vision Audio Omni Overall                                                                                             
+
+> AIME25 AIME26 HQA MMLU-Pro GPQA MMMU MathV. ChartQA AOKVQA MMAU AVQA OmniBench Avg. ∆
+> Full OPOD 55.0 63.3 41.1 78.2 68.7 68.7 77.6 87.6 89.1 76.6 82.6 61.1 70.8 —
+> −One-Sided Guidance 50.0 60.0 40.5 77.0 63.4 68.2 76.7 87.2 87.7 76.3 80.9 60.3 69.0 −1.8
+> −Modality Control 47.1 60.4 36.9 77.6 65.6 67.9 76.0 86.5 88.5 76.0 80.3 60.5 68.6 −2.2
+> −Verification Reward 48.3 60.0 40.6 77.3 65.9 66.9 76.1 86.5 87.9 75.3 80.8 59.7 68.8 −2.0
+> −Reasoning Gain 52.9 63.3 38.8 77.1 65.0 67.7 76.4 85.8 88.0 76.0 80.1 59.1 69.2 −1.6
+> −Answer Confidence 51.7 60.0 40.9 77.1 64.1 68.1 76.8 87.8 88.6 76.0 81.7 59.8 69.4 −1.4
+
+Table 2: Ablation results on Qwen3-Omni-30B-A3B. ∆ denotes the change in Avg. relative to Full OPOD .
+
+Figure 3: Improvement in the 12-benchmark average over the corresponding base model across student backbones. OPOD 
+
+provides the largest gain at every scale. on all 12 benchmarks, improves over native OPD on 11 while tying the remaining one, and exceeds ExOPD on 10. When the specialist teachers are included, OPOD ranks first or sec-ond on 11 of 12 benchmarks. 
+
+Specialist consolidation. The 30B result goes beyond se-lecting the best teacher benchmark by benchmark. Compared separately with the text, image, and audio teachers, OPOD 
+
+scores higher on 10 of 12 benchmarks against each special-ist. Moreover, an oracle that selects the strongest teacher separately for every benchmark reaches an average of 70.3, still 0.5 points below the single OPOD student. Surpassing this oracle shows that joint consolidation recovers improve-ments beyond preserving the strongest specialist for each benchmark. 
+
+Cross-modal balance. More importantly, OPOD improves all modality groups rather than trading one capability for another. Relative to the base model, its aggregated text, vi-sion, audio, and omni-modal scores increase by 7.0, 1.4, 2.2, and 0.8 points, respectively. In contrast, GRPO drops by 0.6 points on omni-modal evaluation, native OPD loses 2.9 points on vision, and ExOPD loses 3.3 points on audio and 1.5 points on omni-modal evaluation. These results sup-port the need to control teacher guidance separately across modalities when training a shared omni-modal backbone. 
+
+Scaling across student backbones. Figure 3 summarizes the average improvement over the corresponding base model at each scale. OPOD delivers the largest gain throughout, improving the 3B, 7B, and 30B-A3B students by 5.5, 4.8, and 3.8 points, respectively. At 7B and 3B, it ranks first or second on 10 and 9 benchmarks; its largest base-relative gains span MMLU-Pro (20.0 and 18.7 points) and ChartQA (13.5 and 10.2). This consistency shows that the method transfers across dense and mixture-of-experts omni-modal backbones. The comparison also separates general post-training head-room from method-specific gains. Improvements over the base become smaller as backbone capacity increases for ev-ery baseline, yet OPOD retains a 3.8-point gain on 30B-A3B, compared with 1.6 points for ExOPD, 0.9 for native OPD, and 0.3 for GRPO. Consequently, its margin over the strongest alternative grows from 1.7 points at 3B to 1.8 at 7B and 2.2 at 30B-A3B. The advantage therefore persists even when a stronger base leaves less room for generic post-training improvements. The method ordering is unchanged across scales, and 
+
+OPOD maintains margins of 3.8, 3.6, and 3.5 points over mixed-modality GRPO, reinforcing that its gain is not tied to one parameter regime. 
+
+Ablation Study 
+
+Core components. Table 2 reports the Qwen3-Omni-30B-A3B results. Removing one-sided guidance, adaptive modal-ity control, or the verification reward lowers the average by 1.8, 2.2, and 2.0 points, respectively. Full OPOD outperforms each variant on all 12 benchmarks, showing that the three components contribute consistently rather than through a small set of favorable tasks. 
+
+Modality control. Replacing the three adaptive weights 
+
+βm with one fixed weight shared across modalities produces the largest degradation. The corresponding text, vision, au-dio, and omni-modal scores decrease by 3.7, 1.0, 1.5, and 0.6 points, respectively. The decline in every evaluation group shows that uniform teacher pressure creates broad cross-modal trade-offs rather than an isolated benchmark failure. Text drops most even though image retains guidance longest in Figure 4, confirming that guidance duration reflects cali-brated constraint gaps rather than modality difficulty. 
+
+Reward decomposition. We further separate the two terms in the verification reward. Removing reasoning gain and an-swer confidence reduces the average by 1.6 and 1.4 points, respectively. Full OPOD matches or exceeds the variant with-out reasoning gain on every benchmark and outperforms the variant without answer confidence on 11 of 12. Their pro-files also differ: reasoning gain has larger effects on AVQA and OmniBench, whereas answer confidence has larger ef-Figure 4: Dynamics of adaptive modality control in the Qwen3-Omni-30B-A3B OPOD run. (a) Running estimates of the modality-specific constraint budgets during the 10-step warm-up, yielding frozen values of 0.020 , 0.191 , and 0.254 for text, image, and audio. (b) Five-update moving averages of the constraint gaps ¯cm −ϵm, where zero denotes each modality’s calibrated target. (c) The corresponding control weights βm. Annotations mark the first optimization step at which each weight reaches 
+
+βmin = 0 .1.fects on AIME25, AIME26, and GPQA. The former evalu-ates whether the generated reasoning makes the gold answer more likely, while the latter measures teacher support for a correct final answer. The two signals therefore capture com-plementary aspects of trajectory quality. 
+
+Analysis of Adaptive Modality Control 
+
+Adaptive modality control produces the largest drop in the overall average when removed, so we further examine how the controller responds to modality-specific constraint sig-nals during training. Figure 4 reports controller statistics extracted from the full 30B OPOD training run, while re-stricting the visualization to the 10-step warm-up and the first 80 optimization steps. 
+
+Modality-specific calibration. During warm-up, the run-ning estimates in Figure 4(a) yield frozen budgets of ϵtext =0.020 , ϵimage = 0 .191 , and ϵaudio = 0 .254 . The largest bud-get is approximately 12 .7× the smallest, showing that the observed warm-up scale of the one-sided constraints differs substantially across modalities and motivating separate cali-brated targets. Because the final warm-up batch contains no image sample, the image endpoint denotes the budget frozen from the available image observations rather than an addi-tional measurement. 
+
+Data-driven control trajectories. After calibration, Fig-ure 4(b) shows the five-update moving average of each con-straint gap ¯cm − ϵm. A positive gap indicates that the dis-crepancy exceeds the calibrated budget and increases the corresponding teacher weight, whereas a negative gap al-lows the controller to reduce it. The audio gap remains be-low its target throughout the plotted post-warm-up window, the text gap gradually moves farther below its target, and the image gap remains closer to its boundary for longer. Con-sequently, although all three weights begin near 0.6, they first reach βmin = 0 .1 at different optimization steps: 24 for audio, 54 for text, and 80 for image, as shown in Fig-ure 4(c). These trajectories show that the modality weights are neither shared nor governed by a prescribed common annealing schedule. Instead, the controller independently re-leases teacher pressure for modalities whose constraints fall within budget while retaining guidance longer for modalities that remain near their calibrated boundaries. This behavior provides a mechanism-level interpretation of the 2.2-point degradation observed when adaptive modality control is re-moved. 
+
+## Conclusion 
+
+We presented OPOD , an on-policy omni distillation frame-work that consolidates text, image, and audio specialists into a single omni-modal policy through modality-decoupled multi-teacher guidance. Unlike uniform multi-teacher super-vision, OPOD coordinates the specialists at three complemen-tary levels. Its one-sided token constraint retains guidance only where the routed teacher is ahead, its modality-specific controller adapts teacher pressure to separately calibrated budgets, and its verification reward evaluates both answer confidence and reasoning gain over complete trajectories. Across twelve benchmarks, OPOD achieves the best overall average on all three evaluated backbones, outperforming the strongest comparator by 2.1, 1.8, and 1.7 points on 30B, 7B, and 3B. On the 30B backbone, it exceeds the base model and mixed-modality GRPO on every benchmark and ranks first or second on eleven when the specialist teachers are in-cluded. Ablations show that all three levels contribute, with adaptive modality control producing the largest degradation when replaced by a fixed shared weight. The controller anal-ysis further reveals distinct calibrated budgets and indepen-dently emerging teacher-weight trajectories, providing direct evidence that the three teachers require different guidance schedules. The teachers are discarded after post-training, re-taining single-student inference without ensemble overhead. Together, these results establish OPOD as an effective ap-proach to consolidating modality specialists into a deploy-able omni-modal agent. 
+
+## References 
+
+Agarwal, R.; Vieillard, N.; Zhou, Y.; Stanczyk, P.; Garea, S. R.; Geist, M.; and Bachem, O. 2024. On-Policy Distil-lation of Language Models: Learning from Self-Generated Mistakes. In The Twelfth International Conference on Learn-ing Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 . OpenReview.net. Bai, J.; Bai, S.; Yang, S.; Wang, S.; Tan, S.; Wang, P.; Lin, J.; Zhou, C.; and Zhou, J. 2023. Qwen-VL: A Fron-tier Large Vision-Language Model with Versatile Abilities. 
+
+CoRR , abs/2308.12966. Chu, Y.; Xu, J.; Yang, Q.; Wei, H.; Wei, X.; Guo, Z.; Leng, Y.; Lv, Y.; He, J.; Lin, J.; Zhou, C.; and Zhou, J. 2024. Qwen2-Audio Technical Report. CoRR , abs/2407.10759. Dai, W.; Li, J.; Li, D.; Tiong, A. M. H.; Zhao, J.; Wang, W.; Li, B.; Fung, P.; and Hoi, S. C. H. 2023. InstructBLIP: Towards General-purpose Vision-Language Models with In-struction Tuning. In Oh, A.; Naumann, T.; Globerson, A.; Saenko, K.; Hardt, M.; and Levine, S., eds., Advances in Neu-ral Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 .Gu, Y.; Dong, L.; Wei, F.; and Huang, M. 2024. MiniLLM: Knowledge Distillation of Large Language Models. In The Twelfth International Conference on Learning Representa-tions, ICLR 2024, Vienna, Austria, May 7-11, 2024 . Open-Review.net. Hinton, G. E.; Vinyals, O.; and Dean, J. 2015. Distilling the Knowledge in a Neural Network. CoRR , abs/1503.02531. Hou, W.; Peng, S.; Wang, W.; Ruan, Z.; Zhang, Y.; Zhou, Z.; Gao, M.; Chen, Y.; Wang, K.; Yang, H.; Zhang, C.; Tian, Z.; Hu, H.; Yang, Y.; Wu, F.; and Fan, H. 2026. Uni-OPD: Uni-fying On-Policy Distillation with a Dual-Perspective Recipe. 
+
+CoRR , abs/2605.03677. Kim, Y.; and Rush, A. M. 2016. Sequence-Level Knowledge Distillation. In Su, J.; Carreras, X.; and Duh, K., eds., Pro-ceedings of the 2016 Conference on Empirical Methods in Natural Language Processing, EMNLP 2016, Austin, Texas, USA, November 1-4, 2016 , 1317–1327. The Association for Computational Linguistics. Li, J.; Li, D.; Savarese, S.; and Hoi, S. C. H. 2023. BLIP-2: Bootstrapping Language-Image Pre-training with Frozen Image Encoders and Large Language Models. In Krause, A.; Brunskill, E.; Cho, K.; Engelhardt, B.; Sabato, S.; and Scar-lett, J., eds., International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA , vol-ume 202 of Proceedings of Machine Learning Research ,19730–19742. PMLR. Li, J.; Yin, H.; Xu, H.; Xu, B.; Tan, W.; He, Z.; Ju, J.; Luo, Z.; and Luan, J. 2026a. Video-OPD: Efficient Post-Training of Multimodal Large Language Models for Tem-poral Video Grounding via On-Policy Distillation. CoRR ,abs/2602.02994. Li, X.; Jiao, W.; Jin, J.; Wang, S.; Dong, G.; Jin, J.; Wang, H.; Wang, Y.; Wen, J.; Lu, Y.; and Dou, Z. 2026b. Om-niGAIA: Towards Native Omni-Modal AI Agents. CoRR ,abs/2602.22897. Li, Y.; Zhang, G.; Ma, Y.; Yuan, R.; Guo, H.; Liang, Y.; Liu, J.; Wang, N.; Yang, J.; Wu, S.; et al. 2026c. Omnibench: Towards the future of universal omni-language models. Ad-vances in Neural Information Processing Systems , 38. Li, Y.; Zuo, Y.; He, B.; Zhang, J.; Xiao, C.; Qian, C.; Yu, T.; Gao, H.; Yang, W.; Liu, Z.; and Ding, N. 2026d. Re-thinking On-Policy Distillation of Large Language Mod-els: Phenomenology, Mechanism, and Recipe. CoRR ,abs/2604.13016. Lightman, H.; Kosaraju, V.; Burda, Y.; Edwards, H.; Baker, B.; Lee, T.; Leike, J.; Schulman, J.; Sutskever, I.; and Cobbe, K. 2024. Let’s Verify Step by Step. In The Twelfth Interna-tional Conference on Learning Representations, ICLR 2024, Vienna, Austria, May 7-11, 2024 . OpenReview.net. Liu, H.; Li, C.; Wu, Q.; and Lee, Y. J. 2023. Visual Instruction Tuning. CoRR , abs/2304.08485. Lu, P.; Bansal, H.; Xia, T.; Liu, J.; Li, C.; Hajishirzi, H.; Cheng, H.; Chang, K.-W.; Galley, M.; and Gao, J. 2024. Mathvista: Evaluating mathematical reasoning of foundation models in visual contexts. In International Conference on Learning Representations , volume 2024, 23439–23554. Ma, W.; Wei, J.; Zhao, L.; Zhang, H.; Xiao, B.; Li, L.; Yang, Q.; Gao, B.; Wang, Y.; Li, R.; Dong, J.; Sui, Z.; and Luo, F. 2026. MOPD: Multi-Teacher On-Policy Distilla-tion for Capability Integration in LLM Post-Training. CoRR ,abs/2606.30406. Masry, A.; Tan, J. Q.; Joty, S.; Hoque, E.; et al. 2022. Chartqa: A benchmark for question answering about charts with visual and logical reasoning. In Findings of the association for computational linguistics: ACL 2022 , 2263–2279. Rein, D.; Hou, B. L.; Stickland, A. C.; Petty, J.; Pang, R. Y.; Dirani, J.; Michael, J.; and Bowman, S. R. 2023. GPQA: A Graduate-Level Google-Proof Q&A Benchmark. CoRR ,abs/2311.12022. Sakshi, S.; Tyagi, U.; Kumar, S.; Seth, A.; Selvakumar, R.; Nieto, O.; Duraiswami, R.; Ghosh, S.; and Manocha, D. 2025. Mmau: A massive multi-task audio understanding and reasoning benchmark. In International Conference on Learning Representations , volume 2025, 84929–84964. Sanh, V.; Debut, L.; Chaumond, J.; and Wolf, T. 2019. Dis-tilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter. CoRR , abs/1910.01108. Schwenk, D.; Khandelwal, A.; Clark, C.; Marino, K.; and Mottaghi, R. 2022. A-okvqa: A benchmark for visual ques-tion answering using world knowledge. In European confer-ence on computer vision , 146–162. Springer. Setlur, A.; Nagpal, C.; Fisch, A.; Geng, X.; Eisenstein, J.; Agarwal, R.; Agarwal, A.; Berant, J.; and Kumar, A. 2025. Rewarding Progress: Scaling Automated Process Verifiers for LLM Reasoning. In The Thirteenth International Con-ference on Learning Representations, ICLR 2025, Singapore, April 24-28, 2025 . OpenReview.net. Shao, Z.; Wang, P.; Zhu, Q.; Xu, R.; Song, J.; Zhang, M.; Li, Y. K.; Wu, Y.; and Guo, D. 2024. DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models. CoRR , abs/2402.03300. Wan, F.; Huang, X.; Cai, D.; Quan, X.; Bi, W.; and Shi, S. 2024. Knowledge Fusion of Large Language Models. In 
+
+The Twelfth International Conference on Learning Repre-sentations, ICLR 2024, Vienna, Austria, May 7-11, 2024 .OpenReview.net. Wang, S.; Huang, W.; Yu, X.; Yang, Z.; Lin, H.; Wu, K.; Xiao, C.; Chen, C.; Wang, W.; Zhu, B.; Zhang, Y.; and Qin, C. 2026. PRISM: Pre-alignment via Black-box On-policy Distillation for Multimodal Reinforcement Learning. CoRR ,abs/2604.28123. Wang, Y.; Ma, X.; Zhang, G.; Ni, Y.; Chandra, A.; Guo, S.; Ren, W.; Arulraj, A.; He, X.; Jiang, Z.; et al. 2024. Mmlu-pro: A more robust and challenging multi-task language un-derstanding benchmark. Advances in Neural Information Processing Systems , 37: 95266–95290. Xu, J.; Guo, Z.; He, J.; Hu, H.; He, T.; Bai, S.; Chen, K.; Wang, J.; Fan, Y.; Dang, K.; Zhang, B.; Wang, X.; Chu, Y.; and Lin, J. 2025a. Qwen2.5-Omni Technical Report. CoRR ,abs/2503.20215. Xu, J.; Guo, Z.; Hu, H.; Chu, Y.; Wang, X.; He, J.; Wang, Y.; Shi, X.; He, T.; Zhu, X.; et al. 2025b. Qwen3-omni technical report. arXiv preprint arXiv:2509.17765 .Yang, P.; Wang, X.; Duan, X.; Chen, H.; Hou, R.; Jin, C.; and Zhu, W. 2022. Avqa: A dataset for audio-visual ques-tion answering on videos. In Proceedings of the 30th ACM international conference on multimedia , 3480–3491. Yang, W.; Liu, W.; Xie, R.; Yang, K.; Yang, S.; and Lin, Y. 2026. Learning beyond Teacher: Generalized On-Policy Dis-tillation with Reward Extrapolation. CoRR , abs/2602.12125. Yang, Z.; Qi, P.; Zhang, S.; Bengio, Y.; Cohen, W. W.; Salakhutdinov, R.; and Manning, C. D. 2018. HotpotQA: A Dataset for Diverse, Explainable Multi-hop Question An-swering. CoRR , abs/1809.09600. Ye, T.; Dong, L.; Chi, Z.; Wu, X.; Huang, S.; and Wei, F. 2025. Black-Box On-Policy Distillation of Large Language Models. CoRR , abs/2511.10643. Yin, Q.; Yao, H.; Cai, Y.; Chen, J.; Wang, Z.; Yang, M.; Su, F.; and Zhao, Z. 2026. H-OPD: Confidence Aware Hetero-geneous Multi-Teacher Multimodal On-policy Distillation. arXiv:2607.02592. You, S.; Xu, C.; Xu, C.; and Tao, D. 2017. Learning from Multiple Teacher Networks. In Proceedings of the 23rd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, Halifax, NS, Canada, August 13 - 17, 2017 ,1285–1294. ACM. Yue, X.; Ni, Y.; Zhang, K.; Zheng, T.; Liu, R.; Zhang, G.; Stevens, S.; Jiang, D.; Ren, W.; Sun, Y.; et al. 2024. Mmmu: A massive multi-discipline multimodal understanding and reasoning benchmark for expert agi. In Proceedings of the IEEE/CVF conference on computer vision and pattern recog-nition , 9556–9567. Zhang, Y.; Yu, T.; Tian, H.; Fu, C.; Li, P.; Zeng, J.; Xie, W.; Shi, Y.; Zhang, H.; Wu, J.; Wang, X.; Hu, Y.; Wen, B.; Gao, T.; Zhang, Z.; Yang, F.; Zhang, D.; Wang, L.; and Jin, R. 2025. MM-RLHF: The Next Step Forward in Multimodal LLM Alignment. In Singh, A.; Fazel, M.; Hsu, D.; Lacoste-Julien, S.; Berkenkamp, F.; Maharaj, T.; Wagstaff, K.; and Zhu, J., eds., Forty-second International Conference on Machine Learning, ICML 2025, Vancouver, BC, Canada, July 13-19, 2025 , volume 267 of Proceedings of Machine Learning Research . PMLR / OpenReview.net.
