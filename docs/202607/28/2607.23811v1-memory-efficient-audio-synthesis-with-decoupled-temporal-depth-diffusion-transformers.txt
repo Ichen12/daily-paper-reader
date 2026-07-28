@@ -1,0 +1,406 @@
+Title: Memory Efficient Audio Synthesis with Decoupled Temporal Depth Diffusion Transformers
+
+URL Source: https://arxiv.org/pdf/2607.23811v1
+
+Published Time: Tue, 28 Jul 2026 01:18:12 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Memory Efficient Audio Synthesis with Decoupled Temporal Depth Diffusion Transformers 
+
+Dongseong Hwang ∗, Prasanth Yadla ∗, Kaan Elgin ∗, Shifas Padinjaru Veettil , Sivanand Achanta , Dipjyoti Paul ,
+
+Ramya Rasipuram , Tyler Johnson , Emad Soroush , Chung-Cheng Chiu , Zhifeng Chen 
+
+Apple 
+
+> ∗
+
+These authors contributed equally to this work. 
+
+Siri Expressive Voices synthesize rich, configurable speech in real time and entirely on device, powered by AFM 3 Core Advanced, Apple’s most powerful on-device foundation model. This work presents the memory-efficient audio synthe-sis architecture behind that capability: a detokenizer that converts the semantic audio tokens emitted by the foundation model into high-fidelity audio within the tight compute and memory budget of the Apple Matrix Coprocessor (AMX). We convert semantic audio tokens to a residual vector quantization (RVQ) representation with a three-component design—a streaming encoder, a temporal decoder, and a depth decoder—that systematically decouples temporal and depth processing. A single reusable depth decoder with Diffusion Transformer (DiT)-style stage conditioning generates all RVQ levels autoregressively, replacing the dedicated per-level decoders of prior multi-decoder architectures, while causal sliding window attention with fixed-window key-value caching yields constant memory complexity independent of sequence length. Deployed on the AMX, the detokenizer sustains roughly 10 ms per generation step—about 16 × faster than real time— with a peak runtime memory of only ∼21 MB and 329 MB of on-device assets, enabling continuous streaming synthesis of 20–320 seconds of audio alongside the on-device foundation model. This constant, small footprint replaces the linear and quadratic memory scaling of conventional transformer- and GAN-based approaches. Comprehensive ablation studies validate the effectiveness of key architectural components, including DiT conditioning mechanisms, temporal lookahead processing, and unified depth decoding strategies. Audio quality assessment through phonetic discriminability analysis, perceptual quality metrics, and neural quality estimation confirms that the proposed architecture maintains synthesis fidelity while achieving computational efficiency gains over existing methodologies. The proposed architecture is deployed in production as part of Siri Expressive Voices, powering a voice overhaul with Pace and Expressivity customization sliders in Apple Devices and support for custom assistant voices. Operating at a 1-billion-parameter activation size within AFM 3 Core Advanced, it improves Mean Opinion Score (MOS) by +0.28 overall (4.15 vs. 3.87) and by +0.42 on conversational speech (4.24 vs. 3.82) over the prior on-device text-to-speech system. 
+
+Keywords: Speech Synthesis, Residual Vector Quantization, Diffusion Transformers, High-fidelity Synthesis 
+
+Correspondence: Dongseong Hwang: dhwang2@apple.com; Prasanth Yadla: p_yadla@apple.com 
+
+Date: July 28, 2026 
+
+## 1 Introduction 
+
+The architecture presented here is deployed as the audio synthesizer for Siri Expressive Voices, a feature of AFM 3 Core Advanced, Apple’s most capable on-device foundation model Apple (2026). AFM 3 Core 1arXiv:2607.23811v1 [cs.SD] 26 Jul 2026 Advanced is natively multimodal and built on a sparse, 20-billion-parameter architecture that uses Instruction-Following Pruning (IFP) Hou et al. (2025): the full model is stored in flash memory (NAND), and for each prompt a lightweight dense block selects a small subset of input-dependent routed experts—1–4 billion active parameters, reselected periodically during generation—which combine with a set of always-active shared 
+
+experts to form a dense model in DRAM. Because only this small active set occupies DRAM at any time, audio generation must run within a tight, shared on-device memory and latency budget. Converting the foundation model’s semantic audio tokens into high-fidelity audio under this budget is the challenge we address; we show that a memory-efficient detokenizer can perform the conversion on the Apple Matrix Coprocessor (AMX) faster than real time and at a very small memory footprint, making streaming expressive synthesis practical on device. Neural audio synthesis has evolved from raw waveform generation approaches like WaveNet Oord et al. (2016) to more efficient architectures including WaveGlow Prenger et al. (2019) and WaveRNN Kalchbrenner et al. (2018). Transformer-based audio generation has been demonstrated in MusicLM Agostinelli et al. (2023), AudioLM Borsos et al. (2023), and Jukebox Dhariwal et al. (2020), though these approaches exhibit quadratic memory complexity limiting scalability to extended sequences. Diffusion-based methods, including DiffWave Kong et al. (2020) and Diffusion Transformers (DiT) Peebles and Xie (2023a), have shown promise but remain underexplored for real-time applications. Contemporary speech generation uses discrete tokenization to exploit advances in large language models while providing computational efficiency for latency-critical applications Défossez et al. (2022) Lakhotia et al. (2021). Vector quantization techniques, initially developed for image processing Evans et al. (2024), have been successfully adapted to audio domains Dhariwal et al. (2020), with residual vector quantization (RVQ) Lee et al. (2022) addressing scalability limitations inherent in exponentially growing codebook sizes. While hierarchical RVQ representations enable extended audio generation capabilities, they necessitate multiple token predictions per timestep, creating computational bottlenecks. Semantic audio token representations Kreuk et al. (2023) have emerged as a solution, providing single-token encodings of multi-layered RVQ structures. Recent work by Moshi Défossez et al. (2024) demonstrates real-time conversational audio generation through a hierarchical RQ-Transformer that pairs a temporal transformer with a single Depth Transformer generating the RVQ levels autoregressively along the depth dimension. While the depth transformer body is shared across levels, Moshi retains codebook-specific parameters—in particular per-level input and output projections—so the effective parameterization still grows with the number of quantization levels. To address computational limitations while maintaining generation quality, we propose a novel architecture for generating high-quality natural audio that decouples temporal and depth processing through specialized computational modules. Our approach generates quantized audio tokens from semantic audio token repre-sentations using a Diffusion Transformer (DiT)-style conditioning mechanism. While conceptually similar to Moshi’s depth processing, our implementation achieves computational and parameter savings by employing a single fully reusable depth decoder that identifies each RVQ level solely through DiT-style stage condition-ing (a rotary encoding of the codebook index), eliminating even the per-level input and output projections used by Moshi. Concurrent work such as Fish Audio S2 Fish Audio Team (2026) adopts a related dual-autoregressive decoupling of temporal and depth processing, which further corroborates this design direction. A complementary line of work targets detokenizer efficiency from a different angle: T-Mimi Wu et al. (2026), building on TS3-Codec Wu et al. (2024), replaces the de-convolution layers of Moshi’s Mimi decoder with a purely transformer-based decoder to reduce mobile-CPU latency. In contrast, we address the upstream semantic-token-to-RVQ conversion and target the Apple Matrix Coprocessor (AMX) rather than a mobile CPU. The primary contributions of this work are: (1) a novel architecture that separates temporal and depth di-mension processing for efficient high-quality audio generation, (2) a unified depth decoder design that reuses a single decoder with fully shared parameters across all RVQ levels through DiT-style stage conditioning, dispensing with the per-level projections retained by prior depth-transformer designs such as Moshi, (3) integration of a fixed-window KV cache mechanism that ensures constant memory consumption indepen-dent of audio sequence length, and (4) demonstration of superior computational efficiency and generation speed compared to state-of-the-art methods, including Moshi, enabling real-time natural audio generation in 2Streaming Encoder                        
+
+> fθ
+> 4×Causal Sliding-Window Self-Attention +FFN
+> Temporal Decoder
+> gϕT
+> 6×DiT Block Adaptive LayerNorm Causal SW-Attention
+> Depth Decoder
+> gϕD
+> 2×DiT Block Stage-kConditioning Causal SW-Attention
+> Semantic Tokens xt
+> RVQ Tokens rt, 1: K
+> + RoPE( k)
+> BOS TBOS D
+> htytyt,k rt,k
+> z(T)
+> tz(D)
+> t, 1
+> qt,k →z(D)
+> t,k +1
+> k= 1 , . . . , K
+> ×Kper frame (shared)
+> ¯qt= mean( qt, 1: K)−→ z(T)
+> t+1
+> temporal autoregressive loop
+
+Figure 1 Proposed architecture comprising a streaming encoder fθ , temporal decoder gϕT , and depth decoder gϕD . The depth decoder is reused across all K RVQ levels via DiT-style stage conditioning, with temporal feedback through the mean RVQ embedding ¯qt.
+
+resource-constrained environments. 
+
+## 2 Model Architecture 
+
+As illustrated in Figure 1, the proposed architecture comprises three primary components: a streaming encoder, a temporal decoder, and a depth decoder. The encoder functions as a feature extraction and representation learning module, transforming input seman-tic audio token representations into hierarchical condition latents that encapsulate temporal and semantic characteristics of the audio signal. This component establishes the mapping between diverse input token formats and the standardized internal representations required for subsequent processing stages. The encoder employs causal sliding window attention Beltagy et al. (2020) to maintain causal constraints essential for autoregressive generation while managing computational complexity associated with extended audio sequences. Layer normalization Ba et al. (2016) is applied in a pre-norm configuration both preceding and following attention computations, enhancing training stability and convergence properties. Positional embeddings provide temporal information to guide the attention mechanism in processing sequential audio tokens, while residual connections around each attention block facilitate gradient propagation and enable deeper architectural configurations. The temporal decoder functions as an intermediary module that bridges the encoder and depth decoder, pro-cessing condition latents from the encoder alongside previously generated RVQ tokens to predict subsequent token sequences. This component extracts essential information from the encoder’s semantic audio token rep-resentations while incorporating feedback from generated RVQ tokens, ensuring that temporal dependencies are preserved throughout the generation process. Crucially, the temporal decoder is required due to the RVQ autoregressive loop: each newly generated RVQ token must condition on previously generated tokens to maintain synthesis fidelity. Empirical analysis shows that removing the autoregressive loop leads to a severe drop in generated RVQ token accuracy, as the model loses access to critical temporal dependencies necessary for high-quality reconstruction. This design contrasts with Moshi’s approach, which simplifies the token mapping by utilizing identical input and output representations, whereas our architecture explicitly bridges semantic audio tokens and RVQ token sequences due to their representational differences and the need to preserve autoregressive dependencies. The temporal decoder implements a Diffusion Transformer (DiT) Peebles and Xie (2023b) architecture incor-porating causal sliding window attention and adaptive layer normalization modulation. The depth decoder generates RVQ tokens autoregressively for each temporal frame using condition latents 3from the temporal decoder. Token generation for each frame is initialized using a learnable Beginning of Sequence (BOS) token without retaining previous states. Like Moshi, our depth decoder shares a single transformer body across all RVQ levels and generates them autoregressively along the depth dimension; unlike Moshi, it uses fully shared parameters, identifying each level only through DiT-style stage conditioning rather than the per-level input and output projections Moshi employs. The depth decoder architecture mirrors the temporal decoder, employing DiT Peebles and Xie (2023b) with causal sliding window attention and adaptive layer normalization modulation. The architecture utilizes DiT-style conditioning, providing computational efficiency while maintaining ef-fectiveness. This approach eliminates ambiguity in semantic audio to RVQ token mapping while avoiding computational overhead associated with cross-attention mechanisms. Following equations describe the architecture. xt denotes the input token at timestep t, while z(T ) 
+
+> t
+
+and z(D)
+
+> t
+
+denote the time and depth decoder inputs respectively. Furthermore, fθ denotes the encoder, while gϕT and 
+
+gϕD denote the time and depth decoders. K denotes number of codebooks. 
+
+ht = fθ (xt) (2.1) 
+
+yt = gϕT (z(T ) 
+
+> t
+
+, h t) (2.2) 
+
+yt,k = RoPE (yt, k ) (2.3) 
+
+(rt,k , q t,k ) = gϕD (z(D) 
+
+> t,k
+
+, y t,k ) (2.4) 
+
+z(D) 
+
+> t,k +1
+
+= qt,k (2.5) 
+
+qt = mean (qt, 1: K ) (2.6) 
+
+z(T ) 
+
+> t+1
+
+= qt (2.7) Time decoder conditions on the encoder output, while depth decoder conditions on the output of the time decoder. Time decoder output is augmented with the codebook index using rotary positional encoding before being fed as a condition information to the depth decoder. Depth decoder outputs RVQ tokens ( rt,k ) and their corresponding embedding vectors ( qt,k ). Finally, the mean of the embedding vectors is fed into the time decoder. The inputs of time and depth decoders are initialized with learnable BOS tokens. At every timestep, time decoder input is updated with the mean of the RVQ embedding vectors, while depth decoder input starts with a BOS token regardless of the timestep. In addition, the architecture incorporates a temporal lookahead mechanism to enhance contextual under-standing by providing the encoder with future semantic audio token information. This design enables the model to access contextual information beyond the current timestep, facilitating more informed generation decisions. Empirical analysis reveals that this temporal offset significantly impacts generated audio quality, indicating that enhanced contextual awareness through lookahead is crucial for achieving high-fidelity audio synthesis. 
+
+## 3 Experiments 
+
+The transformer architectures incorporate contemporary architectural innovations derived from state-of-the-art language models, specifically LLaMA 3 Meta (2024) and Gemma 2 Google (2024). The implementation utilizes RMS normalization Zhang and Sennrich (2019) in conjunction with SwiGLU activation functions Shazeer (2020), rotary positional embeddings, and grouped query attention mechanisms to enhance com-putational efficiency and model expressiveness. Consistent with the design principles established in PaLM Google (2022), bias parameters are systematically excluded throughout the architectural framework. Logit scaling is implemented using a normalization factor of 1√V , where V represents the vocabulary dimension. Hyperparameter optimization identified a learning rate of 1 × 10 −4 coupled with a cosine annealing schedule incorporating an extended peak phase as the configuration yielding superior convergence properties. 43.1 On-Device Deployment 
+
+The proposed architecture is deployed on the AMX as the audio detokenizer for Siri Expressive Voices in AFM 3 Core Advanced. The production deployment is tuned separately from the research configuration reported in this paper. To meet the stricter on-device compute and memory budget, the shipped model is further compressed and optimized, so it differs in several hyperparameters (e.g., layer allocation, number of RVQ levels, frame rate, and bitrate). Unless otherwise stated, the numbers reported in this paper refer to the research configuration. On device, it sustains a latency of approximately 10 ms per generation step— producing 160 ms of audio per step, roughly 16 × faster than real time (RTF ≈ 0.06)—with a peak runtime memory of only ∼21 MB and 329 MB of on-device assets (Table 1). This small, constant footprint is what allows high-fidelity streaming synthesis to run concurrently with the sparsely-activated AFM 3 Core Advanced model under the device’s shared memory budget. Because the fixed-window KV cache makes runtime memory independent of utterance length, the same budget supports everything from short Siri responses to long-form navigation and reading.  
+
+> Table 1 On-device performance of the proposed detokenizer on the AMX.
+
+Metric Value 
+
+Latency per generation step ∼10 ms Throughput 160 ms audio / step ( 16 × real time) Peak runtime memory ∼21 MB On-device assets 329 MB  
+
+> Table 2 Controlled cross-architecture comparison of algorithmic scaling across audio sequence lengths, measured on a common GPU so that all baselines are evaluated under identical conditions. The production deployment target is the AMX (Table 1).
+
+Audio Length Model Generation Time Memory Usage Real-Time Factor (seconds) (GB) (RTF) 
+
+512 tokens (20s) 
+
+Ours 2.40 1.13 0.12 
+
+Transformer Decoder 0.78 1.78 0.04 Autoregressive GAN 8.53 1.66 0.43 2048 tokens (80s) 
+
+Ours 9.64 1.13 0.12 
+
+Transformer Decoder 17.1 3.36 0.21 Autoregressive GAN 33.97 1.66 0.42 8192 tokens (320s) 
+
+Ours 38.59 1.13 0.12 
+
+Transformer Decoder 800 33.44 2.5 Autoregressive GAN 136.2 1.66 0.43  
+
+> Note: Reported on a single NVIDIA H100 GPU with unit batch size, used here only as a common platform for controlled comparison against baselines whose on-device numbers are unavailable. This isolates each architecture’s scaling behavior: our model holds generation time, memory, and RTF constant with sequence length, whereas the baselines scale linearly or quadratically. Absolute on-device cost is far lower ( ∼21 MB peak runtime memory; see Table 1).
+
+The model underwent pretraining on an extensive proprietary audio corpus characterized by substantial dataset diversity. The training data is comprised of many hours of internally recorded voice assistant interac-tions. Detailed dataset compositions and specifications cannot be disclosed in accordance with institutional data governance policies and confidentiality protocols. Beyond the on-device deployment numbers in Section 3.1, we compare algorithmic scaling against baselines on a common GPU, since on-device measurements are not available for the external baselines. Table 2 reports generation time, memory, and real-time factor (RTF) as a function of sequence length. The proposed architecture holds all three approximately constant with sequence length, whereas the transformer-decoder and autoregressive-GAN baselines scale linearly or quadratically. This constant-scaling property is what 5Table 3 Ablation Study on architecture components. We evaluate semantic-to-RVQ token conversion quality by reporting evaluation loss. “Temporal Lookahead” refers to the number of future semantic tokens used for conditioning. “Fixed KV Cache” implements constant memory usage independent of sequence length.                                    
+
+> Temporal Lookahead Unified Depth Dec DiT Conditioning Output Norm Fixed KV Cache Eval Loss ( ↓)
+> ✗✗✗✗✗5.86
+> ✓✗✗✗✗4.09
+> ✓✓✗✗✗3.34
+> ✓✓✓✗✗3.28
+> ✓✓✓✓✗3.23
+> ✓✓✓✓✓3.23
+
+carries over to the device: as shown in Table 1, the deployed detokenizer runs at 16 × real time using only 
+
+∼21 MB of runtime memory, independent of utterance length. Additionally we conducted several ablation studies to determine the best configuration for training the model which are described in Table 3.  
+
+> Table 4 Audio Quality Evaluation of Neural Audio Codecs. All entries use the research configuration for controlled comparison; the shipped production configuration differs.
+
+Model fs fr Bitrate UTMOS ( ↑) SI-SNR ( ↑)
+
+Ground Truth 24kHz – – 4.07 –Moshi/Mimi 24kHz 12.5Hz 1.1kbps 3.92 7.45 Transformer Decoder 24kHz 25Hz 1.5kbps 3.61 3.76 Autoregressive GAN 24kHz 25Hz 1.5kbps 3.91 5.50 
+
+Ours 24kHz 25Hz 1.5kbps 3.97 9.47 
+
+3.2 Conditioning Method 
+
+Comparative analysis of conditioning mechanisms shows that DiT-style conditioning matches cross-attention in generation quality while being substantially more efficient. On held-out evaluation datasets, the two are statistically indistinguishable in both loss and next-token accuracy, yet DiT-style conditioning trains 1.36 ×
+
+faster and avoids the additional attention computation that cross-attention requires over the conditioning context. It also removes a hyperparameter — the cross-attention context window — that we found had no consistent effect on performance. These properties make DiT-style conditioning the preferred choice for the proposed architecture. Figure 2a compares the training-loss trajectories of the two mechanisms. Further investigation of cross-attention performance shows that the context-window size has no consistent effect on quality. Earlier experiments exhibited divergent training loss at extended context lengths (32 or greater); we found this to be a training-stability artifact rather than an architectural limitation: with gradient clipping and a tuned learning rate, large cross-attention context lengths train stably without divergence. Cross-attention thus introduces an additional hyperparameter, the context window, without providing a consistent quality benefit, further motivating the choice of DiT-style conditioning. Figure 2b presents the training loss characteristics across different cross-attention configurations under this stabilized training setup. 
+
+3.3 Time Lookahead 
+
+Temporal lookahead analysis reveals architectural differences compared to existing approaches. While Moshi’s experimental validation established that a single-frame lookahead suffices for their architecture, the proposed framework requires a 6-token temporal offset to achieve optimal performance. Comparative evaluation of bidirectional encoding demonstrates marginal accuracy improvements, suggesting that the 240ms lookahead window introduces negligible information loss from the input signal while providing sufficient contextual information for high-quality generation. Figure 3a presents the training loss characteristics across different temporal lookahead configurations. 66.2
+
+6.4
+
+6.6
+
+6.8
+
+7.0
+
+7.2
+
+7.4
+
+> Training loss (CE)
+
+Stage conditioning  
+
+> DiT (adaLN) Cross-attn
+
+0 5 10 15 20 25 
+
+Training step ( ×10 3)
+
+0.02 
+
+0.03 
+
+0.04 
+
+0.05 
+
+> RVQ top-1 acc.
+
+(a) DiT-style conditioning versus cross-attention. 6.6 
+
+6.8 
+
+7.0 
+
+7.2 
+
+> Training loss (CE)
+
+0 5 10 15 20 25 
+
+Training step ( ×10 3)
+
+0.02 
+
+0.03 
+
+0.04     
+
+> RVQ top-1 acc.
+> 20 22 24
+> 6.55
+> 6.65
+> 20 22 24
+> 0.035
+> 0.040
+
+X-attn window 
+
+w = 3 w = 4 w = 16 w = 32 (b) Cross-attention across context lengths. With gradient clipping and a tuned learning rate, all lengths—including large windows ( ≥ 32 ) that previously diverged—train stably. 
+
+Figure 2 Conditioning-mechanism ablations: training loss for the two conditioning schemes (left) and for cross-attention context-window sizes (right). 6.00 
+
+> 6.25
+> 6.50
+> 6.75
+> 7.00
+> 7.25
+> Training loss (CE)
+
+Lookahead               
+
+> `= 1 `= 4 `= 8 `= 12 `= 24
+> 020 40 60 80 100
+
+Training step ( ×10 3)  
+
+> 0.02
+> 0.03
+> 0.04
+> 0.05
+> 0.06
+> 0.07
+> RVQ top-1 acc.
+> 88 96
+> 6.00
+> 6.04
+> 6.08
+> 88 96
+> 0.060
+> 0.066
+
+(a) Varying temporal lookahead configurations. 6.00 
+
+> 6.25
+> 6.50
+> 6.75
+> 7.00
+> 7.25
+> Training loss (CE)
+
+Sliding window             
+
+> W= 32 W= 64 W= 128 W= 256
+> 020 40 60 80 100
+
+Training step ( ×10 3)   
+
+> 0.02
+> 0.03
+> 0.04
+> 0.05
+> 0.06
+> 0.07
+> RVQ top-1 acc.
+> 88 96
+> 6.00
+> 6.04
+> 6.08
+> 88 96
+> 0.060
+> 0.066
+
+(b) Varying sliding window sizes. 
+
+Figure 3 Attention-context ablations: training loss across temporal lookahead settings (left) and sliding window sizes (right). 
+
+73.4 Sliding Window Size 
+
+Sliding window size optimization identified 128 tokens as the configuration yielding optimal performance characteristics. The initial hypothesis favored a constrained window size, predicated on the assumption that the model, operating as a deterministic token-to-token mapping function, would not require access to distant temporal context for effective generation. However, empirical analysis revealed that the model possesses sufficient representational capacity to selectively attend to salient information even when provided with extended contextual windows. These findings suggest that larger window sizes do not introduce detrimental effects on model performance, indicating robust attention mechanisms capable of filtering relevant information from extended sequences. Figure 3b illustrates the training loss behavior across different sliding window configurations. 
+
+3.5 Layer depth ratio analysis 
+
+Architectural depth optimization analysis reveals that a layer configuration of 4-6-2 (encoder-temporal decoder-depth decoder) achieves optimal performance across loss, evaluation accuracy, and training efficiency metrics. The depth decoder exhibits the highest computational cost due to its iterative execution across all quantization levels, requiring six iterations per token, yet performance saturates at a depth of two layers. Configuration with zero layers yields substantially degraded performance, as it attempts to predict all RVQ tokens simultaneously, indicating that a minimum of one layer is essential for effective hierarchical token generation. With the depth decoder configuration fixed at two layers, systematic optimization of encoder and temporal decoder depths was conducted. Results demonstrate that four layers for the encoder and six layers for the temporal decoder provide superior performance across all evaluated metrics, including training loss, compu-tational efficiency, and evaluation accuracy. The increased depth requirement for the temporal decoder is attributed to its critical role in aggregating comprehensive information from both encoder outputs and previ-ously generated tokens to produce effective latent representations for subsequent depth processing. Figure 4a illustrates the training loss behavior across different layer depth configurations. 6.00             
+
+> 6.25
+> 6.50
+> 6.75
+> 7.00
+> 7.25
+> Training loss (CE)
+> Layers (E/T/D)
+> 2 / 8 / 2 4 / 6 / 2 5 / 5 / 2 6 / 4 / 2 8 / 2 / 2
+> 020 40 60 80 100
+> Training step ( ×10 3)
+> 0.02
+> 0.03
+> 0.04
+> 0.05
+> 0.06
+> 0.07
+> RVQ top-1 acc.
+> 88 96
+> 6.00
+> 6.05
+> 6.10
+> 88 96
+> 0.060
+> 0.068
+> (a)
+
+Varying layer depth ratios for the encoder, temporal decoder, and depth decoder. 6.00            
+
+> 6.25
+> 6.50
+> 6.75
+> 7.00
+> 7.25
+> Training loss (CE)
+> Depth-decoder output
+> Output norm on Output norm off
+> 020 40 60 80 100
+> Training step ( ×10 3)
+> 0.02
+> 0.03
+> 0.04
+> 0.05
+> 0.06
+> 0.07
+> RVQ top-1 acc.
+> 88 96
+> 5.95
+> 6.00
+> 6.05
+> 88 96
+> 0.060
+> 0.068
+> (b)
+
+With and without output normalization.  
+
+> Figure 4
+
+Training loss for the layer-depth-ratio ablation (left) and the output-normalization ablation (right). 
+
+83.6 Output Normalization Analysis 
+
+Following established practices in text-based large language models, output normalization is applied im-mediately preceding logit computation. Comparative analysis reveals that while omitting normalization yields marginally superior performance during early training phases, models with normalization demonstrate enhanced convergence stability and superior long-term performance. This aligns with language modeling literature, where output normalization serves as a regularization mechanism improving training dynamics. Figure 4b presents training loss trajectories comparing models with and without output normalization. 
+
+3.7 Audio Quality Evaluation 
+
+One way to measure the effectiveness of the compression method is to measure the phonetic discriminability of the representation space, which means comparing how well each approach preserves phonetic distinctions after reconstruction. Inspired from Moshi, we compute the within-speaker ABX Schatz et al. (2013) metrics on LibriHeavy Panayotov et al. (2015) and compare the error rates of our model with three different baseline models, which are Mimi decoder (Moshi’s decoder), an internal transformer decoder, and another internal model which is similar to the autoregressive GAN approach Morrison et al. (2022). We measure error rates of the quantized vector outputs from our model, formed by the sum of RVQ embeddings at each layer. Our representation achieves a within-speaker ABX error rate of 5.3%, confirming that phonetic distinctions are well preserved after reconstruction. Furthermore, in order to measure acoustic quality of reconstructed audio, we use VisQOL Hines et al. (2015), MOSNet Lo et al. (2019), and SI-SNR metrics. 
+
+3.8 Production Human Evaluation 
+
+The expressive voices powered by AFM 3 Core Advanced were evaluated against Apple’s prior production text-to-speech system through crowd-sourced Mean Opinion Score (MOS) evaluations across five production voices spanning three domains: Siri (task-oriented assistant speech), Conversational (natural dialogue-style speech), and Navigation (turn-by-turn direction speech). Operating at a 1-billion-parameter activation size, AFM 3 Core Advanced achieves an overall MOS of 4.15 versus 3.87 for the production baseline—a +0.28 improvement, notable given that a 0.1 MOS gain is already highly perceptible to users. The gain is largest on conversational speech, where AFM 3 Core Advanced scores 4.24 versus 3.82 (+0.42), reflecting markedly more natural and expressive cadence. Audio cleanliness—the fraction of samples free of tremor, slurs, and glitches—also improves, with Navigation reaching 100% clean, confirming a systematic reduction of perceptible artifacts in production. 
+
+## 4 Conclusions 
+
+This work establishes a novel paradigm in neural speech synthesis through the introduction of a semantic audio token processing architecture that fundamentally diverges from existing approaches such as Moshi. While Moshi generates the RVQ levels with a single depth transformer that retains codebook-specific input and output projections, our three-component architectural design achieves superior computational and parameter efficiency through a single reusable depth decoder whose parameters are fully shared across levels via DiT-style stage conditioning. The proposed system generates high-quality natural audio from semantic audio token inputs via this specialized neural architecture that decouples temporal and depth processing, eliminating the per-level parameterization overhead of Moshi’s depth transformer. The integration of diffusion transformer based conditioning mechanisms with causal sliding window attention and fixed-window KV cache enables enhanced synthesis quality while maintaining computational efficiency required for real-time deployment. Deployed on the AMX as the audio synthesizer for Siri Expressive Voices in AFM 3 Core Advanced, the architecture runs at roughly 16 × real time ( ∼10 ms per generation step) using only ∼21 MB of runtime memory and maintains constant memory across audio sequences ranging from 20 to 320 seconds—in contrast to Moshi and other state-of-the-art methodologies that exhibit linear or quadratic memory scaling. This memory efficiency is what enables high-quality, expressive, real-time speech synthesis to run entirely on 9device alongside a sparsely-activated foundation model, addressing fundamental scalability limitations in contemporary audio generation systems. 
+
+## References 
+
+Andrea Agostinelli, Timo I Denk, Zalán Borsos, Jesse Engel, Mauro Verzetti, Antoine Caillon, Qingqing Huang, Aren Jansen, Adam Roberts, Marco Tagliasacchi, et al. Musiclm: Generating music from text. arXiv preprint arXiv:2301.11325 , 2023. Apple. Introducing the Third Generation of Apple’s Foundation Models. Technical report, Apple, 2026. URL 
+
+> https://machinelearning.apple.com/research/introducing-third-generation-of-apple-foundation-models
+
+. Apple Machine Learning Re-search. Jimmy Lei Ba, Jamie Ryan Kiros, and Geoffrey E. Hinton. Layer normalization, 2016. URL https://arxiv.org/abs/1607. 06450 .Iz Beltagy, Matthew E. Peters, and Arman Cohan. Longformer: The long-document transformer. CoRR ,abs/2004.05150, 2020. URL https://arxiv.org/abs/2004.05150 .Zalán Borsos, Raphaël Marinier, Damien Vincent, Eugene Kharitonov, Olivier Pietquin, Matt Sharifi, Dominik Roblek, Olivier Teboul, David Grangier, Marco Tagliasacchi, et al. Audiolm: a language modeling approach to audio generation. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 31:2523–2533, 2023. Alexandre Défossez, Yossi Adi, Jade Copet, Gabriel Synnaeve, Itai Elbaz, Tal Remez, Olivier Teboul, David Grangier, Artyom Cattan, Felix Maurer, et al. Moshi: a speech-text foundation model for real-time dialogue. arXiv preprint arXiv:2410.00037 , 2024. Prafulla Dhariwal, Heewoo Jun, Christine Payne, Jong Wook Kim, Alec Radford, and Ilya Sutskever. Jukebox: A generative model for music. arXiv preprint arXiv:2005.00341 , 2020. Alexandre Défossez, Jade Copet, Gabriel Synnaeve, and Yossi Adi. High fidelity neural audio compression, 2022. URL 
+
+> https://arxiv.org/abs/2210.13438
+
+.Zach Evans, Julian Parker, CJ Carr, Zack Zukowski, Josiah Taylor, and Jordi Pons. Long-form music generation with latent diffusion. arXiv preprint arXiv:2404.10301 , 2024. Fish Audio Team. Fish audio s2 technical report, 2026. URL https://arxiv.org/abs/2603.08823 .Google. PaLM: Scaling Language Modeling with Pathways, 2022. URL https://research.google/blog/ pathways-language-model-palm-scaling-to-540-billion-parameters-for-breakthrough-performance/ . Technical Report. Google. Gemma 2: A New Generation of Open Models. Technical report, Google, 2024. URL https://storage.googleapis. com/deepmind-media/gemma/gemma-2-report.pdf . Technical Report. Andrew Hines, Jan Skoglund, Andrew Kokaram, and N. Harte. Visqol: an objective speech quality model. EURASIP Journal on Audio, Speech, and Music Processing , 2015:1–13, 2015. Bairu Hou, Qibin Chen, Jianyu Wang, Guoli Yin, Chong Wang, Nan Du, Ruoming Pang, Shiyu Chang, and Tao Lei. Instruction-following pruning for large language models, 2025. URL https://arxiv.org/abs/2501.02086 .Nal Kalchbrenner, Erich Elsen, Karen Simonyan, Seb Noury, Norman Norm, Eamonn Lockhart, Florian Stimberg, Aaron van den Oord, Sander Dieleman, and Koray Kavukcuoglu. Efficient neural audio synthesis. arXiv preprint arXiv:1802.08435 , 2018. Zhifeng Kong, Wei Ping, Jiaming Huang, Kexin Zhao, and Bryan Catanzaro. Diffwave: A versatile diffusion model for audio synthesis. arXiv preprint arXiv:2009.09761 , 2020. Felix Kreuk, Gabriel Synnaeve, Adam Polyak, Uriel Singer, Alexandre Défossez, Jade Copet, Devi Parikh, Yaniv Taigman, and Yossi Adi. Audiogen: Textually guided audio generation, 2023. URL https://arxiv.org/abs/2209.15352 .Kushal Lakhotia, Evgeny Kharitonov, Wei-Ning Hsu, Yossi Adi, Adam Polyak, Benjamin Bolte, Tu-Anh Nguyen, Jade Copet, Alexei Baevski, Adelrahman Mohamed, and Emmanuel Dupoux. Generative spoken language modeling from raw audio, 2021. URL https://arxiv.org/abs/2102.01192 .Doyup Lee, Chiheon Kim, Saehoon Kim, Minsu Cho, and Wook-Shin Han. Autoregressive image generation using residual quantization. Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 11523–11532, 2022. 
+
+10 Chen-Chou Lo, Szu-Wei Fu, Wen-Chin Huang, Xin Wang, Junichi Yamagishi, Yu Tsao, and Hsin-Min Wang. Mosnet: Deep learning based objective assessment for voice conversion. arXiv preprint arXiv:1904.08352 , 2019. URL 
+
+> https://arxiv.org/abs/1904.08352
+
+.Meta. Llama 3: The next generation of open models. Technical report, Meta, 2024. URL https://llama.meta.com/llama3/ .Technical Report. Max Morrison, Rithesh Kumar, Kundan Kumar, Prem Seetharaman, Aaron Courville, and Yoshua Bengio. Chunked autoregressive gan for conditional waveform synthesis, 2022. URL https://arxiv.org/abs/2110.10139 .Aaron van den Oord, Sander Dieleman, Heiga Zen, Karen Simonyan, Oriol Vinyals, Alex Graves, Nal Kalchbrenner, An-drew Senior, and Koray Kavukcuoglu. Wavenet: A generative model for raw audio. arXiv preprint arXiv:1609.03499 ,2016. Vassil Panayotov, Guoguo Chen, Daniel Povey, and Sanjeev Khudanpur. Librispeech: An asr corpus based on public domain audio books. 2015 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) ,pages 5206–5210, 2015. URL https://api.semanticscholar.org/CorpusID:2191379 .William Peebles and Saining Xie. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 4195–4205, 2023a. William Peebles and Saining Xie. Scalable diffusion models with transformers, 2023b. URL https://arxiv.org/abs/2212. 09748 .Ryan Prenger, Rafael Valle, and Bryan Catanzaro. Waveglow: A flow-based generative network for speech synthesis. In ICASSP 2019-2019 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 3617–3621. IEEE, 2019. Thomas Schatz, Vijayaditya Peddinti, Francis Bach, Aren Jansen, Hynek Hermansky, and Emmanuel Dupoux. Eval-uating speech features with the minimal-pair abx task: analysis of the classical mfc/plp pipeline. In Interspeech 2013 , pages 1781–1785, 2013. doi: 10.21437/Interspeech.2013-441. Noam Shazeer. GLU variants improve transformer. CoRR , abs/2002.05202, 2020. URL https://arxiv.org/abs/2002.05202 .Haibin Wu, Naoyuki Kanda, Sefik Emre Eskimez, and Jinyu Li. Ts3-codec: Transformer-based simple streaming single codec, 2024. URL https://arxiv.org/abs/2411.18803 .Haibin Wu, Bach Viet Do, Naveen Suda, Julian Chan, C R Madhavan, Gene-Ping Yang, Yi-Chiao Wu, Naoyuki Kanda, Yossef Adi, Xin Lei, Yue Liu, Florian Metze, and Yuzong Liu. T-mimi: A transformer-based mimi decoder for real-time on-phone tts, 2026. URL https://arxiv.org/abs/2601.20094 .Biao Zhang and Rico Sennrich. Root mean square layer normalization. CoRR , abs/1910.07467, 2019. URL http: //arxiv.org/abs/1910.07467 .
+
+> Apple and the Apple logo are trademarks of Apple Inc., registered in the U.S. and other countries and regions.
+
+11
