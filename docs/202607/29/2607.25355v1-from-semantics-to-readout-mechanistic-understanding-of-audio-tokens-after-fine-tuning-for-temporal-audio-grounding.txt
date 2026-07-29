@@ -1,0 +1,783 @@
+Title: From Semantics to Readout: Mechanistic Understanding of Audio Tokens after Fine-Tuning for Temporal Audio Grounding
+
+URL Source: https://arxiv.org/pdf/2607.25355v1
+
+Published Time: Wed, 29 Jul 2026 00:35:40 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# From Semantics to Readout: Mechanistic Understanding of Audio Tokens after Fine-Tuning for Temporal Audio Grounding 
+
+Yujian Ma 1, Jinqiu Sang 2∗, Ruizhe Li 3∗, Jiaao Yu 2, Ang Li 4
+
+> 1
+
+Shanghai Institute of Artificial Intelligence for Education, East China Normal University, China 
+
+> 2
+
+School of Computer Science and Technology, East China Normal University, China 
+
+> 3
+
+School of Computer Science, University of Birmingham, UK 
+
+> 4
+
+School of Information Engineering, Chang’an University, China 
+
+Abstract 
+
+Large audio-language models (LALMs) convey acoustic evi-dence to language decoders through native audio tokens, yet the internal roles of these tokens remain poorly understood. Using temporal audio grounding as a diagnostic setting, we examine how language-model fine-tuning affects the layerwise semantics, decoder accessibility, and temporal output align-ment of native audio-token states through four complementary analyses: query-conditioned token semantics, calibrated to-ken readout, temporal-window probes, and residual-delta era-sure during generation. Alongside substantial improvements in temporal localization, semantic analysis of Qwen2.5-Omni shows that latent evidence for queried events is already present before fine-tuning and that the audio tokens most strongly aligned with the queried event appear at similar temporal po-sitions before and after fine-tuning. After fine-tuning, event-related information in audio tokens becomes more accessible to the decoder, especially in early and middle layers, and a cross-checkpoint control shows that this improvement arises primarily from decoder adaptation. Temporal probes show that the base checkpoint already contains recoverable infor-mation about annotated windows and that fine-tuning mainly improves alignment with each checkpoint’s own predicted temporal support. Residual-delta erasure further shows that re-moving audio-token updates within predicted windows harms timestamp generation more than removing the same number of randomly selected updates. The same broad improvements in decoder readability and prediction alignment also appear in Qwen2-Audio. Together, these results support a semantics-to-readout account in which grounding fine-tuning helps the decoder read existing event evidence and connect it more re-liably to temporal outputs. 
+
+1 Introduction 
+
+Large audio-language models (LALMs) connect acoustic signals with the reasoning and generation capabilities of large language models (Tang et al. 2024; Chu et al. 2024; Kong et al. 2024; Wang et al. 2025). They convert continuous wave-forms into audio tokens, the interface through which acoustic evidence enters language reasoning. Yet these native audio tokens remain poorly understood: they support downstream behavior, but what they encode, when this information be-comes readable, and how it reaches final text remain unclear. 
+
+> ∗
+
+Corresponding authors. 
+
+Temporal grounding gives a controlled way to probe this question. General audio understanding asks what event oc-curs; temporal grounding also asks when. This makes task fine-tuning an informative intervention because the model must connect event semantics to explicit temporal outputs. Since general LALMs are not primarily trained for precise timestamp grounding (Tang et al. 2024; Chu et al. 2024), recent evaluations report persistent failures in localization, duration estimation, temporal reasoning, and timestamp pre-diction (Ahia et al. 2025; Kulkarni et al. 2026; Yao et al. 2025). Recent work improves temporal grounding by making time explicit through time-aware audio representations, au-dio prompts, timestamp-interleaved training sequences, or grounding objectives (Wang et al. 2026; Shi et al. 2026; Sun et al. 2026; An et al. 2026). These methods show that stronger temporal supervision and interfaces help. However, they mainly optimize timestamp interfaces and outputs, often using fine-tuned LALMs as baselines before adding explicit timestamp structure. This leaves a key internal question un-derexplored: how does task fine-tuning change the semantics and decoder readout of native audio-token representations? As illustrated in Figure 1, we use fine-tuning for temporal grounding to compare native audio-token states before and after task adaptation. Rather than treating fine-tuning as a black box that simply adds temporal capabilities, we orga-nize the analysis around four linked research questions: RQ1 :What query-relevant event evidence is already present in native audio-token states before grounding fine-tuning, and how stable are its temporal locations across checkpoints? 
+
+RQ2 : How does fine-tuning affect the decoder’s ability to read this evidence, and do the resulting gains arise primar-ily from intermediate-state changes or downstream decoder adaptation? RQ3 : How do audio-token states correspond to annotated event windows and to each checkpoint’s own pre-dicted temporal support? RQ4 : Do residual updates within predicted windows affect timestamp generation? Together, these questions trace the progression from event semantics to decoder readout, temporal output alignment, and generation-time relevance. The main contributions are summarized as follows: 
+
+• Controlled diagnostic setting. We use temporal ground-ing fine-tuning to examine changes in native audio-token states beyond timestamp accuracy. arXiv:2607.25355v1 [cs.SD] 28 Jul 2026 Figure 1: Overview of the core audio-token semantics-to-readout analysis pipeline. (1) LALM forward pass: the audio clip and question q form a mixed audio-text sequence, from which we extract layerwise audio-token states haℓ (i). (2) Token semantics: 
+
+task event phrases are encoded by the LALM text pathway to build Bℓ with text-side states bℓ,j . Phrase matching selects Mℓ(q)
+
+for the target event phrase e(q); mean normalization gives zℓ(q), and sℓ(i, q ) scores each audio token. (3) Token readout: haℓ (i)
+
+is inserted at the diagnostic [PATCH] site and decoded with a no-patch baseline. Sentence-BERT (SBERT) embeds the target event phrase from q and both readouts as vq , vpatch , and vno -patch ; their cosine difference gives calibrated readout gain. 
+
+• Semantics-to-readout framework. We combine query-conditioned token semantics, calibrated token readout, temporal-window probes, and residual-delta erasure to distinguish event representation, decoder accessibility, checkpoint-specific output consistency, and functional relevance in generation. 
+
+• Empirical answers. RQ1 : Base checkpoints already con-tain latent event evidence at largely stable temporal loca-tions. RQ2 : Fine-tuning improves decoder readability pri-marily through downstream decoder adaptation. RQ3 : It strengthens consistency with predicted temporal support more than recoverability of annotated windows. RQ4 :Predicted-window residual updates are functionally rele-vant to timestamp generation. 
+
+2 Related Work 
+
+Temporal Audio Grounding Temporal audio grounding localizes the time intervals of queried sound events. It is closely related to sound event detection, which localizes pre-defined sound classes from strong or weak temporal labels (Bhosale et al. 2024; Cornell et al. 2024). Text query ground-ing generalizes this setting to natural-language event phrases, as in AudioGrounding’s phrase-level links among clips, cap-tions, event phrases, and timestamp intervals (Xu et al. 2021). Because it conditions on phrases, this formulation naturally fits LALMs, which jointly condition on audio and text and generate textual responses. For LALMs, grounding methods typically improve times-tamp prediction by making time explicit in the interface or objective. TimeAudio and SpotSound use temporal markers, time encodings, timestamp sequences, or specialized tempo-ral supervision (Wang et al. 2026; Sun et al. 2026); TimePro-RL injects timestamp embeddings and optimizes temporal alignment with rewards (Shi et al. 2026); and tool use at the frame level exposes finer temporal operations for audio-language models (An et al. 2026). These works mainly study how temporal coordinates should be represented, supervised, or generated. In contrast, we use temporal grounding as a di-agnostic setting for studying how task fine-tuning changes native audio-token semantics and decoder readout. 
+
+Audio Tokens as Interfaces LALMs follow a common multimodal design in which audio inputs are encoded, pro-jected into the hidden space of the language model, and placed in the decoder context as token representations. Acoustic encoders and projection modules produce native audio-token states that condition text generation, enabling audio question answering, captioning, dialogue, and gen-eral audio understanding (Tang et al. 2024; Chu et al. 2024; Kong et al. 2024; Xu et al. 2025). These states form the internal interface through which acoustic evidence reaches the language decoder. Benchmarks such as AudioBench and AIR-Bench evaluate external capabilities across speech, en-vironmental sound, music, and open-ended audio interaction (Wang et al. 2025; Yang et al. 2024). They do not, however, explain how fine-tuning for a task changes what event ev-idence native audio-token states organize, or whether that evidence becomes more accessible to the language decoder. Token Evidence and Readout Methods for interpreting hidden states provide distinct ways to inspect internal ev-idence and its accessibility. Linear probing tests whether information can be recovered, although recoverability alone does not show that the evidence is used during generation (Hewitt and Liang 2019). LatentLens compares hidden states with contextualized semantic references (Krojer et al. 2026), while Patchscopes use diagnostic prompts to verbalize hid-den states (Ghandeharioun et al. 2024). Causal tracing and activation-patching interventions test whether hidden-state components affect model outputs (Meng et al. 2022). These methods separate recoverability, semantic alignment in rep-resentation space, decoder readout, and functional relevance. Interpretability work in audio has begun to examine inter-nal representations beyond final task accuracy. AudioLens traces auditory attribute evidence in LALMs through projec-tions into vocabulary space (Yang et al. 2025); Beyond Tran-scription uses probing and interventions to study automatic speech recognition representations (Glazer et al. 2026); Ma et al. analyze how LoRA adaptation reshapes Whisper encoder representations for speech emotion recognition through prob-ing, logit-lens, and representation-similarity analyses (Ma et al. 2026); causal tracing examines audio-text fusion across layers and token positions (Chen, Huang, and Lee 2026); and audio-visual stress tests show that multimodal LLMs may fail to surface auditory evidence in generated answers even when sound information is present (Selvakumar et al. 2026). These studies reveal semantic evidence in audio representations and possible gaps between audio information and generated be-havior, but they do not directly examine how task fine-tuning changes native audio-token semantics, decoder readout, and alignment with explicit temporal outputs. We address this gap by treating temporal-grounding fine-tuning as a con-trolled intervention and comparing representation, readout, and output correspondence across checkpoints. 
+
+3 Method 
+
+Our diagnostics compare native audio-token states before and after grounding fine-tuning using query-conditioned seman-tics, calibrated readout, output-facing temporal probes, and an intervention during generation. These diagnostics charac-terize representational alignment, decoder accessibility, out-put consistency, and functional relevance for timestamp gen-eration. 
+
+Audio-Token Interface 
+
+Given an audio clip x and a natural-language audio ques-tion, we denote the full question by q and the target event phrase extracted from it by e(q). The extracted event phrase is used for matching and scoring at the event level. Our anal-ysis focuses on the internal audio-token representations that connect acoustic evidence to textual responses about events, rather than on the final generated answer alone. The processor constructs a mixed audio-text input se-quence containing text tokens from the question and, for the waveform, audio placeholder tokens specific to the model. The audio tower encodes the waveform into audio features, which are projected into representations associated with the corresponding audio-token positions. Let A denote the na-tive audio-token positions in this mixed sequence, identified by the audio-token id used by the model. For the i-th audio token and layer ℓ, we denote its hidden state as haℓ (i), where 
+
+i indexes audio-token positions and ℓ indexes LALM layers. These layerwise audio-token states are the focus of our analysis. 
+
+Query-Conditioned Token Semantics 
+
+We adapt contextualized semantic reference retrieval to an-alyze audio-token semantics conditioned on the question. The representations under inspection are native audio-token hidden states haℓ (i), and the semantic reference is the target sound event specified by e(q) rather than an unconstrained text neighborhood. For each layer ℓ, we construct an event-phrase semantic bank Bℓ = {(cj , b ℓ,j )} from normalized event expressions in AudioGrounding-QA. Each row j stores the contextual state 
+
+bℓ,j of one text token from the LALM text pathway and its source expression cj . The term “event phrase” also covers simple event clauses. Given the event expression e(q), we retrieve a matched subset Mℓ(q) ⊆ B ℓ using the exact ,
+
+contains , and token_overlap_k matching cascade. The semantic vector conditioned on the question is the nor-malized mean of the matched bank embeddings: 
+
+zℓ(q) = norm 
+
+ 1
+
+|M ℓ(q)|
+
+X  
+
+> (cj,b ℓ,j )∈M ℓ(q)
+
+bℓ,j 
+
+ .
+
+We score each audio-token state by its cosine similarity to this semantic vector, which we call the target event alignment score: 
+
+sℓ(i, q ) = cos( haℓ (i), z ℓ(q)) .
+
+High values indicate that the audio-token state is close to con-textualized text representations of the queried event. The di-agnostic is checkpoint-relative because both the audio-token states and text-side event references for e(q) are extracted from the corresponding checkpoint; it therefore measures within-checkpoint audio-text alignment rather than isolating changes in audio states alone. We define the top-scoring set 
+
+Hℓ(q) as the top M = 20 audio tokens under this score. In comparisons with predicted windows, this statistic mea-sures how strongly the event tokens with the highest scores align with the model’s generated temporal support. Thus, the audio-token semantics diagnostic provides a target event alignment score sℓ(i, q ) for comparing token-level evidence against annotated and predicted temporal windows. Ap-pendix B further reports semantic bank validation and exam-ples of the exact , contains , and token_overlap_k 
+
+matching cascade used to construct Mℓ(q).
+
+Calibrated Token Readout 
+
+The audio-token semantics diagnostic measures alignment in representation space, but it does not test whether the lan-guage decoder can express the information carried by an audio-token state. We therefore use a calibrated hidden-state insertion diagnostic for audio-token readout: a source audio-token state haℓ (i) is inserted into a sound event prompt to elicit a natural language readout. For each audio-token state haℓ (i), we use a diagnostic text prompt p to ask the model to identify the sound event repre-sented by an internal audio representation. The prompt con-tains a placeholder position r, used as the readout site, with hidden state hpℓ (r). At layer ℓ, we replace this placeholder state with haℓ (i), continue the remaining decoder computa-tion, and decode a short event phrase dpatch  
+
+> ℓ,i
+
+deterministically. A diagnostic prompt can itself induce generic or non-informative outputs. To isolate the semantic contribution of the patched audio-token state, we decode the same prompt without any patch, yielding dno -patch . We embed the patched readout, no-patch readout, and the target event phrase e(q)
+
+with SBERT (Reimers and Gurevych 2019), yielding vpatch  
+
+> ℓ,i
+
+,
+
+vno -patch , and vq , respectively. We define the calibrated se-mantic readout gain as 
+
+∆readout (ℓ, i ) = cos 
+
+
+
+vpatch  
+
+> ℓ,i
+
+, vq
+
+
+
+− cos  vno -patch , vq
+
+ .
+
+Positive ∆readout indicates that patching the audio-token state improves semantic readout of the target event beyond the no-patch diagnostic baseline. This calibrated variant differs from direct output inspec-tion: it asks whether a specific audio-token hidden state can be expressed by the language decoder as text semantically matching the queried event. Together with the semantics di-agnostic, it separates semantics in representation space from token readout by the decoder. 
+
+Output-Facing Temporal Diagnostics 
+
+Temporal-window probes. We use temporal-window probes as standard diagnostic linear classifiers over frozen audio-token states. For each checkpoint, layer, and label source, hidden vectors are standardized from the training split and an L2-regularized logistic probe is trained to pre-dict whether an audio token belongs to a temporal support region. For an audio token i at layer ℓ, the probe predicts 
+
+pℓ(yi = 1 | haℓ (i)) = σ w⊤ 
+
+> ℓ
+
+haℓ (i) + bℓ
+
+ ,
+
+where yi indicates whether the token overlaps a target tempo-ral window. We use two label sources: ygt  
+
+> i
+
+= 1[ωi ∩W ⋆̸ = ∅]
+
+for annotated event windows, and ypred  
+
+> i
+
+= 1[ωi ∩ cW̸ = ∅] for the model’s generated temporal windows, where ωi is the ap-proximate time span assigned to audio token i. For predicted-window labels, cW is constructed separately from each check-point’s parsed timestamp output, so these probes measure checkpoint-specific consistency with generated temporal be-havior rather than performance on a shared prediction target. Layerwise figures report held-out token-level AUROC across all layers as the primary threshold-free metric. Ap-pendix E reports implementation details, including label ra-tios, AUPRC, validation-selected F1 and balanced accuracy, and a position-only control. These probes are audio-state-only and do not take the event phrase or query-conditioned vector as input. Thus, annotated-window probes test lin-ear decodability of annotated temporal membership, while predicted-window probes test whether audio-token states are linearly aligned with each checkpoint’s own temporal out-puts.                       
+
+> Split #QA #Aud. QA/Aud. Avg.#Seg Avg. Cov. (s) Train 9,542 3,686 2.59 1.65 5.07 Val 1,052 483 2.18 1.77 4.95 Test 992 483 2.05 1.83 4.75 Total 11,586 4,652 2.49 1.67 5.01
+
+Table 1: Statistics of the AudioGrounding-QA dataset. 
+
+Residual-delta erasure. To test functional relevance in the original generation context, we apply residual-delta erasure to the fine-tuned Qwen2.5-Omni checkpoint. At a selected layer, we replace the layer output at audio-token positions overlapping the checkpoint’s predicted temporal support with the corresponding layer input, thereby removing only that layer’s residual update. We compare these predicted-window positions with a size-matched random audio-token control, sampled outside the predicted support when possible. We report the degradation rate, defined as the percentage of instances whose timestamp IoU drops by more than 0.05 relative to unmodified generation; sampling and evaluation details are provided in Appendix E. 
+
+4 Experiments 
+
+AudioGrounding-QA 
+
+We construct AudioGrounding-QA by converting phrase-level temporal annotations from the public AudioGround-ing corpus, released with TextToAudioGrounding (Xu et al. 2021), into an audio question-answering format. Audio-Grounding is built on AudioCaps/AudioSet clips (Kim et al. 2019; Gemmeke et al. 2017); each phrase item with timestamped segments becomes one event-centered tempo-ral question and an answer verbalized from the annotated intervals. After QA construction and cleaning, the dataset contains 9,542/1,052/992 QA instances for train/val/test, re-spectively (11,586 in total), following the official Audio-Grounding split protocol. Table 1 reports split statistics. Here, QA/Aud. measures the number of event-centered ques-tions per audio clip, Avg.#Seg reports temporal fragmenta-tion through the average number of annotated intervals, and Avg. Cov. (s) denotes the average total duration covered by the queried event on the approximately 10-second timeline. Appendix A gives construction prompts and QA examples. 
+
+Models and Evaluation 
+
+We fine-tune two LALMs, Qwen2.5-Omni-7B (Xu et al. 2025) and Qwen2-Audio-7B-Instruct (Chu et al. 2024), on the AudioGrounding-QA training split using Low-Rank Adaptation (LoRA) (Hu et al. 2022). Qwen2.5-Omni is the primary model for detailed audio-token analysis, and Qwen2-Audio tests whether the pattern replicates across architec-tures. In both models, LoRA adapters are applied only inside the language model transformer blocks; the audio tower and multimodal audio to language projector remain frozen. Thus, acoustic encoding is fixed while the transformation of audio-token states inside the language model can change. Full fine-tuning and hardware details are provided in Appendix D, and Appendix G reports the Qwen2-Audio replication. Figure 2: Audio-token semantics analysis. (a1) Top-20 overlap with annotated and predicted temporal support. (a2) Inside– outside support score separation. (a3) Layerwise fine-tuning gains. (b) A representative Top-20 token case; W1 quantifies cross-checkpoint differences in token time and semantic similarity.       
+
+> Model mIoU F1 R@0.5 R@0.7 R@0.9 Qwen2.5-Omni base 0.3707 0.4416 0.3377 0.2349 0.1542 Qwen2.5-Omni FT 0.6817 0.7626 0.7399 0.5817 0.3286 Qwen2-Audio base 0.3653 0.4667 0.2873 0.1704 0.0927 Qwen2-Audio FT 0.6199 0.7195 0.6714 0.4556 0.2157
+
+Table 2: Temporal grounding on AudioGrounding-QA. FT: fine-tuned checkpoint. All main results are reported on the 992-instance test split. For temporal grounding evaluation, model outputs are parsed into timestamp intervals and compared with annotated event intervals using mean intersection over union (mIoU), F1 at the time level, and recall at IoU thresholds R@0.5, R@0.7, and R@0.9. For the main token analysis on Qwen2.5-Omni, we inspect all 28 Thinker layers using the diagnostics defined in Section 3. Appendix C specifies the readout diagnostic prompt and representative readout examples, Appendix D provides generation, parsing, and metric details, and Ap-pendix E gives probe and residual-erasure implementation details for reproducibility. 
+
+Grounding Performance 
+
+Table 2 shows that fine-tuning substantially improves tem-poral grounding on AudioGrounding-QA. Qwen2.5-Omni improves from 0.3707 to 0.6817 mIoU and from 0.4416 to 0.7626 F1, with R@0.7 rising from 0.2349 to 0.5817. Qwen2-Audio shows the same trend, improving from 0.3653 to 0.6199 mIoU and from 0.4667 to 0.7195 F1. These gains are consistent across architectures. 
+
+Semantic Scores and Predicted Support 
+
+Figure 2 characterizes how temporal-grounding fine-tuning changes the correspondence between query-relevant seman-tics in audio-token space and the temporal support gener-ated by the model. The analysis considers both the strongest event-aligned tokens and the broader distribution of semantic scores across layers. Figures 2(a1–a3) present the aggregate results. Fig-ure 2(a1) shows that fine-tuning consistently increases the fraction of Top-20 query-aligned tokens contained within the model-predicted temporal support, with larger differences emerging in later layers. Changes relative to annotated win-dows are weaker, indicating that the dominant effect is a closer correspondence between internal semantic evidence and the model’s own temporal output. Figure 2(a2) extends this observation to all audio tokens. Positive separation indi-cates that tokens inside the temporal support exhibit higher query-conditioned similarity than those outside it. Although the separation varies more across layers than the Top-20 hit ratio, it shows that the relationship between predicted support and event semantics is also reflected in the broader score dis-tribution. Figure 2(a3) summarizes these changes: predicted-window hit gains remain positive throughout the network and reach approximately +11 –13 percentage points in the fi-nal layers, whereas annotated-window gains are weaker and often negative. Together with the checkpoint-stability anal-ysis in Appendix E.1, these results show that fine-tuning brings model-predicted temporal support into closer corre-spondence with largely stable query-relevant evidence al-ready present in the audio-token stream. Figure 2(b) provides a token-level view for a representa-tive example with multiple intervals. Early layers show lim-ited differences across checkpoints, whereas middle and late layers exhibit clear recalibration of semantic scores while retaining much of the temporal structure of the tokens with the highest scores. At L28, the temporal distributions re-main close, with W1(time) = 0 .2390 s, while the event similarity scores differ with W1(sim) = 0 .2938 . This case illustrates semantic-score recalibration over largely shared temporal support. Together, the aggregate and example-level results answer RQ1 by showing pre-existing event evidence at largely stable temporal locations and provide semantic ev-Figure 3: Audio-token readout analysis. (a1) Mean calibrated readout gain for base and fine-tuned models. (a2) Percentage of tokens with positive gain. (a3) Fine-tuned Top-k gain among highest-gain tokens. (b) Token-level readout heatmaps for the representative case in Figure 2.                    
+
+> Layers Decoder swap State swap Gap 95% CI L1–L10 0.0929 −0.0020 0.0949 ±0.0224
+> L11–L18 0.0496 −0.0057 0.0553 ±0.0131
+> L19–L24 0.0192 −0.0037 0.0229 ±0.0073
+> L25–L28 0.0003 0.0000 0.0003 ±0.0004
+
+Table 3: Cross-checkpoint readout control on 100 stratified instances. Values are layer-band mean readout-gain changes. Gap is decoder-swap minus patched-state-swap (95% CI). idence for RQ3 by showing closer alignment with predicted support after fine-tuning. 
+
+Event Evidence Becomes More Accessible 
+
+Figure 3 summarizes whether the event semantics identified in representation space are readable by the language decoder, using the calibrated readout gain from Section 3. Figures 3(a1–a3) show that fine-tuning increases both mean readout gain and coverage of positive tokens, with the largest differences in early and middle layers. Mean readout gain attenuates toward zero in later layers, whereas cover-age of positive tokens declines but remains substantial. The Top-k analysis further shows that the largest gains remain concentrated among highly readable states, while the layer-wise profile is stable across values of k. Fine-tuning there-fore broadens decoder accessibility while concentrating its strongest effects in audio tokens with high responses. Figure 3(b) provides a token-level view for the same rep-resentative example analyzed in Figure 2(b). Positive read-out is sparse and fragmented in the base checkpoint, but becomes substantially denser after fine-tuning, particularly across early and middle layers. The increase spans a broad range of audio-token positions rather than a few isolated states. Together with Figure 2(b), this case shows that event evidence organized over largely shared temporal locations becomes more broadly accessible to the language decoder after adaptation. The bands coarse-grain the per-layer curves in Appendix C into early, middle, late, and near-output regions. Although the audio tower and projector remain frozen, haℓ (i) is produced by language-model blocks up to layer ℓ and can therefore differ across checkpoints. We extract this layer-ℓ audio-token hidden state from either checkpoint under the original audio-question context, patch it into the same layer of either check-point’s diagnostic prompt, and let the remaining language-model layers complete the readout, yielding four patched-state and downstream-decoder combinations (Appendix C). Table 3 reveals clear downstream-decoder dominance. Swapping the downstream decoder yields positive gains from L1–L24, whereas swapping the checkpoint that supplies the patched state has little effect; the gap confidence intervals ex-clude zero in the first three bands. These results answer RQ2: the early- and middle-layer gains in Figure 3 arise primarily from fine-tuned decoder access rather than from differences between base and fine-tuned intermediate states. Both effects approach zero in L25–L28, where little downstream compu-tation remains after insertion. 
+
+Output Consistency and Functional Relevance 
+
+To connect diagnostic readout with timestamp genera-tion, we test the pathway inside the original generation context. On 100 fine-tuned Qwen2.5-Omni test instances, the temporal-window probes from Section 3 distinguish annotated-window recoverability from consistency with each checkpoint’s own predicted temporal support. Residual-delta erasure then compares predicted-window audio-token masks with size-matched random audio-token masks. Figures 4(a1,a2) reveal a complementary contrast between annotated-window discrimination and predicted-window consistency. For annotated windows, both checkpoints re-main above chance and exhibit similar layerwise profiles, indicating little change in linear recoverability after fine-tuning. In contrast, the base predicted-window probe remains near chance across layers, whereas the fine-tuned checkpoint achieves substantially higher AUROC over most of the net-work. The position-only control in Appendix E also remains close to chance, showing that this separation is not explained by token order alone. Thus, fine-tuning improves alignment with predicted support more than recoverability of annotated event windows, answering RQ3. Figures 4(b1,b2) show that erasing predicted-window audio-token updates causes larger output degradation than erasing random audio-token updates of the same size. At Layer 16, degradation is 39.0% under predicted-window era-Figure 4: Output-facing temporal diagnostics. (a1,a2) Layer-wise AUROC for membership in annotated and checkpoint-predicted windows; dashed lines mark chance. (b1,b2) Residual-delta erasure compares predicted-window and size-matched random updates; (b2) reports the degradation gap. sure and 13.0% under size-matched random erasure, yielding a peak +26 .0 percentage-point gap (95% CI: [15.0, 36.0]). Because masks are size matched, this excess degradation answers RQ4 by showing that predicted-window residual updates contribute more directly to timestamp generation. Together, these two views separate output consistency from generation-time relevance: the probes measure align-ment between states and emitted windows, whereas residual-delta erasure tests whether updates at those windows affect the timestamp answer. 
+
+Cross Model Check 
+
+For the non-intervention diagnostics, Appendix G repeats the semantics, readout, and temporal-probe diagnostics on Qwen2-Audio-7B-Instruct. Predicted-window Top-20 hit gains are positive in all 28 layers, averaging 10.11 percent-age points, predicted-window probes improve more clearly than annotated-window probes, and high-response readout strengthens after fine-tuning (Top-5 gain +0.0347, positive in 24/28 layers). Thus, improved readability and prediction alignment generalize, while layerwise concentration remains model dependent. 
+
+5 Discussion 
+
+Latent Event Evidence (RQ1/RQ3). The results suggest that grounding fine-tuning does not simply create event evidence from scratch. Fine-tuning substantially improves timestamp prediction, yet the base checkpoint already con-tains measurable event-related structure. The audio tokens most strongly aligned with the queried event appear at simi-lar temporal positions before and after grounding fine-tuning, and annotated-window membership is weakly but consis-tently recoverable in the base checkpoint. Thus, poor ground-ing before fine-tuning is better explained by a weak mapping from existing event evidence to temporal outputs than by the absence of such evidence. 
+
+Layered Semantics-to-Readout (RQ2/RQ3). Adapta-tion appears to induce a layered division of labor rather than a single-layer bottleneck. Early and middle layers show the strongest gains in decoder accessibility: calibrated readout becomes stronger and more widespread, and the cross-checkpoint control attributes these gains primarily to decoder-side adaptation. Later layers show the closest cor-respondence between query-relevant semantic evidence and predicted temporal support, suggesting tighter coupling to output-facing timing decisions in later computation. Query-side activation patching in Appendix F supports this progres-sion: phrase-level influence appears earlier, whereas answer-facing start-time recovery emerges closer to the output. The Qwen2-Audio replication shows the same broad transition from latent evidence to improved readability and predic-tion alignment, although the layerwise concentration remains model dependent. 
+
+Output Consistency and Relevance (RQ3/RQ4). The re-sults separate three increasingly stringent notions of temporal evidence: recoverability, output consistency, and generation-time relevance. The annotated-window probe measures whether temporal membership is recoverable from audio-token states, whereas the predicted-window probe measures consistency between those states and each checkpoint’s own temporal outputs. Neither probe alone establishes that the recovered information affects generation. Residual-delta era-sure addresses this gap: removing updates within predicted windows degrades timestamp generation more than removing random updates of the same size. This intervention does not identify a complete circuit, but it narrows the functional test to predicted-window residual updates during generation. The agreement among recoverability, output consistency, and the intervention during generation supports the conclusion that fine-tuning improves how existing event evidence is read out and coupled to output timing. 
+
+6 Conclusion 
+
+Temporal grounding provides a diagnostic setting for exam-ining how language-model fine-tuning affects the semantics, decoder accessibility, and temporal output alignment of na-tive audio-token states. In both LALMs studied, base models contain latent event evidence, while fine-tuning strengthens decoder readout and consistency with predicted windows. Residual-delta erasure further shows that predicted-window updates contribute to timestamp generation. Together, these findings support a semantics-to-readout account in which supervision improves access to existing event evidence and connects it more reliably to temporal outputs. Thus, temporal grounding acts as both an evaluation target and a compact probe of decoder-accessible audio evidence. 
+
+References 
+
+Ahia, O.; Bartelds, M.; Ahuja, K.; Gonen, H.; Hofmann, V.; Arora, S.; Li, S. S.; Puttagunta, V.; Adeyemi, M.; Buchireddy, C.; et al. 2025. BLAB: Brutally Long Audio Bench. arXiv preprint arXiv:2505.03054 .An, J.; Keung, P.; Wang, J.; Ahia, O.; and Smith, N. A. 2026. Frame-Level Internal Tool Use for Temporal Grounding in Audio LMs. arXiv preprint arXiv:2602.10230 .Bhosale, S.; Nag, S.; Kanojia, D.; Deng, J.; and Zhu, X. 2024. DiffSED: Sound Event Detection with Denoising Dif-fusion. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 38, 792–800. Chen, W.-C.; Huang, C.-y.; and Lee, H.-y. 2026. Causal Trac-ing of Audio-Text Fusion in Large Audio Language Models. 
+
+arXiv preprint arXiv:2603.13768 .Chu, Y.; Xu, J.; Yang, Q.; Wei, H.; Wei, X.; Guo, Z.; Leng, Y.; Lv, Y.; He, J.; Lin, J.; et al. 2024. Qwen2-Audio Technical Report. arXiv preprint arXiv:2407.10759 .Cornell, S.; Ebbers, J.; Douwes, C.; Martín-Morató, I.; Harju, M.; Mesaros, A.; and Serizel, R. 2024. DCASE 2024 Task 4: Sound Event Detection with Heterogeneous Data and Miss-ing Labels. arXiv preprint arXiv:2406.08056 .Gemmeke, J. F.; Ellis, D. P.; Freedman, D.; Jansen, A.; Lawrence, W.; Moore, R. C.; Plakal, M.; and Ritter, M. 2017. AudioSet: An Ontology and Human-Labeled Dataset for Audio Events. In 2017 IEEE international conference on acoustics, speech and signal processing (ICASSP) , 776–780. IEEE. Ghandeharioun, A.; Caciularu, A.; Pearce, A.; Dixon, L.; and Geva, M. 2024. Patchscopes: A Unifying Framework for Inspecting Hidden Representations of Language Mod-els. In Proceedings of the 41st International Conference on Machine Learning , volume 235 of Proceedings of Machine Learning Research , 15466–15490. PMLR. Glazer, N.; Segal-Feldman, Y.; Segev, H.; Shamsian, A.; Buchnick, A.; Hetz, G.; Fetaya, E.; Keshet, J.; and Navon, A. 2026. Beyond Transcription: Mechanistic Interpretability in ASR. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 40, 37407–37416. Hewitt, J.; and Liang, P. 2019. Designing and interpret-ing probes with control tasks. In Proceedings of the 2019 conference on empirical methods in natural language pro-cessing and the 9th international joint conference on natural language processing (emnlp-ijcnlp) , 2733–2743. Hu, E. J.; Shen, Y.; Wallis, P.; Allen-Zhu, Z.; Li, Y.; Wang, S.; Wang, L.; and Chen, W. 2022. LoRA: Low-Rank Adaptation of Large Language Models. In International Conference on Learning Representations .Kim, C. D.; Kim, B.; Lee, H.; and Kim, G. 2019. Au-dioCaps: Generating Captions for Audios in The Wild. In 
+
+Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers) , 119–132. Minneapolis, Minnesota: Association for Computational Linguistics. Kong, Z.; Goel, A.; Badlani, R.; Ping, W.; Valle, R.; and Catanzaro, B. 2024. Audio Flamingo: A Novel Audio Lan-guage Model with Few-Shot Learning and Dialogue Abil-ities. In International Conference on Machine Learning ,25125–25148. PMLR. Krojer, B.; Nayak, S.; Mañas, O.; Adlakha, V.; Elliott, D.; Reddy, S.; and Mosbach, M. 2026. LatentLens: Revealing Highly Interpretable Visual Tokens in LLMs. arXiv preprint arXiv:2602.00462 .Kulkarni, A.; Jayakumar, K.; Ghosh, S.; Wiegreffe, S.; Manocha, D.; and Duraiswami, R. 2026. A Closer Look at Failure Modes in Temporal Understanding of Large Audio-Language Models. arXiv preprint arXiv:2606.17417 .Ma, Y.; Lu, X.; Sang, J.; Jiang, X.; and Li, R. 2026. Behind the Scenes: Mechanistic Interpretability of LoRA-Adapted Whisper for Speech Emotion Recognition. In 2026 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 5286–5290. IEEE. Meng, K.; Bau, D.; Andonian, A.; and Belinkov, Y. 2022. Locating and Editing Factual Associations in GPT. Advances in neural information processing systems , 35: 17359–17372. Reimers, N.; and Gurevych, I. 2019. Sentence-BERT: Sen-tence Embeddings using Siamese BERT-Networks. In Pro-ceedings of the 2019 Conference on Empirical Methods in Natural Language Processing and the 9th International Joint Conference on Natural Language Processing (EMNLP-IJCNLP) , 3982–3992. Selvakumar, R.; Jayakumar, K.; Sakshi, S.; Ghosh, S.; Gao, R.; and Manocha, D. 2026. Do Audio-Visual Large Lan-guage Models Really See and Hear? In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 5892–5902. Shi, Y.; Cai, P.; Liu, J.; Gu, Q.; Jiang, N.; Dai, L.; McLoughlin, I.; and Song, Y. 2026. Towards Fine-grained Temporal Perception: Post-Training Large Audio-Language Models with Audio-Side Time Prompt. arXiv preprint arXiv:2604.13715 .Sun, L.; Zhou, X.; Li, Z.; Zhang, Y.; Wang, Y.; and Xie, W. 2026. SpotSound: Enhancing Large Audio-Language Mod-els with Fine-Grained Temporal Grounding. arXiv preprint arXiv:2604.13023 .Tang, C.; Yu, W.; Sun, G.; Chen, X.; Tan, T.; Li, W.; Lu, L.; Ma, Z.; and Zhang, C. 2024. Salmonn: Towards generic hear-ing abilities for large language models. In International Con-ference on Learning Representations , volume 2024, 16607– 16629. Wang, B.; Zou, X.; Lin, G.; Sun, S.; Liu, Z.; Zhang, W.; Liu, Z.; Aw, A.; and Chen, N. 2025. AudioBench: A Universal Benchmark for Audio Large Language Models. In Proceed-ings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) ,4297–4316. Wang, H.; Li, Y.; Ma, S.; Liu, H.; and Wang, X. 2026. Listen-ing Between the Frames: Bridging Temporal Gaps in Large Audio-Language Models. Proceedings of the AAAI Confer-ence on Artificial Intelligence , 40: 26233–26241. Xu, J.; Guo, Z.; He, J.; Hu, H.; He, T.; Bai, S.; Chen, K.; Wang, J.; Fan, Y.; Dang, K.; Zhang, B.; Wang, X.; Chu, Y.; and Lin, J. 2025. Qwen2.5-Omni Technical Report. arXiv preprint arXiv:2503.20215 .Xu, X.; Dinkel, H.; Wu, M.; and Yu, K. 2021. Text-to-Audio Grounding: Building Correspondence Between Cap-tions and Sound Events. In IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 606– 610. IEEE. Yang, C.-K.; Ho, N.; Lee, Y.-J.; and Lee, H.-Y. 2025. Au-dioLens: A Closer Look at Auditory Attribute Perception of Large Audio-Language Models. In 2025 IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) ,1–8. Yang, Q.; Xu, J.; Liu, W.; Chu, Y.; Jiang, Z.; Zhou, X.; Leng, Y.; Lv, Y.; Zhao, Z.; Zhou, C.; et al. 2024. AIR-Bench: Benchmarking Large Audio-Language Models via Genera-tive Comprehension. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 1979–1998. Yao, J.; Liu, S.; Wang, Y.; Cheng, R.; Mei, L.; Bi, B.; Xiong, Z.; and Cheng, X. 2025. Not in Sync: Unveil-ing Temporal Bias in Audio Chat Models. arXiv preprint arXiv:2510.12185 .Supplementary Material for From Semantics to Readout: Mechanistic Understanding of Audio Tokens after Fine-Tuning for Temporal Audio Grounding 
+
+Appendix Contents 
+
+A Dataset Construction B Semantic Bank Construction and Validation C Audio-Token Readout Diagnostics D Training, Generation, and Metrics E Temporal Evidence and Output-Facing Diagnostics F Query-Side Activation Patching G Supplementary Qwen2-Audio Diagnostics 
+
+# A Dataset Construction 
+
+This section provides additional details for constructing AudioGrounding-QA, the temporal audio question-answering dataset used in the main paper. The dataset is derived from the public Audio-Grounding corpus, where each audio-caption sample contains phrase-level temporal annotations. Our conversion keeps the original temporal supervision intact while recasting each phrase item as an instruction-style question-answering instance. 
+
+A.1 AudioGrounding-QA Conversion 
+
+Each source AudioGrounding record contains an audio identifier, an AudioCaps identifier, a cap-tion, and phrase annotations with one or more temporal segments. We expand each valid phrase annotation into one QA instance. A valid item must have a non-empty source phrase and at least one numeric interval whose start time is no larger than its end time. The conversion preserves the original phrase-level temporal supervision while replacing caption-fragment queries with concise event-centered questions. 
+
+A.2 Event-Phrase Normalization 
+
+The original phrase annotations are caption spans and may be fragments rather than natural event expressions. We therefore normalize each source phrase into a concise event expression used in questions. The normalization is performed with Qwen3-Max using temperature 0 and JSON-object response format. Results are cached by lower-cased source phrase so repeated phrases receive the same normalized event text. 1Prompt component Content         
+
+> System prompt You normalize one source phrase from an audio caption into a concise event expression. Keep meaning unchanged. Do not add or remove semantic content. Return JSON only with this schema:
+> {"event text": string }.
+> User payload For each phrase item, the model receives caption text and
+> source phrase .
+> User rules Output JSON only: {"event text": string }; keep meaning unchanged; provide no extra explanation; ensure the event text is a concise event expression. Table 1: Event-phrase normalization prompt used for AudioGrounding-QA construction.
+
+The normalization is intentionally conservative: for example, a dog is barking becomes adog barking , while distressed cat growling is kept unchanged. 
+
+A.3 Question Templates and Timestamp Answers 
+
+For each valid phrase item, we generate one QA instance. The question is created from one of three templates: 1. When does {event } occur in this audio? 
+
+2. At what time does {event } happen in this audio? 
+
+3. During which time interval can {event } be heard in this audio? 
+
+The template is selected deterministically from audio id and source phrase : the builder computes an MD5 hash of audio id || source phrase , maps it modulo 3, and adds 1 to obtain a template id. This keeps template variation reproducible without using randomness. Temporal segments are rounded to two decimals using decimal ROUND HALF UP rounding. The answer is then verbalized directly from the rounded intervals. For a single interval, the answer format is:     
+
+> The event occurs from {start }to {end }seconds.
+
+For multiple intervals, the intervals are joined with commas and a final and . For example: 
+
+> The event occurs from 1.51 to 2.76 seconds, from 4.62 to 5.91 seconds, from 6.88 to 7.16 seconds, and from 8.28 to 9.15 seconds.
+
+A.4 Dataset Statistics and Examples 
+
+The final QA file used in the main paper contains 11,586 records, with 9,542/1,052/992 instances for train/val/test. The reported benchmark results use the 992-instance test split; full split statistics are reported in the main paper. Because AudioGrounding clips follow an approximately 10-second timeline, the covered duration of each QA instance is directly comparable on a fixed timeline. We define covered duration as the sum of all annotated segment durations, i.e., ∑
+
+> i
+
+(tend i − tstart i ); Avg. Covered (s) denotes the average of this quantity within each split. Table 2 shows representative final QA instances, including answers with single or multiple intervals. These examples illustrate the two temporal forms that appear throughout the dataset. Some queried events occupy a single continuous segment, while others occur in several disjoint intervals within the same clip. Keeping these intervals explicit is important for evaluation because the benchmark scores overlap over time spans rather than only checking whether a single timestamp is close to the annotation. 2QA ID Question Answer train-000008 At what time does a child yelling happen in this audio? The event occurs from 3.12 to 4.22 seconds. train-000057 During which time interval can honking be heard in this audio? The event occurs from 1.38 to 2.64 seconds. val-000002 During which time interval can a dog barking be heard in this audio? The event occurs from 1.51 to 2.76 seconds, from 4.62 to 5.91 seconds, from 6.88 to 7.16 seconds, and from 8.28 to 9.15 seconds. test-000087 At what time does a cat meowing happen in this audio? The event occurs from 1.09 to 2.06 seconds. 
+
+Table 2: Representative AudioGrounding-QA examples. 
+
+# B Semantic Bank Construction and Validation 
+
+The main paper’s audio-token semantics diagnostic compares audio-token states with the semantic vector zℓ(q), which is conditioned on the question and built from bank entries for the target event; this section documents the semantic reference space used for that comparison. The diagnostic uses an event-phrase semantic bank as the textual reference space for target event alignment. In our implementation, the event-expression inventory contains 5,228 unique normalized expressions from the AudioGrounding-QA construction pool. The inventory is used only as a semantic reference for representation diagnostics: timestamp intervals, answer strings, and model predictions are not used when constructing the bank. We keep the compact name “event-phrase bank,” although its expressions may be short noun phrases, verb phrases, or simple event clauses. Table 3 lists representative expressions from the bank. For auxiliary validation, we additionally constructed task question and descriptive caption banks from the construction pool to check whether the event-phrase bank preserves the relevant event structure. The main analysis uses the event-phrase bank because it removes question template and caption context words while keeping the target sound event semantics. Each normalized expression is encoded as text through the corresponding LALM text pathway. We then store contextualized hidden states of retained textual tokens at layer ℓ as bank vectors 
+
+bℓ,j , together with their source expression cj . Thus, one multi-token expression may contribute multiple bank rows, and these vectors are model-internal text-side hidden states rather than external sentence embeddings. 
+
+Entry type Representative normalized event expressions Human vocal events a man speaks ; a child yelling ; baby crying ; laughter 
+
+Animal sounds dog barking ; a dog is growling ; goats are bleating ; sheep bleat nearby 
+
+Vehicle and mechanical sounds 
+
+car engine idling at low frequency ; engine idling ; tires skidding ; train horn 
+
+Environmental sounds wind blowing ; water splashing ; rain falling 
+
+Table 3: Representative normalized event expressions used in the event-phrase semantic bank. 
+
+As a sanity check, we measure whether event-phrase representations preserve coarse event neigh-borhoods across layers. We group token pairs into related pairs, confusable pairs, and clearly distinct pairs, and compute centroid-level cosine similarity from contextualized bank embeddings at each layer. Representative pairs include car /engine and speaking /talking as related pairs, 
+
+car /train and wind /water as confusable pairs, and dog /engine and water /speaking as distinct pairs. Figure 1 shows that related and confusable event pairs remain consistently more similar than 3clearly distinct pairs. We use this result only as evidence that the bank provides a semantically structured reference space, not as a claim that the bank is a fine-grained event classifier. 
+
+> Figure 1: Category-wise semantic structure of the event-phrase bank. Related/confusable pairs remain more similar than distinct pairs across layers.
+
+Figure 2 provides a compact layerwise view of the same event-phrase bank. We visualize repre-sentative layers spanning the analyzed depth. The lower-triangle panels report centroid-level cosine similarity among representative event tokens. Because the matrix is symmetric, the lower triangle removes duplicated entries while preserving the pairwise semantic structure. 
+
+> Figure 2: Layerwise event-phrase bank similarity. Each panel reports lower-triangle cosine similarity among representative event-token centroids; brighter cells indicate higher similarity.
+
+Layer-to-layer CKA. Linear centered kernel alignment (CKA) compares two centered repre-sentation matrices and measures whether they preserve a similar global geometry. For centered 4event-phrase representation matrices Xℓ and Xm from two layers, we compute CKA( Xℓ, X m) = ∥X⊤ 
+
+> ℓ
+
+Xm∥2
+
+> F
+
+∥X⊤ 
+
+> ℓ
+
+Xℓ∥F ∥X⊤
+
+> m
+
+Xm∥F
+
+.
+
+We use it only as a compact layer-to-layer structural check for the event-phrase bank. 
+
+> Figure 3: Layer-to-layer CKA of the event-phrase bank. Higher values indicate that two layers preserve more similar event-phrase geometry.
+
+Semantic matching example. Table 4 illustrates how the matched bank subset is constructed for one question. The example asks when tires squeal occurs; the associated event expression is squealing tires , with annotated interval 3.93–9.98 s and predicted intervals 4.51–6.76 s and 7.48–8.78 s. We first match the normalized event expression against the source expressions cj
+
+attached to bank rows, then average and normalize the matched contextualized token vectors at each layer to form zℓ(q). We use a deterministic matching cascade: exact requires equality after normalization; contains 
+
+allows one normalized phrase to contain the other; and token overlap k selects bank entries with the largest content-token overlap, where k is the number of shared content tokens.                  
+
+> Layer Match Rows Matched bank entries 1exact 1squealing tires
+> 12 exact 1squealing tires
+> 28 exact 2squealing tires (two contextual token en-tries) Table 4: Example of semantic bank matching conditioned on the question for the audio-token semantics diagnostic.
+
+# C Audio-Token Readout Diagnostics 
+
+The main paper uses audio-token readout to separate event semantics in representation space from semantics readable by the decoder; this section specifies the diagnostic prompt used for that measurement. The readout diagnostic uses a separate prompt from the dataset construction prompt 5above. To obtain source audio-token states, we run the model on the original audio question input and append the answer prefix The event occurs from . This keeps hidden state extraction aligned with the temporal grounding generation format. To test event semantics readable by the decoder, we then use a text diagnostic prompt with a placeholder token. The selected audio-token state is patched into the placeholder position Sound . The string [PATCH] in the main-paper overview figure is a schematic label for this operation rather than the literal token used in implementation. The same diagnostic prompt is also decoded without patching to obtain the no-patch baseline used in the calibrated readout gain.            
+
+> Prompt component Content
+> Source audio input {audio }followed by the original temporal grounding question and the answer prefix The event occurs from .
+> Diagnostic prompt Identify the sound event represented by the internal audio representation. Answer with only a short sound event phrase. Do not explain. Sound
+> Readout site The placeholder token Sound is used as the readout site. In the patched condition, its hidden state is replaced with an audio-token state haℓ(i); in the no-patch condition, the same prompt is decoded without replacement. Table 5: Diagnostic prompt and readout site used for calibrated audio-token readout.
+
+For reproducibility, readout scoring uses the Sentence-BERT (SBERT) encoder paraphrase-multilingual-mpnet-base-v2 from Sentence-Transformers. The generated patched readout, no-patch readout, and target event phrase contained in the question are embedded with this encoder and compared in a shared text embedding space. In the notation of the main paper, SBERT maps them to vpatch , vno-patch , and vq, where vq denotes the target-event embedding derived from question q, yielding the calibrated semantic readout gain reported in the main paper. 
+
+C.1 Cross-Checkpoint Readout Control 
+
+Table 3 in the main paper reports a cross-checkpoint control for the Qwen2.5-Omni readout diag-nostic. The goal is to separate two factors: whether fine-tuning changes the source audio-token states, and whether it changes the language decoder’s ability to read event semantics from a given state. This control is more expensive than the within-checkpoint readout analysis because every selected state is decoded under four source/decoder combinations. We therefore run this control on a fixed 100-instance subset of the 992-instance test split. The subset is selected before running the swap experiment and reused for all four checkpoint combinations, with no per-condition resampling. It covers the observed base/fine-tuned temporal grounding behavior categories: both good (20), both poor (16), ft degrades (10), ft improves 
+
+(20), ft improves strong (24), and mixed (10). It also contains both temporal forms used in the benchmark: 56 single-interval instances and 44 multi-interval instances. This subset is intended as a paired diagnostic control rather than a replacement for the full 992-instance benchmark evaluation.           
+
+> Condition Source audio-token states Readout decoder
+> base state to base decoder Base checkpoint Base checkpoint
+> base state to finetuned decoder Base checkpoint Fine-tuned checkpoint
+> finetuned state to base decoder Fine-tuned checkpoint Base checkpoint
+> finetuned state to finetuned decoder Fine-tuned checkpoint Fine-tuned checkpoint
+
+6Table 6: Four checkpoint combinations used in the cross-checkpoint readout control. 
+
+For each sample, selected audio-token positions are fixed and reused across all four conditions, so comparisons are paired at the sample, token, and layer level. The source hidden states are extracted from the original audio question input with the same answer prefix used by the readout diagnostic. The patched and no-patch decodes use the same diagnostic prompt as Table 5, with 
+
+Sound as the implementation placeholder. Decoding is deterministic with max new tokens=8 and 
+
+do sample=false ; temperature , top p , and top k are unset. For a source checkpoint S and readout decoder D, let Rℓ(S, D ) denote the average calibrated readout gain at layer ℓ, averaged over the fixed sample and token set. The calibrated gain in each condition subtracts the no-patch baseline decoded by the same target decoder D, so the measurement compares patched versus unpatched readout within the same diagnostic prompt and decoder. With B denoting the base checkpoint and F denoting the fine-tuned checkpoint, we compute: DecoderSwap ℓ = (Rℓ(B, F ) − Rℓ(B, B )) + ( Rℓ(F, F ) − Rℓ(F, B )) 2 ,
+
+StateSwap ℓ = (Rℓ(F, B ) − Rℓ(B, B )) + ( Rℓ(F, F ) − Rℓ(B, F )) 2 .
+
+Table 3 in the main paper reports layer-group averages of these layerwise quantities, and the reported gap is DecoderSwap − StateSwap. Because late-layer patching leaves fewer downstream transformer blocks to transform the inserted state into text, the near-zero late-layer swap values should be interpreted as a readout-intervention effect rather than as evidence that late layers contain no event information. 1 4 8 12 16 20 24 28 
+
+> Layer
+> 0.00
+> 0.02
+> 0.04
+> 0.06
+> 0.08
+> 0.10
+> 0.12
+> Δ readout gain
+> Decoder swap
+> State swap
+
+Figure 4: Layerwise version of the cross-checkpoint readout control summarized in Table 3 of the main paper. Curves show decoder-swap and state-swap effects at each layer, with shaded 95% confidence intervals over the 100 paired test instances. Decoder swap dominates from early through middle layers, while state swap remains close to zero, supporting the interpretation that the main readout improvement comes from decoder-side adaptation rather than from a comparable change in source audio-token states. 
+
+Figure 4 provides the per-layer view underlying the layer-band summary in Table 3. The decoder-swap effect is broad in early layers, then gradually attenuates toward the output, whereas the state-swap curve remains near zero across depth. This visualization makes the same conclusion more explicit: fine-tuning primarily changes how the decoder reads event evidence from audio-token states. 7C.2 Audio-Token Readout Examples 
+
+Table 7 shows representative Qwen2.5-Omni readout examples with case metadata and multiple fine-tuned token readouts. These examples are intended to make the calibrated readout procedure concrete, rather than to serve as aggregate evidence; the aggregate readout trends are reported in the main paper. The no-patch diagnostic prompt tends to produce generic or non-informative outputs, while patching selected audio-token states elicits event-related phrases. The base column is kept as a compact reference and reports the highest-scoring base readout for each case. The fine-tuned column expands the comparison by reporting the top three distinct audio tokens from early layers (L1–L9), keeping only the highest-scoring layer for repeated occurrences of the same audio token. Individual readout entries report the decoded phrase, one-indexed layer label, audio-token index, approximate token time, and calibrated readout gain. The final column reports the sample-level mean readout gain, computed as the fine-tuned minus base average calibrated readout gain over all evaluated audio-token/layer positions for that sample.                              
+
+> Target event and metadata No-patch Base best readout FT top-3 distinct readouts Mean readout gain
+> a woman speaks
+> test-000399 ;Y2Zbl9J4vWns.wav
+> GT: 0.00–1.88, 3.76–6.76, 8.30–10.00
+> mechanisms whispering
+> L1, tok 27, 1.10s; 0.145 1. female speech ; L4, tok 32, 1.30s; 0.852 2. human voice ; L5, tok 18, 0.74s; 0.549 3. human voice ; L5, tok 19, 0.78s; 0.549 +0.103
+> an adult female briefly speaks in the foreground
+> test-000513 ;Y4iwHOSTWd1s.wav
+> GT: 0.95–4.68
+> mechanisms human voice
+> L7, tok 16, 0.66s; 0.302 1. female speech ; L4, tok 47, 1.90s; 0.783 2. human voice ; L1, tok 29, 1.18s; 0.540 3. human voice ; L5, tok 53, 2.14s; 0.540 +0.115
+> person laughing in background
+> test-000445 ;Y3OFi-JWcGK8.wav
+> GT: 6.88–10.02
+> mechanisms laugh
+> L15, tok 219, 8.78s; 0.438 1. laughter ; L4, tok 213, 8.54s; 0.726 2. laughter ; L1, tok 214, 8.58s; 0.726 3. laughter ; L2, tok 215, 8.62s; 0.726 +0.153
+> baby crying
+> test-000474 ;Y3ujCBi8VbLc.wav
+> GT: 0.27–5.19, 6.72–7.15
+> mechanisms baby crying
+> L7, tok 17, 0.70s; 0.719 1. baby crying ; L5, tok 17, 0.70s; 0.967 2. baby crying ; L1, tok 32, 1.30s; 0.967 3. baby crying ; L8, tok 39, 1.58s; 0.967 +0.112
+> wind blows loudly
+> test-000057 ;YdHce3m03dgk.wav
+> GT: 0.00–7.41
+> mechanisms Wind blowing
+> L5, tok 2, 0.10s; 0.614 1. wind ; L4, tok 10, 0.42s; 0.795 2. wind ; L1, tok 11, 0.46s; 0.795 3. wind ; L1, tok 182, 7.30s; 0.795 +0.118
+
+Table 7: Representative audio-token readout examples with case metadata and multiple fine-tuned token readouts. GT denotes ground-truth intervals. The no-patch output is decoded without replacing the place-holder state. Base best readout reports the highest-scoring base token-layer readout for the case. FT denotes fine-tuned; FT top-3 distinct readouts list the highest-scoring distinct audio tokens from early layers. Layer labels are one-indexed to match the main paper. Each entry gives the decoded phrase, layer, audio-token index, approximate token time, and calibrated readout gain. Mean readout gain reports the sample-level fine-tuned minus base average calibrated readout gain over all evaluated audio-token/layer positions. 
+
+# D Training, Generation, and Metrics 
+
+D.1 Fine-Tuning Setup 
+
+Both LALMs are fine-tuned with Low-Rank Adaptation (LoRA) using LLaMA-Factory. The train-ing data are converted into ShareGPT-style audio instruction-tuning records, where the user mes-8sage contains the audio placeholder and temporal grounding question, and the assistant message contains the timestamp answer.                 
+
+> Component Setting Models/hardware Qwen2.5-Omni-7B and Qwen2-Audio-7B-Instruct; four NVIDIA GeForce RTX 4090 GPUs with torchrun .Optimization 20 epochs, learning rate 1 .0×10 −4, cosine scheduler, warmup ratio 0.03. Batching Per-device batch size 1, gradient accumulation 8, effective global batch size 32, cutoff length 1024. LoRA scope LoRA rank 8, alpha 16, dropout 0.05; lora target: all attaches adapters only to self-attention q/k/v/o and feed-forward gate/up/down projections inside language-model transformer blocks. Audio towers and multimodal projectors remain frozen. Trainable size Qwen2.5-Omni: 20,185,088 trainable parameters out of 8,951,998,976 total (0.2255%); Qwen2-Audio: 19,988,480 out of 8,417,083,392 (0.2375%). Token embeddings and LM heads are not saved as trainable modules. Precision bf16 for Qwen2.5-Omni and fp16 for Qwen2-Audio. Runtime Preprocessing workers 8, dataloader workers 4, logging every 10 steps, validation/checkpoint saving every 200 steps.
+
+Table 8: Fine-tuning and hardware settings. 
+
+D.2 Evaluation Generation, Parsing, and Metrics 
+
+For benchmark evaluation, the model receives the audio clip and event-centered question, then gen-erates a timestamp answer on the test split. We use float16 inference, batch size 2 where batching is supported, max new tokens=96 , and deterministic decoding with do sample=false ; temperature ,
+
+top p , and top k are unset. For Qwen2.5-Omni, we disable audio output and evaluate only the textual timestamp response. Unless otherwise stated, each aggregate model or diagnostic result is computed from one fixed base or fine-tuned checkpoint and one deterministic evaluation pass on the stated split; reported confidence intervals use paired-instance resampling over fixed evaluation sets rather than repeated training runs. Predicted intervals are extracted from the generated text with a rule-based parser covering com-mon timestamp forms, including from ... to ... seconds , generic numeric ranges, between ... and ... , bracketed pairs, JSON-style start/end fields, and mm:ss ranges. Parsed intervals are normalized so that start time is no larger than end time, then overlapping intervals are merged. A prediction is counted as format-valid if at least one interval is parsed. Table 9 reports the format-valid rate on the 992-instance test split. Both base checkpoints already produce parseable timestamp responses for almost all test instances, and fine-tuning moves this rate only slightly to 100%. Thus, the behavioral gains in the main paper should not be read as only a change in parser success; the token-level diagnostics examine how event evidence is represented, read out, and aligned with generated temporal windows after a timestamp response is parseable. 
+
+Model Base valid (%) FT valid (%) Qwen2.5-Omni 99.4 100.0 Qwen2-Audio 99.9 100.0 
+
+9Table 9: Format-valid rates for parsed timestamp responses on the AudioGrounding-QA test split. Aresponse is format-valid if the parser extracts at least one timestamp interval. 
+
+Let P and G denote the merged predicted and ground-truth interval sets. We compute temporal intersection length |P ∩ G|, predicted duration |P |, and ground-truth duration |G|. The per-sample temporal IoU is IoU = |P ∩ G||P | + |G| − | P ∩ G| .
+
+Time-level precision, recall, and F1 are computed as Prec = |P ∩ G||P | , Rec = |P ∩ G||G| , F1 = 2 Prec Rec Prec + Rec ,
+
+with zero used when the denominator is zero. We report mIoU and time-level F1 by averaging per-sample scores over the test split. Recall at threshold R@τ is the fraction of test instances whose temporal IoU is at least τ .
+
+# E Temporal Evidence and Output-Facing Diagnostics 
+
+E.1 Top-k Temporal Stability of Semantic Evidence 
+
+The main-paper Top-20 semantic hit ratio asks whether the strongest query-aligned audio tokens fall inside annotated or predicted temporal support. Because checkpoint-specific predicted support can differ in temporal coverage, we additionally test whether the high-scoring semantic-token locations themselves remain stable across checkpoints. For each shared test example, layer ℓ, and k ∈{5, 10 , 20 , 50 }, we select the Top-k audio tokens by sℓ(i, q ) in the base and fine-tuned checkpoints. Let their sorted token-center times be tbase (1: k) and tFT (1: k). We compute the one-dimensional Wasserstein distance 
+
+W (k)1 = 1
+
+k
+
+> k
+
+∑
+
+> j=1
+
+∣∣∣tbase (j) − tFT (j)
+
+∣∣∣ .
+
+As a chance baseline, we keep the base Top-k locations fixed and compare them with k token positions sampled without replacement from the same audio clip, averaging repeated random draws. 1 4 8 12 16 20 24 28        
+
+> Layer
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> W1 distance (s)
+> (a) Top-20 temporal stability
+> Stability gap
+> Random Top-20
+> Base-FT Top-20
+> 14812 16 20 24 28
+> Layer
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> W1 reduction vs. random (%)
+> (b) Top-k robustness
+> Top-5
+> Top-10
+> Top-20
+> Top-50
+
+Figure 5: Temporal stability of high-scoring query-aligned audio tokens across checkpoints. (a) Base–FT Top-20 token locations are consistently closer than random Top-20 locations from the same audio. (b) The same pattern holds across Top-5, Top-10, Top-20, and Top-50 selections, shown as the percentage reduction in W1 relative to the random baseline. 
+
+10 Figure 5 shows that high-scoring semantic evidence is not relocated to arbitrary positions after fine-tuning. Across all layers and 986 shared test examples, the Top-20 Base–FT W1 is 0.80s, compared with 1.60s for random Top-20 locations. Exact Top-20 overlap is also much higher than chance (60.3% vs. 8.1%). The stability pattern is not specific to Top-20: the W1 reduction relative to random sampling is 53.7%, 48.6%, 46.4%, and 46.5% for Top-5, Top-10, Top-20, and Top-50, respectively. These results support the interpretation that fine-tuning aligns the model’s emitted temporal support with stable query-relevant semantic evidence already present in the audio-token stream. 
+
+E.2 Residual-Delta Erasure Details 
+
+The residual-delta erasure diagnostic is run on 100 fine-tuned Qwen2.5-Omni test instances across all 28 Thinker layers. For a selected layer ℓ and a selected set of prompt positions M , we replace the layer output at those positions with the corresponding layer input before continuing generation: 
+
+herase  
+
+> ℓ
+
+(i) = hℓ−1(i) for i ∈ M. 
+
+This removes only the residual update contributed by layer ℓ at the selected positions, while leaving the rest of the prompt and downstream computation unchanged. We evaluate four audio-token masks: annotated-window tokens, predicted-window tokens, all audio tokens, and a size-matched random control. Annotated-window and predicted-window masks include audio tokens whose approximate token windows overlap the ground-truth event interval or the parsed baseline prediction, respectively. The random control samples the same number of audio tokens as the predicted-window mask, using outside-prediction audio tokens when enough are available. If the outside pool is too small, it falls back to sampling the same count from all audio tokens. Random masks are sampled once per instance and layer using seed 42. For each intervention, we parse the generated timestamp response and compute ∆IoU (ℓ) 
+
+> m
+
+= IoU( ̂Ybase , Y ⋆) − IoU( ̂ Y (ℓ,m )erase , Y ⋆),
+
+where m is the mask type. A sample is counted as degraded when ∆IoU > 0.05, and the degradation rate is the percentage of degraded samples at each layer and mask. The main-paper curve plots predicted-window erasure against the size-matched random audio-token control. At Layer 16, predicted-window erasure degrades 39.0% of samples, compared with 13.0% for the random control, yielding a +26 .0 percentage-point excess. A paired bootstrap over the 100 test instances gives a 95% confidence interval of [15.0, 36.0] percentage points for this Layer-16 gap. For reference, annotated-window and all-audio erasure both degrade 32.0% of samples at the same layer. The outside-prediction pool is large enough for strict outside sampling in 56 of the 100 examples, corresponding to 1568 of 2800 instance-layer intervention settings. The remaining 44 examples use the all-audio fallback; 17 of these have predicted windows that cover all audio tokens. This fallback tends to make the random control conservative, because it can include predicted-window tokens and therefore dilute the predicted-versus-random gap. Consistent with this interpretation, the Layer-16 gap is +37 .5 percentage points on the strict-outside subset and +26 .0 percentage points overall. The effect is also not specific to the ∆IoU > 0.05 threshold. The peak predicted-minus-random degradation gap is +20 .0, +26 .0, and +22 .0 percentage points for thresholds 0, 0.05, and 0.10, respectively. Using mean IoU drop rather than a binary degradation rate gives the same layerwise conclusion: the predicted-minus-random gap peaks at Layer 16 with a +5 .68 IoU-point difference. 
+
+E.3 Temporal-Window Probe Implementation 
+
+For the Qwen2.5-Omni token-level probe analysis, we export hidden states from all 28 Thinker layers. Audio-token positions are identified with the model’s audio-token index, and each layer 11 produces one hidden vector for every audio token. We store the resulting audio-token vectors together with token-level metadata and train one independent linear probe per layer. To assign an approximate time span to each audio token, let an audio clip have duration T and 
+
+n audio tokens. The token with rank r ∈ { 0, . . . , n − 1} is assigned center time T r/ (n − 1) and a clipped window of width approximately T /n . Ground-truth window labels mark whether this token window overlaps any annotated target event interval. Predicted window labels are constructed in the same way, but using intervals parsed from the model’s own generated response. Each probe uses standardized hidden vectors and a logistic linear classifier implemented as 
+
+SGDClassifier with log loss, L2 regularization α = 10 −4, seed 42, and reweighting for positive tokens. The feature scaler is fitted on the training split by streaming over samples. For each layer, the decision threshold is selected on the validation split by searching thresholds from 0.05 to 0.95 in increments of 0.05, and the selected threshold is then evaluated on the held-out test split. Layerwise figures report held-out token-level AUROC across all layers. AUPRC is reported as an additional threshold-independent metric, while F1 and balanced accuracy are reported as complementary threshold-dependent diagnostics; the main paper uses held-out token-level AUROC as the primary layerwise probe metric. For the complementary single-layer summary in Table 11, we keep the validation-F1-selected layers and report all held-out metrics at those fixed layers. 
+
+E.4 Probe Label Statistics 
+
+Table 10 summarizes the positive token ratios used by the temporal window probes. The ground-truth window labels are shared across the base and fine-tuned checkpoints, while predicted window labels are derived from each checkpoint’s parsed timestamp response. These statistics contextualize the probe results as a moderately balanced token-level classification problem, and the base check-point produces fewer positives for predicted windows than the fine-tuned checkpoint. We therefore use reweighting for positive tokens and select decision thresholds on the validation split rather than fixing a universal threshold.             
+
+> Label source Train Val Test Ground-truth window 51.1 50.7 48.8 Base predicted window 39.0 36.8 37.7 Fine-tuned predicted window 51.3 47.9 49.6 Table 10: Positive token ratios (%) for temporal window probe labels. The train, validation, and test splits contain 2,387,666, 259,367, and 244,544 audio-token labels, respectively.
+
+Table 11 reports the full set of held-out probe diagnostics for the validation-F1-selected layer in each Qwen2.5-Omni condition. Because this table follows validation-F1-based layer selection, it should be read as a complementary single-layer summary; the main probe comparison is the full layerwise AUROC curve in Figure 4 of the main paper. The additional metrics support the same contrast: ground-truth window probes remain similar before and after fine-tuning, whereas checkpoint-specific predicted-window probes improve much more strongly.                                
+
+> Checkpoint Label Sel. layer F1 AUROC AUPRC Bal. Acc. Base GT-window 12 0.6272 0.5873 0.5539 0.5527 Fine-tuned GT-window 14 0.6210 0.5812 0.5482 0.5528 Base Pred-window 20.4770 0.5052 0.3796 0.5040 Fine-tuned Pred-window 12 0.6629 0.6329 0.5888 0.5960 Table 11: Qwen2.5-Omni temporal-window probe test metrics. Each row follows validation-F1-based layer selection, then reports held-out F1, AUROC, AUPRC, and balanced accuracy at the selected layer. This table is complementary; the main probe comparison uses layerwise AUROC in Figure 4 of the main paper.
+
+12 As a control for temporal position confounding, we also train a position-only probe with the same train/validation/test split but without hidden states. The features are normalized audio-token rank and its squared value. This control tests whether the window labels can be recovered from coarse token position alone. Table 12 shows that position-only AUROC remains close to chance for both ground-truth and checkpoint-specific predicted windows. Thus, the stronger fine-tuned predicted-window AUROC in the main layerwise probe is not explained by token rank alone.                
+
+> Checkpoint Label Val AUROC Test AUROC Base GT-window 0.5165 0.5115 Fine-tuned GT-window 0.5165 0.5115 Base Pred-window 0.5054 0.5085 Fine-tuned Pred-window 0.5172 0.5163 Table 12: Position-only temporal-window probe control for Qwen2.5-Omni. The classifier uses only normal-ized audio-token rank and squared normalized rank, without hidden-state features.
+
+# F Query-Side Activation Patching 
+
+As an additional query-side intervention, we perform activation patching on clean/corrupted pairs that share the same audio but ask about different target events. In the corrupted run, we replace a selected hidden state with the corresponding hidden state from the clean run and then decode the timestamp answer. This keeps the acoustic evidence fixed while testing whether the patched query-conditioned state redirects the output toward the clean event. All activation-patching results use the fine-tuned Qwen2.5-Omni checkpoint. We form same-audio clean/corrupted pairs from the AudioGrounding-QA test split and orient each pair so the clean query is answered more accurately by the unpatched model. A pair is eligible when the clean baseline IoU is at least 0.30, the clean-minus-corrupted baseline IoU gap is at least 0.05, and the clean and corrupted ground-truth intervals have IoU at most 0.05. This screen yields 254 primary different-event candidates; we evaluate the top 100 pairs sorted by clean baseline IoU and clean-minus-corrupted gap. Patching is run for all 28 layers, layerwise curves average over the 100 pairs, and decoding is deterministic with max new tokens=128 and do sample=false . Both patching sites use the same generation suffix, The event occurs from , before decoding the timestamp answer. We compare two patching sites. Mean-phrase patching replaces the mean-pooled hidden repre-sentation of the target event phrase in the question, which serves as a phrase-level semantic anchor. Last-token patching replaces the hidden state at the final prompt token immediately before gener-ation, which serves as the answer-facing readout interface in the decoder-only thinker. To quantify the direction of the patched answer, we define a layerwise ShiftScore . For full temporal intervals, 
+
+S(ℓ)IoU = IoU 
+
+(̂ 
+
+Y (ℓ)patch , Y clean 
+
+)
+
+− IoU 
+
+(̂ 
+
+Y (ℓ)patch , Y corr 
+
+)
+
+,
+
+where ̂ Y (ℓ)patch is the patched prediction at layer ℓ, and Yclean and Ycorr are the clean and corrupted target intervals. Positive values indicate that the patched answer is closer to the clean temporal target; negative values indicate stronger alignment with the corrupted target. Because the first emitted timestamp is the most local autoregressive commitment, we also compute a start-time ShiftScore. Let d(ℓ)clean and d(ℓ)corr be the absolute distances between the patched start time and the clean or corrupted start times. With a 1-second tolerance, the score gives +1 when only the clean start is recovered, −1 when only the corrupted start is recovered, and partial credit according to which target is closer when neither or both are within tolerance. 13 1 4 8 12 16 20 24 27 28         
+
+> Layer
+> −0.8
+> −0.6
+> −0.4
+> −0.2
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> IoU Shift Score
+> IoU Shift Score by Layer
+> Mean phrase
+> Last token
+> 14812 16 20 24 27 28
+> Layer
+> −1.0
+> −0.5
+> 0.0
+> 0.5
+> 1.0
+> Start Shift Score
+> Start Shift Score by Layer
+> Mean phrase
+> Last token
+
+Figure 6: Layerwise activation patching ShiftScore. Mean-phrase patching tests the target event phrase as a semantic anchor, while last-token patching tests the answer-facing readout state. The IoU ShiftScore measures whether the full predicted interval moves toward the clean target, and the start-time ShiftScore measures whether the first timestamp is recovered or moved closer to the clean onset. Positive values indicate movement toward the clean target; negative values indicate stronger alignment with the corrupted target. Mean-phrase patching is clean-biased in early-to-middle layers but reverses in later layers, whereas last-token start-time recovery becomes positive only in the final layers, suggesting a staged transition from phrase-level event semantics to answer-facing timestamp readout. 
+
+Figure 6 provides an additional query-side intervention complementing the main paper’s output-facing diagnostics. Mean-phrase patching has a positive start-time effect in early-to-middle layers, indicating that target-event phrase states can bias the model toward the clean onset at these depths. This effect collapses around the middle layers and becomes corrupted-biased later. In contrast, last-token patching is weak or corrupted-biased through most layers but becomes sharply positive for start-time recovery in the final layers. The separation between start-time and IoU ShiftScores suggests that the late answer-facing state most directly controls the first emitted timestamp, while full interval realization also depends on downstream or autoregressive computations. 
+
+# G Supplementary Qwen2-Audio Diagnostics 
+
+The main paper argues that fine-tuning for temporal grounding primarily improves decoder accessi-bility and prediction alignment of event-relevant audio-token evidence, rather than simply creating information over ground-truth windows from scratch. As a supplementary check across models, we apply the same diagnostic logic to Qwen2-Audio-7B-Instruct. The goal of this section is not to repeat the full Qwen2.5-Omni analysis, but to test whether the same three-way pattern appears in another audio-language model: event semantics in representation space become more aligned with predictions, readout readable by the decoder improves for selected audio tokens, and probe evi-dence shifts more strongly toward the model’s predicted temporal windows than toward additional recoverability for ground-truth windows. Unless otherwise stated, the Qwen2-Audio diagnostics reuse the same AudioGrounding-QA test split, event-phrase inventory, deterministic matching cascade, calibrated readout prompt, SBERT scoring procedure, and temporal window probe protocol described in Sections B–E. The layerwise semantic bank vectors are specific to the model: for Qwen2-Audio, the shared event-phrase inven-tory is encoded through the Qwen2-Audio text pathway at each analyzed layer. This makes the Qwen2-Audio section a matched check across models rather than a separate experimental setting. For comparability with the Qwen2.5-Omni figures in the main paper, the semantics and readout analyses use the first 28 Qwen2-Audio decoder layers; the temporal window probe additionally 14 reports all 32 Qwen2-Audio layers. 
+
+Diagnostic Qwen2-Audio finding Interpretation Semantics Top-20 hit for predicted windows increases by 10.11 percentage points and is positive in all 28 analyzed layers. Fine-tuning strengthens event semantics in representation space that are aligned with predictions. Readout Top-5 readout gain increases by 0.0347 and is positive in 24/28 analyzed layers. Evidence readable by the decoder improves, but is concentrated in tokens with high response. Probe The layer-averaged AUROC summary changes only slightly for ground-truth windows but increases from 0.5162 to 0.5895 for predicted windows. Audio-token states become more aligned with the model’s own temporal predictions than with additional recoverability for ground-truth windows. 
+
+Table 13: Summary of the Qwen2-Audio supplementary diagnostics. 
+
+G.1 Audio-Token Semantics 
+
+Figures 7 and 8 show the Qwen2-Audio version of the audio-token semantics diagnostic using the same top-20 summary of top-scoring tokens as the main paper. 0.4 
+
+> 0.5
+> 0.6
+> Mean hit ratio
+
+(a) Top-20 hit ratio 
+
+> base GT top-20 hit
+> base pred top-20 hit
+> FT GT top-20 hit
+> FT pred top-20 hit
+> −1
+> 0
+> 1
+> 2
+> Separation (%)
+
+(b) Relative similarity separation                            
+
+> base GT gap
+> base pred gap
+> FT GT gap
+> FT pred gap
+> 12345678910 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28
+> Layer
+> −10
+> −5
+> 0
+> 5
+> 10
+> Change (pp)
+
+(c) Fine-tuning gain 
+
+> Prediction hit
+> GT hit
+> Prediction gap
+> GT gap
+
+Figure 7: Qwen2-Audio aggregate audio-token semantics diagnostic. The panels compare top-20 hit ratios for top-scoring tokens, inside/outside similarity separation, and fine-tuning gains across layers. 
+
+15 The aggregate panels show a consistent increase in semantic alignment with predicted windows after fine-tuning: the top-20 hit gain for predicted windows is positive in every analyzed layer, and the similarity separation on the prediction side also shifts upward. By contrast, the curves for ground-truth windows are more mixed, especially in the fine-tuning gain panel. This distinction mirrors the main paper observation for Qwen2.5-Omni. The diagnostic does not ask whether every token inside the annotated interval becomes more similar to the queried event. Instead, it asks whether the audio tokens with the strongest event semantics conditioned on the question fall into temporally meaningful regions. For Qwen2-Audio, fine-tuning moves this top-scoring semantic evidence toward the windows predicted by the model more reliably than toward the annotated windows. Figure 8 gives a matched token-level example of this behavior. Together, these panels support the interpretation that task adaptation reorganizes semantic evidence around the temporal support used by the model’s own answer, rather than simply raising event similarity uniformly across the ground-truth interval. 24 28                   
+
+> 24 28
+> 24 28
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> Query similarity
+> L1
+> W1(sim)=0.0026 W1(time)=0.000s L4
+> W1(sim)=0.0472 W1(time)=0.487s L8
+> W1(sim)=0.0402 W1(time)=0.372s
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> Query similarity
+> L12
+> W1(sim)=0.0743 W1(time)=0.674s L16
+> W1(sim)=0.1243 W1(time)=0.443s L20
+> W1(sim)=0.1263 W1(time)=0.572s
+> 02468
+> Time (s)
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> Query similarity
+> L24
+> W1(sim)=0.1600 W1(time)=0.429s
+> 02468
+> Time (s)
+> L27
+> W1(sim)=0.1874 W1(time)=0.767s
+> 02468
+> Time (s)
+> L28
+> W1(sim)=0.1846 W1(time)=0.737s
+
+(b) Representative top-20 token case     
+
+> base top-20 FT top-20 ground truth fine-tuned pred base pred
+
+Figure 8: Qwen2-Audio matched top-20 audio-token semantics case. The panel visualizes where the highest scoring audio tokens fall relative to the ground-truth and predicted temporal windows. 
+
+G.2 Audio-Token Readout 
+
+Figure 9 reports the Qwen2-Audio readout diagnostic using the same calibrated prompt and SBERT scoring procedure as Section C. The mean readout gain and positive token coverage do not show a uniformly stronger fine-tuned curve across all layers; instead, the clearest improvement appears when we focus on the tokens with the highest response. The Top-k panel shows that readout from selected tokens remains substantially stronger than the average over all tokens, and Table 13 summarizes that the Top-5 readout gain is positive in 24/28 analyzed layers. This pattern is important for interpreting consistency across models. In Qwen2.5-Omni, the main paper reports a broad increase in both average readout gain and positive token coverage, suggesting that fine-tuning makes semantics for the queried event readable from many more audio-token states. Qwen2-Audio shows a sparser version of the same effect: the average over all tokens is less uniformly improved, but the strongest token and layer locations become more readable after 16 fine-tuning. The matched heatmap case gives the same qualitative picture at the token level, where fine-tuning exposes event evidence readable by the decoder in concentrated regions. Thus, Qwen2-Audio supports the readout part of the main claim while showing that the distribution of readable evidence can depend on the LALM architecture. (a) Aggregate audio-token readout across layers                               
+
+> (b) Token-level readout in the matched case
+> 1816 24 28
+> Layer
+> −0.02
+> 0.00
+> 0.02
+> 0.04
+> 0.06
+> Gain
+> (a1) Mean
+> Base
+> FT
+> 1816 24 28
+> Layer
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> %
+> (a2) Positive
+> Base
+> FT
+> 1816 24 28
+> Layer
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> Gain
+> (a3) Top-k
+> 1510 20 all
+> 1816 24 28
+> Layer
+> 0
+> 50
+> 100
+> 150
+> 200
+> Audio token
+> (b1) Base
+> 1816 24 28
+> Layer
+> (b2) Fine-tuned
+> −0.3 −0.2 −0.1 0.0 0.1 0.2 0.3
+> Readout gain
+
+Figure 9: Qwen2-Audio audio-token readout diagnostic. The aggregate panels compare average and top ranked readout behavior, while the matched case shows evidence readable by the decoder concentrated in selected audio tokens. 
+
+G.3 Temporal-Window Probe Diagnostics 
+
+Figure 10 shows the matched temporal window probe using held-out token-level AUROC, matching the primary probe metric used in the main paper. Fine-tuning changes the ground-truth-window curve only slightly, whereas the checkpoint-specific predicted-window curve increases more clearly. This is the same diagnostic contrast used in the main paper: probes for ground-truth windows test recoverable annotated temporal evidence, whereas probes for predicted windows test checkpoint-specific consistency with the model’s own generated temporal support. 1 8 16 24 32     
+
+> Decoder layer
+> 0.50
+> 0.52
+> 0.54
+> 0.56
+> 0.58
+> 0.60
+> 0.62
+> 0.64
+> Token-level AUROC
+> Ground-truth-window probe
+> Base
+> Fine-tuned
+> 1816 24 32
+> Decoder layer
+> Predicted-window probe
+
+Figure 10: Qwen2-Audio temporal window probe results. Curves report held-out token-level AUROC across layers. The horizontal dashed line denotes chance-level AUROC of 0.5. 
+
+17 Table 14 gives the corresponding Qwen2-Audio descriptive probe summaries averaged across layers. The layer-averaged summaries avoid selecting a best layer on the test set and show the same direction as the figure: predicted-window AUROC improves after fine-tuning, while annotated-window discrimination changes only slightly.                 
+
+> Checkpoint Label Mean AUROC Median AUROC Base GT-window 0.5873 0.5889 Fine-tuned GT-window 0.5978 0.5965 Base Pred-window 0.5162 0.5158 Fine-tuned Pred-window 0.5895 0.5962 Table 14: Qwen2-Audio temporal-window probe test metrics from the 992-instance AudioGrounding-QA test split. As a descriptive cross-model summary, each row reports mean and median test AUROC across all 32 layers in the corresponding layerwise curve, avoiding test-set selection of a single best layer.
+
+The Qwen2-Audio probe therefore reinforces the distinction between annotated-window dis-crimination and output alignment. If fine-tuning mainly created new information for annotated windows in the hidden states, we would expect a larger gain for the probe on ground-truth windows. Instead, the large change appears for predicted window labels, which are derived from each check-point’s generated answer. This indicates that fine-tuning mainly makes Qwen2-Audio audio-token states more consistent with the model’s temporal output behavior, while leaving annotated-window discrimination nearly unchanged. 
+
+Interpretation across models. Together, these Qwen2-Audio diagnostics provide a check across models on the main paper interpretation. As in Qwen2.5-Omni, fine-tuning strengthens semantics aligned with predictions, readout from selected tokens, and checkpoint-specific predicted-window AUROC, with little change in recoverability for ground-truth windows. The strongest shared pattern is therefore not that fine-tuning uniformly increases every form of event evidence, but that it makes event-relevant audio-token states more usable for the model’s own temporal grounding behavior. The main difference is distributional. Qwen2.5-Omni shows broader readout gains across audio-token states, whereas Qwen2-Audio concentrates readout gains in selected tokens with high re-sponse. We interpret this as variation across models in how event evidence readable by the decoder is distributed, not as a contradiction of the overall semantics-to-readout view. The evidence across models supports the qualitative claim while keeping the mechanism appropriately diagnostic rather than universal. These results should therefore be read as a matched diagnostic replication rather than a new training recipe or a claim that different LALM architectures must share the same layerwise pro-file. Reusing the same split, event-phrase inventory, matching cascade, readout prompt, SBERT scorer, and probe protocol keeps the comparison controlled, while building bank vectors specific to each model through its own text pathway keeps the semantic reference space appropriate for that architecture. Appendix G therefore complements the main Qwen2.5-Omni results by separating the shared diagnostic pattern from variation in the distribution of readable audio-token evidence across models. 18

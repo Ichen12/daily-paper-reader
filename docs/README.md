@@ -6,62 +6,44 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-28
-- 运行时间：2026-07-28 21:31:13 UTC
+- 最新运行日期：2026-07-29
+- 运行时间：2026-07-29 21:41:28 UTC
 - 运行状态：成功
-- 本次总论文数：14
-- 精读区：7
-- 速读区：7
+- 本次总论文数：8
+- 精读区：3
+- 速读区：5
 
 ### 今日简报（AI）
-今日聚焦语音技术前沿，涵盖金融语音基准、新加坡英语TTS及非洲语言模型等14篇论文。最值得精读的是满分10分的《Earnings25：金融500小时语音基准》与9分的《Singlish，Can or Not？新加坡英语零样本TTS》；速读可关注《DONDO》非洲语言ASR与《VibeVoice》低比特方案。建议普通读者关注金融与多语言语音应用，尤其是非标准英语及低资源语言的最新突破。
-- 详情：[/202607/28/README](/202607/28/README)
+今日8篇论文聚焦语音风格提取、联邦ASR及跨模态生成，精读两篇均获9.0高分。推荐关注梯度逆优化解冻TTS模型提取语音风格的方法，以及语音LLM与联邦学习结合实现端到端ASR的实际案例。建议深入精读论文，速读部分可关注OmniVAE的多模态对齐生成与文本提示音频对比学习。
+- 详情：[/202607/29/README](/202607/29/README)
 
 ### 精读区论文标签
-1. [Earnings25: A Comprehensive 500-Hour Speech Benchmark for Finance](/202607/28/2607.23813v1-earnings25-a-comprehensive-500-hour-speech-benchmark-for-finance)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：金融领域综合语音基准
-2. [Singlish, Can or Not? Fine-Tuning and Evaluating Zero-Shot TTS for Singapore English](/202607/28/2607.23027v1-singlish-can-or-not-fine-tuning-and-evaluating-zero-shot-tts-for-singapore-english)  
+1. [Extracting Voice Styles from Frozen TTS Models via Gradient-Based Inverse Optimization](/202607/29/2607.25351v1-extracting-voice-styles-from-frozen-tts-models-via-gradient-based-inverse-optimization)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：新加坡英语零样本语音合成
-3. [Indic DiarBench: A Multilingual Joint Diarization and ASR Benchmark for Indian Languages](/202607/28/2607.23808v1-indic-diarbench-a-multilingual-joint-diarization-and-asr-benchmark-for-indian-languages)  
+   evidence：通过梯度逆优化从TTS模型中提取语音风格
+2. [SpeechLLM Meets Federated Learning for End-to-End ASR: English and Italian Case Studies](/202607/29/2607.25716v1-speechllm-meets-federated-learning-for-end-to-end-asr-english-and-italian-case-studies)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：多语言联合说话人分离与ASR基准
-4. [Memory Efficient Audio Synthesis with Decoupled Temporal Depth Diffusion Transformers](/202607/28/2607.23811v1-memory-efficient-audio-synthesis-with-decoupled-temporal-depth-diffusion-transformers)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：从语义标记进行设备端语音合成
-5. [Qwen-Audio-3.0-TTS: Freely Controllable and Highly Robust Speech Synthesis with Multi-Stage Training Paradigm](/202607/28/2607.23938v1-qwen-audio-30-tts-freely-controllable-and-highly-robust-speech-synthesis-with-multi-stage-training-paradigm)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：文本到语音合成系统
-6. [MoLGE: Mixture of Language Group Experts for Efficient Scaling of Massively Multilingual Speech Recognition](/202607/28/2607.24030v1-molge-mixture-of-language-group-experts-for-efficient-scaling-of-massively-multilingual-speech-recognition)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：多语言自动语音识别，采用MoE和LoRA
-7. [Let Me Look at You: Advanced Facial Expression Modeling for Conversational Speech Synthesis](/202607/28/2607.24430v1-let-me-look-at-you-advanced-facial-expression-modeling-for-conversational-speech-synthesis)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：基于面部表情的对话语音合成
+   evidence：联邦学习用于基于SpeechLLM的端到端ASR
+3. [Towards Operational Conversational Intelligence: A Speech Intelligence Framework](/202607/29/2607.24958v1-towards-operational-conversational-intelligence-a-speech-intelligence-framework)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：包含语音识别和说话人日志的语音智能框架
 
 ### 速读区论文标签
-1. [VibeVoice-ASR-BitNet Technical Report](/202607/28/2607.21075v2-vibevoice-asr-bitnet-technical-report)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：为边缘实时推理压缩的自动语音识别系统
-2. [DONDO: Open w2v-BERT Speech-Recognition Base Models for African Languages](/202607/28/2607.21540v2-dondo-open-w2v-bert-speech-recognition-base-models-for-african-languages)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：非洲语言开放语音识别基础模型
-3. [Listen, Do Not Copy: Internalizing Audio-Grounded Scaffold Context for Robust Omni-Model Speech Understanding](/202607/28/2607.21943v1-listen-do-not-copy-internalizing-audio-grounded-scaffold-context-for-robust-omni-model-speech-understanding)  
+1. [OmniVAE: An Audio-Video VAE with Cross-Modal Alignment for Joint Generation](/202607/29/2607.23855v1-omnivae-an-audio-video-vae-with-cross-modal-alignment-for-joint-generation)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：基于音频基础支架上下文的鲁棒全模型语音理解
-4. [Improving Zero-Shot Phonetic Classification through Language-Agnostic Articulatory Features](/202607/28/2607.23606v1-improving-zero-shot-phonetic-classification-through-language-agnostic-articulatory-features)  
+   evidence：联合音视频VAE，跨模态对齐用于生成
+2. [Text-Prompted CLAP: Learning Query-Conditioned Audio Representations via Contrastive Learning](/202607/29/2607.25085v1-text-prompted-clap-learning-query-conditioned-audio-representations-via-contrastive-learning)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：用于语音识别的音素分类
-5. [Leveraging Gradient Reversal Loss and Multitask Learning for Datasets-Aware Audio Deepfake Detection](/202607/28/2607.23961v1-leveraging-gradient-reversal-loss-and-multitask-learning-for-datasets-aware-audio-deepfake-detection)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：针对语音转换生成的深度伪造检测
-6. [Multimodal Speaker Verification as a Threat to Speaker Anonymization](/202607/28/2607.19636v1-multimodal-speaker-verification-as-a-threat-to-speaker-anonymization)  
+   evidence：文本提示的音频表示学习，对比学习
+3. [Constrained CTC Decoding for Efficient Diacritic Restoration](/202607/29/2607.18946v2-constrained-ctc-decoding-for-efficient-diacritic-restoration)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：多模态说话人验证对语音匿名化的影响
-7. [From Read Speech to Spoken Digits: A Task-Specific Evaluation of Speech Privacy With Informed Attackers](/202607/28/2607.21393v1-from-read-speech-to-spoken-digits-a-task-specific-evaluation-of-speech-privacy-with-informed-attackers)  
+   evidence：基于CTC的阿拉伯语音译变音符号恢复
+4. [From Semantics to Readout: Mechanistic Understanding of Audio Tokens after Fine-Tuning for Temporal Audio Grounding](/202607/29/2607.25355v1-from-semantics-to-readout-mechanistic-understanding-of-audio-tokens-after-fine-tuning-for-temporal-audio-grounding)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：利用语音识别作为攻击者的语音隐私评估
+   evidence：大型音频语言模型中音频令牌的机制分析，用于时间音频定位
+5. [VAD to the Bone: Ultra-Tiny Speech Activity Detection for Edge Deployment](/202607/29/2607.25870v1-vad-to-the-bone-ultra-tiny-speech-activity-detection-for-edge-deployment)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：使用纯CNN层和结构化剪枝的超微型语音活动检测
 
 
 <div class="dpr-home-promo-card">

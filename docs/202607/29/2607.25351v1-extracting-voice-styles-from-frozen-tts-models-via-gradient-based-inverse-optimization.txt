@@ -1,0 +1,218 @@
+Title: Extracting Voice Styles from Frozen TTS Models via Gradient-Based Inverse Optimization
+
+URL Source: https://arxiv.org/pdf/2607.25351v1
+
+Published Time: Wed, 29 Jul 2026 00:35:00 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# EXTRACTING VOICE STYLES FROM FROZEN TTS MODELS VIA GRADIENT-BASED INVERSE OPTIMIZATION 
+
+# Gyeongmin Kim 
+
+# Department of Computer Science, Hanyang University, Seoul, Korea kdrkdrkdr@hanyang.ac.kr 
+
+ABSTRACT 
+
+Some text-to-speech systems ship a synthesis model and preset style vectors but not the reference encoder that turns audio into such a vector. The model still accepts a style vector; a user with a voice of their own cannot produce one. We solve for that input directly, in-verting the released pipeline by gradient descent: every weight stays frozen and only the style vector is optimized, against time-pooled WavLM statistics of one recording. Because the objective discards the time axis, the synthesized text may differ from the recording, so no transcript and no alignment are needed. On 154 speakers from two corpora, ECAPA-TDNN similarity rises from 0.132 to 0.413 and ResNet from 0.099 to 0.401, improving for every speaker; a verifier at its equal-error point accepts 53% of the recovered voices as the target, against 1% for the presets they start from. 
+
+Index Terms — Speaker verification, spoofing, voice cloning, model inversion, WavLM 
+
+1. INTRODUCTION 
+
+Neural TTS models such as SupertonicTTS [1] synthesize speech far faster than real time at a fraction of the parameter count of ear-lier systems. Many condition generation on a style vector encoding speaker identity and vocal character, so one model can voice any speaker for which such a vector exists. Obtaining one for a new speaker normally requires a reference encoder that maps audio into the conditioning space. Some released systems ship the synthesis model and a handful of preset styles but keep that encoder private. The synthesizer still takes a style vector; what is missing is the map from audio to that vector. This is an inverse problem rather than a training problem [2]: the function is fixed and public, and the unknown is one of its inputs. We recover the missing input by optimization: given the re-leased pipeline and one target recording, we search for the style vec-tor whose synthesized output matches the target voice. Nothing is trained and nothing about the released system changes. The absent encoder puts three things in the way. Gradients must flow through an inference graph never meant for training; the objective must mea-sure speaker identity while the generated and target utterances say different words; and with no encoder there is no bound on the valid style region, so the loss cannot simply be driven down. Fitting a conditioning vector while the generator is held fixed is familiar from speaker adaptation [3–5], but those methods extend a model their authors trained and supervise it by reconstructing the target’s own transcribed utterance frame by frame. Here the genera-tor is someone else’s inference-only release and the target arrives as a bare recording. Our objective therefore discards the time axis and matches per-dimension statistics of an early self-supervised layer, content-independent up to a measurable floor (Section 4.3); putting a pooled statistic in place of an aligned reconstruction is what makes texture and style inversion work on frozen image generators [6, 7]. Our contributions are: 1. A method for recovering a withheld conditioning input from a released synthesizer. Nothing is trained, and no transcript, forced aligner, speaker-verification model, enrolled popula-tion, or reference encoder is required at any stage. 2. The objective that makes it possible: a match between time-pooled statistics of an early self-supervised layer, taken from utterances that say different words. It transfers to speaker-verification metrics it never saw, and we characterize the point past which it has to be stopped. 3. Validation on 154 speakers across two corpora that dif-fer in recording condition. Code is released at https: //github.com/kdrkdrkdr/supertonic.embed .
+
+2. RELATED WORK Cloning and adaptation. Zero-shot systems rely on speaker en-coders [8], codec prompting [9], or infilling from an audio con-text [10]. Closer to us, VoiceLoop [3], the embedding-only route of Arik et al. [4], and SEA-Emb [5] hold the generator fixed and fit a conditioning vector for one named speaker. Two things separate them. The generator is one the authors trained, so its weights and corpus are theirs to use; and the objective reconstructs the target’s own transcribed utterance, a per-frame loss that VoiceLoop says “requires an exact temporal alignment of the input and the output sequence.” SEA-Emb further conditions on linguistic features and 
+
+f0 extracted from the adaptation data, which need a text front-end, a forced aligner and a pitch tracker. None of those exists for a bare recording, nor is accepted by an inference-only release. 
+
+Optimizing a conditioning vector for something other than a voice. A second line optimizes inside a synthesizer without chang-ing its weights: a style code driven toward transcription error [11], or a speaker embedding driven toward endless generation [12]. Nei-ther objective refers to a target voice at all. Marras et al. [13] are the closest neighbor, optimizing a frozen cloner’s conditioning em-bedding into a reusable vector, but by gradient-free evolution against the mean similarity to a proxy population, in what they call an “un-targeted dictionary attack”: it matches many speakers by chance rather than reproducing one. Their objective also needs a speaker-verification encoder, which ours never uses. 
+
+Reaching a voice without a speaker encoder. kNN-VC [14] and kNN-TTS [15] reach a chosen voice from untranscribed audio and public self-supervised features, with no speaker encoder. Re-trieval does the work: the target is kept as a searchable database of frames rather than reduced to a vector, and nothing is optimized arXiv:2607.25351v1 [eess.AS] 28 Jul 2026 sttl Text encoder 
+
+Vector estimator Vocoder Generated audio 
+
+WavLM layer 4 L (μ, σ )
+
+Target audio Frozen TTS pipeline 
+
+∇sttl L
+
+Fig. 1 . Only the style vector sttl (dark) receives gradients; every module of the TTS pipeline and of WavLM stays frozen. The loss compares time-pooled layer-4 statistics, so the generated and target audio may carry different text. toward it. kNN-VC, which calls itself non-parametric, reports that below roughly 30 s of target speech “the more complex baselines perform better.” Aldeneh et al. [16] use the same time-pooled mean and standard deviation of a frozen self-supervised layer that our loss regresses onto, but as a similarity score read between two real record-ings, never as a quantity anything is optimized toward. 
+
+Latent optimization. GAN inversion [17] recovers latent codes through a frozen generator and Textual Inversion [18] optimizes em-beddings in diffusion models. The image domain already substitutes a pooled statistic for the aligned term where alignment is meaning-less: Image2StyleGAN++ [6] optimizes a latent with its pixel losses disabled, and Lin et al. [7] refine real-texture inversions against a Gramian loss, having judged location-wise losses ill suited to tex-tures. Audio style transfer [19] matches such statistics too, but opti-mizes the output signal rather than an input to a fixed generator. 
+
+Layer structure. Self-supervised speech models distribute in-formation unevenly with depth [20]; a layer-wise probe of WavLM-Large puts peak speaker-identification accuracy at layer 4 [21]. 
+
+3. METHOD 
+
+The target deployment pattern is a TTS release that publishes the synthesis model and a set of preset style vectors while keeping the reference encoder private. Few public systems fit it: most either ship the speaker encoder alongside the weights (CosyVoice [22]), prompt directly on reference audio with no explicit style vector (F5-TTS [23]), or condition on discrete codec tokens (VALL-E [9]). We study SupertonicTTS, which fits the pattern and is small enough to differentiate through end to end. Fig. 1 shows the setup. 
+
+3.1. Problem formulation 
+
+Let G be a frozen TTS pipeline mapping text t and a style vector s to a waveform. For a target recording y∗ we solve 
+
+s∗ = arg min  
+
+> s
+
+L  G(t, s), y∗, (1) where t is text of our choosing, unrelated to what y∗ says. Super-tonicTTS exposes sttl ∈ R50 ×256 , which enters the acoustic mod-ules as cross-attention keys and values, and a separate duration style 
+
+sdp ∈ R8×16 . We optimize sttl , 12,800 free parameters, and keep sdp 
+
+fixed. 
+
+3.2. Gradient flow through a deployed graph 
+
+The released pipeline is four ONNX modules built for inference. We simplify each graph with onnxslim, downgrade the opset from 19 to 17, and strip trailing empty inputs from Clip operators, after which onnx2torch produces a differentiable PyTorch module. Every con-verted parameter and every WavLM parameter is frozen; the style vector is the only tensor in the optimizer. 
+
+3.3. A content-independent objective 
+
+The generated and target utterances contain different words, so the objective must ignore content. Let H = [ h1, . . . , hT ] ∈ RT ×D denote WavLM-Large layer-4 hidden states, D=1024. We collapse the time axis into per-dimension statistics, 
+
+μ = 1 
+
+> T
+
+∑τ hτ , σ = std (H), (2) and compare them by mean squared error, 
+
+L = 1 
+
+> D
+
+μ ˆy − μy∗ 
+
+> 22
+
++ 1 
+
+> D
+
+σ ˆy − σ y∗ 22. (3) Mean-and-standard-deviation pooling over time is the statistics pool-ing used by x-vector speaker embeddings [24]. More directly, this exact descriptor (time-pooled mean and standard deviation of frozen SSL hidden states, no trained head) is itself a competent speaker representation [16], which is why the objective transfers to speaker verification metrics it never saw. Pooling over time also removes any dependence on utterance length. We use layer 4, where Chiu et al. [21] report peak speaker-identification accuracy for this model; their layer indexing counts the CNN encoder output as layer 0 and so matches ours. 
+
+3.4. Initialization and stopping 
+
+Optimization starts from the preset whose output on the first prompt is closest to the target under Eq. 3, over the ten released presets. Because the encoder is unavailable, the extent of the valid style region is unknown, and driving the loss arbitrarily low pushes the vector into territory the model was never trained on. We therefore calibrate a stopping point from public material only. Synthesizing two different sentences from the same preset leaves a residual loss attributable to content rather than to speaker mismatch. Across the ten presets and four prompts, these 60 same-preset pairs span 0 .15 to 0.41 with a mean of 0 .27. We stop at 0 .30; 37 of the 60 pairs fall be-low that value, so the stopping point sits near the 62nd percentile of the content-only floor. This floor is measured between two synthe-sized clips, while optimization compares a synthesized clip to a real one, and the two are not on the same scale: 0 .30 is a calibrated oper-ating point, not a bound on where content ceases to be the residual. Section 4.3 shows what happens on either side of it. 
+
+3.5. Optimization details 
+
+Five English prompts chosen for phoneme coverage rotate across steps so the style vector cannot overfit one phoneme set. We use Adam at learning rate 2 ×10 −4, gradient clipping at max-norm 1 .0, and ReduceLROnPlateau with patience 200 and factor 0 .5. Each prompt has its own noise latent, drawn once from a fixed seed and Table 1 . 154 speakers, five utterances each. The baseline is the preset each speaker was initialized from, synthesized on the same prompts. 
+
+SIM E↑ SIM R↑ SIM W↑ WER ↓
+
+All (154) Preset 0.132 0.099 0.713 1.84% 
+
+Proposed 0.413 0.401 0.836 3.19% VCTK (110) Preset 0.132 0.099 0.699 1.67% 
+
+Proposed 0.393 0.384 0.824 3.99% Seed-TTS (44) Preset 0.132 0.099 0.747 2.28% 
+
+Proposed 0.463 0.444 0.865 1.19% reused at every step. That latent is sized once, from a single pre-set’s predicted duration, and reused for every speaker, so the dura-tion predictor’s output never enters the waveform path and sdp has no gradient path to the loss: utterance timing is not recovered here. Because each style vector reaches only its own output, several speakers can be optimized in one forward pass by summing their per-speaker losses; a speaker that reaches the threshold is removed from the batch at once, so it cannot drift past the stopping point. At batch 16 on one RTX 3090 this costs 0.49 minutes per speaker, against 5 to 6 minutes optimized singly. 
+
+4. EXPERIMENTS 4.1. Setup 
+
+We evaluate the public SupertonicTTS 2 release [25] (internal ver-sion v1.6.0 ), whose architecture is described in [1]. It ships 10 preset styles and no reference encoder. Targets are 154 speakers from two corpora with different record-ing conditions: 110 from VCTK [26] (studio, 8 to 12 s of reference audio, real gender and accent metadata) and 44 from the Common Voice subset of Seed-TTS Eval [27] (crowdsourced, 3 to 16 s). For every speaker we synthesize the same five prompts used during op-timization, from the extracted style and from the preset it started from, so the baseline is matched. The target recording’s own words are never used at any stage. Speaker similarity is cosine similarity between reference and generated embeddings under ECAPA-TDNN [28] (SIM E) and ResNet (SIM R), both from SpeechBrain VoxCeleb checkpoints, and under WavLM-base-plus-sv (SIM W), the metric most TTS work reports. SIM E and SIM R are trained independently of anything we optimize; SIM W shares the WavLM family with our objective, so we report it for comparability rather than as an independent check. Intelligibility is word error rate under Whisper-large-v3. For scale, we measured both ends of the ECAPA range on these same references. Different speakers score 0 .118 on average (95th percentile 0 .321, maximum 0 .629); two recordings of one VCTK speaker score a median of 0 .682; two halves of a single recording, which also fixes the channel, score 0 .804 over the 121 references long enough to split. The nearest preset therefore starts almost at the impostor floor. The impostor tail is long, so a single score near 0 .4is not by itself proof of identity; the comparison that matters is the paired change per speaker. 
+
+4.2. Main results 
+
+Table 1 reports the result against the nearest-preset baseline, the strongest option available to a user restricted to the public release. Speaker similarity rises from the impostor floor to about 60% of the 0 .682 that two real recordings of one speaker score: SIM E from 0.132 to 0.413 and SIM R from 0.099 to 0.401. Bootstrap 95% con-fidence intervals over speakers are [0.395 , 0.430 ] and [0.385 , 0.418 ].The gain is universal, not an average over successes and failures. 
+
+Every one of the 154 speakers ends closer to its target than its own preset does, under SIM E and SIM R, and 145 of 154 under SIM W.The objective sees none of these three, so the gain is transfer, not the optimizer scoring its own work. A Wilcoxon signed-rank test returns 
+
+p < 10 −26 for both independent metrics, with paired effect sizes dz
+
+of 2.70 and 2.82. The two verification models also rank speakers almost identically (Spearman ρ = 0.881), so the improvement is not an artifact of one embedding space. Extraction costs intelligibility but does not destroy it: mean WER rises from 1.84% to 3.19%. The mean is misleading here. The median is 0.00% and 107 of the 154 speakers transcribe with no error at all, so the increase is carried by a minority of failures rather than by uniform degradation. Section 4.3 attributes part of that tail to the synthesizer itself. The recovered vectors also behave like native ones. Predicted naturalness (UTMOS [29]) reaches 4.23 against 4.47 for the model’s own presets, 95% of what the synthesizer attains from a style vector it shipped; the median speaker gives up 0.10, at dz = 0.66 against 2.70 for the similarity gain on the same clips. Staying near the preset level is evidence that the vector lands inside the region the model was trained on, which is what the stopping rule buys (Section 4.3). UTMOS is trained on systems from earlier challenges, so it bounds this rather than measuring naturalness. The two corpora differ: Seed-TTS speakers reach higher sim-ilarity (0.463 against 0.393) and their WER falls rather than rises, while VCTK speakers gain less despite converging faster (297 steps against 568). They differ in recording condition, duration, and ac-cent coverage at once, so we offer no controlled explanation. 
+
+4.3. Where to stop 
+
+The stopping threshold is the one hyperparameter with no principled setting available from the release alone, so we characterize what it buys. Continuing six speakers from 0.30 down to 0.24, below the calibrated stopping point, raises SIM E from 0.498 to 0.534 but lifts word error rate from 1.07% to 5.22% and leaves SIM W slightly lower, 0.910 against 0.906. Past that point the optimizer is buying speaker similarity with intelligibility. Two of the six speakers ac-count for nearly all the damage, one going from 0.00% to 18.85% WER. Some of that fragility is the synthesizer’s, not ours. Synthesizing the ten stock presets with no optimization at all, over 250 clips, gives a mean WER of 0.38%, but two clips exceed 10% and one preset-sentence pair swings 15 points across noise seeds. Any single-clip WER from this model, including ours, carries that variance. 
+
+4.4. Would a verifier accept these voices? 
+
+A cosine similarity is hard to read as a risk. Table 2 restates the result as a verification decision, in the form a spoofing evaluation would use: with the verifier tuned to a given false-accept rate on genuine and impostor trials, how often does it accept an extracted voice as the target speaker? On this data the verifier separates real speakers cleanly, with an equal-error rate of 0.9% at a threshold of 0.406. At that operating point it accepts 52.6% of the extracted voices and 1.3% of the presets they were built from. Loosening to a 5% false-accept rate raises acceptance to 85.7%, against 9.1% for the presets. 0 200 400 600 800 1000 1200 
+
+optimization step 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> WavLM layer-4 loss
+
+stopping threshold 0.3 
+
+mean 
+
+(a) convergence, 154 speakers 
+
+0.0 0.2 0.4 0.6 
+
+SIM E (ECAPA-TDNN) 
+
+0
+
+10 
+
+20 
+
+30 
+
+> speakers
+
+(b) speaker similarity, 154 speakers 
+
+nearest preset 
+
+proposed Fig. 2 . (a) Best-so-far loss for all 154 speakers; light curves are individual speakers, the dark curve their mean. Every speaker reaches the 0.30 threshold, on average after 375 steps and between 80 and 1275. (b) ECAPA similarity before and after extraction; the two distributions barely overlap. 
+
+Table 2 . Acceptance by an ECAPA verifier tuned to a given false-accept rate. “Genuine” is a second real recording of the same speaker, which is what a deployed verifier actually sees; those trials cover the 110 VCTK speakers, the only ones with a second record-ing, against 6000 impostor pairs over all 154 references. Operating point Thresh. Genuine Extracted Preset EER (0.9%) 0.406 99.1% 52.6% 1.3% FAR = 5% 0.290 100.0% 85.7% 9.1% FAR = 1% 0.399 100.0% 53.9% 1.9% FAR = 0.1% 0.519 92.7% 18.8% 0.0% 
+
+4.5. How accurate is preset selection? 
+
+VCTK ships per-speaker gender labels, which lets us score the ini-tialization against ground truth rather than against itself. The nearest preset matches the labeled gender for 105 of 110 speakers (95.5%). All five errors share one direction: a male preset (M1) chosen for a female speaker. Initialization is therefore good but not reliable, which matters because the starting point is the one part of the proce-dure with no feedback signal. 
+
+5. DISCUSSION AND LIMITATIONS What initialization does. Preset initialization is a convenience, not a requirement. In an early three-speaker pilot, run at layer 3 with three prompts and a 0.24 stopping loss, a zero vector reaches SIM E
+
+0.496 against 0.594 for the standard start; on the two speakers also run from an opposite-category preset, the mean falls from 0.593 to 0.460. All are far above the 0.13 baseline, so optimization recovers from a poor start rather than failing. That pilot predates the settings above and scores above the 154-speaker mean, so only its internal ordering is meaningful. 
+
+Layer choice. We adopt the layer that [21] reports as best for speaker identity rather than sweeping layers ourselves. Neighboring early layers plausibly work as well; the loss scale differs between them, so each would need its own stopping threshold. 
+
+Duration style. The latent length is fixed in our graph, so sdp 
+
+has no gradient path to the loss and speaking rate is inherited from the initializing preset. Recovering it needs a latent whose length follows the duration predictor, which we leave open. 
+
+No countermeasure evaluation. We measure acceptance by a speaker verifier, not by a spoofing countermeasure. Synthetic speech from this model may well be detectable even when the verifier ac-cepts it: our result bounds what identity information the condition-ing space carries, not whether the audio survives a detector. Pairing extraction with a countermeasure benchmark is the natural next ex-periment. 
+
+Scope. Results come from one TTS model. The method as-sumes only a differentiable pipeline and a continuous style input, so it should transfer, but we have not shown that. The five evaluation prompts are the ones optimized on, so generalization to unseen text is untested. Naturalness is only a predicted score; a listening test re-mains necessary. Accent coverage is uneven and the weakest results fall on the least represented accents. 
+
+6. CONCLUSION 
+
+We recover a withheld conditioning input from a released synthe-sizer by optimization alone. Without an encoder there is no su-pervision signal for the fit; we substitute a time-pooled early-layer WavLM statistic, which makes the comparison content-independent, so one untranscribed recording suffices and it need not say any-thing in particular. A stopping point calibrated from the released presets keeps the result inside the region the model was trained on. Across 154 speakers the method raises ECAPA speaker similarity from 0.132 to 0.413, improves every speaker, and costs half a minute of GPU time each; a verifier at its equal-error point accepts 53% of the results as the target, against 1% for the presets they were derived from. One implication is that withholding the encoder removes a con-venience rather than a capability. Whatever a partial release is meant to achieve, it should be assessed against what the released compo-nents already determine, not against the intended interface alone. 
+
+7. COMPLIANCE WITH ETHICAL STANDARDS Use of a released model outside its intended interface. This work operates a publicly released model in a way its authors did not de-sign for: SupertonicTTS ships synthesis weights and preset voices, the reference encoder is withheld, and we reach the conditioning space without it. We used only public artifacts, breached no access control, and modified no released file, but operating a release out-side its intended interface carries obligations beyond its license, so we state plainly what we did. 
+
+Dual use. The measurement is directly usable to imitate a real person. That is not a side effect: the quantity we report is how con-vincingly a recovered vector reproduces a specific voice, so a high number is what makes misuse feasible. We report it because that same number tells a provider, or a user relying on one, how much of a voice a partial release already determines. A result of this kind cannot be reported in a form that informs the defense but not the offense. 
+
+Data, approval and funding. All evaluation uses consented, openly licensed corpora: VCTK (CC BY 4.0) and the Common Voice subset of Seed-TTS Eval (CC0). The study was conducted retrospectively on human-subject speech data already available in open access; no new recordings were collected, and ethical approval was not required, as confirmed by the licenses attached to that data. No identifiable individual is targeted, no public figure appears, and we release no extracted style vector for any real person. The released code documents that cloning a voice without the speaker’s consent is out of scope for it. This work received no external funding, and the author declares no conflict of interest. 
+
+What we release. We publish the procedure in enough detail to reproduce the measurement, with the code that produced the num-bers. We do not package it as a turnkey cloning tool, and the tech-nique it builds on has been public since 2018 [3–5], so the marginal capability this adds is small relative to the transparency it buys. 
+
+Mitigations available to providers. The conditioning space is reachable because it is continuous, differentiable, and shipped along-side working examples. Perturbing or quantizing the released pre-sets, watermarking synthesizer output so generated speech remains attributable, or serving the acoustic modules behind an interface that does not expose gradients would each raise the cost. We measured none of these and offer them as directions, not results. 
+
+8. REFERENCES 
+
+[1] H. Kim, J. Yang, Y. Yu, S. Ji, J. Morton, F. Bous, J. Byun, and J. Lee, “SupertonicTTS: Towards highly efficient and stream-lined text-to-speech system,” arXiv:2503.23108 , 2025. [2] M. Fredrikson, S. Jha, and T. Ristenpart, “Model inversion attacks that exploit confidence information and basic counter-measures,” in Proc. ACM CCS , 2015, pp. 1322–1333. [3] Y. Taigman et al., “VoiceLoop: Voice fitting and synthesis via a phonological loop,” in Proc. ICLR , 2018. [4] S. Ö. Arik et al., “Neural voice cloning with a few samples,” in Proc. NeurIPS , 2018, pp. 10040–10050. [5] Y. Chen et al., “Sample efficient adaptive text-to-speech,” in 
+
+Proc. ICLR , 2019. [6] R. Abdal, Y. Qin, and P. Wonka, “Image2StyleGAN++: How to edit the embedded images?,” in Proc. CVPR , 2020, pp. 8296–8305. [7] J. Lin, G. Sharma, and T. N. Pappas, “Texture representa-tion via analysis and synthesis with generative adversarial net-works,” arXiv:2212.09983 , 2022. [8] Y. Jia et al., “Transfer learning from speaker verification to multispeaker text-to-speech synthesis,” in Proc. NeurIPS ,2018, pp. 4485–4495. [9] C. Wang et al., “Neural codec language models are zero-shot text to speech synthesizers,” arXiv:2301.02111 , 2023. [10] M. Le et al., “Voicebox: Text-guided multilingual universal speech generation at scale,” in Proc. NeurIPS , 2023. [11] W. Jin et al., “Towards evaluating the robustness of auto-matic speech recognition systems via audio style transfer,” 
+
+arXiv:2405.09470 , 2024. [12] X. Gao et al., “TTSlow: Slow down text-to-speech with effi-ciency robustness evaluations,” arXiv:2407.01927 , 2024. [13] M. Marras et al., “Dictionary attacks on speaker verifica-tion,” IEEE Trans. Inf. Forensics Security , vol. 18, pp. 773– 788, 2023. [14] M. Baas, B. van Niekerk, and H. Kamper, “Voice conversion with just nearest neighbors,” in Proc. Interspeech , 2023, pp. 2053–2057. [15] K. El Hajal et al., “kNN retrieval for simple and effective zero-shot multi-speaker text-to-speech,” in Proc. NAACL , 2025, pp. 778–786. [16] Z. Aldeneh et al., “Can you remove the downstream model for speaker recognition with self-supervised speech features?,” in 
+
+Proc. Interspeech , 2024, pp. 4648–4652. [17] R. Abdal, Y. Qin, and P. Wonka, “Image2StyleGAN: How to embed images into the StyleGAN latent space?,” in Proc. ICCV , 2019, pp. 4432–4441. [18] R. Gal et al., “An image is worth one word: Personalizing text-to-image generation using textual inversion,” in Proc. ICLR ,2023. [19] E. Grinstein, N. Q. K. Duong, A. Ozerov, and P. Pérez, “Audio style transfer,” in Proc. ICASSP , 2018, pp. 586–590. [20] A. Pasad, J.-C. Chou, and K. Livescu, “Layer-wise analysis of a self-supervised speech representation model,” in Proc. IEEE ASRU , 2021, pp. 914–921. [21] A. Y. F. Chiu et al., “A large-scale probing analysis of speaker-specific attributes in self-supervised speech representations,” 
+
+arXiv:2501.05310v3 , 2026. [22] Z. Du et al., “CosyVoice: A scalable multilingual zero-shot text-to-speech synthesizer based on supervised semantic to-kens,” arXiv:2407.05407 , 2024. [23] Y. Chen et al., “F5-TTS: A fairytaler that fakes fluent and faith-ful speech with flow matching,” in Proc. ACL , 2025, pp. 6255– 6271. [24] D. Snyder et al., “X-vectors: Robust DNN embeddings for speaker recognition,” in Proc. ICASSP , 2018, pp. 5329–5333. [25] Supertone Inc., “Supertonic 2 open-weight release,” 2026. [Online]. Available: https://huggingface.co/ Supertone/supertonic-2 .[26] J. Yamagishi, C. Veaux, and K. MacDonald, “CSTR VCTK corpus: English multi-speaker corpus for CSTR voice cloning toolkit (version 0.92),” Univ. of Edinburgh, 2019. [27] P. Anastassiou et al., “Seed-TTS: A family of high-quality versatile speech generation models,” arXiv:2406.02430 , 2024. [28] B. Desplanques, J. Thienpondt, and K. Demuynck, “ECAPA-TDNN: Emphasized channel attention, propagation and aggre-gation in TDNN based speaker verification,” in Proc. Inter-speech , 2020, pp. 3830–3834. [29] T. Saeki et al., “UTMOS: UTokyo-SaruLab system for Voice-MOS Challenge 2022,” in Proc. Interspeech , 2022, pp. 4521– 4525.

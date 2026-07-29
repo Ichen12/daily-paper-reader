@@ -1,0 +1,270 @@
+Title: VAD to the Bone: Ultra-Tiny Speech Activity Detection for Edge Deployment
+
+URL Source: https://arxiv.org/pdf/2607.25870v1
+
+Published Time: Wed, 29 Jul 2026 01:10:36 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# VAD to the Bone: Ultra-Tiny Speech Activity Detection for Edge Deployment 
+
+# Stephen Bauer 1,2,∗, Sheila Seidel 1,∗,∗∗ , Shanza Iftikhar 1, Scott Veidenheimer 1, Gorkem Ulkar 11 Analog Devices, Inc., USA  
+
+> 2
+
+# University of California, Los Angeles (UCLA), USA 
+
+sheila.seidel@analog.com 
+
+Accepted for publication at INTERSPEECH 2026. 
+
+# Abstract 
+
+Voice activity detection (VAD) triggers downstream speech pro-cessing in always-on systems under strict memory, latency, and compute constraints. Recent compact models report strong accuracy but rely on components that are not widely sup-ported: learnable filterbanks, recurrent layers, or non-causal post-processing. We propose kiloVAD, designed for embed-ded inference using standard Mel features, CNN-only layers, and tunable context/spectral parameters. We introduce per-layer structured pruning with self-distillation and angle-based quantization-aware training (QAT) that outperforms standard QAT by 1-4%. Evaluated per-frame under causal conditions, kiloVAD achieves 0.850 AUC on AVA-Speech with 2.1 k pa-rameters and 200 ms context, establishing a new state of the art for causal, deployment-ready VAD. 
+
+Index Terms : Voice activity detection, edge devices, structured pruning, angle-based quantization, knowledge distillation, Con-volutional Neural Networks (CNNs) 
+
+# 1. Introduction 
+
+Voice activity detection (VAD) is a critical front-end compo-nent for speech processing systems deployed on edge devices. Before any downstream processing such as speech recognition, speaker verification, or keyword spotting can engage, a VAD must first determine whether speech is present, enabling the de-vice to keep power-hungry models dormant until needed. For always-on applications like smart speakers, hearables, and IoT devices, this decision must be made continuously with minimal latency and power consumption. Recent advances in deep learning have led to significant im-provements in VAD robustness, particularly in noisy and real-world conditions [1, 2, 3, 4]. However, these models achieve their performance at the cost of millions of parameters, making them impractical for always-on, resource-constrained devices. To address this, recent work has produced compact VAD archi-tectures. MarbleNet [5] introduced 1D time-channel separable convolutions at 91 k parameters. TinyVAD [6] reduced this to 11.6 k parameters using a patchify module and CSPTiny lay-ers. SincQDR [7] achieved 8 k parameters with learnable sinc filters, while ResectNet [8] reached 4.5 k parameters by com-bining sinc convolutions with a GRU. SG-VAD [9] proposed stochastic gates for feature selection at 7.8 k parameters. Most recently, AtomicVAD [10] achieved 0.3 k parameters using a novel oscillatory activation function (GGCU). 
+
+> *These authors contributed equally.
+> ** indicates the corresponding author.
+
+However, parameter count alone does not determine de-ployment feasibility. We identify four considerations for prac-tical embedded use. First, frontend compatibility : several re-cent models, such as ResectNet, SincQDR, and AtomicVAD operate on raw audio with learnable filterbanks or internal spec-trogram computation, requiring custom DSP implementations that cannot leverage hardware-accelerated Mel spectrogram ex-traction available on most embedded platforms. Moreover, Mel features are shared by downstream tasks such as keyword spot-ting and speech recognition, enabling a single frontend to serve multiple models in the audio pipeline. Second, architectural constraints : some compact VADs employ specialized recur-rent or gated units that introduce non-standard operations. For example, AtomicVAD’s GGCU activation requires computing 
+
+cos( ·) per activation, which is expensive on microcontrollers without hardware trigonometric computation support. Resect-Net’s GRU introduces dynamic control flow problematic for frameworks like TensorFlow Lite for Microcontrollers (TFLM). Third, detection latency: prior work often optimizes for much higher latency. SG-VAD operates at the segment level (up to 100 seconds), incompatible with low-latency streaming. Mar-bleNet, TinyVAD, and AtomicVAD all report 630 ms input con-text, tripling latency compared to our 200 ms design. Fourth, 
+
+causal evaluation : as noted by [10], “reported values are not directly comparable because of two competing inference pro-tocols”, yet most compact VADs, including AtomicVAD itself, report best results using non-causal sliding window inference with 87.5% overlap. AtomicVAD’s causal performance on AVA Speech [11] achieves an Area Under the Curve (AUC) of 0.869, dropping notably from its non-causal result of 0.903, illustrating how evaluation protocol choice may overstate streaming perfor-mance. Beyond architecture, edge deployment demands aggres-sive model compression to fit within the memory and com-pute budgets of target hardware—budgets that vary widely across microcontroller classes. Two complementary techniques dominate this space: structured pruning, which removes en-tire channels or layers to reduce parameter counts, often com-bined with knowledge distillation to recover accuracy [12]; and quantization-aware training (QAT), which enables infer-ence with fixed-point arithmetic but typically requires careful handling to avoid degradation at low bit-widths [13]. In this work, we present kiloVAD, a deployment-oriented VAD designed to jointly address architecture, compression, and real-time constraints. Our main contributions include: • A CNN-only architecture using standard Mel spectrogram features, designed for compatibility with embedded ML toolchains and aggressive structured pruning. • A generalizable per-layer structured pruning optimization approach with self-distillation, enabling varying degrees of arXiv:2607.25870v1 [eess.AS] 28 Jul 2026 60 100 140 180 220 260 300 340 
+
+> Input Context Length (ms)
+> 0.80
+> 0.82
+> 0.84
+> 0.86
+> 0.88
+> AVA AUC
+> 0.798
+> 0.862
+> 0.872
+
+Figure 1: AVA-Speech AUC vs. input context length. Error bars show 95% confidence intervals ( n=10 seeds). Performance plateaus near 200 ms. 
+
+model-size reduction to suit application requirements. • A novel angle-aware self-distilling QAT approach that out-performs standard QAT by 1–4% under INT4 quantization. • Analysis of design tradeoffs including Mel bins, input con-text, and compression ratio versus performance. We evaluate under strictly causal conditions with a 200 ms in-put context, achieving 0.850 AUC on AVA-Speech with 2.1 k parameters pre-quantization. To facilitate reproducibility, we provide pretrained weights and a web-based demo. 1
+
+# 2. Deployment Oriented System Design 
+
+2.1. Model Architecture 
+
+The kiloVAD architecture is optimized for cross-platform em-bedded support under standard operator constraints. Our model processes Mel spectrogram features through depthwise separa-ble convolutional blocks, global average pooling, and a linear classifier. We make four deployment-driven design choices: 
+
+Convolution-only design. kiloVAD is designed for com-patibility with embedded ML toolchains and supports export using only standard operations. We present a convolution-only backbone (all layers except the final classifier) operating on fixed Mel-spectrogram features and avoid non-standard compo-nents such as Sinc filters, GRUs, or novel activation functions that require custom kernels or introduce dynamic control flow. This design ensures static-graph compatibility and eliminates unsupported operators in lightweight embedded ML runtimes. 
+
+Pruning-friendly adapter layer. A 1 × 1 convolutional adapter projects mel features to an internal channel dimension. This decouples the fixed mel resolution from subsequent layer widths, enabling aggressive structured pruning of internal chan-nels without modifying the input interface. 
+
+Global average pooling. Rather than flattening fea-tures before classification (which ties parameter count to input length), we pool across the temporal dimension. This allows the same weights to operate on different input context lengths without architectural changes or additional parameters. 
+
+Amplitude-agnostic preprocessing. We normalize each mel frequency bin to zero mean and unit variance across the input window before passing features to the model. This per-frame normalization forces the model to learn relative spectral      
+
+> 1https://huggingface.co/spaces/kiloVAD-demo/ kiloVAD 24 32 40 64 80 96
+> Number of Mel Bins
+> 0.856
+> 0.858
+> 0.860
+> 0.862
+> 0.864
+> 0.866
+> AVA AUC
+> 0.8584
+> 0.8591
+> 0.8602
+> 0.8620
+> 0.8616
+> 0.8632
+
+Figure 2: AVA-Speech AUC vs. Mel bin count. Error bars show 95% confidence intervals ( n=10 seeds). Performance degrades gracefully with fewer bins. 
+
+patterns rather than absolute energy levels, improving robust-ness across diverse recording conditions and microphone gains. The normalization adds minimal overhead: computing mean and variance over 21 time steps for 64 mel bins. The architecture comprises: an adapter layer ( nmels →
+
+128 ), a depthwise separable block (temporal kernel 11), two 
+
+1 × 1 projection layers (128 →64 →64 channels), a residual block (kernel 17), a dilated block (kernel 29, dilation 2), a point-wise conv, global average pooling, and a binary classifier. 
+
+2.2. Deployment-Driven Feature and Context Selection Input context. The input context length directly determines detection latency. Figure 1 shows AUC across context lengths from 60 ms to 360 ms. Performance rises sharply from 0.798 at 60 ms to 0.862 at 200 ms, then plateaus, consistent with the 4–5 Hz syllable rate of spontaneous speech [14]. A 200 ms in-put context captures roughly one syllable, providing sufficient acoustic evidence while also providing a significant latency re-duction over the 630 ms latency required by MarbleNet [5], TinyVAD [6], and AtomicVAD [10]. 
+
+Mel resolution. Embedded DSP libraries vary in supported Mel configurations. For a 200 ms input context, we evaluate Mel resolutions from 24 to 96 bins (Figure 2) and find perfor-mance degrades gracefully: reducing from 64 to 32 bins costs only 0.003 AUC points. We default to 64 bins but support lower resolutions for platforms with different DSP constraints. 
+
+# 3. Compression Methods 
+
+3.1. Per-Layer Structured Pruning Strategy 
+
+We use structured pruning via torch-pruning [15], which constructs a dependency graph to identify parameter groups that must be pruned together to preserve functional structure. We apply magnitude-based pruning with ℓ2-norm importance to systematically remove channels contributing least to the out-put. Rather than applying a uniform global pruning ratio, we al-low each layer to have an independent pruning ratio. We search over these per-layer ratios using Optuna [16] with a multi-objective formulation: simultaneously minimizing (1) the False Positive Rate (FPR) at a True Positive Rate (TPR) of 0.95 on validation data, and (2) total parameter count. This produces a Pareto front of pruning configurations, allowing us to select the optimal model for any target size. After pruning, we fine-tune for 8 epochs using self-distillation: the unpruned model serves as the teacher, and we minimize a weighted combination of cross-entropy loss and KL divergence between student and teacher logits. This recov-ers accuracy lost during pruning without requiring a separately trained teacher. 
+
+3.2. Self-Distilling Quantization-Aware Training 
+
+Quantization complements pruning for embedded deployment, enabling faster inference, lower energy, and reduced memory via fixed-point arithmetic. As noted in [17, 18] angular quan-tization error dominates at low bit-widths. Prior work [19] ad-dresses this via knowledge distillation, learning quantized fea-tures to match full-precision teacher directions. We go fur-ther: we freeze the full-precision classifier and treat its class weight vectors as fixed prototypes. Our loss pulls penultimate feature vectors toward their corresponding class weight vectors while repelling them from non-target weight vectors, directly optimizing feature–weight geometry without a teacher. Un-like angular-margin softmax methods [20, 21, 22], which mod-ify full-precision training, we specifically target quantization-induced angle errors. Our loss operates on the quantized graph with soft-to-hard annealing inspired by [23] and regularization to stabilize angle drift. 
+
+Setup. For a mini-batch {(xi, y i)}Bi=1 with yi ∈{1, . . . , C }, where C is the number of classes, let the backbone have weights U and the classifier be a frozen full-precision ma-trix W FP ∈ RC×d with rows wFP  
+
+> c
+
+∈ Rd (one per class). We quantize only the backbone: ˜U = QW (U ). For each sample, the penultimate feature is fi = f ˜U (xi) ∈ Rd, so fi and each 
+
+wFP  
+
+> c
+
+live in the same d-dimensional space. We use the cosine-similarity function and do not backpropagate through W FP .
+
+Objective. The training loss is the mini-batch mean of an align–repel objective: 
+
+L = 1
+
+B
+
+> B
+
+X
+
+> i=1
+
+h
+
+1 − cos  fi, w FP 
+
+> yi
+
+| {z }
+
+> align to target
+
++ λ ϕ  {cos( fi, w FP  
+
+> c
+
+)}c∈{ 1,...,C }\{ yi}
+
+| {z }
+
+> repel from non-targets
+
+i
+
+,
+
+(1) with a hinge-style repulsion 
+
+ϕ {sc}c̸=yi
+
+ = max 0, max 
+
+> c̸=yi
+
+sc (2) The first term in Eq. (1) aligns the feature vector with the target class weight vector; the second term in Eq. (1) uses the hinge penalty defined in Eq. (2), which operates on cosine similarities 
+
+sc = cos( fi, w FP  
+
+> c
+
+) between fi and all non-target prototypes 
+
+wFP  
+
+> c
+
+with c̸ = yi. The max c̸=yi sc term selects the non-target class whose prototype is most aligned with fi, and the outer 
+
+max {0, ·} clamps this value at zero, so the penalty is non-zero only when a non-target class is aligned with fi. Thus the sec-ond term in Eq. (1) penalizes features that are too close in an-gle to incorrect prototypes and encourages an angular margin between the target and all other classes. In our VAD setting 
+
+C = 2 so this term penalizes similarity between fi and the only other class prototype. For aggressive quantization, we use INT4 backbone weights and show that our angle-based self-distilling QAT substantially outperforms standard STE-based QAT [24] 0 5k 10k 15k 20k  
+
+> Parameters
+> 0.81
+> 0.82
+> 0.83
+> 0.84
+> 0.85
+> 0.86
+> 0.87
+> AVA AUC
+> (622, 0.831)
+> (1.1k, 0.844)
+> (2.1k, 0.851) Unpruned model
+> Global w/o KD
+> Per-layer w/o KD
+> Per-layer w/ KD
+
+Figure 3: AVA-Speech AUC vs. parameter count for pruned models. Per-layer pruning outperforms uniform global prun-ing, especially at low parameter counts. Knowledge distillation (KD) improves performance at all compression levels. Labeled points: 622 parameters retains 0.831 AUC; 2.1 k parameters achieves 0.851 AUC, within 1.3% of baseline. 
+
+# 4. Experimental Setup 
+
+Training data. We train on LibriSpeech train-clean-100 [25] with three noise conditions: 25% clean speech, 25% mixed with synthetic wind noise [26] at −5 dB SNR, and 50% mixed with DNS Challenge noise [27] at SNRs of {− 10 , −5, 0, 5, 10 } dB, with half of these samples including simulated room reverber-ation. This mixture exposes the model to both environmental noise (wind) and diverse acoustic interference (DNS). For Lib-riSpeech, tightly aligned annotations were obtained using the Montreal Forced Aligner [28] as provided by [29]. 
+
+Training protocol. We use SGD with momentum 0.9, Nes-terov acceleration, and weight decay 8.75 × 10 −4. The learning rate follows a cyclic schedule: 4-epoch warmup to 3.5 × 10 −3,16-epoch hold, then 20-epoch cosine decay to 10 −5. We apply label smoothing ( ϵ = 0 .09 ) and train for 40 epochs with batch size 512. 
+
+Evaluation. We evaluate on AVA-Speech [11], which con-tains 15-minute YouTube clips with annotated speech segments across diverse acoustic conditions. Evaluating on a different domain than training tests generalization to unseen acoustic en-vironments. Unlike prior work that uses non-causal sliding-window inference with 87.5% overlap [6, 7], we evaluate under strictly causal conditions: each 200 ms frame is classified inde-pendently using that audio, with no future context or temporal smoothing. We report frame-level AUC and best F1 score at the optimal threshold, with 95% confidence intervals computed over 10 independent training runs with different random seeds. 
+
+# 5. Results 
+
+Structured pruning. Figure 3 compares pruning strategies across compression levels. Per-layer pruning ratios, optimized via multi-objective search, consistently outperform uniform global pruning, particularly below 5 k parameters where global pruning degrades sharply. Notably, global pruning fails entirely below 2 k parameters (the curve terminates) due to layer col-lapse, while per-layer pruning remains stable down to 622 pa-rameters. Knowledge distillation from the unpruned teacher provides AUC gains at all compression levels. At 2.1 k param-eters, per-layer pruning with KD achieves 0.851 AUC, within Table 1: Comparison of kiloVAD to prior art. kiloVAD is the only model satisfying all four deployment requirements (R1–R4). For kiloVAD, 95% CIs shown (full: n=10; pruned: n=8, as 2 seeds exhibited layer collapse at extreme compression). 
+
+Model R1: Frontend R2: Portable R3: Low R4: Causal Params Input Ctx. Total Ctx. AUC Compat. Ops Latency Eval (K) (ms) (ms) (AVA) kiloVAD (full) ✓ ✓ ✓ ✓ 81.1 200 200 0.862 ± 0.001 kiloVAD (pruned) ✓ ✓ ✓ ✓ 2.1 200 200 0.850 ± 0.007 MarbleNet [5] ✓ ✓ – ✓ 91 630 630 0.850 TinyVAD [6] ✓ ✓ – –a 11.6 630 1181 a 0.864 SincQDR [7] –b –c – –a 8 25 1181 a 0.914 ResectNet [8] –b –d ✓ ✓ 4.5 40 200 0.886 AtomicVAD [10] –b –e – ✓ 0.3 630 630 0.869        
+
+> aUses non-causal sliding-window inference with 87.5% overlap. dUses GRU for temporal modeling.
+> bOperates on raw audio (not Mel-compatible). eUses GGCU activation (cos() per activation).
+> cUses learnable sinc bandpass filters.
+
+1.3% of the unpruned baseline while reducing parameters by 97.4% and MACs from 1.7 M to 44 k per inference. We fea-ture the 2.1 k configuration in Table 1. Pruning ratios were op-timized on a single seed (the model studied in Figure 3) and transferred to 10 independent models; 2 failed under this ag-gressive compression due to layer collapse, yielding n=8 for confidence intervals in Table 1. This transfer protocol tests gen-eralization of the pruning configuration rather than per-model tuning. 
+
+Comparison to prior work. Table 1 compares kilo-VAD against recent compact VAD models. Critically, reported AUC values are not directly comparable across methods: Sinc-QDR and TinyVAD employ non-causal sliding-window infer-ence with 87.5% overlap, which substantially inflates perfor-mance. AtomicVAD reports 0.903 AUC with this protocol but only 0.869 under causal evaluation [10]. Under strictly causal conditions with a 200 ms input context, 3 × shorter than Mar-bleNet, TinyVAD, and AtomicVAD, our pruned model (F1: 
+
+0.783 ± 0.004 ) matches MarbleNet (0.850 AUC) at 43 × fewer parameters while maintaining TFLM portability. Our full model achieves 0.862 AUC (F1: 0.796 ± 0.001 ). As shown in Fig-ure 1, extending input context to 360 ms yields 0.872 AUC, surpassing both AtomicVAD’s causal result (0.869) and Tiny-VAD’s non-causal result (0.864), despite using nearly half the context (360 ms vs. 630 ms) and only standard CNN operations. 
+
+Quantization. We evaluate our angle-aware self-distillation method on two pruned variants: 10 k and 2.1 k parameters (Figure 4). Post-training INT8 quantization with round-to-nearest (RTN) is essentially lossless: the 10 k model maintains 0.861 AUC and the 2.1 k model remains at 0.851 AUC, matching their FP32 baselines. This confirms that 8-bit weights and activations can be deployed on embedded targets without sacrificing accuracy. For more aggressive INT4 quantization, our angle-aware self-distilling QAT outperforms standard straight-through esti-mator (STE) QAT [24]. Standard INT4 QAT yields 0.800 AUC for the 10 k model and 0.693 AUC for the 2.1 k model. Angle-aware QAT improves these to 0.811 and 0.719 AUC, respec-tively, a 1–4% relative improvement depending on model size. This demonstrates that explicit optimization of quantization-induced angular error provides meaningful gains under aggres-sive compression, without requiring a separate teacher model. FP32 INT8 INT4   
+
+> Quantization
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> AVA AUC  0.850 0.851
+> 0.693
+> 0.719
+> 0.861 0.861
+> 0.800
+> 0.811
+> Method :
+> Unquantized
+> RTN
+> QAT (Standard)
+> QAT (Angle)
+> Base Pruned Model :
+> 2.1 k params
+> 10 k params
+
+Figure 4: AVA-Speech AUC for FP32, INT8, and INT4 models. Colors denote quantization method; open vs. filled markers in-dicate 2.1 k vs. 10 k parameters. 
+
+# 6. Discussion 
+
+We presented kiloVAD, a VAD co-designed from the ground up for aggressive compression and microcontroller deployment. Our architecture, featuring a 1 ×1 adapter layer to decouple in-put resolution from internal channels, global average pooling for context-flexible inference, and a fully convolutional back-bone, was specifically engineered to support extreme structured pruning while remaining TFLM-compatible. Per-layer pruning with multi-objective optimization reduces the model from 81 k to 2.1 k parameters (97.4% reduction) and from 1.7 M to 44 k MACs, while retaining 0.850 AUC, within 1.3% of the un-pruned baseline. This matches MarbleNet at 43 × fewer param-eters with 3 × lower latency (200 ms vs. 630 ms). At 360 ms context, still nearly half that of AtomicVAD (630 ms), kilo-VAD reaches 0.872 AUC, exceeding AtomicVAD’s 0.869 with lower latency and only standard CNN operations. INT8 post-training quantization is lossless; for INT4, our angle-aware self-distilling QAT outperforms standard QAT by 1–4%, demon-strating that explicit optimization of quantization-induced an-gular error is critical at extreme bit-widths. Unlike prior work that achieves small footprints through recurrent archi-tectures, learnable filterbanks, or non-causal post-processing, kiloVAD is CNN-only, fixed-point compatible, stateless, and low-latency, addressing a gap in deployment-ready VAD for resource-constrained edge devices. 7. Acknowledgments 
+
+The authors thank Bibek Gupta and Rupesh Kumar for their help configuring on-premises machines and Azure training workflows, Adam Rowell for his help creating the online demo, and Kao Kitichotkul, Alessandro Ragano, and Henning Hase-mann for their feedback on the manuscript. 
+
+# 8. Generative AI Use Disclosure 
+
+Claude (Anthropic) was used as a writing assistant for manuscript editing and as a programming aid during code de-velopment. The authors reviewed and validated all outputs and retain full responsibility for the work presented. 
+
+# 9. References 
+
+[1] S. Team, “Silero vad: Pre-trained enterprise-grade voice activity detector (vad) models,” https://github.com/snakers4/silero-vad, 2025, version 6.0.0, released August 26, 2025. [2] Y. Zhao and B. Champagne, “An efficient transformer-based model for voice activity detection,” in 2022 IEEE 32nd Inter-national Workshop on Machine Learning for Signal Processing (MLSP) , 2022, pp. 1–6. [3] B. Karan et al., “A transformer-based voice activity detector,” in 
+
+Interspeech , vol. 2024, 2024, pp. 3819–3823. [4] H. Bredin et al., “Pyannote.audio: Neural building blocks for speaker diarization,” in ICASSP 2020 - 2020 IEEE Interna-tional Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2020, pp. 7124–7128. [5] F. Jia, S. Majumdar, and B. Ginsburg, “Marblenet: Deep 1d time-channel separable convolutional neural network for voice activity detection,” 2021. [Online]. Available: https: //arxiv.org/abs/2010.13886 [6] H. Chae and S. Lee, “Small-footprint convolutional neural net-work with reduced feature map for voice activity detection,” in 
+
+ICASSP 2024 - 2024 IEEE International Conference on Acous-tics, Speech and Signal Processing (ICASSP) , 2024, pp. 12 266– 12 270. [7] C.-C. Wang et al., “Sincqdr-vad: A noise-robust voice activity de-tection framework leveraging learnable filters and ranking-aware optimization,” arXiv preprint arXiv:2508.20885 , 2025. [8] O. K¨ op¨ ukl¨ u and M. Taseska, “Resectnet: An efficient architecture for voice activity detection on mobile devices,” in Proceedings of Interspeech 2022 , 09 2022, pp. 5363–5367. [9] J. Svirsky and O. Lindenbaum, “Sg-vad: Stochastic gates based speech activity detection,” in ICASSP 2023-2023 IEEE Interna-tional Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2023, pp. 1–5. [10] A. J. Soto-Vergel, P. Sankaran, J. C. Velez, R. Amaya-Mier, and D. Ramirez-Rios, “Atomicvad: A tiny voice activity detection model for efficient inference in intelligent iot systems,” Internet of Things , p. 101822, 2025. [11] S. Chaudhuri et al., “AVA-Speech: A Densely Labeled Dataset of Speech Activity in Movies,” in Proceedings of Interspeech , 2018, pp. 1239–1243. [Online]. Available: https://www.isca-speech. org/archive/Interspeech 2018/abstracts/2028.html [12] H. Jiang, L. L. Zhang, Y. Li, Y. Wu, S. Cao, T. Cao, Y. Yang, J. Li, M. Yang, and L. Qiu, “Accurate and structured pruning for effi-cient automatic speech recognition,” in Proc. Interspeech , 2023, pp. 4104–4108. [13] H. D. Nguyen, A. Alexandridis, and A. Mouchtaris, “Quantization aware training with absolute-cosine regularization for automatic speech recognition,” in Proc. Interspeech , 2020, pp. 3366–3370. [14] S. Greenberg, H. Carvey, L. Hitchcock, and S. Chang, “Tempo-ral properties of spontaneous speech—a syllable-centric perspec-tive,” Journal of Phonetics , vol. 31, no. 3-4, pp. 465–485, 2003. [15] G. Fang, X. Ma, M. Song, M. B. Mi, and X. Wang, “Depgraph: Towards any structural pruning,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 16 091–16 101. [16] T. Akiba, S. Sano, T. Yanase, T. Ohta, and M. Koyama, “Optuna: A next-generation hyperparameter optimization framework,” in 
+
+KDD , 2019. [17] A. G. Anderson and C. P. Berg, “The high-dimensional geome-try of binary neural networks,” arXiv preprint arXiv:1705.07199 ,2017. [18] T. Zhang, L. Zhu, Q. Zhao, and K. Shin, “Neural networks weights quantization: Target none-retraining ternary (tnt),” in 2019 Fifth Workshop on Energy Efficient Machine Learning and Cognitive Computing – NeurIPS Edition (EMC2-NIPS) . IEEE, Dec. 2019, pp. 62–65. [19] Z. Li, B. Yang, P. Yin, Y. Qi, and J. Xin, “Feature affinity assisted knowledge distillation and quantization of deep neural networks on label-free data,” IEEE Access , vol. 11, pp. 78 042–78 051, 2023. [20] W. Liu, Y. Wen, Z. Yu, M. Li, B. Raj, and L. Song, “Sphereface: Deep hypersphere embedding for face recognition,” in CVPR ,2017, pp. 6738–6746. [21] H. Wang, Y. Wang, Z. Zhou, X. Ji, D. Gong, J. Zhou, Z. Li, and W. Liu, “Cosface: Large margin cosine loss for deep face recog-nition,” in CVPR , 2018, pp. 5265–5274. [22] J. Deng, J. Guo, N. Xue, I. Kotsia, and S. Zafeiriou, “Arcface: Additive angular margin loss for deep face recognition,” in CVPR ,2019. [23] E. Agustsson, F. Mentzer, M. Tschannen, L. Cavigelli, R. Tim-ofte, L. Benini, and L. Van Gool, “Soft-to-hard vector quanti-zation for end-to-end learning compressible representations,” in 
+
+NeurIPS , 2017, pp. 1141–1151. [24] I. Hubara, M. Courbariaux, D. Soudry, R. El-Yaniv, and Y. Ben-gio, “Quantized neural networks: Training neural networks with low precision weights and activations,” Journal of Machine Learning Research , vol. 18, no. 187, pp. 1–30, 2018. [25] V. Panayotov, G. Chen, D. Povey, and S. Khudanpur, “Lib-rispeech: an asr corpus based on public domain audio books,” in 2015 IEEE international conference on acoustics, speech and signal processing (ICASSP) . IEEE, 2015, pp. 5206–5210. [26] D. Mirabilii, A. Lodermeyer, F. Czwielong, S. Becker, and E. A. Habets, “Simulating wind noise with airflow speed-dependent characteristics,” in 2022 International Workshop on Acoustic Sig-nal Enhancement (IWAENC) , 2022, pp. 1–5. [27] C. K. Reddy et al. , “The interspeech 2020 deep noise suppression challenge: Datasets, subjective testing framework, and challenge results,” in Interspeech , 2020. [28] M. McAuliffe, M. Socolof, S. Mihuc, M. Wagner, and M. Son-deregger, “Montreal Forced Aligner: Trainable Text-Speech Alignment Using Kaldi,” in Proc. Interspeech 2017 , 2017, pp. 498–502. [29] L. Lugosch, M. Ravanelli, P. Ignoto, V. S. Tomar, and Y. Bengio, “Speech model pre-training for end-to-end spoken language understanding,” 2019. [Online]. Available: https: //arxiv.org/abs/1904.03670
