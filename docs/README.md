@@ -6,44 +6,63 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-29
-- 运行时间：2026-07-29 21:41:28 UTC
+- 最新运行日期：2026-07-30
+- 运行时间：2026-07-30 21:46:06 UTC
 - 运行状态：成功
-- 本次总论文数：8
-- 精读区：3
-- 速读区：5
+- 本次总论文数：13
+- 精读区：4
+- 速读区：9
 
 ### 今日简报（AI）
-今日8篇论文聚焦语音风格提取、联邦ASR及跨模态生成，精读两篇均获9.0高分。推荐关注梯度逆优化解冻TTS模型提取语音风格的方法，以及语音LLM与联邦学习结合实现端到端ASR的实际案例。建议深入精读论文，速读部分可关注OmniVAE的多模态对齐生成与文本提示音频对比学习。
-- 详情：[/202607/29/README](/202607/29/README)
+今日精选13篇音频论文，聚焦音频字幕大规模多维基准与智能语音识别。
+
+最值得看：9分《MMAC: 音频字幕大规模多维基准》与8分《智能语音识别中的语音记忆》两个方向。
+
+建议普通读者优先关注MMAC基准如何评价音频字幕系统，以及语音记忆如何赋能智能代理。
+- 详情：[/202607/30/README](/202607/30/README)
 
 ### 精读区论文标签
-1. [Extracting Voice Styles from Frozen TTS Models via Gradient-Based Inverse Optimization](/202607/29/2607.25351v1-extracting-voice-styles-from-frozen-tts-models-via-gradient-based-inverse-optimization)  
+1. [MMAC: A Massive Multi-dimensional Benchmark for Audio Captioning](/202607/30/2607.27109v1-mmac-a-massive-multi-dimensional-benchmark-for-audio-captioning)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：通过梯度逆优化从TTS模型中提取语音风格
-2. [SpeechLLM Meets Federated Learning for End-to-End ASR: English and Italian Case Studies](/202607/29/2607.25716v1-speechllm-meets-federated-learning-for-end-to-end-asr-english-and-italian-case-studies)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：联邦学习用于基于SpeechLLM的端到端ASR
-3. [Towards Operational Conversational Intelligence: A Speech Intelligence Framework](/202607/29/2607.24958v1-towards-operational-conversational-intelligence-a-speech-intelligence-framework)  
+   evidence：面向音频描述的大规模多维基准
+2. [Voice Memory for Agentic Speech Recognition](/202607/30/2607.26410v1-voice-memory-for-agentic-speech-recognition)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：包含语音识别和说话人日志的语音智能框架
+   evidence：具有语音记忆的智能体语音识别
+3. [Zero-Shot Face-to-Speech Synthesis via Latent Space Adaptation of a Style-Diffusion TTS Model](/202607/30/2607.26742v1-zero-shot-face-to-speech-synthesis-via-latent-space-adaptation-of-a-style-diffusion-tts-model)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：基于TTS的零样本人脸到语音合成
+4. [Qwen-Audio-3.0-Gen-Preview Technical Report](/202607/30/2607.27011v1-qwen-audio-30-gen-preview-technical-report)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：统一音频生成框架，支持文本到音频合成
 
 ### 速读区论文标签
-1. [OmniVAE: An Audio-Video VAE with Cross-Modal Alignment for Joint Generation](/202607/29/2607.23855v1-omnivae-an-audio-video-vae-with-cross-modal-alignment-for-joint-generation)  
+1. [Listen, Do Not Copy: Internalizing Audio-Grounded Scaffold Context for Robust Omni-Model Speech Understanding](/202607/30/2607.21943v2-listen-do-not-copy-internalizing-audio-grounded-scaffold-context-for-robust-omni-model-speech-understanding)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：联合音视频VAE，跨模态对齐用于生成
-2. [Text-Prompted CLAP: Learning Query-Conditioned Audio Representations via Contrastive Learning](/202607/29/2607.25085v1-text-prompted-clap-learning-query-conditioned-audio-representations-via-contrastive-learning)  
+   evidence：基于音频接地上下文的鲁棒语音理解
+2. [Simple Language Normalization Wins: Cross-Lingual Speaker Verification for the TidyVoice 2026 Challenge](/202607/30/2607.22923v1-simple-language-normalization-wins-cross-lingual-speaker-verification-for-the-tidyvoice-2026-challenge)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：文本提示的音频表示学习，对比学习
-3. [Constrained CTC Decoding for Efficient Diacritic Restoration](/202607/29/2607.18946v2-constrained-ctc-decoding-for-efficient-diacritic-restoration)  
+   evidence：跨语言说话人验证挑战数据集和基准
+3. [Text-Prompted CLAP: Learning Query-Conditioned Audio Representations via Contrastive Learning](/202607/30/2607.25085v1-text-prompted-clap-learning-query-conditioned-audio-representations-via-contrastive-learning)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：用于语音/音频任务的文本提示对比学习音频表示框架
+4. [AMRD: Adaptive Multi-Teacher Relational Distillation for Lightweight Speech Emotion Recognition](/202607/30/2607.25289v1-amrd-adaptive-multi-teacher-relational-distillation-for-lightweight-speech-emotion-recognition)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：语音情感识别，知识蒸馏用于语音
+5. [VAD to the Bone: Ultra-Tiny Speech Activity Detection for Edge Deployment](/202607/30/2607.25870v1-vad-to-the-bone-ultra-tiny-speech-activity-detection-for-edge-deployment)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：超小型语音活动检测模型，适用于边缘部署，与语音处理相关
+6. [Pushing the Frontier of Full-Song Generation: Hierarchical Autoregressive Planning Meets Flow-Matching Rendering](/202607/30/2607.20253v3-pushing-the-frontier-of-full-song-generation-hierarchical-autoregressive-planning-meets-flow-matching-rendering)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：基于CTC的阿拉伯语音译变音符号恢复
-4. [From Semantics to Readout: Mechanistic Understanding of Audio Tokens after Fine-Tuning for Temporal Audio Grounding](/202607/29/2607.25355v1-from-semantics-to-readout-mechanistic-understanding-of-audio-tokens-after-fine-tuning-for-temporal-audio-grounding)  
+   evidence：结合自回归规划和流匹配渲染的文本到歌曲生成框架
+7. [Evaluation of forced alignment of code-mixed speech: the case of Hindi-English](/202607/30/2607.25581v1-evaluation-of-forced-alignment-of-code-mixed-speech-the-case-of-hindi-english)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：大型音频语言模型中音频令牌的机制分析，用于时间音频定位
-5. [VAD to the Bone: Ultra-Tiny Speech Activity Detection for Edge Deployment](/202607/29/2607.25870v1-vad-to-the-bone-ultra-tiny-speech-activity-detection-for-edge-deployment)  
+   evidence：对混合语音强制对齐的评估，作为基准
+8. [Dissecting Sensitivity to Training Language in Self-Supervised Speech Learning Using Neural Audio Codec Tokens](/202607/30/2607.26350v1-dissecting-sensitivity-to-training-language-in-self-supervised-speech-learning-using-neural-audio-codec-tokens)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：使用纯CNN层和结构化剪枝的超微型语音活动检测
+   evidence：使用神经音频编解码token研究自监督语音学习的语言敏感性
+9. [MPEcho: A Melody and Phoneme-Aware Generative Framework for Controllable Cover Song Generation](/202607/30/2607.26698v1-mpecho-a-melody-and-phoneme-aware-generative-framework-for-controllable-cover-song-generation)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：使用音素和旋律感知的翻唱歌曲生成框架
 
 
 <div class="dpr-home-promo-card">

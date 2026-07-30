@@ -1,0 +1,313 @@
+Title: Zero-Shot Face-to-Speech Synthesis via Latent Space Adaptation of a Style-Diffusion TTS Model
+
+URL Source: https://arxiv.org/pdf/2607.26742v1
+
+Published Time: Thu, 30 Jul 2026 00:45:06 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# Zero-Shot Face-to-Speech Synthesis via Latent Space Adaptation of a Style-Diffusion TTS Model 
+
+## Carlos Mu˜ noz-Romero ID 1,2, Jose A. Gonzalez-Lopez ID 3,11 Universitat Oberta de Catalunya (UOC), Spain 
+
+2 Monoceros Labs, Spain 
+
+3 Dpt. of Signal Theory, Telematics and Communications, University of Granada, Spain 
+
+carlosmr@uoc.edu, joseangl@ugr.es 
+
+## Abstract 
+
+Zero-shot text-to-speech (TTS) clones a voice from a short au-dio prompt, but this reliance on reference audio is a barrier when only visual information is available, e.g. for historical figures or video-game characters. In this work, we propose a Face-to-Speech (F2S) framework that predicts a plausible voice from a static facial image. A lightweight Face Adapter, together with soft-tuning of the face encoder’s upper blocks, aligns face-recognition features with the style space of a frozen StyleTTS 2 model, kept frozen during training. We evaluate on held-out identities from LRS3, a large-scale audiovisual corpus of En-glish TED-talk videos. The synthesized speech is highly natu-ral (UTMOS 3.7-4.0, matching or exceeding the 3.61 of ground truth), face-to-voice retrieval is consistently above chance, and the generated voice is consistent with the target speaker. With-out any retraining, an English-trained adapter also produces flu-ent Spanish speech, indicating that the face-to-style mapping is largely language-agnostic. 
+
+Index Terms : Face-to-Speech, zero-shot TTS, latent space alignment, style diffusion models, cross-lingual transfer 
+
+## 1. Introduction 
+
+Recent advances in zero-shot text-to-speech (TTS) enable voice cloning from a few seconds of reference audio [1, 2, 3, 4]. Systems such as Tacotron 2 [5], FastSpeech 2 [6] and HiFi-GAN [7], along with recent large-corpus models (ZipVoice [2], VoxCPM [3], VibeVoice [4]), clone an arbitrary voice from a short audio prompt. StyleTTS 2 [8], in particular, models prosody as a latent style sampled by a diffusion model, reach-ing human-level naturalness. This paradigm is, however, fun-damentally constrained when no vocal recording exists, such as generating voices for historical figures, fictional characters, or non-player characters (NPCs, i.e., computer-controlled charac-ters) in video games. Face-to-Speech (F2S) synthesis bypasses this by predicting vocal identity directly from facial attributes [9], biologically grounded in the shared developmental link between facial bone and vocal-organ morphology (e.g. andro-gens jointly drive mandibular growth and vocal-fold thickening) [10, 11]. Early systems predicted a speaker embedding from a face: Face2Speech [12] drove a multi-speaker TTS this way, while FVTTS [9] generated a coherent voice end-to-end, re-porting a Speaker Encoder Cosine Similarity (SECS, cosine be-tween speaker embeddings of generated and reference audio) of 0.754 on LRS3 [13]. Diffusion-based F2S [14] preserves a face-derived identity, and later work decouples identity from prosody [15] or emotion [16] on corpora such as VoxCeleb2 [17]. De-spite this potential, F2S faces a critical challenge: the weak, non-deterministic correlation between facial and vocal traits. Approaches trained with simple regression objectives tend to suffer from mode collapse [18], where generated voices con-verge toward generic, gender-averaged prototypes [12]. At its core, F2S is an alignment between heterogeneous latent spaces: Deep CCA [19] captures high-variance shared attributes (e.g. gender) but lacks intra-class discrimination, and pair-based met-ric learning [20] is unstable against a fixed target. Extend-ing F2S beyond English is further under-explored due to the scarcity of paired multilingual audiovisual data. This paper addresses these limitations with a “Freeze-Align” F2S frame-work. 1 We keep a state-of-the-art acoustic generator (StyleTTS 2 [8]) frozen as a teacher and train a lightweight adapter that maps faces into its style space [21]—a teacher-side alignment validated for audio by Wav2CLIP [22]—while also soft-tuning the upper blocks of the face encoder (the majority of its param-eters). Our contributions are: • A Freeze-Align F2S system: a Face Adapter over a frozen 
+
+StyleTTS 2 acoustic teacher (with soft-tuning of the face en-coder) that synthesizes natural speech from a face without training the generator. • An inference-time control that decouples face-derived tim-bre from prosody and exposes an explicit, tunable identity-vs-naturalness trade-off. • A hybrid contrastive loss (Relational Knowledge Distilla-tion [23] plus demographic auxiliary heads) that structures the face-voice latent space against mode collapse. • A rigorous evaluation on genuinely unseen identities —with SECS in a standard speaker-verification space, Mc-Nemar significance, and a frozen-vs. soft-tuning ablation— showing that the face’s contribution to vocal identity is real but modest, plus a working zero-shot cross-lingual transfer 
+
+to Spanish. The remainder of this paper is organized as follows. Sec-tion 2 describes the proposed Freeze-Align framework. Sec-tion 3 details the experimental setup and evaluation protocol. Section 4 presents and discusses the results. Finally, Section 5 concludes the paper. 
+
+## 2. Proposed Method 
+
+2.1. Architectural overview 
+
+The overall architecture (Fig. 1) comprises a visual backbone, a trainable projection module (Face Adapter), and a frozen acoustic generator (StyleTTS 2 [8]). We choose StyleTTS 2 because its style-diffusion mechanism condenses timbre and 
+
+> 1
+
+Links to the code repository and audio samples will be provided upon paper acceptance. arXiv:2607.26742v1 [eess.AS] 29 Jul 2026 Face Adapter (trainable) 
+
+> Proposed Freeze-Align F2S architecture used during training
+> Face Encoder
+> InceptionResnetV1 (soft-tuned)
+> hvis (512-d)
+> Target/reference audio (training)
+> Projector
+> (MLP)
+> Gender head
+> Age head
+> StyleTTS 2
+> (Frozen)
+> Face image
+> Synth. speech (validation)
+> StyleEncoder
+> (Frozen)
+> zaudio (128-d)
+> HYBRID LOSS
+> InfoNCE + RKD + Var + Aux
+> zface (128-d) (validation synthesis)
+> (auxiliary demographic loss)
+> Solid border = Frozen (pre-trained, not updated) Dashed border = Trainable (updated during training)
+> (reference prosody)
+
+Figure 1: Proposed Freeze-Align F2S architecture used during training. An InceptionResnetV1 backbone maps the input face to a 512-d embedding hvis , which the trainable Face Adapter (MLP, 512 → 1024 → 1024 → 128 ) projects into the 128-d style space zf ace . The frozen StyleTTS 2 style encoder provides the acoustic target zaudio . Training aligns the two modalities through the hybrid loss (InfoNCE, RKD, variance, and demo-graphic auxiliary heads). The acoustic teacher is frozen; the Face Adapter is trainable and the upper blocks of the face en-coder are soft-tuned. 
+
+prosody into a compact style vector decoupled from content— exactly the interface our adapter targets, enabling the decou-pling of Section 2.3—while reaching human-level naturalness with modest public corpora (LibriTTS, 245 h [24]) and open weights that make Spanish fine-tuning feasible. Given a static face image I, an InceptionResnetV1 [25] pre-trained on VGGFace2 [26] produces a 512-dimensional face embedding hvis . As this embedding and the StyleTTS 2 style space differ in dimensionality and content (visual iden-tity vs. acoustic timbre), we train a Face Adapter—an MLP (512 → 1024 → 1024 → 128 , ≈1.7M parameters, ReLU, 
+
+0.3 dropout)—that projects hvis into the 128-dimensional style space, yielding zf ace . We additionally soft-tune the encoder’s upper blocks ( ≈18.3M parameters, most of the backbone) so the visual features specialize towards vocally-relevant traits, keeping the lower, generic layers frozen. The frozen StyleTTS 2 style encoder provides the acoustic target zaudio (LibriTTS for English, fine-tuned on a Spanish corpus for the cross-lingual setting; see Section 3). 
+
+2.2. Hybrid loss formulation 
+
+To avoid mode collapse and capture distinctive vocal character-istics, we use a multi-term loss: 
+
+Ltotal = λnce LN CE + λrkd LRKD + λvar LV ar + LAux (1) This hybrid loss trains the Face Adapter and the soft-tuned face-encoder blocks; the StyleTTS 2 acoustic teacher remains frozen. The four terms play complementary roles: identity discrimina-tion ( LN CE ), structure preservation ( LRKD ), collapse preven-tion ( LV ar ), and demographic grounding ( LAux ). These terms are detailed below. 
+
+2.2.1. Supervised contrastive loss 
+
+Rather than regressing each face embedding onto its target voice embedding with an MSE loss, which over-smooths predictions in weakly correlated multimodal spaces and encourages mode collapse, we align the two modalities with a contrastive, CLIP-style objective [27]. Each projected face zif ace is pulled towards the voice embeddings of the same speaker and pushed away from those of all other speakers in the batch. Since the balanced sampler places K = 4 utterances per speaker per batch, each face has multiple positives P (i), giving a supervised, multi-positive InfoNCE loss: 
+
+LN CE = − 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+1
+
+|P (i)|
+
+X 
+
+> p∈P(i)
+
+log exp( sim (zif ace , z paudio )/τ )
+
+PNj=1 exp( sim (zif ace , z jaudio )/τ ) (2) where sim (·) is the cosine similarity, N the batch size, and τ
+
+a learnable, CLIP-style temperature (initialized at 0.04 for the identity-priority configuration and 0.07 otherwise). Contrasting each anchor against all in-batch voices yields richer gradients than pair- or triplet-based metric learning. 
+
+2.2.2. Relational Knowledge Distillation (RKD) 
+
+Beyond the absolute position of each projection, we preserve the pairwise geometry of the acoustic space with the distance-wise term of RKD [23]: within a batch B, the distance between any two projected face embeddings should match the distance between the corresponding pair of audio embeddings, so that voices that are close (or far apart) in the style space map to faces that are equally close (or far apart): 
+
+LRKD = 1
+
+|B| 2
+
+X
+
+> (i,j )∈B
+
+Lδ
+
+
+
+ψ(zif ace , z jf ace ), ψ (ziaudio , z jaudio )
+
+
+
+(3) where ψ(a, b ) is the Euclidean distance ∥a − b∥2 normalized by the mean pairwise distance in the batch (making the term scale-invariant), and Lδ is the Huber loss, robust to outliers. We use only this distance-preserving term, not the angular RKD vari-ant. Transferring this relational geometry preserves the local structure of the acoustic manifold in the visual projection. 
+
+2.2.3. Variance regularization loss ( LV ar )
+
+To explicitly discourage representation shrinkage, we align the per-batch standard deviation of the projected embeddings with that of the audio embeddings: 
+
+LV ar = 1
+
+D ∥σ(Zf ace ) − σ(Zaudio )∥22 (4) where Zf ace , Zaudio stack the batch’s zf ace , zaudio vectors, 
+
+σ(·) is the per-dimension standard deviation across the batch and D the embedding dimensionality (the audio standard devi-ation is treated as a fixed target). 
+
+2.2.4. Demographic auxiliary loss ( LAux )
+
+To retain essential biological markers, parallel heads predict gender and age, acting as semantic anchors during training: 
+
+LAux = λgen LBCE (ˆ ygen , y gen ) + λage LM SE (ˆ yage , y age )
+
+(5) 
+
+2.3. Inference-time feature decoupling 
+
+A static image carries no temporal information about prosody, so conditioning solely on zf ace risks monotonous speech. We Table 1: Datasets used in this work. LRS3 demographic statis-tics are automatically estimated with InsightFace over the la-beled subset. 
+
+LRS3 Spanish corpus 
+
+Language English Spanish Role adapter train/eval backbone fine-tune Samples 14 ,170 53 ,336 
+
+Speakers 2,007 48 
+
+(with label) 1,449 —Gender (M/F) 868 /581 21 /27 
+
+Age (mean ±std) 41 .0 ± 11 .1 30 ± 5
+
+therefore decouple timbre from prosody at inference, exploiting that the StyleTTS 2 style vector splits into a timbre component (consumed by the waveform decoder) and a prosody component (consumed by the duration and prosody predictor). The face supplies the timbre, while each component can additionally be sampled from the native text-conditioned style diffusion model (zdif f ) or taken from optional reference audio ( zref ). The two components are interpolated independently: 
+
+z timbre f inal = (1 − α) zf ace + α z timbre dif f ,z prosody f inal = (1 − β) zref + β z prosody dif f , (6) where a low α preserves the face-derived identity (identity strength is thus ∝ 1 − α) and β sets how much prosodic ex-pressiveness is drawn from the diffusion sampler; when no ref-erence audio is provided, zref defaults to zf ace . Section 4.4 quantifies how α trades identity for naturalness, exposing this balance as an explicit control. 
+
+## 3. Experimental Setup 
+
+3.1. Datasets and preprocessing 
+
+We evaluate our proposed method in both English and Span-ish. The Face Adapter is trained and evaluated on LRS3 [13], a dataset of English TED-talk videos. Starting from the vali-dated record list of prior F2S work and applying quality filtering (low-quality audio, undetectable faces, audiovisual desynchro-nization), we obtain 14 ,170 aligned face–audio pairs spanning 
+
+2,007 distinct speakers. Demographic labels (gender and age) for 1,449 of them are obtained with InsightFace buffalo l 2.Audio is resampled to 24 kHz and one random frame per clip serves as the face image (LRS3 clips are already head-cropped). For Spanish, since no comparable public audiovisual dataset exists, we do not train the adapter; instead, we only fine-tune the frozen StyleTTS 2 backbone on a private audio-only multi-speaker corpus ( 48 speakers, 21 M / 27 F, 53 ,336 utterances) and apply the English-trained adapter zero-shot. Table 1 summa-rizes both datasets. 
+
+3.2. Training configuration 
+
+The adapter is trained on an NVIDIA A100 with Py-Torch/ accelerate , using AdamW [28] (lr 2 × 10 −3, cosine annealing with warm restarts) for 200 epochs. The batch size is scaled to 1024 via a custom balanced sampler that places K=4 
+
+samples per speaker in each batch, sharpening speaker bound-aries. We train the Face Adapter together with a soft-tuning of the face encoder’s upper blocks, for ≈20.0M trainable param-eters in total: ≈1.7M in the adapter and ≈18.3M (about 78% 
+
+> 2https://github.com/deepinsight/insightface
+
+Table 2: Loss configurations compared in this work. All use 
+
+λrkd =0 .5. A dash (–) indicates a disabled term. 
+
+Configuration λnce τ λgen λage λvar 
+
+Balanced 1.0 0.07 0.2 0.1 –Identity-priority 2.0 0.04 0.05 0.01 –+ variance 1.0 0.07 0.2 0.1 1.0
+
+Pure-contrastive 1.0 0.07 – – –of the backbone) in the encoder; only the StyleTTS 2 acoustic teacher stays frozen. The reported checkpoint is selected on a disjoint development set by an objective criterion that combines identity and naturalness while penalizing collapse, rather than peak training retrieval. 
+
+3.3. Evaluation protocol and metrics 
+
+We evaluate on a disjoint test set of 24 LRS3 speakers (from the pretrain partition, with any identity overlapping the training set removed), none seen during training. Over this pool we re-port cross-modal face →voice retrieval: for each face we predict 
+
+zf ace and rank the N =24 real-audio style embeddings by co-sine similarity; Top-k is the fraction of faces whose own speaker ranks among the k most similar (chance Top-1 ≈ 4.17% , Top-5 ≈ 20 .8% ). We also measure identity fidelity at the embed-ding level as the mean cosine similarity between each face-predicted embedding zif ace and the audio style prototype ¯z s(i)
+
+> audio
+
+of its speaker (the mean of that speaker’s real-audio style em-beddings) as follows: SECS emb = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+sim 
+
+
+
+zif ace , ¯z s(i)
+
+> audio
+
+
+
+(7) We additionally report SECS audio , the cosine similarity between speaker embeddings of the synthesized and the real audio, com-puted with an external speaker-verification encoder (Resem-blyzer, a GE2E model [29]) to match the protocol of prior F2S work. Diversity is measured with SED (Speaker Embedding Diversity), the mean pairwise cosine similarity among all pre-dicted embeddings, where a lower value indicates more diverse (less collapsed) voices: SED = 2
+
+N (N − 1) 
+
+X
+
+> i<j
+
+sim 
+
+
+
+zif ace , z jf ace 
+
+
+
+(8) Statistical significance of retrieval differences is assessed with McNemar’s test. 
+
+3.4. Model configurations 
+
+We compare four loss configurations, summarized in Table 2 (λrkd =0 .5 throughout). Because they differ in λnce and τ as well as in the demographic and variance terms, Table 3 com-pares operating points rather than a single-factor ablation. 
+
+## 4. Results and Discussion 
+
+4.1. Comparison with prior F2S work 
+
+For context, prior end-to-end F2S systems report SECS on syn-thesized audio of 0.754 (FVTTS [9]) and 0.748 (Face-TTS [14]) on LRS3, while our SECS audio is 0.61 (EN) and 0.57 
+
+(ES, cross-lingual). These are not directly comparable : prior systems fine-tune the full TTS end-to-end, whereas we keep the acoustic teacher frozen and adapt only the face side, and Table 3: Results on the disjoint set of 24 unseen LRS3 identities (chance level: Top-1 4.17% , Top-5 20 .8% ). SECS emb is the embedding-level cosine; lower SED is more diverse. EN and ES embedding metrics are computed in each language’s own style space and are not cross-comparable. 
+
+Config Top-1 Top-5 SECS emb SED 
+
+English 
+
+Balanced 9.3% 35.1% 0.40 0.36 Identity-priority 8.9% 32.6% 0.42 0.43 + variance 7.1% 34.0% 0.41 0.37 Pure-contrastive 9.3% 39.2% 0.41 0.39 
+
+Frozen enc. (abl.) 6.8% 38.8% 0.29 0.23 
+
+Spanish (cross-lingual) 
+
+Balanced 12.7% 44.0% 0.55 0.50 Identity-priority 7.1% 35.5% 0.53 0.52 + variance 12.7% 41.1% 0.42 0.32 Pure-contrastive 10.2% 38.0% 0.52 0.50 our SECS audio partly reflects the StyleTTS 2 voice prior (Sec-tion 4.4), so the gap is not a pure identity difference. A protocol-matched comparison (end-to-end fine-tuning of StyleTTS 2 on LRS3) is left as future work. 
+
+4.2. Results on unseen identities 
+
+Table 3 reports retrieval and identity on the disjoint unseen set for the four configurations (English and Spanish) plus a frozen-encoder ablation. Face →voice retrieval is consistently above chance (Top-1 around 2×, Top-5 1.6–2.1×), indicating a weak but real biometric signal for speakers never seen in training; the predictions stay diverse (Table 3, SED below the real-audio level), so we see no mode collapse. With only 24 unseen identi-ties, Top-1 is noisy: a McNemar test finds no significant differ-ence among the four configurations (all p > 0.1), so the hybrid objective is robust and no single term dominates, rather than one configuration being clearly best. Conditioned on Spanish text, the English-trained adapter transfers zero-shot to fluent Spanish (ES rows), with comparable retrieval and identity, so the face-to-style mapping is largely language-agnostic. 
+
+Adaptation depth (frozen vs. soft-tuning). Soft-tuning the upper blocks is decisive for absolute alignment: it nearly dou-bles the embedding-level fidelity (SECS emb 0.42 vs. 0.29 for a frozen encoder), though the two are indistinguishable on Top-1 ( p=0 .25 ). A frozen encoder ranks reasonably but places the style off the acoustic manifold, degrading synthesis; we adapt only the upper blocks because, with ≈2k identities, full fine-tuning risks catastrophic forgetting. 
+
+4.3. Perceptual quality (automatic proxies) 
+
+Lacking a large-scale listening test, we report automatic proxies for subjective quality: UTMOS [30] (naturalness) and NISQA [31] (signal quality), plus SECS audio (identity). Both MOS pre-dictors are English-biased, so Spanish values are only indica-tive. Table 4 reports means over synthesized utterances of un-seen identities (inference at α=0 .5); the reported checkpoint epoch was selected on this unseen development split, a mild optimism we declare. Ground-truth recordings are an upper an-chor. In English the synthesized voices reach UTMOS 3.7–4.0,on par with or above ground truth ( 3.61 ), confirming that con-Table 4: Audio identity and quality on unseen identities (α=0 .5). SECS audio via an external speaker encoder; UT-MOS/NISQA as MOS proxies. Ground truth applies to English recordings. 
+
+System SECS audio UTMOS NISQA 
+
+English 
+
+Ground truth — 3.61 3.63 Balanced 0.62 3.72 3.94 Identity-priority 0.62 3.72 3.84 + variance 0.61 3.98 4.22 Pure-contrastive 0.61 3.95 4.21 
+
+Spanish (cross-lingual) 
+
+Balanced 0.57 2.73 3.66 Identity-priority 0.57 2.79 3.74 + variance 0.57 2.67 3.74 Pure-contrastive 0.57 2.88 3.85 Table 5: Effect of the decoupling weight α (English, unseen identities, β=0 .9). 
+
+α 0.1 0.3 0.5 0.7 0.9 SECS audio 0.61 0.64 0.62 0.57 0.56 UTMOS 1.82 2.66 3.62 4.17 4.10 ditioning the frozen backbone on the predicted style does not degrade naturalness, even for held-out (unseen) identities. The cross-lingual Spanish values are lower (UTMOS 2.7–2.9): both proxies are English-biased and the Spanish backbone is reached zero-shot, so these are indicative rather than conclusive. 
+
+4.4. Identity–naturalness control ( α)
+
+The decoupling weight α of Eq. (6) exposes an explicit identity-vs-naturalness trade-off (Table 5): identity (SECS audio ) peaks at 
+
+α=0 .3—a near-pure face vector lands off-manifold and hurts naturalness—while higher α blends towards the diffusion prior, trading identity for naturalness. We use α=0 .5 as a balanced point. 3 SECS audio ranges only from 0.56 (diffusion-dominant) to 0.64 (face-dominant), so the face supplies a modest part of the absolute identity, most coming from the StyleTTS 2 prior; absent a mismatched-face baseline, this range bounds the face’s net contribution. 
+
+## 5. Conclusions 
+
+We presented a Freeze-Align framework that synthesizes a plau-sible, coherent voice from a single face by adapting a face-recognition embedding to the style space of a frozen StyleTTS 2 teacher, via a trainable Face Adapter and soft-tuning of the face encoder. The mapping holds for unseen identities, with natu-ralness on par with ground truth (UTMOS 3.7–4.0 vs. 3.61 ), above-chance retrieval, and zero-shot transfer to fluent Spanish. An inference-time control shows the face contributes a modest but real part of the identity, most coming from the TTS prior. Future work includes an end-to-end protocol-matched compar-ison, a human MOS/AB study, native multilingual training, and stochastic adapters.        
+
+> 3The αsweep is a separate evaluation run (fixed prompts, β=0 .9); its α=0 .5point matches Table 4 only approximately ( ≲0.1UTMOS).
+
+## 6. Acknowledgments 
+
+This work was supported by Monoceros Labs; the R&D&I project C-HUM-223-UGR23, co-financed by the Consejer´ ıa de Universidad, Investigaci´ on e Innovaci´ on and the Euro-pean Union through the FEDER Andalusia 2021–2027 Pro-gramme; and grants PID2022-141378OB-C22 and AIA2025-163317-C32, funded by MICIU/AEI/10.13039/501100011033 and ERDF/EU. 
+
+## 7. Generative AI Use Disclosure 
+
+The authors used generative AI tools for language editing and coding assistance only, not to generate scientific content, design the methodology, or interpret the results; the authors reviewed all content and take full responsibility for the publication. 
+
+## 8. References 
+
+[1] X. Tan, T. Qin, F. Soong, and T.-Y. Liu, “A survey on neural speech synthesis,” arXiv preprint arXiv:2106.15561 , 2021. [2] H. Zhu, W. Kang, Z. Yao, L. Guo, F. Kuang, Z. Li, W. Zhuang, L. Lin, and D. Povey, “ZipVoice: Fast and high-quality zero-shot text-to-speech with flow matching,” arXiv preprint arXiv:2506.13053 , 2025. [3] Y. Zhou, G. Zeng, X. Liu, X. Li, R. Yu, Z. Wang et al. , “VoxCPM: Tokenizer-free TTS for context-aware speech generation and true-to-life voice cloning,” arXiv preprint arXiv:2509.24650 , 2025. [4] Z. Peng, J. Yu, W. Wang, Y. Chang, Y. Sun, L. Dong, Y. Zhu, W. Zhou, J. Bao, Z. Wang et al. , “VibeVoice technical report,” 
+
+arXiv preprint arXiv:2508.19205 , 2025. [5] J. Shen, R. Pang, R. J. Weiss, M. Schuster, N. Jaitly, Z. Yang, Z. Chen, Y. Zhang, Y. Wang, R. Skerry-Ryan, R. A. Saurous, Y. Agiomyrgiannakis, and Y. Wu, “Natural TTS synthesis by conditioning WaveNet on mel spectrogram predictions,” in Proc. IEEE Int. Conf. Acoust., Speech, Signal Process. (ICASSP) , 2018, pp. 4779–4783. [6] Y. Ren, C. Hu, X. Tan, T. Qin, S. Zhao, Z. Zhao, and T.-Y. Liu, “FastSpeech 2: Fast and high-quality end-to-end text to speech,” in Proc. Int. Conf. Learn. Represent. (ICLR) , 2021. [7] J. Kong, J. Kim, and J. Bae, “HiFi-GAN: Generative adversar-ial networks for efficient and high fidelity speech synthesis,” in 
+
+Advances in Neural Information Processing Systems (NeurIPS) ,vol. 33, 2020, pp. 17 022–17 033. [8] Y. A. Li, C. Han, V. S. Raghavan, G. Mischler, and N. Mes-garani, “StyleTTS 2: Towards human-level text-to-speech through style diffusion and adversarial training with large speech language models,” in Advances in Neural Information Processing Systems (NeurIPS) , vol. 36, 2023, pp. 19 594–19 621. [9] M. Lee, E. Park, and S. Hong, “FVTTS: Face based voice syn-thesis for text-to-speech,” in Proc. Interspeech 2024 , 2024, pp. 4953–4957. [10] H. M. J. Smith, A. K. Dunn, T. Baguley, and P. C. Stacey, “Match-ing novel face and voice identity using static and dynamic facial images,” Attention, Perception, & Psychophysics , vol. 78, no. 3, pp. 868–879, 2016. [11] L. W. Mavica and E. Barenholtz, “Matching voice and face iden-tity from static images,” Journal of Experimental Psychology: Human Perception and Performance , vol. 39, no. 2, pp. 307–312, 2013. [12] S. Goto, K. Onishi, Y. Saito, K. Tachibana, and K. Mori, “Face2Speech: Towards multi-speaker text-to-speech synthesis using an embedding vector predicted from a face image,” in Proc. Interspeech 2020 , 2020, pp. 1321–1325. [13] T. Afouras, J. S. Chung, and A. Zisserman, “LRS3-TED: A large-scale dataset for visual speech recognition,” arXiv preprint arXiv:1809.00496 , 2018. [14] J. Lee, J. S. Chung, and S.-W. Chung, “Imaginary voice: Face-styled diffusion model for text-to-speech,” in Proc. IEEE Int. Conf. Acoust., Speech, Signal Process. (ICASSP) , 2023, pp. 1–5. [15] M. Kang, W. Han, and E. Yang, “Face-StyleSpeech: Enhancing zero-shot speech synthesis from face images with improved face-to-speech mapping,” arXiv preprint arXiv:2311.05844 , 2023. [16] J. Ye, B. Cao, and H. Shan, “Emotional face-to-speech,” arXiv preprint arXiv:2502.01046 , 2025. [17] J. S. Chung, A. Nagrani, and A. Zisserman, “VoxCeleb2: Deep speaker recognition,” in Proc. Interspeech 2018 , 2018, pp. 1086– 1090. [18] T. Salimans, I. Goodfellow, W. Zaremba, V. Cheung, A. Rad-ford, and X. Chen, “Improved techniques for training GANs,” in 
+
+Advances in Neural Information Processing Systems (NeurIPS) ,vol. 29, 2016, pp. 2234–2242. [19] G. Andrew, R. Arora, J. Bilmes, and K. Livescu, “Deep canonical correlation analysis,” in Proc. Int. Conf. Mach. Learn. (ICML) ,2013, pp. 1247–1255. [20] R. Hadsell, S. Chopra, and Y. LeCun, “Dimensionality reduction by learning an invariant mapping,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR) , vol. 2, 2006, pp. 1735–1742. [21] M. Maniparambil, R. Akshulakov, Y. A. D. Djilali, S. Narayan, A. Singh, and N. E. O’Connor, “Harnessing frozen unimodal en-coders for flexible multimodal alignment,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2025, pp. 29 847– 29 857. [22] H.-H. Wu, P. Seetharaman, K. Kumar, and J. P. Bello, “Wav2CLIP: Learning robust audio representations from CLIP,” in Proc. IEEE Int. Conf. Acoust., Speech, Signal Process. (ICASSP) , 2022, pp. 4563–4567. [23] W. Park, D. Kim, Y. Lu, and M. Cho, “Relational knowledge dis-tillation,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern Recog-nit. (CVPR) , 2019, pp. 3967–3976. [24] H. Zen, V. Dang, R. Clark, Y. Zhang, R. J. Weiss, Y. Jia, Z. Chen, and Y. Wu, “LibriTTS: A corpus derived from LibriSpeech for text-to-speech,” in Proc. Interspeech 2019 , 2019, pp. 1526–1530. [25] F. Schroff, D. Kalenichenko, and J. Philbin, “FaceNet: A unified embedding for face recognition and clustering,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR) , 2015, pp. 815–823. [26] Q. Cao, L. Shen, W. Xie, O. M. Parkhi, and A. Zisserman, “VG-GFace2: A dataset for recognising faces across pose and age,” in 
+
+Proc. IEEE Int. Conf. Autom. Face Gesture Recognit. (FG) , 2018, pp. 67–74. [27] A. van den Oord, Y. Li, and O. Vinyals, “Representation learning with contrastive predictive coding,” arXiv preprint arXiv:1807.03748 , 2018. [28] I. Loshchilov and F. Hutter, “Decoupled weight decay regulariza-tion,” in Proc. Int. Conf. Learn. Represent. (ICLR) , 2019. [29] L. Wan, Q. Wang, A. Papir, and I. Lopez Moreno, “Generalized end-to-end loss for speaker verification,” in Proc. IEEE Int. Conf. Acoust., Speech, Signal Process. (ICASSP) , 2018, pp. 4879–4883. [30] T. Saeki, D. Xin, W. Nakata, T. Koriyama, S. Takamichi, and H. Saruwatari, “UTMOS: UTokyo-SaruLab system for Voice-MOS challenge 2022,” in Proc. Interspeech 2022 , 2022, pp. 4521–4525. [31] G. Mittag, B. Naderi, A. Chehadi, and S. M¨ oller, “NISQA: A deep CNN-self-attention model for multidimensional speech quality prediction with crowdsourced datasets,” in Proc. Inter-speech 2021 , 2021, pp. 2127–2131.
