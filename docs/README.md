@@ -6,53 +6,46 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-07-31
-- 运行时间：2026-07-31 20:52:09 UTC
+- 最新运行日期：2026-08-01
+- 运行时间：2026-08-01 19:56:28 UTC
 - 运行状态：成功
-- 本次总论文数：11
-- 精读区：6
-- 速读区：5
+- 本次总论文数：8
+- 精读区：1
+- 速读区：7
 
 ### 今日简报（AI）
-今日共读11篇论文（精读6篇，速读5篇），重点关注音频生成与音频字幕评测。最值得细看的是《Qwen-Audio-3.0-Gen-Preview Technical Report》和《MMAC》音频字幕基准，分别代表生成能力与新评测维度。下一步建议优先跟进音频生成与评测方向，再结合速读中的AgenticASR和对话机器人低延迟方法拓宽应用视野。
-- 详情：[/202607/31/README](/202607/31/README)
+今日共读8篇论文，聚焦语音AI前沿，精读1篇、速读7篇。  
+最值得看的是语音代理模拟基准《VAmoS Bench》（8.0分），以及脑电波解码《Joint Text-Audio Alignment》与实时音视频生成《Ripple》两个方向。  
+建议普通读者优先浏览语音交互与多模态生成类研究，关注人机协作与实时体验提升。
+- 详情：[/202608/01/README](/202608/01/README)
 
 ### 精读区论文标签
-1. [Qwen-Audio-3.0-Gen-Preview Technical Report](/202607/31/2607.27011v2-qwen-audio-30-gen-preview-technical-report)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：基于 DiT 的非自回归统一框架，可依据文本条件生成混合音频
-2. [MMAC: A Massive Multi-dimensional Benchmark for Audio Captioning](/202607/31/2607.27109v2-mmac-a-massive-multi-dimensional-benchmark-for-audio-captioning)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：提出了音频描述的大型多维基准MMAC
-3. [VocalRender: Score-Native Singing Voice Synthesis for Real-World Composition](/202607/31/2607.27768v1-vocalrender-score-native-singing-voice-synthesis-for-real-world-composition)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：从歌词、音高和音符进行歌声合成
-4. [Dissecting Sensitivity to Training Language in Self-Supervised Speech Learning Using Neural Audio Codec Tokens](/202607/31/2607.26350v1-dissecting-sensitivity-to-training-language-in-self-supervised-speech-learning-using-neural-audio-codec-tokens)  
+1. [VAmoS Bench: Voice Agent Simulation Bench](/202608/01/2607.27453v1-vamos-bench-voice-agent-simulation-bench)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：分析基于编解码器的自监督语音模型的语言敏感性
-5. [Prosody-driven Jailbreaks in Audio LLMs: A Controlled Study and Mechanistic Analysis](/202607/31/2607.26541v1-prosody-driven-jailbreaks-in-audio-llms-a-controlled-study-and-mechanistic-analysis)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：提出包含600条样本的韵律变化音频基准AdvAudio-Prosody
-6. [CrowdioSet and PaRIRset: Two Datasets Towards Live Music Source Separation](/202607/31/2607.27828v1-crowdioset-and-parirset-two-datasets-towards-live-music-source-separation)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：两个面向现场音乐源分离的新音频数据集
+   evidence：语音智能体仿真基准，直接对应语音与音频相关基准需求
 
 ### 速读区论文标签
-1. [AgenticASR: Refining Speech Recognition in Real-World Scenarios via an Agentic Approach](/202607/31/2607.28175v1-agenticasr-refining-speech-recognition-in-real-world-scenarios-via-an-agentic-approach)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：用智能体方法将ASR逐字稿清洗成规范文本
-2. [Low-Latency Turn-Taking via Context-Aware Preface Generation in a Real-World Dialogue Robot](/202607/31/2607.23204v1-low-latency-turn-taking-via-context-aware-preface-generation-in-a-real-world-dialogue-robot)  
+1. [Joint Text-Audio Alignment for EEG-to-Text Decoding in Chinese Speech Production and Perception](/202608/01/2607.25626v1-joint-text-audio-alignment-for-eeg-to-text-decoding-in-chinese-speech-production-and-perception)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：面向低延迟语音对话轮转，融合语音识别与语音活动预测
-3. [Text-Prompted CLAP: Learning Query-Conditioned Audio Representations via Contrastive Learning](/202607/31/2607.25085v1-text-prompted-clap-learning-query-conditioned-audio-representations-via-contrastive-learning)  
+   evidence：脑电到文本解码，关联语音识别研究
+2. [Speech2Grasp: Data-Efficient Transfer of Text-Conditioned Grasp Detection to Speech in Humanoid Robots](/202608/01/2607.26567v1-speech2grasp-data-efficient-transfer-of-text-conditioned-grasp-detection-to-speech-in-humanoid-robots)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：跨模态音频表示学习与检索理解
-4. [Automatic Audio Equalization with Semantic Embeddings](/202607/31/2607.23846v1-automatic-audio-equalization-with-semantic-embeddings)  
+   evidence：将文本条件模型迁移到语音输入用于机器人抓取
+3. [Ripple: Real-Time Streaming Audio-Video Generation With Cross-Modal Recurrent Memory](/202608/01/2607.26818v1-ripple-real-time-streaming-audio-video-generation-with-cross-modal-recurrent-memory)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：实时流式音频-视频生成
+4. [WeSep: A Modular and Cue-Composable Framework for Target Speaker Extraction](/202608/01/2607.27436v1-wesep-a-modular-and-cue-composable-framework-for-target-speaker-extraction)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：目标说话人提取的统一可组合框架，属于语音分离与提取研究
+5. [Multi-Phonation Graph Learning with Self-Supervised Speech Embeddings for ALS Detection and Progression Prediction](/202608/01/2607.25284v1-multi-phonation-graph-learning-with-self-supervised-speech-embeddings-for-als-detection-and-progression-prediction)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：基于语义嵌入的数据驱动音频均衡
-5. [OmniVAE: An Audio-Video VAE with Cross-Modal Alignment for Joint Generation](/202607/31/2607.23855v1-omnivae-an-audio-video-vae-with-cross-modal-alignment-for-joint-generation)  
+   evidence：利用自监督语音嵌入进行ALS检测与进展预测，属于语音健康分析
+6. [From Semantics to Readout: Mechanistic Understanding of Audio Tokens after Fine-Tuning for Temporal Audio Grounding](/202608/01/2607.25355v1-from-semantics-to-readout-mechanistic-understanding-of-audio-tokens-after-fine-tuning-for-temporal-audio-grounding)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：联合训练的音频-视频VAE，通过对齐潜空间实现同步音视频生成
+   evidence：大型音频语言模型中的音频分词与时间音频定位研究
+7. [Teffic-Audio: Tell Fact from Fiction](/202608/01/2607.28351v1-teffic-audio-tell-fact-from-fiction)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：针对语音合成与语音转换攻击的深度伪造检测
 
 
 <div class="dpr-home-promo-card">
