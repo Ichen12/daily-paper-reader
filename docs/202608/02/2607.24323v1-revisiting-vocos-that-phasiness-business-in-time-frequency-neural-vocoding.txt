@@ -1,0 +1,252 @@
+Title: Revisiting Vocos: That Phasiness Business in Time-Frequency Neural Vocoding
+
+URL Source: https://arxiv.org/pdf/2607.24323v1
+
+Published Time: Tue, 28 Jul 2026 01:54:04 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# REVISITING VOCOS: THAT PHASINESS BUSINESS IN TIME-FREQUENCY NEURAL VOCODING 
+
+# ¨Unal Ege Gaznepo˘ glu 1∗, Frank Zalkow 2, Mohammad Joshaghani 2
+
+# Emanu¨ el A.P. Habets 1,2, Nils Peters 3, Christian Dittmar 21International Audio Laboratories Erlangen, Germany 
+
+> 2
+
+# Fraunhofer Institute for Integrated Circuits IIS, Germany 
+
+> 3
+
+# Dept. of Electronic & Electrical Engineering, Trinity College Dublin, Ireland 
+
+ABSTRACT 
+
+Recently, time-frequency neural vocoders have been approaching the state-of-the-art quality of time-domain neural vocoders. Vocos is a notable example due to its efficiency, but its audio quality lags behind the time-domain vocoders and the reasons remain debated. Thus, in this study, we revisit Vocos from a phase reconstruction per-spective. First, we quantify the gap between time-domain and time-frequency domain vocoders using bandlimited mel spectrograms as inputs. Later, via an ablation study, we verify the Vocos architecture is effective for magnitude modeling, but less so for phase. We then adapt the Vocos backbone to predict phase differences, a precursor for phase reconstruction, and identify 1D convolutional layers are hindering their accurate prediction. Our findings indicate that future research needs to focus on inductive biases that allow the architec-ture to better model the time-frequency structure of speech signals, without sacrificing the support for arbitrary input representations. 
+
+Index Terms — neural vocoders, phase reconstruction 
+
+1. INTRODUCTION 
+
+Neural vocoders synthesize time-domain audio signals from lossy representations, typically mel spectrograms. They play a key role in speech synthesis, such as in voice conversion and speaker anonymization systems [1, 2]. In these settings, time-domain neural vocoders can yield high-quality audio signals but are computa-tionally expensive due to the cascaded temporal upsampling [3]. Approaches including multi-band synthesis can reduce this cost at the expense of some audio quality [4, 5]. Vocos [6] avoids neural upsampling by predicting complex-valued short-time Fourier trans-form (STFT) coefficients for signal reconstruction via inverse STFT. However, its audio quality is slightly below the state-of-the-art time-domain vocoders [7], resulting in artifacts resembling phasiness , the loss of clarity associated also with classical methods [8]. Subsequent studies have examined Vocos, reaching differing interpretations and proposing divergent remedies. The original au-thor of Vocos reports 1 that scaling the model does not improve the performance, and hypothesizes that since phase recovery is an au-toregressive task, the convolutional neural network (CNN)-based architecture is not suitable for it [9]. Notably, the magnitude and phase predictions of Vocos were found to deviate substantially from the ground truth [7, 10]. The inverse STFT partially compensates these errors through overlap–add redundancy, similar to the classical 
+
+> ∗Work performed during an internship at Fraunhofer IIS.
+> 1https://openreview.net/forum?id=vY9nzQmQBw
+
+Griffin–Lim algorithm [11]. Few works report performance gains by incorporating loss terms between predicted and ground-truth mag-nitude and phase spectrograms [12–14] and using a pseudo-inverse for recovering the linear-scale magnitude spectrograms [14]. In WaveNeXt, the authors argue the inverse STFT is unnecessary be-cause ConvNeXt blocks could directly predict the time-domain sig-nal [7]. In WaveHax, the architecture is in the spotlight: ConvNeXt blocks with 2D convolutions refine a harmonic prior to exploit local time-frequency structure [10]. In summary, the exact reasons for Vo-cos’ phase modeling issues and the best way to address them remain unclear. Moreover, the aforementioned studies have not compared Vocos to time-domain vocoders on an equal footing, which prevents a clear assessment. So, in this work, we investigate why phase mod-eling is a bottleneck for time-frequency domain vocoders. We do so by comparing Vocos to the state-of-the-art time-domain vocoders, and later by analyzing Vocos through a phase reconstruction lens. This work has the following contributions: • We compare Vocos to BigVGAN and find that the audio quality gap is still present, even after controlling for confounding factors such as training loss and discriminators. • Training Vocos variants with oracle knowledge of either the mag-nitude or phase spectrograms reveals that 1D convolutions are ef-fective for magnitude modeling, but less so for phase modeling. • Then, we investigate whether the Vocos architecture can predict phase differences, a precursor for phase reconstruction that does not require autoregression, and find that it is not effective for this task either. We later show that switching to 2D convolutions sub-stantially improves performance on this particular subtask. 
+
+2. METHODOLOGY (VOCODING) 2.1. Input representation 
+
+We use 80-band log mel spectrograms (for the frequency range 0– 8 kHz) as input, at a sampling rate of 22.05 kHz. Bandlimited spec-trograms could accentuate the gap between time-domain and time-frequency domain vocoders, since time-frequency domain vocoders are known to struggle with generating harmonic structure [10]. 
+
+2.2. Model architectures Vocos. Fig. 1 outlines the Vocos architecture. It consists of a Conv1D layer, followed by a stack of ConvNeXt [15] blocks, and a ‘Head’ block that interprets the network outputs as STFT coef-ficients. Finally, the time-domain signal is reconstructed using the arXiv:2607.24323v1 [eess.AS] 27 Jul 2026 Conv1D (k : 7)                                        
+
+> LayerNorm
+> DW-Conv1D (k: 7)
+> (B, 80 , T )
+> (B, 512 , T )
+> LayerNorm
+> (B, 512 , T )
+> (B, 512 , T )
+> ConvNeXt ( ×8)
+> PW-Conv1D (k: 1)
+> GELU
+> PW-Conv1D (k: 1)
+> (B, 512 , T )
+> (B, 1536 , T )
+> (B, 1536 , T )
+> (B, 512 , T )
+> +
+> PW-Conv1D (k: 1)
+> (B, 513 , T )
+> min(exp( ·),100) cos( ·) + jsin( ·)
+> (B, 513 , T )
+> ·
+> iSTFT ( N: 1024 ,H: 256 )
+> LayerNorm
+> (B, 1,256 T)
+> log mel spectrogram
+> audio waveform
+> ˆmˆp
+> Head
+
+Fig. 1 . The Vocos architecture, predicting log-magnitude and phase spectrograms ( ˆm, ˆp). DW/PW denote depthwise/pointwise opera-tions. Batch size and number of time frames are indicated by B, T .inverse STFT with a Hann window. In practice, we found that the magnitude clamping (shown in orange) prevents the network from predicting accurate magnitude spectrograms. Fig. 2 shows the his-togram of the maximum STFT magnitude for all training samples, with −1 dBFS amplitude scaling. The default threshold of 100 is set too low to accurately represent up to 41 % of the training samples. Based on the histogram, we adopt a threshold of 400, and advise future work to carefully consider the choice of this hyperparameter. 
+
+BigVGANv2. We retrained BigVGAN to serve as a benchmark time-domain vocoder [3]. An official checkpoint bigvgan v2 -22khz 80band fmax8k 256x matches our input representation but was trained on a larger dataset, so we report results for both that checkpoint and our retrained model. We also retrained a smaller variant of BigVGANv2, with 14.4 M parameters (denominated BigVGANv2-base), to match the parameter count of Vocos. 
+
+2.3. Discriminator 
+
+In our vocoder trainings, we utilize the multi-period discriminator with periods of (2, 3, 5, 7, 11) [16], EnCodec MS-STFT discrim-inator [17] for FFT sizes of (128, 256, 512, 1024, 2048), and the MS-SB-CQT discriminator [18]. 
+
+3. METHODOLOGY (PHASE RECONSTRUCTION) 
+
+In Vocos, the Head is the only block that imposes phase-related in-ductive bias, by (elementwise) wrapping the predicted values to the 
+
+[−π, π ) range. However, spectrograms are characterized by a much stronger inductive bias of consistency, in the form of a coupling be-tween the time and frequency gradients of log-magnitude and phase 
+
+> 10.00
+> 15.45
+> 23.87
+> 36.87
+> 56.96
+> 87.99
+> 135.94
+> 210.00
+> 324.42
+> Max STFT magnitude
+> 0.00
+> 0.02
+> 0.04
+> Relative frequency
+
+Fig. 2 . Histogram of the maximum ground-truth STFT magnitude for all training samples (with −1 dBFS amplitude scaling). Dashed line indicates the Vocos’ default clamping threshold of 100. spectrograms [19, 20]. So, STFT bins are influenced by neighbors in the time-frequency plane, and in the case of harmonic overtones, even by components spaced further apart along the frequency axis. These relations are baked in DSP-based phase reconstruction methods, such as the Phase Gradient Heap Integration (PGHI) [20] as well as in some neural network-based approaches [21–24]. In essence, these methods first predict the phase differences (i.e., phase gradients) from a given log-magnitude spectrogram, and later inte-grate them across time and frequency to obtain a phase estimate. As mentioned above, Vocos does none of these operations explicitly, but instead offloads them to the ConvNeXt blocks. This warrants an investigation into whether the Vocos architecture can predict phase differences, and if not, which components are responsible for this failure. Hence, later on, we adapt the Vocos architecture to predict phase differences, and train it with a loss that directly compares the predicted and ground-truth phase differences. 
+
+3.1. Phase differences 
+
+Phase reconstruction methods often use the frequency phase differ-ences (FPD) (also called group delay), time phase differences (TPD) (also called instantaneous frequency), and baseband phase differ-ences (BPD), which are given by FPD [m, n ] = W(ϕ[m, n ] − ϕ[m − 1, n ]) , (1) TPD [m, n ] = W(ϕ[m, n ] − ϕ[m, n − 1]) , (2) BPD [m, n ] = W(TPD [m, n ] − 2π mH N ) , (3) where W(·) denotes the principal value wrapping operation, and ϕ
+
+denotes the phase spectrogram, for frequency bin m and time index 
+
+n. The STFT hop size and FFT size are denoted by H and N , re-spectively. It is commonly assumed that BPD are easier to model with CNNs than TPD since cumulative contributions from the linear phase term (due to time shifts between frames) are removed [25]. 
+
+3.2. Modeling and integrating phase differences 
+
+We adapt the Vocos backbone to predict BPD and FPD, by altering the first Conv1D layer to take a 513-channel log-magnitude spec-trogram, and the 1026-channel output is split into BPD and FPD. For comparison, we also design a Conv2D variant with 6 ConvNeXt blocks using (32, 64) channels instead of (512, 1536). This results in approximately 400 × fewer parameters. The phase difference pre-diction method proposed by Masuyama et al., whose architecture is shown in Fig. 3, serves as a benchmark. To train these models, we use the linear wrapping-aware loss [13, 26], given by Mean subtraction                               
+
+> FreqConv (k: 1)
+> FreqConv (k: 1 ×3)
+> (B, 1, F, T )
+> (B, 64 , F, T )
+> log mag spectrogram
+> (B, 4, F, T )
+> (B, 64 , F, T )
+> FreqConv (k: 1 ×3)
+> (B, 64 , F, T )
+> Sigmoid
+> (B, 64 , F, T )
+> ·
+> BPD or FPD
+> FreqGatedConv
+> FreqGatedConv
+> +
+> FreqGatedConv
+> +
+> (B, 64 , F, T )
+> (B, 64 , F, T )
+> FreqConv (k: 1)
+> (B, 1, F, T )
+> ×2
+> ×2
+
+Fig. 3 . Benchmark phase difference prediction architecture, using causal 2D convolutions over time and frequency dimensions [23]. 
+
+Lwa (ˆ x, x ) = ˆx − x − 2π round 
+
+ ˆx − x
+
+2π
+
+
+
+> 1
+
+. (4) For evaluation, the predicted phase differences need to be con-verted into a phase spectrogram ˆϕ. We do so by using the least-squares phase reconstruction method of Masuyama et al. [23]. 
+
+4. EXPERIMENTAL SETUP 4.1. Datasets 
+
+For our trainings, we used LibriTTS [27] subsets (train-clean-100, train-clean-360, train-other-500), similar to BigVGAN and Vocos [3, 6]. This dataset contains approximately 585 h of speech data from 2456 speakers. We employed the random amplitude augmentation as proposed for Vocos, namely, scaling the audio so that the maximum amplitude is within [−6, −1) dBFS. For validation and testing, we used LibriTTS subsets dev-clean (40 speakers, 9 h) and test-clean (39 speakers, 8.5 h), respectively. In addition, we used 20 propri-etary German utterances from two speakers for evaluation. All audio files were resampled to 22.05 kHz. While reporting the results, we use mnemonics D1 and D2 for test-clean and the out-of-distribution German datasets, respectively. 
+
+4.2. Losses and training strategy 
+
+We use the following losses in our vocoding experiments: 1) the multi-resolution mel spectrogram loss Lmel , 2) the hinge adversarial loss Ladv , and 3) the feature matching loss Lfm of DAC [16]. The discriminators were trained using the hinge critic loss of DAC, sym-bolized as Lcritic . For training phase difference prediction models, we use the wrapping-aware loss (4). The training settings for both lines of experiments are summarized in Table 1. 
+
+Table 1 . Training strategy for neural vocoding and phase difference prediction experiments, largely based on [16] and [23].                          
+
+> Parameter Vocoding Phase Diff. Batch size (B)16 32 Utterance length [samples] 16384 16384 Generator Loss 15 Lmel +Ladv + 2 Lfm Lwa
+> Discriminator Loss Lcritic N/A Optimizer(s) AdamW RAdam Opt. params lr: 2e −4,β: (0.9, 0.999) lr: 6e −4
+> LR scheduler(s) cosine annealing cosine annealing Training duration [steps] 2M 400k
+
+5. RESULTS 5.1. Comparison of vocoders Objective evaluation. We report five objective metrics: the multi-resolution log-mel spectrogram loss Lmel , SCOREQ using the ground-truth audio as reference [28], voiced-unvoiced F1 score, periodicity RMSE [9], and log-spectral convergence (LSC) [23] 
+
+LSC( ˆϕ, A) = 20 log 10 
+
+∥A − | STFT(iSTFT( Aej ˆϕ)) |∥ Fro 
+
+∥A∥Fro 
+
+!
+
+,
+
+(5) where A and ˆϕ denote the ground-truth magnitude spectrogram and the predicted phase spectrogram (obtained by applying STFT to the predicted waveform), respectively, and ∥·∥ Fro denotes the Frobenius norm. The results are reported in Table 2. Even though retraining on LibriTTS and cutting down the number of parameters degrade the objective metrics slightly, BigV-GANv2 outperforms Vocos. Compared to the official Vocos recipe, using the outlined state-of-the-art vocoder training recipe yields mixed results for Vocos: improving Lmel , deteriorating SCOREQ, and having negligible effects on pitch metrics and LSC. 
+
+Subjective evaluation. Furthermore, we conducted a Multiple Stim-uli with Hidden Reference and Anchor (MUSHRA) test to assess the subjective quality, using webMUSHRA [29]. Sixteen partici-pants rated 14 out of the 20 aforementioned German audio samples (dataset D2). For the lower anchor, we used pseudo-inverted mel spectrograms and the phase estimates by the PGHI algorithm [20], as also done in a previous work [30]. The test stimuli are available at our accompanying website 2
+
+Results, shown in Fig. 4, corroborate that BigVGANv2 is signif-icantly better than Vocos at reconstructing signals from band-limited mel spectrograms. Changes to the magnitude clamping and adopting a state-of-the-art training recipe yield a significant improvement for Vocos, but not enough to reach the performance of BigVGANv2. Interestingly, this outcome is only reflected by one of the objec-tive metrics, namely Lmel . The limited bandwidth of the underlying Wav2Vec2.0 representation might be rendering SCOREQ less sensi-tive to the differences between the two models. 
+
+5.2. Learning isolated STFT components with Vocos 
+
+Results from the previous section indicate that the gap between Vo-cos and BigVGANv2 is still present, even after controlling for con-founding factors. To investigate the reasons for this gap, we trained two Vocos variants: 1) Vocos-Mag, which predicts only the log mag-nitude spectrogram ˆm, and ˆp is set to the ground-truth phase; and 
+
+> 2https://audiolabs-erlangen.de/resources/NLUI/20 26-IWAENC-vocoder
+
+Table 2 . Objective evaluation results, comparing Vocos to time-domain vocoders. BigVGANv2 (official) is the official checkpoint, and Vocos (official †) is obtained by retraining Vocos using its official training recipe, but with the input representation explained in Section 2.1.                                                                                                
+
+> Model # params. Lmel (↓)SCOREQ ( ↓)V/UV F1 ( ↑)Periodicity RMSE ( ↓)LSC [dB] ( ↓)D1 D2 D1 D2 D1 D2 D1 D2 D1 D2 BigVGANv2 (official) 112M 0.767 0.722 .092 .130 .967 .958 .0665 .0635 −18 .94 −22 .01
+> Vocos (official †)13.5M 1.389 1.463 .161 .213 .938 .917 .1261 .1380 −12 .68 −13 .54
+> BigVGANv2 112M 0.846 0.815 .100 .149 .964 .955 .0713 .0666 −18 .06 −20 .32
+> BigVGANv2-base 14.4M 1.172 1.126 .144 .194 .948 .934 .1119 .1172 −13 .70 −15 .16
+> Vocos (modified) 13.5M 1.308 1.309 .188 .258 .940 .919 .1262 .1374 −12 .39 −13 .43
+> Vocos-Mag 13.2M 0.495 0.552 .073 .147 .987 .987 .0273 .0269 −29 .18 −31 .04
+> Vocos-Phase 13.2M 1.560 1.634 .495 .614 .921 .901 .1755 .1777 −10 .39 −11 .20
+> pseudo-inv.
+> PGHI
+> Vocos
+> (official †)
+> Vocos
+> (modified)
+> BigVGANv2
+> (official)
+> Ref.
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> MUSHRA score
+> ****
+> ***
+> ****
+> Speaker gender
+> female
+> male
+
+Fig. 4 . Subjective listening test results (MUSHRA). The significance markers (‘*’: p < 0.05 , ‘**’: p < 0.01 , and ‘****’: p < 0.0001 )are based on two-sided Mann-Whitney-Wilcoxon tests with Holm-Bonferroni correction. 2) Vocos-Phase predicts the phase spectrogram ˆp, and ˆm is set to the ground-truth log magnitudes. The results, reported in the bot-tom rows of Table 2, highlight that Vocos-Mag outperforms almost any other experiment in this paper, while Vocos-Phase performs the worst. We draw a number of conclusions from these results: • The Vocos architecture can easily learn to predict a magnitude spectrogram that is compatible with the ground-truth phase. One dimensional convolutions seem to be sufficient for this task, call-ing into question modifications such as using a pseudo-inverse for recovering the linear-scale magnitude spectrograms [14] • In contrast, predicting a phase spectrogram that is compatible with the ground-truth magnitudes is significantly more challenging, to the point that joint prediction of magnitude and phase spectro-grams yields better results than predicting the phase spectrogram alone. While it is known that Vocos struggles with phase mod-eling, our findings show that the freedom to predict an ‘inconsis-tent’ magnitude spectrogram (instead of being forced to predict the ground truth) is instrumental for Vocos’ plausible waveform synthesis. This implies that approaches such as regularizing the predicted STFT coefficients to be closer to the ground-truth ones [13, 14, 31] may be counterproductive. 
+
+5.3. Phase difference prediction with the Vocos backbone 
+
+To isolate the source of Vocos’ phase errors, we investigate if its backbone can predict phase differences from ground-truth log-magnitude spectrograms. This is important because, according to the signal model, phase differences are a precursor for phase recon-
+
+Table 3 . Impact of architectural choices on phase difference predic-tion performance.                  
+
+> Model # params. # FLOPs/s Lwa (↓)LSC [dB] ( ↓)Vocos backbone (Conv1D) 15.0M 3.0B .646 −20 .24
+> Vocos backbone (Conv2D) 37.1K 3.5B .112 −29 .56
+> Benchmark model [23] 247K 21.8B .238 −26 .12
+
+struction and can be estimated without autoregression. So, if the Vocos backbone is not effective for this task, it would indicate that the issue is not just with autoregression, but also with the inductive biases of the backbone. The results, reported in Table 3, reveal that the Vocos backbone with Conv1D layers is not effective for predicting phase differences. In contrast, switching to Conv2D layers substantially improves the performance while preserving the computational complexity and re-quiring much fewer learnable parameters. It even outperforms the benchmark method of Masuyama et al. [23]. This suggests that the inductive biases of the Vocos architecture, in particular the use of 1D convolutions, bottleneck its ability to model the time-frequency structure of speech signals, which is crucial for phase reconstruction. However, switching to 2D convolutions for vocoding poses chal-lenges. Frequency bins would become a spatial dimension, and thus narrow receptive fields of 2D convolutions could not learn harmonic structures spanning a wider frequency range. Therefore, future re-search should focus on inductive biases that better model the time-frequency structure of speech signals, without relying on ad-hoc remedies such as harmonic priors [10] that rely on pitch information and limit applicability to inputs with local time-frequency structure. 
+
+6. CONCLUSION 
+
+In this paper, we investigated the limitations of the Vocos architec-ture. We showed that using a bandlimited mel spectrogram as input is an informative benchmark for comparing vocoders, accentuating the gap between time-domain and time-frequency domain vocoders. We found that even after controlling for confounding factors, Vocos still lags behind BigVGAN, a state-of-the-art time-domain vocoder. Then, to investigate the reasons for this gap, we trained Vocos vari-ants with oracle knowledge of either the magnitude or phase spec-trograms. Our results showed that the inconsistencies in Vocos-predicted magnitude spectrograms are “not a bug, but a feature”, as the freedom to predict an inconsistent magnitude spectrogram is in-strumental for compensating errors in the phase. We conclude that a promising research direction for improving the phase reconstruction capabilities of Vocos is stronger inductive biases for modeling the time-frequency structure of speech signals. 7. REFERENCES 
+
+[1] P. Mousavi et al., “How should we extract discrete audio tokens from self-supervised models?” In Proc. Interspeech Conf. , 2024. [2] ¨U. E. Gaznepoglu and N. Peters, “Why disentanglement-based speaker anonymization systems fail at preserving emo-tions?” In Proc. IEEE Intl. Conf. on Acoustics, Speech and Signal Processing (ICASSP) , 2025. [3] S.-g. Lee, W. Ping, B. Ginsburg, B. Catanzaro, and S. Yoon, “BigVGAN: A universal neural vocoder with large-scale training,” in Proc. Intl. Conf. on Learning Representations (ICLR) , 2023. [4] A. Mustafa et al., “A streamwise GAN vocoder for wideband speech coding at very low bit rate,” in Proc. IEEE Workshop on Applications of Signal Processing to Audio and Acoustics (WASPAA) , 2021. [5] M. Kawamura, Y. Shirahata, R. Yamamoto, and K. Tachibana, “Lightweight and high-fidelity end-to-end text-to-speech with multi-band generation and inverse short-time Fourier transform,” in Proc. IEEE Intl. Conf. on Acoustics, Speech and Signal Processing (ICASSP) , 2023. [6] H. Siuzdak, “Vocos: Closing the gap between time-domain and Fourier-based neural vocoders for high-quality audio synthesis,” in Proc. Intl. Conf. on Learning Representations (ICLR) , 2024. [7] T. Okamoto, H. Yamashita, Y. Ohtani, T. Toda, and H. Kawai, “WaveNeXt: ConvNeXt-based fast neural vocoder without ISTFT layer,” in Proc. IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) , 2023. [8] J. Laroche and M. Dolson, “Phase-vocoder: About this phasi-ness business,” in Proc. Workshop on Applications of Signal Processing to Audio and Acoustics (WASPAA) , 1997. [9] M. Morrison et al., “Chunked autoregressive GAN for condi-tional waveform synthesis,” in Proc. Intl. Conf. on Learning Representations (ICLR) , 2022. [10] R. Yoneyama, A. Miyashita, R. Yamamoto, and T. Toda, “Wavehax: Aliasing-free neural waveform synthesis based on 2d convolution and harmonic prior for reliable complex spectrogram estimation,” IEEE Trans. Audio, Speech and Lang. Proc. , vol. 33, 2025. [11] D. Griffin and J. Lim, “Signal estimation from modified short-time Fourier transform,” IEEE Trans. Audio, Speech and Sig. Proc. , vol. 32, no. 2, 1984. [12] Y. Lv et al., “FreeV: Free lunch for vocoders through pseudo inversed mel filter,” in Proc. Interspeech Conf. , 2024. [13] H.-P. Du, Y. Ai, R.-C. Zheng, Y.-X. Lu, and Z.-H. Ling, “Is GAN necessary for mel-spectrogram-based neural vocoder?” 
+
+IEEE Signal Process. Lett. , vol. 32, 2025. [14] A. Li et al., “Learning neural vocoder from range-null space decomposition,” in Proc. International Joint Conf. on Artifi-cial Intelligence , 2025. [15] Z. Liu et al., “A ConvNet for the 2020s,” in Proc. IEEE/CVF Conf. on Computer Vision and Pattern Recognition (CVPR) ,2022. [16] R. Kumar, P. Seetharaman, A. Luebs, I. Kumar, and K. Kumar, “High-fidelity audio compression with improved RVQGAN,” in Proc. Neural Information Processing Sys-tems (NeurIPS) , 2023. [17] A. D´ efossez, J. Copet, G. Synnaeve, and Y. Adi, “High fi-delity neural audio compression,” Trans. on Machine Learn-ing Research (TMLR) , 2023. [18] Y. Gu, X. Zhang, L. Xue, and Z. Wu, “Multi-scale sub-band constant-q transform discriminator for high-fidelity vocoder,” in Proc. IEEE Intl. Conf. on Acoustics, Speech and Signal Processing (ICASSP) , 2024. [19] F. Auger, ´ E. Chassande-Mottin, and P. Flandrin, “On phase-magnitude relationships in the short-time Fourier transform,” 
+
+IEEE Signal Processing Letters , vol. 19, no. 5, 2012. [20] Z. Pr˚ uˇ sa, P. Balazs, and P. L. Søndergaard, “A noniterative method for reconstruction of phase from STFT magnitude,” 
+
+IEEE/ACM Trans. Audio, Speech and Lang. Proc. , vol. 25, no. 5, 2017. [21] A. Marafioti, N. Holighaus, N. Perraudin, and P. Majdak, “Adversarial generation of time-frequency features with ap-plication in audio synthesis,” in Proc. Intl. Conf. on Machine Learning (ICML) , 2019. [22] B. Di Giorgi, M. Levy, and R. Sharp, “Mel spectrogram in-version with stable pitch,” in Proc. Intl. Society for Music Information Retrieval Conference (ISMIR) , 2022. [23] Y. Masuyama, K. Yatabe, K. Nagatomo, and Y. Oikawa, “Online phase reconstruction via DNN-based phase differ-ences estimation,” IEEE/ACM Trans. Audio, Speech and Lang. Proc. , vol. 31, 2023. [24] A. Fernandez, J. Azcarreta, C ¸ . Bilen, and J. Monge Alvarez, “Efficient neural and numerical methods for high-quality on-line speech spectrogram inversion via gradient theorem,” in 
+
+Proc. Interspeech Conf. , 2025. [25] M. Krawczyk and T. Gerkmann, “STFT phase reconstruc-tion in voiced speech for an improved single-channel speech enhancement,” IEEE/ACM Trans. Audio, Speech and Lang. Proc. , vol. 22, no. 12, 2014. [26] Y. Ai and Z.-H. Ling, “Low-latency neural speech phase pre-diction based on parallel estimation architecture and anti-wrapping losses for speech generation tasks,” IEEE/ACM Trans. on Audio, Speech and Lang. Proc. , vol. 32, 2024. [27] H. Zen et al., “LibriTTS: A corpus derived from LibriSpeech for text-to-speech,” in Proc. Interspeech Conf. , 2019. [28] A. Ragano, J. Skoglund, and A. Hines, “SCOREQ: Speech quality assessment with contrastive regression,” in Proc. Neural Information Processing Systems (NeurIPS) , 2024. [29] M. Schoeffler et al., “webMUSHRA — a comprehensive framework for web-based listening tests,” Journal of Open Research Software , vol. 6, no. 1, 2018. [30] P. Govalkar, J. Fischer, F. Zalkow, and C. Dittmar, “A com-parison of recent neural vocoders for speech signal recon-struction,” in Proc. ISCA Speech Synthesis Workshop (SSW) ,2019. [31] H.-P. Du, Y.-X. Lu, Y. Ai, and Z.-H. Ling, “APNet2: High-quality and high-efficiency neural vocoder with direct predic-tion of amplitude and phase spectra,” in Proc. National Conf. Man-Machine Speech Communication (NCMMSC) , 2024.

@@ -6,46 +6,55 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-08-01
-- 运行时间：2026-08-01 19:56:28 UTC
+- 最新运行日期：2026-08-02
+- 运行时间：2026-08-02 20:05:05 UTC
 - 运行状态：成功
-- 本次总论文数：8
-- 精读区：1
-- 速读区：7
+- 本次总论文数：11
+- 精读区：5
+- 速读区：6
 
 ### 今日简报（AI）
-今日共读8篇论文，聚焦语音AI前沿，精读1篇、速读7篇。  
-最值得看的是语音代理模拟基准《VAmoS Bench》（8.0分），以及脑电波解码《Joint Text-Audio Alignment》与实时音视频生成《Ripple》两个方向。  
-建议普通读者优先浏览语音交互与多模态生成类研究，关注人机协作与实时体验提升。
-- 详情：[/202608/01/README](/202608/01/README)
+今日共读11篇，精读聚焦神经声码器相位难题与实时音视频生成。  
+最值得看：Vocos时间频率声码器的相位失真分析，以及Ripple跨模态记忆驱动的音视频同步生成，均获8.0高分。  
+建议优先精读这两篇，速读可顺带关注MusiChat的AI音乐创作方法。
+- 详情：[/202608/02/README](/202608/02/README)
 
 ### 精读区论文标签
-1. [VAmoS Bench: Voice Agent Simulation Bench](/202608/01/2607.27453v1-vamos-bench-voice-agent-simulation-bench)  
+1. [Revisiting Vocos: That Phasiness Business in Time-Frequency Neural Vocoding](/202608/02/2607.24323v1-revisiting-vocos-that-phasiness-business-in-time-frequency-neural-vocoding)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：语音智能体仿真基准，直接对应语音与音频相关基准需求
+   evidence：时频神经声码器，面向语音合成的相位重建研究
+2. [Ripple: Real-Time Streaming Audio-Video Generation With Cross-Modal Recurrent Memory](/202608/02/2607.26818v1-ripple-real-time-streaming-audio-video-generation-with-cross-modal-recurrent-memory)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：基于跨模态循环记忆的实时音视频生成
+3. [Enhancing Law-Enforcement Audio Transcription: A LoRA-Based Adaptation of Whisper for BWC Footage](/202608/02/2607.27245v1-enhancing-law-enforcement-audio-transcription-a-lora-based-adaptation-of-whisper-for-bwc-footage)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：将Whisper语音识别适配到执法记录仪音频转写
+4. [WeSep: A Modular and Cue-Composable Framework for Target Speaker Extraction](/202608/02/2607.27436v1-wesep-a-modular-and-cue-composable-framework-for-target-speaker-extraction)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：面向混合语音的目标说话人提取统一框架。
+5. [Cocktail-Talker: Multi-Speaker Dialog Modeling in Noisy Social Environments with Turn Action GRPO](/202608/02/2607.27756v1-cocktail-talker-multi-speaker-dialog-modeling-in-noisy-social-environments-with-turn-action-grpo)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：面向嘈杂社交环境多说话人对话的语音大模型框架
 
 ### 速读区论文标签
-1. [Joint Text-Audio Alignment for EEG-to-Text Decoding in Chinese Speech Production and Perception](/202608/01/2607.25626v1-joint-text-audio-alignment-for-eeg-to-text-decoding-in-chinese-speech-production-and-perception)  
+1. [MusiChat: Vibe Composing for Music Creation](/202608/02/2607.24873v1-musichat-vibe-composing-for-music-creation)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：脑电到文本解码，关联语音识别研究
-2. [Speech2Grasp: Data-Efficient Transfer of Text-Conditioned Grasp Detection to Speech in Humanoid Robots](/202608/01/2607.26567v1-speech2grasp-data-efficient-transfer-of-text-conditioned-grasp-detection-to-speech-in-humanoid-robots)  
+   evidence：通过自然语言交互生成音乐，属于文本到音频合成方法范畴
+2. [Few-Shot Open-Set Audio Classification via Transductive Prototype Refinement and Class Logit Enhancement](/202608/02/2607.26607v1-few-shot-open-set-audio-classification-via-transductive-prototype-refinement-and-class-logit-enhancement)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：将文本条件模型迁移到语音输入用于机器人抓取
-3. [Ripple: Real-Time Streaming Audio-Video Generation With Cross-Modal Recurrent Memory](/202608/01/2607.26818v1-ripple-real-time-streaming-audio-video-generation-with-cross-modal-recurrent-memory)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：实时流式音频-视频生成
-4. [WeSep: A Modular and Cue-Composable Framework for Target Speaker Extraction](/202608/01/2607.27436v1-wesep-a-modular-and-cue-composable-framework-for-target-speaker-extraction)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：目标说话人提取的统一可组合框架，属于语音分离与提取研究
-5. [Multi-Phonation Graph Learning with Self-Supervised Speech Embeddings for ALS Detection and Progression Prediction](/202608/01/2607.25284v1-multi-phonation-graph-learning-with-self-supervised-speech-embeddings-for-als-detection-and-progression-prediction)  
+   evidence：小样本开放集音频分类方法研究。
+3. [Speech Entrainment in Multi-Party Conversations with a Digital Agent](/202608/02/2607.22939v1-speech-entrainment-in-multi-party-conversations-with-a-digital-agent)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：利用自监督语音嵌入进行ALS检测与进展预测，属于语音健康分析
-6. [From Semantics to Readout: Mechanistic Understanding of Audio Tokens after Fine-Tuning for Temporal Audio Grounding](/202608/01/2607.25355v1-from-semantics-to-readout-mechanistic-understanding-of-audio-tokens-after-fine-tuning-for-temporal-audio-grounding)  
+   evidence：基于新数据集研究人与数字代理多方对话中的语音同步。
+4. [Music-Source-Separation-Training (MSST): A Unified Framework for Training and Evaluating Music Demixing Models](/202608/02/2607.23395v1-music-source-separation-training-msst-a-unified-framework-for-training-and-evaluating-music-demixing-models)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：大型音频语言模型中的音频分词与时间音频定位研究
-7. [Teffic-Audio: Tell Fact from Fiction](/202608/01/2607.28351v1-teffic-audio-tell-fact-from-fiction)  
+   evidence：统一的音乐源分离训练与评估框架，与音频分离基准相关
+5. [Audio-Anchored Fusion of Multi-Ratio DiT Reconstruction Residuals for Cross-Domain Audio Deepfake Detection](/202608/02/2607.26472v1-audio-anchored-fusion-of-multi-ratio-dit-reconstruction-residuals-for-cross-domain-audio-deepfake-detection)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：针对语音合成与语音转换攻击的深度伪造检测
+   evidence：基于多比率DiT重建残差的跨域音频深伪检测
+6. [Teffic-Audio: Tell Fact from Fiction](/202608/02/2607.28351v1-teffic-audio-tell-fact-from-fiction)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：语音深度伪造检测，覆盖语音合成与声音转换等欺骗手段
 
 
 <div class="dpr-home-promo-card">
