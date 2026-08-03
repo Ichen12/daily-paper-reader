@@ -1,0 +1,236 @@
+Title: YazSes: An Offline, Privacy-First, Cross-Platform Hold-to-Talk Voice-Dictation System
+
+URL Source: https://arxiv.org/pdf/2607.28878v1
+
+Published Time: Mon, 03 Aug 2026 00:15:06 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# YazSes : An Offline, Privacy-First, Cross-Platform Hold-to-Talk Voice-Dictation System 
+
+Mohsen Seyedkazemi Ardebili 
+
+NovaFabric 
+
+mohsen.seyedkazemi@gmail.com 
+
+July 2026 
+
+Abstract 
+
+Cloud voice-dictation services deliver strong accuracy but require streaming a user’s speech to a remote provider, an unacceptable trade-off in privacy-sensitive professions and offline or air-gapped settings; the leading on-device alternatives are either platform-locked or aimed at expert scripting rather than plug-and-play dictation. We present YazSes , an open-source (Apache-2.0) hold-to-talk voice dictation daemon that runs entirely on-device, with a single codebase targeting Linux, macOS, and Windows through a protocol-based platform abstraction. YazSes 
+
+transcribes speech locally with faster-whisper (CPU, int8) and injects the result into the focused application; a fast regex command grammar, backed by an optional small-language-model router, maps utterances to editor and terminal actions. Nothing leaves the machine: recording is push-to-talk rather than always-listening, there is no telemetry, and an opt-in personalization loop keeps its corpus encrypted on-device and proposes configuration changes instead of shipping data out. We describe the system architecture—a staged pipeline behind a protocol-based platform abstraction with a JSON-RPC control plane—and its privacy and threat model. We evaluate the shipping Python implementation on a single commodity Linux laptop (13th Gen Intel(R) Core(TM) i7-1370P); the macOS and Windows backends are implemented and unit-tested but not end-to-end evaluated here. On 200 LibriSpeech test-clean utterances, word error rate ranges from 4.82% ( tiny.en ) to 2.59% ( small.en ) at RTF ≈ 0.520 for small.en (real-time-factor; decoding faster than real time on CPU with no GPU). The command grammar reaches 100% action accuracy with a 0.0% false-positive rate on plain dictation at 0.021 ms per call, and the non-decode pipeline adds 0.289 ms of overhead. The system and the benchmark harness behind every number in this paper are public at https://github.com/MSKazemi/yazses .
+
+# 1 Introduction 
+
+Voice dictation has become a mainstream input modality, but the most accurate consumer options are cloud services: the user’s audio is streamed to a remote provider for transcription. For many users this is disqualifying. Lawyers, clinicians, journalists protecting sources, and researchers under data-handling agreements often cannot send speech—which may contain privileged or regulated content—to a third party. Users on air-gapped or intermittently connected machines cannot rely on a network round-trip at all. And the recent trend toward always-capturing “memory” features on the desktop, exemplified by Microsoft Recall [ 6 ], has sharpened public concern that ambient capture of on-screen and spoken activity is a security liability rather than a convenience. The offline alternatives each leave a gap. Dragon [ 7] is a mature, paid product effectively limited to Windows. Windows Voice Access [ 5 ] is capable but Windows-only and closed. Talon Voice [ 15 ] is cross-platform and offline but is built for deep, scriptable voice control with a learning curve, rather 1arXiv:2607.28878v1 [cs.CR] 30 Jul 2026 than plug-and-play dictation. On Linux in particular there is no well-supported, turnkey, offline dictation-and -commands tool. We present YazSes , an open-source system that fills this gap. Its design commitments are: (i) on-device by construction —all speech recognition runs locally on the CPU via faster-whisper [14 ]built on CTranslate2 [ 8 ], with no GPU, API key, or account; (ii) push-to-talk, not always-listening —audio is captured only while a key is held, so there is no ambient recording; (iii) cross-platform from one codebase —Linux, macOS, and Windows behind a single protocol-based abstraction; and (iv) privacy as an invariant, not a setting —zero telemetry, and an opt-in personalization loop whose data is encrypted, stays local, and yields configuration proposals rather than exported data or uploaded model weights. This paper makes the following contributions: 
+
+• A description of the YazSes system architecture : a staged dictation pipeline, a protocol-based cross-platform abstraction, a JSON-RPC control plane, and platform-appropriate text-injection backends (Section 3). 
+
+• A privacy and threat-model analysis of an offline dictation daemon, including the invariants that make “nothing leaves the machine” enforceable and a STRIDE-style enumeration of residual risks (Section 4). 
+
+• A design for privacy-preserving on-device personalization : an encrypted local learning corpus and a held-out-validated tuner that proposes configuration changes and never trains or uploads weights (Section 5). 
+
+• An empirical evaluation of the shipping implementation on commodity hardware—word error rate and real-time factor across model sizes, command-grammar precision, pipeline latency, and memory footprint—together with a released, reproducible benchmark harness (Section 7). 
+
+# 2 Related Work 
+
+On-device speech recognition. YazSes builds on Whisper [ 10 ], an encoder–decoder ASR model trained with large-scale weak supervision that transfers well across domains. We use the 
+
+faster-whisper [14 ] reimplementation over CTranslate2 [ 8], which runs int8-quantized Whisper on the CPU at practical speed. Streaming-oriented models such as Moonshine [ 4 ] target low-latency live transcription and voice commands; an earlier exploratory branch of YazSes investigated a dual-stack streaming design, but the shipping system deliberately uses a single push-to-talk decode for simplicity and robustness (Section 8). 
+
+Voice dictation and control systems. Table 1 situates YazSes among widely used dictation tools. Dragon [ 7 ] and Windows Voice Access [ 5] are accurate but platform-locked and closed-source. Talon Voice [15] is the closest offline, cross-platform peer, but its strength—a rich scripting model for power users—is a different design point from YazSes ’ plug-and-play dictation with a fixed practical command grammar. Wispr Flow [ 17 ] is a polished cloud service and thus off-device by design. YazSes is, to our knowledge, the only tool in this set that is simultaneously open-source, cross-platform (including first-class Linux), and fully offline. 
+
+Privacy of desktop capture. The privacy hazards of always-capturing desktop features [ 6]motivate YazSes ’ push-to-talk, zero-telemetry stance. Where those systems continuously snapshot activity, YazSes records only while a key is held and retains nothing by default. 2Table 1: YazSes among common dictation tools. “Offline” = transcription runs on-device with no network dependency. Claims reflect publicly documented behaviour. Talon’s core is free; some beta features are paid. For YazSes , ( ✓) = implemented and unit-tested in CI but not end-to-end validated in this work ; only Linux is (Section 8).                                        
+
+> YazSes Dragon Talon Win. VA Wispr Offline / on-device ✓✓✓✓—Linux ✓—✓——macOS (✓)—✓—✓
+> Windows (✓)✓✓✓✓
+> Voice commands ✓✓✓✓limited Open source ✓————No subscription ✓—✓✓—
+
+Supporting components. Voice-activity detection gates silent buffers; production-grade neural VADs such as Silero [ 13 ] exist, and YazSes can optionally use one, but its default gate is a calibrated RMS threshold (Section 7). Speaker embeddings (ECAPA-TDNN [ 2 ]) underpin YazSes ’ optional, off-by-default speaker features. Optional offline text cleanup and command routing use small language models via grammar-constrained decoding [ 3 ]. We evaluate WER using the standard Whisper text normalizer [1] and JiWER [16] on LibriSpeech [9]. 
+
+# 3 System Design 
+
+YazSes is a long-lived background daemon that owns a single hold-to-talk hotkey and runs the dictation pipeline; a thin command-line tool and optional tray form a control plane that talks to the daemon over local IPC. The model is deliberately simple for the user: hold the key, speak, release, and the text appears in the focused window shortly after release—the delay is dominated by the decode and so scales with utterance length and model size (Section 7). 
+
+3.1 The dictation pipeline 
+
+Each hold–speak–release cycle drives audio through the fixed sequence of stages in Figure 1. All stages except the Whisper decode are pure, fast transforms. The stages are: (1) a hotkey backend (a keyboard hook, or an EMG muscle-sensor over USB serial for hands-free/accessibility use); (2) audio capture to an in-memory buffer; (3) a VAD gate that discards near-silent buffers using a calibrated RMS threshold; (4) pre-speech padding 
+
+that prepends a short lead-in so the first word is not clipped; (5) the faster-whisper decode ,biased by an initial_prompt assembled from the application name, the user’s personal vocabulary, and (optionally) editor context; (6) text cleanup that strips Whisper artefacts and a three-pass 
+
+disfluency filter ; (7) command classification by a Tier-1 regex grammar, with an optional Tier-2 small-language-model router invoked only when Tier-1 is unsure; and (8) dispatch , which either injects the text (dictation) or sends a key sequence (command). 
+
+3.2 Cross-platform abstraction 
+
+A single codebase serves three operating systems through protocol interfaces ( HotkeyBackend ,
+
+InjectorBackend , LifecycleBackend , IPC, permissions, tray). A factory selects concrete backends by operating system (Table 2). Adding a platform means implementing the protocols and registering 3Hotkey 
+
+keyboard / EMG 
+
+## Audio capture 
+
+## VAD gate 
+
+## Pre-speech padding 
+
+## faster-whisper 
+
+decode (CPU int8) 
+
+## Cleanup + disfluency 
+
+## Command grammar 
+
+## Dispatch 
+
+## Inject text 
+
+(dictate) 
+
+## Key sequence 
+
+(command) 
+
+initial prompt 
+
+Figure 1: The YazSes dictation pipeline. Only the faster-whisper decode (orange) is compute-heavy; every other stage is a pure transform costing well under a millisecond (Table 6). An initial prompt (app name, personal vocabulary, optional editor context) biases the decode. Table 2: Protocol-based platform abstraction: one interface, three implementations. This table describes the code; only the Linux column is end-to-end validated in this paper (Section 8).                   
+
+> Interface Linux macOS Windows Hotkey evdev Quartz tap keyboard hook Injector ydotool/xdotool Quartz SendInput Lifecycle systemd launchd SCM IPC Unix socket Unix socket named pipe Tray —rumps pystray
+
+one sys.platform value; the daemon and CLI are unchanged. The EMG hotkey is platform-independent and is registered whenever an EMG device is configured. Linux is the reference platform: it is the one used daily by the author and the only one evaluated in this paper (Section 7). The macOS and Windows backends are implemented and exercised by the unit-test suite in a three-OS continuous-integration matrix (last fully green at the v1.4.1 release), and installers for both are published as unsigned developer previews—but we have not validated end-to-end dictation on macOS or Windows in this work, and we flag this explicitly as a limitation (Section 8). 
+
+3.3 Control plane and text injection 
+
+The CLI and tray never touch the pipeline; they drive the daemon over JSON-RPC 2.0 on a Unix domain socket (Linux/macOS) or named pipe (Windows), carrying status queries, lifecycle commands, and correction signals. The daemon is a state machine ( LOADING →IDLE ↔RECORDING 
+
+→TRANSCRIBING →INJECTING ), with additional states for remote setup and enrollment. Text injection is itself an abstraction with runtime backend selection. On Linux, Wayland 4Table 3: Selected threats and YazSes ’ mitigations (STRIDE-style).         
+
+> Threat Mitigation / residual risk Audio exfiltration No network path by default; CI network-namespace gate. Residual: none on default path. Corpus disclosure AES-256-GCM protects the corpus at rest (disk theft, backups). The key is machine-bound, so a same-uid process can derive it: encryption is not a same-uid boundary. IPC abuse Socket restricted to the owning user (0600). Residual: same-uid clients. Wrong-window injection Inject into the focused window only. Residual: focus hijack during a burst. Model tampering Models fetched from their canonical source on first run. Residual: supply-chain of the model host.
+
+compositors block synthetic-input tools such as wtype for security; YazSes therefore defaults to ydotool [11 ], which injects through the kernel uinput device and works on Wayland and in terminals, falling back to xdotool on X11 or a clipboard-paste path where appropriate. A remote path forwards only the final text to an agent on an SSH host, so voice can drive a remote session while the audio never leaves the local machine. 
+
+# 4 Privacy and Threat Model 
+
+YazSes treats privacy as an invariant enforced by construction, not a configurable preference. The core invariants are: recording is push-to-talk, so no audio is captured while the key is up; there is no telemetry or analytics of any kind; no audio or text is transmitted off-device on the default path; the optional remote path transmits final text only; and the optional learning corpus is encrypted at rest with a machine-bound key and never leaves the device. The offline default is tested in continuous integration by running the daemon inside a network namespace with no connectivity. 
+
+Threat model. We summarize a STRIDE-style [ 12 ] analysis (Table 3). The trusted computing base is the local user account; the primary assets are the in-flight transcript, the encrypted corpus and its key, and the local IPC endpoint. The most consequential residual risks are same-uid 
+
+threats—a process running as the same user can reach the IPC socket or the decrypted corpus—and 
+
+focus-hijack injection, where a window that steals focus during dictation receives the injected text. These are inherent to a user-level input tool and are documented rather than hidden. 
+
+# 5 Privacy-Preserving On-Device Personalization 
+
+Dictation accuracy improves when the recognizer is biased toward a user’s own vocabulary and correction history, but the obvious way to personalize—send corrections to a server—violates YazSes ’invariants. YazSes instead keeps an opt-in , off-by-default learning loop entirely on-device. On each hold-release, a background writer appends one event (transcript, optionally the audio clip, and coarse metadata) to an encrypted SQLite corpus; text and audio are encrypted with a machine-bound key while only coarse metadata stays in clear, and capture never blocks the dictation hot path. The tune command analyzes this corpus offline and proposes configuration changes—vocabulary additions, a VAD-threshold adjustment, a model upgrade, disfluency tweaks—for the user to approve. 5It emits configuration diffs, never model weights, and never transmits anything. To avoid over-fitting proposals to the same data that generated them, the tuner validates each proposal on a 
+
+chronologically held-out slice of the corpus, with a guard against text that is duplicated across the split; proposals that do not corroborate on held-out data are flagged as unverified. Correction signals come from an explicit “mark wrong” action, from re-transcription with a larger model as pseudo-ground-truth, and from a passive re-dictation heuristic—never from keystroke logging. This section contributes a design : we describe the mechanism and its privacy properties, not an accuracy evaluation. Quantifying how much the loop improves WER, and confirming that the held-out guard rejects unhelpful proposals, requires longitudinal single-user data and is future work (Section 8). 
+
+# 6 Implementation 
+
+YazSes is implemented in Python ( ≥3.11) and packaged for PyPI, Snap, and an APT repository. Heavy or platform-specific capabilities are isolated behind optional install extras and imported lazily, so a base install stays small and every advanced feature is dormant until explicitly enabled. The core is 403 Python source files (30,306 lines) with a test suite of 1,639 test functions across 201 files, and design decisions are recorded in 147 architecture decision records. The “off-by-default, guarded” extension pattern lets a large capability surface coexist with an unchanged default dictation path. 
+
+6.1 Capability surface 
+
+Beyond core dictation, YazSes registers 136 named capabilities in a feature registry that drives the yazses features command; each carries a recommendation tier, and Table 4 summarizes the registry by category. Only 4 capabilities are active on a fresh install (Dictation core, Voice commands, Mid-Thought Undo, and Voice-activity overlay); 15 more are recommended, and the remaining majority stay dormant until enabled. 12 capabilities are marked experimental —the registry refuses to enable them without an explicit –force , and none are part of the evaluation in this paper. The experimental set comprises Wake-Word Activation, HatSelect Structural Editing, Vocal Morse, Mouth-Sound Switch Access, Pitch-Contour Gestures, Vocal Joystick, Modality Role Router, Glance-Type (camera), Crowd-Proof Dictation, Cocktail Filter (voice focus), Voice Guard (biometric + anti-spoof), and Glasses–Desktop Bridge. Full per-feature documentation, including configuration keys and dependencies, ships with the project. 
+
+# 7 Evaluation 
+
+Setup. All measurements were taken on a single commodity laptop: 13th Gen Intel(R) Core(TM) i7-1370P (20 logical CPUs), 32 GB RAM, Ubuntu 24.04.4 LTS, Python 3.12.3, faster-whisper 1.2.1, CPU int8 (no GPU). WER is computed on 200 utterances spanning 40 speakers of LibriSpeech [ 9 ]
+
+test-clean (30.1 minutes of audio), drawn by a deterministic speaker-stratified round-robin across all test-clean speakers so the subset is reproducible without clustering on a few speakers. The standard Whisper English text normalizer [ 1 ] is applied to both reference and hypothesis and WER is computed by JiWER [ 16 ]. Every number below is produced by the released benchmark harness and stored as JSON with this provenance block. 
+
+Accuracy and speed. Table 5 and Figure 2 report WER and real-time factor (RTF, decode time over audio duration; RTF < 1 is faster than real time) across the three shipping model sizes. WER 6Table 4: The capability registry by category and recommendation tier (generated from the registry itself). “Default” capabilities are on after a fresh install; “Experim[ental]” ones refuse to enable without –force and are excluded from this paper’s evaluation.                                                        
+
+> Category Total Default Recomm. Opt-in Experim. Core dictation 16 4381Accuracy & correction 20 0614 0Formatting & structure 31 0328 0Editing & navigation 13 0111 1Commands & automation 12 0210 0Multilingual 70070Accessibility & input modalities 20 0014 6Learning, memory & analytics 90090Conversation & recording capture 80044
+> All categories 136 415 105 12
+
+Table 5: STT decode accuracy, speed, and footprint across model sizes (200 LibriSpeech test-clean utterances; CPU int8; 13th Gen Intel(R) Core(TM) i7-1370P). RTF = decode time / audio duration. These characterize the decode stage on clean read speech, not end-to-end microphone dictation.                             
+
+> Model WER RTF Speed Load RSS Disk (%) (med.) (s) (MB) (MB) tiny.en 4.82 0.154 6.5 ×0.6 37 78 base.en 4.07 0.283 3.5 ×0.8 53 148 small.en 2.59 0.520 1.9 ×1.6 520 486
+
+falls from 4.82% ( tiny.en ) to 2.59% ( small.en ); all three models decode faster than real time on CPU, with small.en at RTF = 0 .520 (about 1.9 × real time) and tiny.en at roughly 6.5 ×. The table also reports cold-start load time, resident memory, and on-disk model size. Two caveats apply when reading these numbers. First, YazSes uses Whisper unmodified , so these figures characterize the shipping decode configuration (CPU int8) rather than a new model; they check that the on-device configuration reproduces the model’s expected accuracy, and claim nothing more. For reference, the largest zero-shot Whisper model reports a 2.7% word error rate on LibriSpeech test-clean (after the same Whisper text normalization; Table 2 of [ 10 ]). On this clean read-speech benchmark the CPU-int8 small.en lands in the same range; the larger models’ documented advantage is robustness on harder, out-of-distribution audio [ 10 ]—the conditions a real microphone actually produces. Second, this measurement decodes clean recordings from file and therefore isolates the STT stage : it does not exercise the microphone, the VAD gate, pre-speech padding, or the initial_prompt biasing that live dictation adds (see Threats to validity). 
+
+Pipeline overhead. The non-decode stages are negligible next to the decode. Table 6 and Figure 3 give per-stage timings; the total non-decode overhead per utterance is 0.289 ms, i.e. the pipeline around the model adds far less than a millisecond and end-to-end latency is dominated by the decode. 
+
+Command grammar. On 68 labelled command phrases the Tier-1 regex grammar achieves 100% action accuracy, classifying 92.6% of them as commands (the remainder are intentional dictation 7tiny.en base.en small.en 
+
+0
+
+1
+
+2
+
+3
+
+4
+
+5
+
+> Word error rate (%)
+> 4.8
+> 4.1
+> 2.6
+
+# Accuracy vs. speed across model sizes (CPU int8) 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+> Real-time factor (lower = faster)
+
+Figure 2: Word error rate (bars) and median real-time factor (line) across model sizes. Larger models are more accurate and slower, but all decode faster than real time on CPU. Table 6: Per-call cost of the pure (non-decode) pipeline stages.              
+
+> Pipeline stage Median (ms) P95 (ms) VAD gate (RMS) 0.0626 0.0756 Text cleanup 0.0054 0.0057 Disfluency filter 0.1465 0.1701 Grammar classify (dictation) 0.0745 0.0931 Grammar classify (command) 0.0435 0.0489
+> Total non-decode overhead 0.289
+
+controls in the fixture). On 80 lines of ordinary prose, the false-positive rate—dictation wrongly treated as a command—is 0.0%. Classification takes 0.021 ms per call, three orders of magnitude below the perceptual budget, so the grammar is effectively free. These figures are measured on text fixtures and therefore assume correct transcripts; real-world misfires additionally depend on upstream ASR errors, so they upper-bound the grammar’s own contribution to command reliability rather than the end-to-end rate. 
+
+VAD gate. At the default threshold the RMS gate detects speech in 100.0% of real speech clips and rejects 100.0% of silent/quiet-room buffers, with the median speech level about 2.4 × the threshold. The silence set is synthetic sub-threshold noise, so the high rejection rate is unsurprising; the informative result is the comfortable margin between real speech energy and the threshold. This is a separability check at the operating point, not a frame-level benchmark, and the RMS gate is not a substitute for a neural VAD in adverse noise (see Section 8). 810 −2 10 −1
+
+Median time per call (ms, log scale) 
+
+VAD gate 
+
+Text cleanup 
+
+Dis fl uency 
+
+Grammar 
+
+> 0.0626
+> 0.0054
+> 0.1465
+> 0.0745
+
+## Per-stage cost of the non-decode pipeline Figure 3: Median per-call cost of the non-decode pipeline stages (log scale). Every stage is well under a millisecond. 
+
+Dysfluency-friendly mode. YazSes ’ opt-in collapse pass for stuttered/repeated speech is held to a pre-registered gate (thresholds fixed before measuring). On 33 clean control strings its false-collapse rate is 0.0%, and on 28 labelled dysfluency cases its recall is 92.9%, meeting the pre-registered criteria (false-collapse < 2% , recall ≥ 60% ). This is measured on hand-authored text, not affected-speaker audio, which remains future work. 
+
+Threats to validity. These numbers characterize one machine, one operating system, one English read-speech corpus subset, and English .en models. All measurements were taken on Linux; nothing here validates the macOS or Windows paths beyond their unit tests. WER on read audiobooks is a floor, not a guarantee for noisy microphones or accented/conversational speech; RTF scales with CPU; and the VAD result is a separability check at the operating threshold, not a frame-level benchmark on a diarized noisy corpus. We report the measurement conditions with every number so results can be reproduced and re-scoped. 
+
+# 8 Limitations and Future Work 
+
+YazSes ships English .en models by default; other languages require a different model. It is a desktop tool with no mobile or web build. For the absolute lowest WER on a difficult microphone, a cloud service may still win—the deliberate trade-off is that nothing leaves the machine. Although the codebase targets three operating systems, everything evaluated in this paper ran on Linux: the macOS and Windows backends are implemented, covered by the unit suite in CI, and shipped as unsigned developer-preview builds, but end-to-end dictation on those platforms has not been validated by the author, and the cross-platform claim should be read as architectural until it has been. The shipping system uses a single push-to-talk decode; an exploratory branch investigated a streaming dual-stack STT design and an on-device agentic layer (LLM tool-use with encrypted personal memory), which we regard as future work rather than part of the evaluated system. 9Finally, validating dysfluency-friendly mode and the personalization loop on real affected-speaker and long-term single-user data is important future work. The largest gap is that this paper reports no user study . The evaluation is entirely technical; usability, learnability, and the lived experience of the accessibility features (dysfluency mode, EMG trigger, gaze targeting) are not measured here. Claims about the system being easy to adopt therefore describe its design intent , not a measured outcome, and a human-subjects evaluation—in particular with users who rely on the accessibility paths—is the most valuable next step. 
+
+# 9 Conclusion 
+
+YazSes shows that voice dictation with practical voice commands can be delivered entirely on-device—from a single codebase that targets Linux, macOS, and Windows, and validated end-to-end on Linux—with privacy as an enforced invariant rather than a promise. On commodity CPU hardware it transcribes faster than real time at the word error rates of the underlying Whisper models, adds negligible pipeline overhead, and—on text fixtures—classifies commands with no false positives on ordinary prose, all while never sending audio or text off the machine. We hope both the system and its reproducible benchmark harness are useful to practitioners who need dictation they can trust. 
+
+# Availability and Reproducibility 
+
+YazSes is open-source under Apache-2.0 at https://github.com/MSKazemi/yazses and on PyPI ( pipx install yazses ). The benchmark harness that produced every number in Section 7, together with the machine-readable results, is released with the paper; each experiment reproduces from a pinned dependency set and the public LibriSpeech test-clean download. 
+
+# References 
+
+[1] Kurian Benoy. whisper-normalizer: A python package for text standardization. https: //github.com/kurianbenoy/whisper_normalizer , 2024. Implements the Whisper English-TextNormalizer. Accessed July 2026. [2] Brecht Desplanques, Jenthe Thienpondt, and Kris Demuynck. ECAPA-TDNN: Emphasized channel attention, propagation and aggregation in TDNN based speaker verification. In Proc. Interspeech 2020 , pages 3830–3834, 2020. [3] Georgi Gerganov et al. llama.cpp: LLM inference in C/C++. https://github.com/ggml-o rg/llama.cpp , 2024. GBNF grammar-constrained decoding. Accessed July 2026. [4] Nat Jeffries, Evan King, Manjunath Kudlur, Guy Nicholson, James Wang, and Pete Warden. Moonshine: Speech recognition for live transcription and voice commands, 2024. [5] Microsoft. Use voice access to control your PC and author text with your voice. https: //support.microsoft.com/en-us/topic/use-voice-access-to-control-your-pc-autho r-text-with-your-voice-4dcd23ee-f1b9-4fd1-bacc-862ab611f55d , 2024. Accessed July 2026. 10 [6] Microsoft. Retrace your steps with Recall. https://support.microsoft.com/en-us/wind ows/retrace-your-steps-with-recall-aa03f8a0-a78b-4b3e-b0a1-2eb8ac48701c , 2025. Feature announced May 2024; general availability December 2025. Accessed July 2026. [7] Nuance Communications (Microsoft). Dragon speech recognition software and solutions. 
+
+https://dragon.nuance.com/ , 2026. Dragon Professional for Mac discontinued October 2018. Accessed July 2026. [8] OpenNMT. CTranslate2: Fast inference engine for transformer models. https://github.com /OpenNMT/CTranslate2 , 2024. Accessed July 2026. [9] Vassil Panayotov, Guoguo Chen, Daniel Povey, and Sanjeev Khudanpur. Librispeech: An ASR corpus based on public domain audio books. In 2015 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 5206–5210. IEEE, 2015. [10] Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision. In Proceedings of the 40th International Conference on Machine Learning (ICML) , pages 28492–28518, 2023. arXiv:2212.04356. [11] ReimuNotMoe. ydotool: Generic Linux command-line automation tool. https://github.com /ReimuNotMoe/ydotool , 2024. Accessed July 2026. [12] Adam Shostack. Threat Modeling: Designing for Security . Wiley, 2014. [13] Silero Team. Silero VAD: pre-trained enterprise-grade voice activity detector. https://gith ub.com/snakers4/silero-vad , 2024. MIT license. Accessed July 2026. [14] SYSTRAN. faster-whisper: Faster Whisper transcription with CTranslate2. https://github .com/SYSTRAN/faster-whisper , 2024. Accessed July 2026. [15] Talon Voice. Talon voice. https://talonvoice.com , 2024. Accessed July 2026. [16] Nik Vaessen. JiWER: Similarity measures for automatic speech recognition evaluation. https: //github.com/jitsi/jiwer , 2024. Accessed July 2026. [17] Wispr AI. Wispr flow. https://wisprflow.ai , 2024. Accessed July 2026. 11

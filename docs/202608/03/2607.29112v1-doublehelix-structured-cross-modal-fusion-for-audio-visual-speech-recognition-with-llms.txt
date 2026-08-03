@@ -1,0 +1,468 @@
+Title: 2607.29112v1.pdf
+
+URL Source: https://arxiv.org/pdf/2607.29112v1
+
+Published Time: 2026-07-31T15:37:17.000Z
+
+Number of Pages: 11
+
+Markdown Content:
+# DoubleHelix: Structured Cross-Modal Fusion for Audio-Visual Speech Recognition with LLMs 
+
+# Ziwei Cheng 
+
+Software College of Northeastern University Shenyang, Liaoning, China chengzw@stumail.neu.edu.cn 
+
+# Zhenhua Tan ✉
+
+Software College of Northeastern University Shenyang, Liaoning, China tanzh@mail.neu.edu.cn 
+
+# Zhuomin Zhu 
+
+Software College of Northeastern University Shenyang, Liaoning, China zhuzzm@stumail.neu.edu.cn 
+
+## Abstract 
+
+Audio-visual speech recognition (AVSR) relies on effective fusion of audio and visual modalities, yet existing approaches treat cross-modal interaction as a single-step operation without structured iterative refinement. We present DoubleHelix, a multimodal fusion framework that reformulates fusion as an iterative cross-modal interaction process with adaptive degradation-aware enhancement. The framework comprises three components including ReversePar-allelHelix for multi-turn structured interaction with learned align-ment constraints, QualitySensor for learning degradation-aware gating signals, and HelixReplication for consistency-guided condi-tional feature enhancement. Experiments on LRS3 demonstrate that DoubleHelix achieves 0.68% WER on clean audio, outper-forming previous best results by 5.6% relative improvement under matched backbone settings. Comprehensive ablation studies vali-date each component contribution, including targeted analysis of design choices such as asymmetric pathway weighting. The frame-work shows improved robustness under evaluated babble-noise conditions, achieving 11.6% WER at SNR -5dB. 
+
+## CCS Concepts 
+
+• Computing methodologies → Speech recognition .
+
+## Keywords 
+
+Audio-Visual Speech Recognition, Multimodal Fusion, Cross-Modal Interaction, Large Language Models 
+
+ACM Reference Format: 
+
+Ziwei Cheng, Zhenhua Tan, and Zhuomin Zhu. 2026. DoubleHelix: Struc-tured Cross-Modal Fusion for Audio-Visual Speech Recognition with LLMs. In Proceedings of the 34th ACM International Conference on Multimedia (MM ’26), November 10–14, 2026, Rio de Janeiro, Brazil. ACM, New York, NY, USA, 11 pages. https://doi.org/10.1145/3767308.3836602 
+
+## 1 Introduction 
+
+Audio-Visual Speech Recognition (AVSR) combines audio with lip movement visual information to improve speech recognition ac-curacy and robustness [ 20 ]. Research has explored various fusion strategies including concatenation [ 26 ], cross-attention [ 17 , 19 ], conformer integration [ 2, 28 ]. Knowledge distillation from speech foundation models [ 4, 31 ] further improves encoder quality. These  
+
+> This work is licensed under a Creative Commons Attribution 4.0 International License.
+> MM ’26, Rio de Janeiro, Brazil
+> ©2026 Copyright held by the owner/author(s). ACM ISBN 979-8-4007-2213-4/2026/11 https://doi.org/10.1145/3767308.3836602
+
+methods help AVSR systems handle challenging conditions includ-ing frame loss [ 8 ], visual occlusion [ 27 ], and background noise [ 12 ,13 ]. Cross-modal translation approaches like Lip2Vec [ 10 ] and MixSpeech [ 6 ] leverage one modality to improve another. A typical AVSR framework has a front-end encoder for feature extraction using models like Whisper [ 23 ] for audio and AV-HuBERT [ 25 ] for video, and a back-end network for speech recognition. The integration of Large Language Models (LLMs) into AVSR marks a paradigm shift. LLaMA-AVSR [ 3 ] pioneered this direction as the first work to apply LLMs to audio-visual speech recognition. It uses pre-trained Whisper and AV-HuBERT encoders to generate modality tokens processed by LLaMA for speech inference. Follow-ing this encoder-LLM paradigm, subsequent works have advanced the field. AVWhisper [ 29 ] combines AV-HuBERT and Whisper en-coders without LLM decoders. Whisper-Flamingo [ 24 ] integrates visual features into Whisper through gated cross-attention. MMS-LLaMA [ 30 ] introduces early audio-visual fusion with speaking rate adaptation. Transducer-Llama [ 9] enables streaming recognition, while SpeechLLM-XL [ 18 ] and E2E-ASR [ 14 ] address real-time pro-cessing. Beyond end-to-end recognition, AVGER [ 21 ] applies LLMs for post-hoc error correction, and ClozeGER [ 16 ] propose listen-again paradigms. Multi-modality language models [ 11 , 22 ] extract features with pre-trained encoders and project them into token se-quences for LLMs. Parameter-efficient fine-tuning with LoRA [ 15 ]reduces training cost while achieving good performance. 
+
+Problem. Despite these advances, current fusion methods have a fundamental limitation. They treat multimodal fusion as a single-step operation without iterative refinement. MSHF [ 26 ] combines features once. Cross-attention [ 17 , 19 ] does one round of queries be-tween modalities. Conformer-based fusion [ 2 , 28 ] integrates modal-ities through single-pass processing. When audio quality drops due to noise, reliability-based methods [ 8, 13 ] only weight modalities differently. They reduce audio contribution but do not fix degraded audio using visual information. This discards useful information instead of repairing it. Even the state-of-the-art MMS-LLaMA [ 30 ]uses single-step early fusion without progressive refinement. 
+
+Solution and contribution. We propose DoubleHelix, a fusion module that enables iterative cross-modal interaction within the LLM-based AVSR framework, as shown in Figure 1. We build upon LLaMA-AVSR [ 3], the pioneering work that first applied LLMs to AVSR, which serves as our baseline. Our method adopts the same encoder-LLM paradigm (Whisper + AV-HuBERT + LLaMA) introduced by LLaMA-AVSR and refined by MMS-LLaMA [ 30 ], but focuses on improving the fusion mechanism itself. A listener might mishear a phoneme, use lip shapes to correct it, and reconcile MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil Cheng et al. 
+
+Figure 1: Architecture overview of DoubleHelix. Audio features from Whisper and visual features from AV-HuBERT are processed through ReverseParallelHelix for iterative cross-modal interaction. QualitySensor estimates audio degradation, gating HelixReplication for adaptive enhancement. The fused representation is then decoded by LLaMA with LoRA fine-tuning. 
+
+both signals over multiple cycles [ 20 ]. Effective fusion should in-volve repeated exchanges where representations improve through structured interaction. DoubleHelix reformulates fusion as iterative cross-modal interaction with quality-aware enhancement. It has three components. ReverseParallelHelix enables multi-turn interac-tion between audio and visual features. Modalities refine each other across 𝐾 turns using rotation matrices and learned pairing con-straints. QualitySensor estimates modality quality and HelixRepli-cation does conditional refinement. When audio quality is low, HelixReplication synthesizes improved features using visual tem-plates. When audio quality is high, original features stay unchanged. The main contributions are as follows. 
+
+• We propose an iterative cross-modal interaction framework. ReverseParallelHelix enables multi-turn representation refinement, turning fusion into a progressive process rather than single-step combination. 
+
+• We introduce degradation-aware adaptive enhancement. Qual-itySensor learns a gating signal from downstream supervision, and HelixReplication enhances degraded audio using visual guidance, moving beyond passive weighting to constructive repair. 
+
+• Experiments on LRS3 show DoubleHelix achieves 0.68% WER under clean conditions (5.6% improvement over MMS-LLaMA under matched backbone settings) and shows improved robustness under evaluated babble-noise conditions, achieving 11.6% WER at -5dB SNR. 
+
+## 2 Related Work 
+
+Audio-Visual Speech Recognition (AVSR) combines audio with vi-sual information from lip movements to improve recognition accu-racy and robustness [ 13 , 20 ]. Research has explored how to lever-age audio-visual modality fusion effectively [ 2 , 5 , 17 , 19 , 28 ]. AVSR systems perform well under frame loss, visual occlusion, and back-ground noise [ 8, 13 , 27 ]. A typical framework has a front-end for feature extraction and a back-end for speech recognition. Better front-end features improve recognition. Large Language Models (LLMs) enable multi-modality systems that process audio, video, and text together [11, 22]. 
+
+## 2.1 Audio-Visual Fusion Strategies 
+
+Fusion architectures have evolved from concatenation to atten-tion mechanisms. Early approaches use direct feature MSHF [ 26 ], which limits cross-modal interaction despite efficiency. Unified-Attention [ 19 ] and GILA [ 17 ] use cross-attention for bidirectional queries. Unified-Attention [ 19 ] uses shared attention alignment, while GILA [ 17 ] combines global attention with local alignment. DCIM-AVSR [ 28 ] and AVEC [ 2 ] modify the Conformer structure. DoubleHelix: Structured Cross-Modal Fusion for Audio-Visual Speech Recognition with LLMs MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil 
+
+DCIM-AVSR [ 28 ] uses dual Conformer modules, and AVEC [ 2 ] han-dles noise through fusion blocks. These methods perform single-round attention without iterative refinement, which our ReverseP-arallelHelix addresses. Although knowledge distillation [ 4 , 31 ] ef-fectively transfers knowledge from speech foundation models, it still use single-step fusion without progressive refinement. 
+
+## 2.2 Modality Reliability and Robustness 
+
+Handling asymmetric degradation where one modality is more re-liable has attracted attention. AV-RelScore [ 13 ] train with visual corruption modeling and use reliability scoring to weight modal-ities. MSRL [ 5] learn weighting policies through reinforcement learning, while MDA-KD [ 8 ] analyze dropout-induced modality bias. These methods adjust contribution weights based on modality quality. They do not enhance degraded representations using intact counterparts, instead down-weighting unreliable modalities and discarding information. PCD [ 12 ] improve robustness through con-trastive learning, and AVLR [ 27 ] handles specific degradation types. Lin and Harte [ 20 ] analyze when visual information benefits audio recognition. Lip2Vec [ 10 ] maps visual to audio representations, and MixSpeech [ 6] uses cross-modality self-learning. These approaches leverage one modality to improve another but operate as post-hoc processing. Our QualitySensor provides continuous damage scores that gate enhancement, and HelixReplication synthesizes improved audio features using visual templates when degradation is detected. 
+
+## 2.3 LLM-based Audio-Visual Speech Recognition 
+
+Aligning pre-trained audio-visual front-ends (Whisper [ 23 ], AV-HuBERT [ 25 ]) with LLMs enables speech understanding and gen-eration. AVWhisper [ 29 ] combines AV-HuBERT and Whisper en-coders. Whisper-Flamingo [ 24 ] integrates visual features and gated cross-attention into Whisper. LLaMA-AVSR [ 3] uses pre-trained encoders to generate tokens processed by LLaMA. This method encodes modalities separately before concatenating, potentially missing connections between audio and video. MMS-LLaMA [ 30 ]uses early audio-visual fusion that adjusts tokens by speaking rate. Transducer-Llama [ 9] integrates LLMs into streaming recogni-tion, while SpeechLLM-XL [ 18 ] enables real-time processing. E2E-ASR [ 14 ] integrates LLMs into first-pass decoding. Beyond end-to-end recognition, generative error correction applies LLMs post-hoc. AVGER [ 21 ] encodes audio-visual information to correct N-best hypotheses, and ClozeGER [ 16 ] propose listen again paradigms. These post-hoc methods operate on decoder outputs after recogni-tion, whereas our pre-decoding enhancement allows the LLM to use cleaner representations. We adopt the encoder-LLM paradigm from MMS-LLaMA [ 30 ] but introduce iterative fusion before the LLM. 
+
+## 2.4 Positioning of DoubleHelix 
+
+DoubleHelix addresses limitations of prior approaches through three design principles. First, unlike single-step fusion methods (Unified-Attention, DCIM-AVSR), we enable iterative refinement across 𝐾 = 3 interaction turns, achieving plus 10.3 percent improve-ment over single-turn fusion. Second, unlike reliability weighting that down-weights degraded modalities (AV-RelScore [ 13 ]), we enhance degraded representations using visual guidance, achiev-ing plus 31.8 percent improvement over LLaMA-AVSR [ 3] at -5dB SNR. Third, unlike post-hoc correction that refines decoder outputs (AVGER [ 21 ]), we enhance features before decoding, achieving plus 7.2 percent improvement over AVGER [ 21 ] at -5dB SNR. Both MMS-LLaMA [ 30 ] and DoubleHelix use identical encoders (Whisper-medium + AV-HuBERT large) and decoder (LLaMA-3.2-3B), suggest-ing iterative fusion as a major contributor under matched backbone settings. 
+
+## 3 Method 
+
+This paper presents DoubleHelix, an audio-visual speech recog-nition architecture with structured cross-modal interaction as an iterative refinement process. The proposed method preserves the decoder-only backbone and adopts LoRA for parameter-efficient fine-tuning of the Large Language Model (LLM), while keeping pre-trained audio and visual encoders frozen. To improve robust-ness under degraded acoustic conditions, DoubleHelix introduces a structured fusion module composed of ReverseParallelHelix for multi-turn cross-modal interaction, QualitySensor for audio quality estimation, and HelixReplication for conditional audio feature re-pair guided by visual cues. These components form an end-to-end training pipeline, as illustrated in Figure 1. 
+
+## 3.1 Notation 
+
+In this paper, we denote audio features as 𝑋 𝑎 ∈ R𝑇 ×𝐷 and visual fea-tures as 𝑋 𝑣 ∈ R𝑇 ×𝐷 , where 𝑇 is the sequence length and 𝐷 = 1024 
+
+is the feature dimension. 𝐾 denotes the number of interaction turns. 
+
+𝐻 = 8 is the number of attention heads with head dimension 
+
+𝑑 ℎ = 𝐷 /𝐻 = 128 . 𝜎 (·) denotes the sigmoid function. [· ; ·] denotes concatenation along the feature dimension. ⟨· , ·⟩ denotes inner prod-uct. MHA( 𝑄 , 𝐾 , 𝑉 ) denotes multi-head attention with query, key, and value inputs. 
+
+## 3.2 Pre-trained Audio–Visual Encoders 
+
+The architecture follows an encoder-fusion-LLM paradigm. For audio encoding, we use Whisper-medium [ 23 ] (frozen, 24 layers, 1024 dim) to extract acoustic features 𝑋 𝑎 . For video encoding, we use AV-HuBERT large [ 25 ] (frozen, 24 layers, 1024 dim) to extract visual features 𝑋 𝑣 . Both encoders stay frozen during training. 
+
+## 3.3 ReverseParallelHelix 
+
+Conventional fusion does single-step feature combination. ReverseP-arallelHelix enables multi-turn interaction where modalities refine each other through structured exchange. 
+
+Stream Processing. Audio and visual features go through con-volutional projections with different temporal orientations. Let LN (·) denote layer normalization. 
+
+˜𝑋 𝑎 = Conv1d forward (LN (𝑋 𝑎 )) (1) 
+
+˜𝑋 𝑣 = Conv1d backward (flip (LN (𝑋 𝑣 ))) (2) The forward and backward convolutions process temporal infor-mation in complementary directions. 
+
+Multi-Turn Interaction. Across 𝐾 = 3 interaction turns, rep-resentations are refined with learnable rotation matrices. Let 𝑅 𝑘 ∈MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil Cheng et al. 
+
+R𝐷 ×𝐷 be the rotation matrix at turn 𝑘 , initialized as orthogonal via QR decomposition. Let 𝛼 ∈ R be a learnable scale initialized to 1.0. 
+
+𝑋 (𝑘 ) = 𝑋 (𝑘 −1) + 𝛼 · LN (𝑋 (𝑘 −1) )𝑅 𝑘 (3) Rotations alternate between modalities where turn 𝑘 rotates one stream while the other anchors, enabling asymmetric refinement. 
+
+Cross-Modal Correspondence. After rotation refinement, cross-modal attention uses learned pairing matrices. Let 𝑃 ℎ ∈ R𝑑 ℎ ×𝑑 ℎ
+
+be the pairing matrix for head ℎ. For each attention head ℎ, we compute paired features: pair (ℎ) 
+
+> 𝑎
+
+= 𝑋 (ℎ) 
+
+> 𝑎
+
+𝑃 ℎ, pair (ℎ) 
+
+> 𝑣
+
+= 𝑋 (ℎ) 
+
+> 𝑣
+
+𝑃 𝑇 ℎ (4) where 𝑋 (ℎ) 
+
+> 𝑎
+
+, 𝑋 (ℎ) 
+
+> 𝑣
+
+∈ R𝑇 ×𝑑 ℎ are features for head ℎ. A learned gate 
+
+𝑔 (ℎ) ∈ [ 0, 1] modulates pairing strength: 
+
+𝑔 (ℎ) = 𝜎 ⟨𝑋 (ℎ) 
+
+> 𝑎
+
+𝑃 ℎ, 𝑋 (ℎ) 
+
+> 𝑣
+
+⟩√𝑑 ℎ
+
++ 𝑏 
+
+!
+
+(5) where 𝑏 ∈ R is a learnable bias. 
+
+Dual Interaction Pathways. We implement two pathways for different dependency scales. 
+
+𝑂 global = MHA (pair 𝑎 , pair 𝑣 , pair 𝑣 ) (6) 
+
+𝑂 local = Conv1d local (pair 𝑣 ) (7) 
+
+𝑂 global captures long-range cross-modal dependencies through at-tention. 𝑂 local captures short-range patterns through convolution. Outputs combine with asymmetric weighting to reflect modality importance. We assign higher global-path weight to audio (0.7) and higher local-path weight to visual (0.7), motivated by the observa-tion that audio benefits more from long-range temporal context while visual patterns are more localized. 
+
+𝑋 helix  
+
+> 𝑎
+
+= pair 𝑎 + 0.7 · 𝑂 global + 0.3 · 𝑂 local (8) 
+
+𝑋 helix  
+
+> 𝑣
+
+= pair 𝑣 + 0.3 · 𝑂 global + 0.7 · 𝑂 local (9) We validate this asymmetric design through ablation in Section 4.4. 
+
+## 3.4 QualitySensor 
+
+QualitySensor learns a degradation-aware gating signal from audio features for adaptive fusion. Let 𝑑 ∈ [ 0, 1] be the damage score indicating audio degradation level. 
+
+𝑑 = 𝜎 (MLP (Pool (GELU (Conv (𝑋 𝑎 ))))) (10) The architecture is Conv1d ( 𝐷 → 𝐷 /4, kernel 5) followed by GELU, Conv1d ( 𝐷 /4 → 𝐷 /8, kernel 3), adaptive pooling, MLP, and sig-moid. Unlike methods that require explicit quality labels, our dam-age score is learned through downstream supervision, where 𝑑 is trained to correlate with conditions where HelixReplication im-proves recognition. A repair weight 𝑤 repair ∈ [0, 1] is computed with threshold 
+
+𝜏 = 0.5 and scale 𝑠 = 5.0,
+
+𝑤 repair = 𝜎 (( 𝑑 − 𝜏 ) · 𝑠 ) (11) When 𝑑 > 𝜏 , 𝑤 repair approaches 1 and enhancement activates. When 
+
+𝑑 < 𝜏 , 𝑤 repair approaches 0 and minimal intervention applies. We analyze the correlation between 𝑑 and noise levels in Section 4.4. 
+
+## 3.5 HelixReplication 
+
+HelixReplication uses visual features to refine audio representations when audio quality is low. 
+
+Break Detection. A network identifies temporal regions need-ing refinement. Let 𝐵 ∈ R𝑇 ×2 be the break probability for start and end positions: 
+
+𝐵 = 𝜎 (MLP ([ 𝑋 helix  
+
+> 𝑎
+
+; 𝑋 helix  
+
+> 𝑣
+
+])) (12) 
+
+Template Synthesis. Using visual features as template, audio refinements are synthesized: 
+
+𝑋 new  
+
+> 𝑎
+
+= MLP ([ 𝑋 helix  
+
+> 𝑎
+
+; LN (𝑋 helix  
+
+> 𝑣
+
+)]) (13) 
+
+Gap Smoothing. Transitions between original and refined fea-tures are smoothed. Let Δ ∈ R𝑇 ×𝐷 be the residual: 
+
+Δ = tanh (MLP ([ 𝑋 new  
+
+> 𝑎
+
+− 𝑋 helix  
+
+> 𝑎
+
+; 𝑋 helix  
+
+> 𝑣
+
+])) (14) 
+
+𝑋 repaired  
+
+> 𝑎
+
+= 𝑋 new  
+
+> 𝑎
+
++ Δ (15) 
+
+Final Enhancement. The final audio representation combines original and repaired features weighted by repair weight: 
+
+𝑋 final  
+
+> 𝑎
+
+= 𝑋 helix  
+
+> 𝑎
+
+· ( 1 − 𝑤 repair ) + 𝑋 repaired  
+
+> 𝑎
+
+· 𝑤 repair (16) 
+
+## 3.6 Fusion and LLM Integration 
+
+Fused representation 𝑍 ∈ R𝑇 ×𝐷 combines enhanced audio and visual helix outputs: 
+
+𝑍 = MLP fusion ([ 𝑋 final  
+
+> 𝑎
+
+; 𝑋 helix  
+
+> 𝑣
+
+]) (17) 
+
+𝑍 is projected to LLM embedding dimension through a linear layer. We use Llama as the decoder to generate the final transcription from multimodal inputs 𝑍 . Specifically, the fused representation output is projected to the LLM embedding dimension and con-catenated with the instruction embeddings to construct the mul-timodal prompt. During training, the target label embeddings are further appended for autoregressive supervision. Therefore, given the multimodal representation 𝑍 and the instruction tokens 𝑇 𝑒𝑥𝑡 ,the probability of the transcription sequence 𝑌 = {𝑦 𝑖 }𝑁 𝑖 =1 is defined as 
+
+𝑝 (𝑌 | 𝑍,𝑇 𝑒𝑥𝑡 ) =
+
+> 𝑁
+
+Ö
+
+> 𝑖 =1
+
+𝑝  𝑦 𝑖 | 𝑍,𝑇 𝑒𝑥𝑡, 𝑦 <𝑖 
+
+, (18) where 𝑦 <𝑖 denotes the tokens generated before step 𝑖 . To adapt the pre-trained decoder efficiently, we adopt LoRA [15 ] for parameter-efficient fine-tuning, where the rank is set to 𝑟 = 16 and the scaling factor is 𝛼 = 32 .
+
+## 3.7 Implementation Details 
+
+Rotation Matrix Training. Each rotation matrix 𝑅 𝑘 is initialized as an orthogonal matrix via QR decomposition of a random matrix, ensuring stable gradient flow. During training, 𝑅 𝑘 is jointly opti-mized with the entire model through standard gradient descent, learning to align cross-modal representations while preserving feature magnitude through the residual connection structure. 
+
+Pairing Matrix Learning. The per-head pairing matrices 𝑃 ℎ are randomly initialized and learned through backpropagation from the cross-modal attention outputs. The gating mechanism 𝑔 (ℎ) provides adaptive regularization, preventing overfitting to spurious cross-modal correlations. The inner product in the gate computation DoubleHelix: Structured Cross-Modal Fusion for Audio-Visual Speech Recognition with LLMs MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil 
+
+serves as an implicit alignment objective, encouraging 𝑃 ℎ to map audio and visual features to a shared correspondence space. 
+
+QualitySensor Training. The damage score 𝑑 is learned through downstream supervision without explicit quality labels. The net-work learns to produce higher 𝑑 values for degraded audio where HelixReplication improves recognition, as validated by correlation with noise levels in our experiments. This implicit supervision en-ables 𝑑 to serve as a degradation-aware gating signal rather than an absolute quality estimator. 
+
+## 4 Experiments 4.1 Experimental Setup 
+
+Dataset. We conduct our experiments primarily on LRS3 [ 1 ], a large-scale sentence-level audio-visual speech corpus collected from TED and TEDx videos. The dataset contains approximately 439 hours of well-aligned speech recordings, covering around 152K ut-terances from a wide range of speakers and recording environments. Its official validation and test sets provide about 30 hours and 1 hour of carefully annotated audio-visual speech data, respectively. In addition, we make use of VoxCeleb2 [ 7 ], a large multilingual audio-visual dataset initially introduced for speaker recognition, with a total duration of 2,442 hours. Note that we retain only the English subset, which contains 1,326 hours of speech video. Since recent multimodal large language model based speech recognition systems are commonly evaluated on LRS3 and VoxCeleb2, we fol-low this standard experimental setup and use LRS3 as the main benchmark for validating the proposed method. 
+
+Pre-processing . For visual input preparation, we use the pro-vided facial landmarks to crop a tightly aligned mouth region of interest (ROI) with spatial resolution 96 × 96 for each frame. The extracted mouth patches are subsequently converted to grayscale and normalized with global mean and variance statistics, which im-proves numerical robustness across varying recording conditions. For VoxCeleb2, since manual transcriptions are unavailable, we gen-erate pseudo-labels using the Whisper ASR model and combine the resulting samples with LRS3 for training. After this procedure, the final training corpus contains a total of 1,759 hours of audio-visual speech data. 
+
+Training Setup . During training, the pre-trained encoders re-main frozen, while the fusion module and the LoRA-adapted de-coder parameters are optimized. To improve memory efficiency, the LLM is loaded in 4-bit precision. We use AdamW with a peak learn-ing rate of 0.001, weight decay 0.1, and a cosine annealing learning rate schedule. Unless otherwise specified, LoRA is configured with rank 𝑟 = 16 and scaling factor 𝛼 = 32 . All models are trained for 7 epochs on 4 NVIDIA A800 80GB GPUs. We report Word Error Rate (WER) as the primary evaluation metric, where lower values indicate better recognition performance. 
+
+## 4.2 Main Results: Clean Audio Conditions 
+
+Non-MLLM Methods Analysis. Among non-MLLM approaches, we observe a performance hierarchy determined by encoder qual-ity and fusion sophistication. Starting from the baseline, Unified-Attention [ 19 ] achieves 2.1% WER with standard cross-modal at-tention. DCIM-AVSR [ 28 ] improves to 1.7% WER through dual Conformer modules, a 19% relative improvement from hierarchi-cal fusion. DistillAV [ 31 ] advances to 1.3% WER by transferring knowledge from WavLM, showing that encoder pre-training qual-ity impacts performance. AVWhisper [ 29 ] achieves the best non-MLLM result at 0.8% WER using Whisper as the audio encoder, a 62% improvement over Unified-Attention [ 19 ]. LP Conformer [ 4 ]achieves 0.9% WER through specialized Conformer training, close to AVWhisper. All these methods share a limitation in single-step fusion without iterative refinement. 
+
+MLLM-based Methods Analysis. The introduction of LLM decoders marks a paradigm shift initiated by LLaMA-AVSR [ 3], the first work to apply LLMs to AVSR. LLaMA-AVSR [ 3] serves as our baseline, demonstrating the encoder-LLM connection with 0.95% WER using LRS3-only training and 0.77% WER with VoxCeleb2 augmentation, a 19% improvement from additional training data. AVGER [ 21 ] achieves 1.45% WER using LLaMA-2-7B with gener-ative error correction, following a different paradigm (post-hoc correction vs end-to-end recognition). MMS-LLaMA [ 30 ] advances to 0.72% WER (with VoxCeleb2) using LLaMA-3.2-3B with early fu-sion, achieving better performance than LLaMA-AVSR’s 8B model. This result suggests fusion quality matters more than decoder scale. 
+
+DoubleHelix Results. Our method achieves state-of-the-art 0.68% WER when trained on LRS3+VoxCeleb2, and 0.83% WER with LRS3-only training. Compared to MMS-LLaMA (0.72% with Vox-Celeb2), DoubleHelix achieves a 5.6% relative improvement. Com-paring LRS3-only results, DoubleHelix (0.83%) outperforms MMS-LLaMA [ 30 ] (0.9%) by 7.8%, demonstrating consistent gains across training configurations. Both DoubleHelix and MMS-LLaMA [ 30 ]use identical encoders (Whisper-medium + AV-HuBERT large) and decoder (LLaMA-3.2-3B), isolating iterative fusion as the improve-ment source. The consistent gap across training setups validates that iterative cross-modal interaction provides fundamental bene-fits. 
+
+## 4.3 Noisy Audio Robustness 
+
+To evaluate robustness under acoustic degradation, we test all methods on LRS3 with babble noise at varying SNR levels. Table 2 presents the results with analysis across all conditions. 
+
+Overall Performance. DoubleHelix achieves the best average WER of 4.3% across all SNR conditions, outperforming LLaMA-AVSR (6.1%) by 29.5% relative improvement and AVGER [ 21 ] (4.8%) by 10.4%. Our method achieves the best result at Clean (0.68%), -5dB (11.6%), and 5dB (1.0%), while being competitive at 0dB (3.8% vs AVGER [ 21 ] 3.7%), demonstrating consistent robustness across the noise spectrum. 
+
+Per-Condition Analysis. Examining each SNR level reveals distinct performance patterns. Clean . DoubleHelix (0.68%) outperforms LLaMA-AVSR [ 3] (0.77%) by 11.7% and AVGER [ 21 ] (1.45%) by 53.1%. The clean-condition im-provement validates that iterative fusion benefits recognition even without degradation. Progressive refinement across 𝐾 = 3 turns produces better fused representations than single-step exchange. -5dB (Extreme Noise) . DoubleHelix achieves 11.6% WER, outper-forming LLaMA-AVSR [ 3] (17.0%) by 31.8% relative improvement and AVGER [ 21 ] (12.5%) by 7.2%. At this extreme noise level, Quali-tySensor detects severe degradation (damage score 𝑑 approximately MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil Cheng et al. 
+
+Table 1: Experimental results on LRS3. WER denotes word error rate where lower values indicate higher accuracy. Results shown as X/Y indicate LRS3-only and LRS3+VoxCeleb2 training. The best result is highlighted in bold. Method Year Encoder/Decoder MLLMs WER 
+
+Unified-Attention [19] 2024 Conformer/Transformer × 2.1 LP Conformer [4] 2024 Conformer/LSTM × 0.9 DCIM-AVSR [28] 2025 Conformer/Transformer × 1.7 DistillAV [31] 2025 WavLM/Transformer × 1.3 AVWhisper [29] 2025 Whisper/Transformer × 0.8 AVGER [21] 2025 HuBERT/LLaMA2(7B) √ 1.45 LLaMA-AVSR [3] 2025 Whisper+AV-HuBERT/LLaMA3.1(8B) √ 0.95/0.77 MMS-LLaMA [30] 2025 Whisper+AV-HuBERT/LLaMA3.2(3B) √ 0.9/0.72 DoubleHelix (Ours) 2026 Whisper+AV-HuBERT/LLaMA3.2(3B) √ 0.83/ 0.68 Table 2: WER (%) on LRS3 with babble noise at various SNR levels. Δ: Performance changes relative to LLaMA-AVSR, where ’+’ indicates a relative improvement. Method Clean -5dB 0dB 5dB Avg 
+
+AVGER [21] 1.45 12.5 3.7 1.7 4.8 LLaMA-AVSR [3] 0.77 17.0 4.4 2.1 6.1 
+
+DoubleHelix 0.68 11.6 3.8 1.0 4.3 
+
+Δ (%) +11.7 +31.8 +13.6 +52.4 +29.5 0.85), triggering full HelixReplication activation (repair weight 
+
+𝑤 repair approximately 1.0). LLaMA-AVSR [ 3 ] baseline 17.0% WER indicates complete audio failure, while DoubleHelix 11.6% demon-strates effective fallback to visual guidance. 0dB (Moderate Noise) .AVGER [ 21 ] achieves the best result at 3.7% WER, slightly out-performing DoubleHelix (3.8%) by 2.7%. LLaMA-AVSR [3] reaches 4.4% WER. AVGER advantage at this specific condition comes from its post-hoc correction mechanism. Given moderately corrupted N-best hypotheses, the LLM can leverage semantic knowledge to correct errors. However, this advantage disappears at more extreme conditions. 5dB (Mild Noise) . DoubleHelix achieves the best result at 1.0% WER, outperforming LLaMA-AVSR [ 3 ] (2.1%) by 52.4% and AVGER [ 21 ] (1.7%) by 41.2%. This 52.4% improvement, our largest gain across all conditions, demonstrates that quality-aware enhance-ment is most effective when audio is moderately degraded but still informative. 
+
+Improvement Scaling Pattern. The relative improvements over LLaMA-AVSR [ 3] follow a pattern including 11.7% (Clean), 13.6% (0dB), and 31.8% (-5dB). This monotonic increase validates our quality-aware design. As noise severity increases, QualitySensor triggers stronger enhancement, providing proportionally larger benefits. The non-monotonic pattern at 5dB (52.4%, the largest improvement) indicates that mild degradation presents an optimal operating regime for adaptive enhancement. There is sufficient degradation to benefit from enhancement, but not so severe that recovery is impossible. 
+
+Limitations of Noise Evaluation. We note that our noise exper-iments are conducted with babble noise only. While this represents 
+
+Table 3: Ablation study on LRS3 at -5dB SNR. Each row re-moves one component from full DoubleHelix. Δ: Perfor-mance changes relative to the full model, where ’-’ indicates a relative decrease. Configuration WER (%) Δ(%) DoubleHelix (full) 11.6 –
+
+Iterative Interaction Ablations 
+
+Without ReverseParallelHelix 14.2 -22.4 Single turn ( 𝐾 = 1) 12.8 -10.3 Two turns ( 𝐾 = 2) 12.1 -4.3 Without Cross-Modal Correspondence 11.9 -2.6 Without Global Path 11.8 -1.7 Without Local Path 11.7 -0.9 Symmetric weighting (0.5/0.5) 12.0 -3.4 
+
+Adaptive Enhancement Ablations 
+
+Without QualitySensor (always enhance) 12.5 -7.6 Without QualitySensor (never enhance) 12.4 -7.0 Without HelixReplication 11.8 -1.7 a common and challenging noise type for speech recognition, evalu-ation across additional noise types (white noise, street noise, music) would provide a more comprehensive robustness assessment. We leave this for future work. 
+
+## 4.4 Ablation Study 
+
+To understand the contribution of each component, we conduct ablation experiments at -5dB SNR where cross-modal enhancement is most critical. Table 3 presents the results. 
+
+Iterative Interaction is Essential. Removing the entire Re-verseParallelHelix module causes the largest degradation (-22.4%), increasing WER from 11.6% to 14.2%. This confirms that iterative cross-modal interaction is not an incremental improvement but the core contribution. Single-step fusion (equivalent to 𝐾 = 1) degrades by 10.3%, while 𝐾 = 2 degrades by only 4.3%. The progressive im-provement from 𝐾 = 1 to 𝐾 = 3 suggests that each interaction turn DoubleHelix: Structured Cross-Modal Fusion for Audio-Visual Speech Recognition with LLMs MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil 
+
+provides meaningful refinement. Early turns establish coarse align-ment, middle turns refine correspondence, and later turns reconcile residual inconsistencies. 
+
+Structured Alignment Mechanisms. Within ReverseParallel-Helix, removing Cross-Modal Correspondence causes -2.6% degra-dation, while removing Global Path and Local Path causes -1.7% and -0.9% respectively. These results validate our dual-pathway design. Global Path captures long-range dependencies through attention, while Local Path captures short-range patterns through convolu-tion. The larger impact of Global Path suggests that cross-modal alignment benefits more from global context than local patterns. 
+
+Asymmetric Weighting Design. To validate the 0.7/0.3 asym-metric weighting, we compare against symmetric weighting (0.5/0.5 for both modalities). Symmetric weighting causes -3.4% degrada-tion, confirming that the asymmetric design benefits performance. We hypothesize that audio features benefit more from global tem-poral context due to the sequential nature of speech, while visual lip movements are more localized in time. 
+
+Adaptive Enhancement Strategy. The ablation on QualitySen-sor reveals a critical insight. Both fixed strategies (always-enhance and never-enhance) cause significant degradation (-7.6% and -7.0% respectively). Always-enhance harms performance by applying unnecessary corrections to clean or mildly degraded audio, intro-ducing artifacts. Never-enhance loses robustness benefits by failing to repair severely degraded audio. The comparable degradation of both strategies validates our adaptive gating design. QualitySensor provides the critical ability to distinguish when enhancement is beneficial. HelixReplication alone contributes -1.7%, smaller than the gating mechanism, indicating that when to enhance matters more than how to enhance. 
+
+Component Contribution Ranking. Summarizing the abla-tion results, we rank components by contribution. First, iterative interaction ( 𝐾 = 3 vs 𝐾 = 1) contributes plus 10.3%. Second, quality-aware gating contributes plus 7.6%. Third, Cross-Modal Correspon-dence contributes plus 2.6%. Fourth, HelixReplication contributes plus 1.7%. This ranking aligns with our design philosophy where iterative refinement is the primary driver, with adaptive enhance-ment providing complementary robustness. 
+
+## 4.5 Qualitative Analysis 
+
+We further examine how DoubleHelix behaves under severe acous-tic degradation. Specifically, we visualize intermediate representa-tions and repair signals on samples at SNR = −5 dB. Figure 2 shows the audio and visual features of a representative noisy sample in a shared PCA space. Across helix turns, the modality distributions become more structured and their centers move closer, suggesting that ReverseParallelHelix progressively improves cross-modal con-sistency through iterative refinement. Figure 3 presents the break-point activation map produced by HelixReplication . The activations are concentrated on localized temporal regions, indicating that the model performs selective repair rather than uniform enhancement over the entire sequence. To assess this behavior more broadly, Figure 4 summarizes the audio-visual feature distance across helix turns over the noisy set. The distance distribution shifts downward from early to later turns, providing evidence that the proposed iter-ative interaction progressively improves modality alignment under 
+
+Figure 2: Shared-PCA feature evolution under severe noise. Audio and visual representations of a representative -5 dB sample are projected into a shared PCA space. The feature distributions become progressively more structured across helix turns, and the modality centers move closer, suggesting improved cross-modal consistency through iterative interac-tion. 
+
+Figure 3: Break-point activation map produced by HelixRepli-cation. The model selectively activates repair on tempo-rally localized regions instead of enhancing the entire se-quence uniformly, indicating conditional repair behavior under strong acoustic degradation. 
+
+strong noise. Finally, Figure 5 plots the estimated damage score and the corresponding repair weight for noisy samples. Although the repair response is mild in magnitude, it follows the trend of the estimated degradation, indicating that enhancement is modulated by the quality-aware gating mechanism. 
+
+## 4.6 Hyperparameter Sensitivity 
+
+We analyze sensitivity to two key hyperparameters: the number of interaction turns 𝐾 and the repair threshold 𝜏 . Table 4 presents results at -5dB SNR. 
+
+Interaction Turns 𝐾 . Performance improves monotonically from 𝐾 = 1 (12.8% WER) to 𝐾 = 3 (11.6% WER), then saturates at 
+
+𝐾 = 4 (11.6% WER). This saturation point aligns with theoretical intuition. After 3 to 4 turns, cross-modal alignment has converged MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil Cheng et al. 
+
+Figure 4: Cross-modal alignment improvement across helix turns. Boxplots show the distribution of audio-visual feature distance on the -5 dB set. The distance decreases over turns, indicating that ReverseParallelHelix progressively improves alignment under severe noise. 
+
+Figure 5: Damage-aware repair behavior under severe noise. Samples are sorted by estimated damage score. The repair weight follows the variation of the damage estimate, showing that enhancement is modulated by the quality-aware gating mechanism rather than being activated unconditionally. 
+
+and additional turns provide diminishing returns. We select 𝐾 = 3
+
+as the default, balancing performance with computational efficiency (each turn adds approximately 5% overhead). 
+
+Repair Threshold 𝜏 . The threshold 𝜏 controls the sensitivity of HelixReplication activation. Lower values ( 𝜏 = 0.3) cause more frequent enhancement, slightly harming performance (-2.6%) due to unnecessary corrections. Higher values ( 𝜏 = 0.7) delay enhance-ment, missing opportunities to repair degraded audio (-4.3%). The default 𝜏 = 0.5 achieves the best balance, activating enhancement 
+
+Table 4: Hyperparameter sensitivity analysis at -5dB SNR. 
+
+Δ: Performance changes relative to the full model, where ’-’ indicates a relative decrease. Configuration WER (%) Δ
+
+Default ( 𝐾 = 3, 𝜏 = 0.5) 11.6 –
+
+Interaction Turns 𝐾 𝐾 = 1 12.8 -10.3 
+
+𝐾 = 2 12.1 -4.3 
+
+𝐾 = 4 11.6 0
+
+Repair Threshold 𝜏 𝜏 = 0.3 11.9 -2.6% 
+
+𝜏 = 0.7 12.1 -4.3% when damage score 𝑑 exceeds the median of its expected distri-bution. The relatively small degradation range (-2.6% to -4.3%) in-dicates that DoubleHelix is robust to threshold choice within a reasonable range [0.4, 0.6]. 
+
+Practical Recommendations. Based on these analyses, we recommend 𝐾 = 3 for general use, with 𝐾 = 4 providing marginal improvement at higher computational cost. We recommend 𝜏 = 0.5
+
+as default, with adjustment to 𝜏 = 0.4 for cleaner test conditions or 
+
+𝜏 = 0.6 for consistently noisy environments. 
+
+## 5 Conclusion 
+
+In this paper, we introduced DoubleHelix, a multimodal fusion framework for audio-visual speech recognition. Unlike conven-tional one-step fusion methods, DoubleHelix treats fusion as an iterative cross-modal interaction process and further incorporates adaptive degradation-aware enhancement. The framework includes three tightly coupled components. ReverseParallelHelix performs multi-turn structured interaction. QualitySensor learns a degradation-aware gating signal from downstream supervision. HelixReplication conducts consistency-guided conditional enhancement when degra-dation is detected. Experiments on LRS3 show that DoubleHelix achieves 0.68% WER on clean audio, which corresponds to a 5.6% relative improvement over MMS-LLaMA under matched backbone settings. The model also shows improved robustness under eval-uated babble-noise conditions and reaches 11.6% WER at SNR = -5 dB. In addition, ablation results verify the contribution of each component, including targeted analysis of asymmetric pathway weighting and damage score correlation with noise levels. Over-all, the results suggest that progressive cross-modal interaction together with degradation-aware enhancement offers an effective direction for multimodal fusion in AVSR. 
+
+## Acknowledgments 
+
+This work is supported by the National Key Research and Develop-ment Program of China under Grant No.2023YFC3306201. 
+
+## References    
+
+> [1] Triantafyllos Afouras, Joon Son Chung, and Andrew Zisserman. 2018. LRS3-TED: a large-scale dataset for visual speech recognition. CoRR abs/1809.00496 (2018). http://arxiv.org/abs/1809.00496
+
+DoubleHelix: Structured Cross-Modal Fusion for Audio-Visual Speech Recognition with LLMs MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil 
+
+[2] Maxime Burchi and Radu Timofte. 2023. Audio-Visual Efficient Conformer for Robust Speech Recognition. In IEEE/CVF Winter Conference on Applications of Computer Vision, WACV 2023, Waikoloa, HI, USA, January 2-7, 2023 . IEEE, 2257– 2266. doi:10.1109/WACV56688.2023.00229 [3] Umberto Cappellazzo, Minsu Kim, Honglie Chen, Pingchuan Ma, Stavros Petridis, Daniele Falavigna, Alessio Brutti, and Maja Pantic. 2025. Large Language Models are Strong Audio-Visual Speech Recognition Learners. In 2025 IEEE International Conference on Acoustics, Speech and Signal Processing, ICASSP 2025, Hyderabad, India, April 6-11, 2025 . IEEE, 1–5. doi:10.1109/ICASSP49660.2025.10889251 [4] Oscar Chang, Hank Liao, Dmitriy Serdyuk, Ankit Shahy, and Olivier Siohan. 2024. Conformer is All You Need for Visual Speech Recognition. In IEEE International Conference on Acoustics, Speech and Signal Processing, ICASSP 2024, Seoul, Republic of Korea, April 14-19, 2024 . IEEE, 10136–10140. doi:10.1109/ICASSP48485.2024. 10446532 [5] Chen Chen, Yuchen Hu, Qiang Zhang, Heqing Zou, Beier Zhu, and Eng Siong Chng. 2023. Leveraging Modality-Specific Representations for Audio-Visual Speech Recognition via Reinforcement Learning. In Thirty-Seventh AAAI Confer-ence on Artificial Intelligence, AAAI 2023, Thirty-Fifth Conference on Innovative Applications of Artificial Intelligence, IAAI 2023, Thirteenth Symposium on Ed-ucational Advances in Artificial Intelligence, EAAI 2023, Washington, DC, USA, February 7-14, 2023 , Brian Williams, Yiling Chen, and Jennifer Neville (Eds.). AAAI Press, 12607–12615. doi:10.1609/AAAI.V37I11.26484 [6] Xize Cheng, Tao Jin, Rongjie Huang, Linjun Li, Wang Lin, Zehan Wang, Ye Wang, Huadai Liu, Aoxiong Yin, and Zhou Zhao. 2023. MixSpeech: Cross-Modality Self-Learning with Audio-Visual Stream Mixup for Visual Speech Translation and Recognition. In IEEE/CVF International Conference on Computer Vision, ICCV 2023, Paris, France, October 1-6, 2023 . IEEE, 15689–15699. doi:10.1109/ICCV51070. 2023.01442 [7] Joon Son Chung, Arsha Nagrani, and Andrew Zisserman. 2018. Voxceleb2: Deep speaker recognition. arXiv preprint arXiv:1806.05622 (2018). [8] Yusheng Dai, Hang Chen, Jun Du, Ruoyu Wang, Shihao Chen, Haotian Wang, and Chin-Hui Lee. 2024. A Study of Dropout-Induced Modality Bias on Robustness to Missing Video Frames for Audio-Visual Speech Recognition. In IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2024, Seattle, WA, USA, June 16-22, 2024 . IEEE, 27435–27445. doi:10.1109/CVPR52733.2024.02591 [9] Keqi Deng, Jinxi Guo, Yingyi Ma, Niko Moritz, Philip C. Woodland, Ozlem Kalinli, and Mike Seltzer. 2025. Transducer-Llama: Integrating LLMs into Streamable Transducer-based Speech Recognition. In 2025 IEEE International Conference on Acoustics, Speech and Signal Processing, ICASSP 2025, Hyderabad, India, April 6-11, 2025 . IEEE, 1–5. doi:10.1109/ICASSP49660.2025.10889530 [10] Yasser Abdelaziz Dahou Djilali, Sanath Narayan, Haithem Boussaid, Ebtesam Almazrouei, and Mérouane Debbah. 2023. Lip2Vec: Efficient and Robust Visual Speech Recognition via Latent-to-Latent Visual to Audio Representation Mapping. In IEEE/CVF International Conference on Computer Vision, ICCV 2023, Paris, France, October 1-6, 2023 . IEEE, 13744–13755. doi:10.1109/ICCV51070.2023.01268 [11] Yassir Fathullah, Chunyang Wu, Egor Lakomkin, Junteng Jia, Yuan Shangguan, Ke Li, Jinxi Guo, Wenhan Xiong, Jay Mahadeokar, Ozlem Kalinli, Christian Fue-gen, and Mike Seltzer. 2024. Prompting Large Language Models with Speech Recognition Abilities. In IEEE International Conference on Acoustics, Speech and Signal Processing, ICASSP 2024, Seoul, Republic of Korea, April 14-19, 2024 . IEEE, 13351–13355. doi:10.1109/ICASSP48485.2024.10447605 [12] Dongjie Fu, Xize Cheng, Xiaoda Yang, Hanting Wang, Zhou Zhao, and Tao Jin. 2024. Boosting Speech Recognition Robustness to Modality-Distortion with Contrast-Augmented Prompts. In Proceedings of the 32nd ACM International Conference on Multimedia, MM 2024, Melbourne, VIC, Australia, 28 October 2024 -1 November 2024 , Jianfei Cai, Mohan S. Kankanhalli, Balakrishnan Prabhakaran, Susanne Boll, Ramanathan Subramanian, Liang Zheng, Vivek K. Singh, Pablo César, Lexing Xie, and Dong Xu (Eds.). ACM, 3838–3847. doi:10.1145/3664647. 3681347 [13] Joanna Hong, Minsu Kim, Jeongsoo Choi, and Yong Man Ro. 2023. Watch or Listen: Robust Audio-Visual Speech Recognition with Visual Corruption Mod-eling and Reliability Scoring. In IEEE/CVF Conference on Computer Vision and Pattern Recognition, CVPR 2023, Vancouver, BC, Canada, June 17-24, 2023 . IEEE, 18783–18794. doi:10.1109/CVPR52729.2023.01801 [14] Takaaki Hori, Martin Kocour, Adnan Haider, Erik McDermott, and Xiaodan Zhuang. 2025. Delayed Fusion: Integrating Large Language Models into First-Pass Decoding in End-to-end Speech Recognition. In 2025 IEEE International Conference on Acoustics, Speech and Signal Processing, ICASSP 2025, Hyderabad, India, April 6-11, 2025 . IEEE, 1–5. doi:10.1109/ICASSP49660.2025.10890391 [15] Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. 2022. LoRA: Low-Rank Adaptation of Large Language Models. In The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022 . OpenReview.net. https://openreview.net/forum?id=nZeVKeeFYf9 [16] Yuchen Hu, Chen Chen, Chengwei Qin, Qiushi Zhu, Engsiong Chng, and Ruizhe Li. 2024. Listen Again and Choose the Right Answer: A New Paradigm for Automatic Speech Recognition with Large Language Models. In Findings of the Association for Computational Linguistics, ACL 2024, Bangkok, Thailand and virtual meeting, August 11-16, 2024 (Findings of ACL) , Lun-Wei Ku, Andre Martins, and Vivek Srikumar (Eds.). Association for Computational Linguistics, 666–679. doi:10.18653/V1/2024.FINDINGS-ACL.37 [17] Yuchen Hu, Ruizhe Li, Chen Chen, Heqing Zou, Qiushi Zhu, and Eng Siong Chng. 2023. Cross-Modal Global Interaction and Local Alignment for Audio-Visual Speech Recognition. In Proceedings of the Thirty-Second International Joint Conference on Artificial Intelligence, IJCAI 2023, 19th-25th August 2023, Macao, SAR, China . ijcai.org, 5076–5084. doi:10.24963/IJCAI.2023/564 [18] Junteng Jia, Gil Keren, Wei Zhou, Egor Lakomkin, Xiaohui Zhang, Chunyang Wu, Frank Seide, Jay Mahadeokar, and Ozlem Kalinli. 2025. Efficient Streaming LLM for Speech Recognition. In 2025 IEEE International Conference on Acoustics, Speech and Signal Processing, ICASSP 2025, Hyderabad, India, April 6-11, 2025 . IEEE, 1–5. doi:10.1109/ICASSP49660.2025.10890853 [19] Jiahong Li, Chenda Li, Yifei Wu, and Yanmin Qian. 2024. Unified Cross-Modal Attention: Robust Audio-Visual Speech Recognition and Beyond. IEEE ACM Trans. Audio Speech Lang. Process. 32 (2024), 1941–1953. doi:10.1109/TASLP.2024.3375641 [20] Zhaofeng Lin and Naomi Harte. 2025. Uncovering the Visual Contribution in Audio-Visual Speech Recognition. In 2025 IEEE International Conference on Acoustics, Speech and Signal Processing, ICASSP 2025, Hyderabad, India, April 6-11, 2025 . IEEE, 1–5. doi:10.1109/ICASSP49660.2025.10888423 [21] Rui Liu, Hongyu Yuan, Guanglai Gao, and Haizhou Li. 2025. Listening and seeing again: Generative error correction for audio-visual speech recognition. Inf. Fusion 
+
+120 (2025), 103077. doi:10.1016/J.INFFUS.2025.103077 [22] Ziyang Ma, Guanrou Yang, Yifan Yang, Zhifu Gao, Jiaming Wang, Zhihao Du, Fan Yu, Qian Chen, Siqi Zheng, Shiliang Zhang, and Xie Chen. 2025. Speech Recognition Meets Large Language Model: Benchmarking, Models, and Explo-ration. In Thirty-Ninth AAAI Conference on Artificial Intelligence, Thirty-Seventh Conference on Innovative Applications of Artificial Intelligence, Fifteenth Sympo-sium on Educational Advances in Artificial Intelligence, AAAI 2025, Philadelphia, PA, USA, February 25 - March 4, 2025 , Toby Walsh, Julie Shah, and Zico Kolter (Eds.). AAAI Press, 24840–24848. doi:10.1609/AAAI.V39I23.34666 [23] Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. 2023. Robust Speech Recognition via Large-Scale Weak Supervision. In International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA (Proceedings of Machine Learning Research) ,Andreas Krause, Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt, Sivan Sabato, and Jonathan Scarlett (Eds.). PMLR, 28492–28518. https://proceedings. mlr.press/v202/radford23a.html [24] Andrew Rouditchenko, Yuan Gong, Samuel Thomas, Leonid Karlinsky, Hilde Kuehne, Rogério Feris, and James Glass. 2024. Whisper-Flamingo: Integrating Vi-sual Features into Whisper for Audio-Visual Speech Recognition and Translation. In 25th Annual Conference of the International Speech Communication Association, Interspeech 2024, Kos, Greece, September 1-5, 2024 , Itshak Lapidot and Sharon Gannot (Eds.). ISCA. doi:10.21437/INTERSPEECH.2024-322 [25] Bowen Shi, Wei-Ning Hsu, Kushal Lakhotia, and Abdelrahman Mohamed. 2022. Learning Audio-Visual Speech Representation by Masked Multimodal Cluster Prediction. In The Tenth International Conference on Learning Representations, ICLR 2022, Virtual Event, April 25-29, 2022 . OpenReview.net. https://openreview. net/forum?id=Z1Qlm11uOM [26] Jinxin Wang, Zhongwen Guo, Chao Yang, Xiaomei Li, and Ziyuan Cui. 2023. Multi-Scale Hybrid Fusion Network for Mandarin Audio-Visual Speech Recognition. In IEEE International Conference on Multimedia and Expo, ICME 2023, Brisbane, Australia, July 10-14, 2023 . IEEE, 642–647. doi:10.1109/ICME55011.2023.00116 [27] Jiadong Wang, Zexu Pan, Malu Zhang, Robby T. Tan, and Haizhou Li. 2024. Restoring Speaking Lips from Occlusion for Audio-Visual Speech Recognition. In Thirty-Eighth AAAI Conference on Artificial Intelligence, AAAI 2024, Thirty-Sixth Conference on Innovative Applications of Artificial Intelligence, IAAI 2024, Fourteenth Symposium on Educational Advances in Artificial Intelligence, EAAI 2014, February 20-27, 2024, Vancouver, Canada , Michael J. Wooldridge, Jennifer G. Dy, and Sriraam Natarajan (Eds.). AAAI Press, 19144–19152. doi:10.1609/AAAI. V38I17.29882 [28] Xinyu Wang, Haotian Jiang, Haolin Huang, Yu Fang, Mengjie Xu, and Qian Wang. 2025. DCIM-AVSR: Efficient Audio-Visual Speech Recognition via Dual Conformer Interaction Module. In 2025 IEEE International Conference on Acoustics, Speech and Signal Processing, ICASSP 2025, Hyderabad, India, April 6-11, 2025 . IEEE, 1–5. doi:10.1109/ICASSP49660.2025.10890272 [29] Zhao Yang, Yue Heng Yeo, Rui Jiang, Xiao Fu, Weiguang Chen, Wei Xi, and Jizhong Zhao. 2025. Injecting Visual Features into Whisper for Parameter-Efficient Noise-Robust Audio-Visual Speech Recognition. In 2025 IEEE International Conference on Acoustics, Speech and Signal Processing, ICASSP 2025, Hyderabad, India, April 6-11, 2025 . IEEE, 1–5. doi:10.1109/ICASSP49660.2025.10888331 [30] Jeong Hun Yeo, Hyeongseop Rha, Se Jin Park, and Yong Man Ro. 2025. MMS-LLaMA: Efficient LLM-based Audio-Visual Speech Recognition with Minimal Multimodal Speech Tokens. In Findings of the Association for Computational Linguistics, ACL 2025, Vienna, Austria, July 27 - August 1, 2025 (Findings of ACL, Vol. ACL 2025) , Wanxiang Che, Joyce Nabende, Ekaterina Shutova, and Mohammad Taher Pilehvar (Eds.). Association for Computational Linguistics, 20724–20735. doi:10.18653/V1/2025.FINDINGS-ACL.1065 MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil Cheng et al.    
+
+> [31] Jing-Xuan Zhang, Genshun Wan, Jianqing Gao, and Zhen-Hua Ling. 2025. Audio-visual representation learning via knowledge distillation from speech foundation models. Pattern Recognit. 162 (2025), 111432. doi:10.1016/J.PATCOG.2025.111432
+
+## A Detailed Transcription Case Studies 
+
+To qualitatively understand the robustness improvement brought by DoubleHelix under complex conditions, we provide representative transcription examples from the LRS3 test set, as shown in Figure 6. We evaluated the transcription results under clean noise, -5dB, and -15dB. In complex segments with severely degraded acoustic signals, DoubleHelix utilizes its structured iterative interactions to maintain a more stable multimodal representation, thus obtaining accurate transcription results that closely match the true values. Specifically, DoubleHelix can still correctly identify the content at a signal-to-noise ratio of -5dB. At -15dB, DoubleHelix incorrectly identifies "prototype" as "product launch," but most other content is still correctly identified. To explore the potential for practical applications of DoubleHe-lix, we occluded the mouth region, as shown in Figure 7. When the mouth region is occluded, the recognition performance of Double-Helix degrades. Specifically, the areas highlighted in red indicate omissions in content recognition. Analysis reveals that DoubleHe-lix does not fundamentally address the issue of visual occlusion. Therefore, future work will focus on conducting targeted research on this topic. 
+
+Figure 6: Examples of transcription under acoustically de-graded conditions. Bold text indicates correct recognition. Red text indicates errors. 
+
+## B Computational Complexity and Latency Analysis 
+
+A potential concern regarding the DoubleHelix framework is the additional computational overhead introduced by the structured multi-turn interaction. In this section, we provide a detailed break-down of the parameters and floating-point operations (FLOPs) for the fusion module, as shown in Table 5. The DoubleHelix module in-troduces a total of 37.25M trainable parameters. While this is larger than a simple early-concatenation baseline, it constitutes less than 1% of the overall model capacity when compared to the frozen back-bone encoders (Whisper-medium and AV-HuBERT-large, ∼1000M) and the LLaMA-3.2-3B decoder. From a computational perspective, the module requires 34.79 GFLOPs per sequence. Given that the au-toregressive decoding of a sequence by a 3B-parameter LLM alone typically demands ∼900 GFLOPs, the relative FLOPs overhead in-troduced by DoubleHelix is marginal ( <4% of the total inference computation). 
+
+Table 5: Complexity breakdown of the DoubleHelix fusion module. Component Params FLOPS 
+
+QualitySensor 1.41M 0.43G ReverseParallelHelix ( 𝐾 = 3) 15.90M 15.04G HelixReplication 17.85M 16.50G 
+
+DoubleHelix Total 37.25M 34.79G 
+
+Figure 7: Representative transcription examples under visual occlusion conditions. Bold text indicates correct recognition. Red text indicates errors. Red boxes indicate omissions. 
+
+## C Theoretical Interpretation of Structured Interaction 
+
+We visualize the Shared-PCA feature evolution across helix turns to illustrate the structural changes during fusion, as shown in Fig-ure 2. Notably, the cross-modal distributions do not merely over-lap, but rather converge into a more structured and compact dual-cluster topology. Standard cross-modal attention mechanisms (e.g., in DCIM-AVSR) are often susceptible to representation collapse, where in audio and visual features are aggressively projected into a shared manifold to minimize attention or contrastive losses, thereby discarding modality-specific discriminative details. The ReversePar-allelHelix avoids this issue via its dual-pathway asymmetric weight-ing and residual orthogonal rotations. Specifically, the rotation ma-trices 𝑅 𝑘 act as a form of implicit orthogonal regularization. Instead of collapsing the modalities into a single point, the structured in-teraction refines the intra-modal geometry while establishing a DoubleHelix: Structured Cross-Modal Fusion for Audio-Visual Speech Recognition with LLMs MM ’26, November 10–14, 2026, Rio de Janeiro, Brazil 
+
+stable cross-modal correlation boundary. Consequently, the model learns a structured separation rather than an indiscriminate in-tersection, preserving fine-grained phonetic and visual cues for the downstream LLM decoder, which aligns with the performance improvements reported in Table 1.
