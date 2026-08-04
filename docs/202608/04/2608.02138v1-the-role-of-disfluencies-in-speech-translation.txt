@@ -1,0 +1,725 @@
+Title: The Role of Disfluencies in Speech Translation
+
+URL Source: https://arxiv.org/pdf/2608.02138v1
+
+Published Time: Tue, 04 Aug 2026 02:20:14 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# The Role of Disfluencies in Speech Translation 
+
+Maike Züfle 1∗ Maria Teleki 2∗ Fabian Retkowski 1 Vilém Zouhar 3
+
+Oliver Grabner 2 Alexander Waibel 1,4 James Caverlee 2 Jan Niehues 11Karlsruhe Institute of Technology 2Texas A&M University 
+
+> 3
+
+ETH Zurich 4Carnegie Mellon University 
+
+maike.zuefle@kit.edu 
+
+Abstract 
+
+Current speech translation systems, includ-ing SpeechLLMs, are trained on cleaned text and tend to strip disfluencies like filled pauses and false starts rather than translate them. We show this comes at a cost: dis-fluencies carry meaning that gets lost when speech is cleaned up. To study this sys-tematically, we introduce U H-M AZING , a benchmark of human-translated, disfluency-annotated Switchboard speech covering En-glish into eight target languages. Across these languages and several architectures, we find that false starts and self-repairs, not filled pauses or discourse markers, drive most of the translation-quality loss, and that models which fail to preserve a disfluency tend to omit it rather than mistranslate it. We show inference-time decoding can miti-gate this without retraining, and release the benchmark and code. 
+
+1 Introduction 
+
+Spontaneous speech is disfluent (Shriberg, 1994). Filled pauses, repetitions, false starts, and self-repairs occur frequently in natural conversation and reflect underlying cognitive and discourse pro-cesses. While such phenomena are visible to hu-man listeners, they pose persistent challenges for automatic speech processing systems (Liesenfeld et al., 2023; Teleki et al., 2024b). Faced with such limitations, conversational participants of-ten adapt their own speech to cope with live sys-tem shortcomings (Hara and Iqbal, 2015; Akira et al., 2017), underscoring how disfluency han-dling shapes real-world interaction even before translation quality is measured. Speech translation is increasingly deployed in settings where disfluencies carry information that must not be lost (Rice, 2025): in assis-tive wearables, where a speaker’s hesitation or  
+
+> ∗Equal contribution.
+
+self-correction can be as informative as their words (Meta, 2026; TranscribeGlass, 2025; Xan-der, 2025); in multilingual meetings, where filled pauses and false starts signal turn-taking and uncertainty (Meetween, 2024), and in dubbing, where stripping disfluencies can make a speaker sound more confident or fluent than they actually were. Not every setting calls for this, however: live captioning and simultaneous interpretation of-ten favour a fluent rendering instead (Papi et al., 2023, 2025), since disfluencies add reading or lis-tening effort under time pressure without a com-pensating benefit (Choi et al., 2026b). Yet across the many settings where preserv-ing disfluencies does matter, most speech transla-tion systems still treat disfluency as noise: end-to-end models remove them explicitly (Salesky et al., 2019, 2018; Dong et al., 2019), cascaded systems in which ASR omits disfluencies before they reach the translation step (Jamshid Lou and Johnson, 2020; Amann et al., 2024; Kumar et al., 2026), and contemporary LLMs are trained predominantly on cleaned text (Retkowski et al., 2025). Prior work shows this comes at a cost: disfluencies encode affective content, interpersonal relationships, and discourse structure (Appling and Campbell, 2007; Kundu et al., 2022), and their removal reduces per-ceived naturalness (Hassan et al., 2025). Recent SpeechLLMs (Arora et al., 2025) reduce reliance on intermediate text representations by operating directly on speech signals, but evidence suggests they face the same blind spot (Teleki et al., 2026; Liu et al., 2025): existing benchmarks largely fo-cus on fluent speech or implicitly reward disflu-ency removal (Teleki et al., 2024a; Choi et al., 2026b), providing limited insight into model be-haviour under realistic, conversational conditions. Where disfluency-preserving translation data ex-ists at all, it is limited to a single language pair (Post et al., 2013), and the translation is not de-signed or annotated for disfluency research. arXiv:2608.02138v1 [cs.CL] 3 Aug 2026 In this work, we first ask why disfluencies mat-ter: we show in a human case study that removing disfluencies from speech shifts perceived negative emotion, by as much as 71 percentage points in the most extreme case, motivating their preservation. Building on this, we introduce U H-M AZING , a disfluency-aware speech translation benchmark of carefully curated human-translated Switchboard speech spanning eight target languages, with fine-grained annotations of disfluency type. Using this benchmark, we analyse how cur-rent speech translation models, including Speech-LLMs, handle disfluencies. We find that false starts and self-repairs, not filled pauses or dis-course markers, are primarily responsible for the translation-quality cost of disfluent speech. Through human annotation of model outputs into error categories covering both general translation errors and disfluency-specific errors, we show that when models fail to preserve a disfluency, they typically omit it outright rather than mistranslat-ing it. Beyond this analysis, we explore inference-time decoding strategies that improve disfluency preservation without retraining, providing practi-cal guidance for deploying these systems in real-world, conversational settings. We contribute: • A human evaluation showing that disfluencies carry emotionally relevant information. • U H-M AZING , a human-annotated disfluency-aware speech translation benchmark with eight target languages and disfluency annotations. • A human-annotated taxonomy of disfluency-specific failure modes in current speech trans-lation systems. • A systematic evaluation of inference-time strate-gies, showing that beam search and in-context learning offer simple, low-risk improvements to disfluency handling. Since the U H-M AZING dataset is built on Switch-board (Godfrey and Holliman, 1993), we will sub-mit it to Penn LDC for public release. 1
+
+2 The Role of Disfluencies 
+
+Disfluencies are natural features of spontaneous speech, yet NLP pipelines often treat them as noise and remove them (Teleki et al., 2025a; Choi et al.,  
+
+> 1Experimental code and the U H-M AZING dataset will be released upon LDC approval.
+
+2026a). In this section, we investigate what dis-fluencies communicate and argue that they carry emotionally relevant information that should be preserved, particularly in speech translation. 
+
+2.1 Methodology Data Selection: Switchboard. We use the Switchboard corpus (Godfrey and Holliman, 1993), which consists of spontaneous English con-versational telephone speech with detailed disflu-ency annotations, making it well-suited for study-ing genuine disfluent speech (Kundu et al., 2022). We align the transcripts with the corresponding audio recordings and retain the original disfluency annotations. Following Shriberg (1994), we focus on three disfluency classes: interjections ( INTJ ), parentheticals ( PRN ), and edited speech ( EDITED ). 
+
+Human annotation of disfluency meaning. We select 80 utterances from the Switchboard corpus, manually chosen to contain multiple disfluencies and to span a range of lengths (17–212 words, median 51; totalling 25 minutes of audio). To assess how disfluencies shape perceived emotion, we ask human raters to rate the emotional content of each utterance under three conditions: Audio ,which carries both disfluencies and paralinguistic cues (tone, prosody, timing); Disfluent , which pre-serves disfluencies in text but strips paralinguistic cues; and Fluent , which strips both. We recruit 18 annotators and ask each to evalu-ate 40 utterances under one condition per utterance using the Pearmut platform (Zouhar and Kocmi, 2026). Each utterance is rated by three annotators per condition, with different annotators assigned to each condition, so no annotator sees the same utterance in more than one form. Annotators can annotate up to five free-text emotions and rate each on a 0–5 intensity scale (interface in Figure 7). In addition, we also analyse whether LLMs can reproduce these human emotion judgments. To test this, we also replicate the evaluation with 
+
+GPT-5.2-2025-12-11 across seven seeds. 
+
+Analysis approach. Open-ended emotion labels are difficult to compare across annotators, so we structure the analysis around three principles: First, to ensure findings do not depend on the categorisation method, we use two indepen-dent pipelines. The first is NRC EmoLex (Mo-hammad and Turney, 2013), a lexicon mapping free-form labels (e.g., worried , frustrated , hope-ful ) to eight basic emotions (Plutchik, 1980), 0.1 0.0 0.1 0.2 0.3 0.4       
+
+> intensity shift vs. audio
+> (positive = (dis)fluent text rated more intensely than audio)
+> anger
+> fear
+> sadness
+> surprise
+> anticipation
+> trust
+> joy
+> disgust
+> +0.34
+> +0.30
+> +0.24
+> +0.19
+> +0.13
+> +0.10
+> +0.07
+> -0.10
+> bar length = Fluent Audio
+> Disfluent Audio
+> > 0.30 (large)
+> > 0.15 (medium)
+> 0.15 (small)
+
+Figure 1: Removing audio signal and disfluencies increases perceived intensity for seven of the eight emotions. Disgust reverses. Six of the eight increase at both steps: Audio →Disfluent and Disfluent →Fluent. A tick inside the bar marks these emotions. 
+
+grouped by valence into negative (anger, fear, sad-ness, disgust), positive (joy, trust), and variable (surprise, anticipation). Because NRC EmoLex indexes surface forms only, we map each la-bel via a three-pass cascade: direct surface match, Snowball-stem lookup (Porter, 2001), and WordNet-lemma lookup (Miller, 1994). The second categorisation method is an OpenAI-embedding pipeline, which embeds each free-form label with text-embedding-3-small 
+
+and assigns it a valence (negative, neutral, or pos-itive) by nearest cosine similarity to seed words. Second, we also analyse the magnitude of emo-tional shifts and not only their existence. Hence, we report Cramér’s V and ε2 rather than p-values. Third, to verify that no single annotator or sam-ple drives the results, we rerun the analysis leaving out each annotator in turn (18 iterations) and each sample in turn (80 iterations), and report only find-ings that survive both with tight effect-size ranges. 
+
+2.2 Analysis of Disfluency Annotations 
+
+Annotators produced 562 distinct free-form emo-tion labels, of which 66% map to NRC EmoLex categories. The remaining 34% are covered by the embedding pipeline. The most frequently annotated emotions are trust ( n=782 ), sadness (n=657 ), and anticipation ( n=558 ), while sur-prise is the least common ( n=288 ). Per-condition intensity breakdowns for all eight emotions are shown in Figure 8 in the appendix. 
+
+Removing disfluencies amplifies perceived neg-ative emotion. Fluent text generally carries the strongest negative emotional readings, adding dis-fluencies softens these, and hearing the original audio softens them further (Figure 1). Two emo-tions deviate from this pattern: disgust reverses entirely, with audio carrying the strongest read-ing, while surprise peaks at the disfluent condi-tion. The two steps contribute differently: re-moving paralinguistic signal (Audio → Disfluent) accounts for the largest shift in anger ( +0 .23 )and surprise ( +0 .28 ), while removing disfluencies (Disfluent → Fluent) drives the larger shifts in fear (+0 .21 ) and sadness ( +0 .29 ). The embedding pipeline, which assigns each la-bel one of three valence categories (negative, neu-tral, positive), shows the same overall direction. Both text conditions carry more negative labels than audio (Audio 30%, Disfluent 39%, Fluent 34%, V =0 .07 ), and the neutral share is lowest for the disfluent transcript (Audio 34%, Disfluent 25%, Fluent 31%, V =0 .08 ). Within the text con-ditions, the disfluent transcript produces the high-est share of negative labels, while negative-label intensity is highest for fluent text (Audio 2.49, Disfluent 2.68, Fluent 2.78, ε2=0 .01 ). We show qualitative examples in Table 3 in the appendix. 
+
+Annotators diverge more when disfluencies are present. We next examine whether annotators agree more on some conditions than others. For each item annotated by at least two workers, we compute the fraction agreeing on the dominant va-lence category. Fluent transcripts show the highest agreement (67.3%), while Audio (60.5%) and Dis-fluent (60.6%) are significantly lower (Wilcoxon signed-rank, both p < 0.01 ). When disfluencies are present, whether in audio or the transcript, lis-teners diverge more in what they think the speaker is feeling. This confirms that disfluencies are not noise: their presence shifts how listeners interpret the speaker’s emotional state, consistent with the view of disfluencies as interpretive hedges (Bren-nan, 2000; Diachek and Brown-Schmidt, 2024). 
+
+Can LLMs replace human annotators? The interpretive complexity established above raises the question of whether LLMs could substitute for human annotators at scale. While LLM seeds are highly self-consistent ( r=0 .86 between seeds), human-to-LLM correlation averages only r=0 .35 
+
+across all seven seeds, well below the human-human ceiling of r=0 .54 . This gap does not shrink under seed variation, indicating that LLMs cannot yet substitute for humans in this task. 
+
+Implications for translation. The findings above paint a consistent picture. Removing disfluencies amplifies perceived negative emotion, and listeners diverge more on disfluent content than on fluent text. Disfluencies should therefore be preserved in translation: they carry interpretive signal that belongs to the receiver to resolve, not the translator (Angelelli, 2004). Our benchmark accordingly evaluates whether translation systems preserve disfluencies in the target language. 
+
+3 UH-M AZING Speech Translation 
+
+Building on the Switchboard utterances selected in Section 2, we construct U H-M AZING , a mul-tilingual benchmark for disfluency-aware speech translation. We translate the samples into eight target languages, allowing us to directly examine how disfluencies are handled across typologically diverse languages and to evaluate automatic trans-lation systems in this regard. 
+
+3.1 Human Translation 
+
+UH-M AZING consists of 640 human transla-tions of 80 carefully curated Switchboard utter-ances (Godfrey and Holliman, 1993), which were selected for high disfluency density and a wide range of lengths (Section 2). Each utterance is translated from English into Mandarin Chinese (ZH), Spanish (ES), Hindi (HI), French (FR), Ger-man (DE), Italian (IT), Czech (CS), and Modern Standard Arabic (AR). Target languages were cho-sen to span diverse language families and regions, enabling analysis of how disfluency and transla-tion behaviour vary across languages. For each pair, the source side consists of the speech recording, its time-aligned disfluent tran-script, and a fluent transcript obtained by stripping the marked disfluencies (edited, interjections, par-entheticals); the target side consists of a disfluent and a fluent translation, produced by the annota-tion process described below. 
+
+Annotation Protocol. Translations were col-lected via Prolific in two rounds with indepen-dently recruited annotators, following Taguchi et al. (2025). In Round 1 , annotators translated each disfluent English source into the target lan-guage in batches of 20 utterances, marking disflu-ent tokens with underscores (e.g. _uh_ ). In Round 2, a second annotator per language reviewed each Round 1 translation. This standardises the disflu-ency markup and provides a per-translation con-fidence signal, since agreement between the two rounds is stronger evidence of correctness than ei-ther round alone. We use Round 2 outputs as the final dataset. The annotation quality of Prolific participants has been validated in prior work (Gor-don et al., 2026), and we further validate it against our expert translators below. 
+
+3.2 Inter-annotator agreement on translation 
+
+To quantify translator agreement on disfluent speech, we compute inter-annotator agreement on ten paired translations per target language across all eight languages. For each item, one trans-lation comes from the Prolific crowdworker co-hort described in Section 3.1. The paired ref-erence translation was produced by an author or a native-speaker collaborator serving as an expert annotator. We embed each translation with OpenAI’s text-embedding-3-large 
+
+after removing the underscore-delimited disflu-ency markup, and report cosine similarity between the two embeddings. Overall agreement is high: mean expert ↔Prolific cosine is 0.878 (σ=0 .075 ), and 71 of 80 pairs sit above 0.80 . The ordering is stable across three different OpenAI embedders (Figure 9). The Prolific translations therefore re-liably track expert reference translations, and we use them as our translation data in this work. 
+
+3.3 The Role of Disfluencies in Different Languages 
+
+We now analyse how the disfluencies are re-alised across different languages. While disflu-ency counts (428–482 per language) are broadly comparable across languages (Table 4 in the ap-pendix), average disfluency length varies from 2.7 words (Arabic) to 3.8 words (Chinese). 
+
+Syntactic Context of Disfluencies. We parse the reference translations for all eight target lan-guages with the Stanza dependency parser (Qi et al., 2020), characterising each disfluency by the dependency relation of the nearest fluent content word immediately before and after it (Figure 2). Across nearly all eight languages, disfluen-cies systematically precede the sentence’s subject rather than follow it, a pattern that holds with con-sistency across typologically diverse languages. The word preceding a disfluency is instead most often a coordinating conjunction ( CC ), consistent Nsubj.        
+
+> Cc.
+> Advmod.
+> Mark.
+> Conj.
+> Det.
+> Case.
+> Obj.
+> Nmod.
+> Obl.
+> AR
+> CS
+> DE
+> EN
+> ES
+> FR
+> HI
+> IT
+> ZH
+> 0.2 0.1 0.0 0.1 0.2
+> before disfluency after disfluency Figure 2: Across languages, disfluencies most often follow a coordinating conjunction and precede the sentence subject. Position of disfluencies by the de-pendency relation of neighboring content words.
+
+with disfluencies frequently arising right after con-nectives such as and or but . The strength of this asymmetry still differs by language. 
+
+Context Shift on Translation. We next ask whether the syntactic context of a disfluency is preserved when the utterance is translated into an-other language. It is not: the contextual place-ment varies substantially by language and disflu-ency category. Markers introducing subordinate clauses retain their context comparatively more of-ten (9–42% across languages), whereas discourse markers do so in under 8% of cases in every lan-guage. This shows that when a disfluency is trans-lated, its syntactic environment is rarely carried over unchanged, another source of the difficulty translation systems face with disfluent speech. 
+
+4 Models & Evaluation 
+
+Having established that disfluencies carry emo-tionally relevant information, we now turn to the question of whether current speech translation models are capable of preserving them. 
+
+4.1 Translation Models 
+
+We evaluate four model types (cascaded, end-to-end, SpeechLLM, and commercial), using both a standard and a disfluency-aware prompt for all ex-cept end-to-end models, which are not designed to follow explicit instructions (prompts in Figure 11). • Cascaded: Canary (Sekoyan et al., 2025) or Whisper (Radford et al., 2022) for ASR, followed by Tower (Rei et al., 2025) or Llama (Grattafiori et al., 2024) for translation; also evaluated on human-annotated transcripts. • End-to-end: Canary and OWSM (Peng et al., 2023). OWSM: does not support Hindi; Canary: does not support Chinese, Hindi, or Arabic. • SpeechLLM: Phi-4 (Abdin et al., 2024) and Qwen2.5-Omni (Xu et al., 2025). • Commercial: ChatGPT (GPT-5.2-2025-12-11) and Gemini (Comanici et al., 2025, gemini-2.5-flash), evaluated with both speech input and human-annotated transcripts. 
+
+4.2 Evaluation 
+
+We evaluate all model families in terms of overall translation quality and disfluency preservation. 
+
+Automatic Metrics. We assess translation qual-ity using chrF (Popovi´ c, 2015, word-segmenting Chinese translations using jieba ), which mea-sures character-level overlap with the reference and is therefore sensitive to disfluency preser-vation, and COMET-Kiwi (Rei et al., 2022), a reference-free metric that focuses on semantic ad-equacy. For cascaded models, we additionally re-port E-Scores and Z-Scores (Teleki et al., 2025b) at the ASR step, which measure the retention of disfluent elements. 
+
+Disfluency Preservation. To evaluate whether models correctly preserve disfluencies in the translation, we additionally use LLM-as-a-judge (Zheng et al., 2023; Li et al., 2025) with 
+
+GPT-5.2-2025-12-11 to score translations on two dimensions (0–100): • Style Preservation: How well are disfluencies preserved (presence, type, placement, feel)? • Meaning Preservation: How accurately and completely is the source meaning preserved? We use two prompt variants for the LLM judge: with and without a reference translation (full prompts in Figure 11). We select the best-performing model and prompting strategy from each category based on automatic metrics, and ap-ply both LLM judge variants to these systems. Metric Ref-based? Segm. Corr. Sys. Corr. 
+
+Style 
+
+LLM-judge Style × 37.3 86.8 LLM-judge Style ✓ 40.4 92.5 chrF ✓ 38.2 93.1 
+
+COMET-Kiwi × 26.9 78.2 
+
+Meaning 
+
+LLM-judge Meaning × 34.2 90.2 
+
+LLM-judge Meaning ✓ 40.8 90.2 
+
+chrF ✓ 34.6 88.4 COMET-Kiwi × 33.4 83.7 
+
+Overall 
+
+LLM-judge Overall × 42.1 91.0 LLM-judge Overall ✓ 46.8 92.6 chrF ✓ 38.6 92.8 
+
+COMET-Kiwi × 30.9 80.4     
+
+> Table 1: Reference-based metrics have best corre-lation with human judgments on disfluent transla-tions. Correlation (%) between human Style/Mean-ing/Overall judgments and automatic metrics, averaged over the eight languages and four systems. Segment-level: mean Kendall’s τ(within-item, across systems). System-level: soft pairwise accuracy (SPA).
+
+Human Evaluation of Quality. Finally, we complement automatic metrics with human evalu-ation, inspired by MQM and ESA annotation pro-tocols (Freitag et al., 2021; Kocmi et al., 2024). We select the same best-performing models as for the LLM judge, and present their outputs side by side. Each item is annotated by one annotator, with the first 20 items additionally annotated by two further annotators to confirm inter-annotator reliability (leave-one-out soft pairwise accuracy: 96.1% for style, 94.0% for meaning). Annotators score each translation on the same dimensions as the LLM judge, Style Preservation and Meaning Preservation, but additionally mark and categorise error spans. We use the Pearmut platform (Zouhar and Kocmi, 2026). Human annotation guidelines and the interface are shown in Figure 12. 
+
+5 Results 
+
+We first examine general translation quality, be-fore turning to disfluency preservation and an anal-ysis of specific disfluency types. 
+
+5.1 Comparison to Human Annotation and Automatic Metrics 
+
+Table 1 reports how well each automatic metric tracks human Style, Meaning, and Overall judg-ments (Overall being the average of the two) at both the segment level (Kendall’s τ ) and the sys-tem level (soft pairwise accuracy). A per-language breakdown is shown Table 9. Unlike the LLM judge variants and the human protocol, chrF and COMET-Kiwi do not distinguish style from mean-ing: each produces a single quality score, which we correlate against the three human axes in turn. All four metrics correlate well with human judgment: system-level SPA exceeds 78% across every metric and axis, and segment-level τ ranges from 27% to 47%, consistent with state-of-the-art results at recent speech translation metric shared tasks (Adelani et al., 2026). The two reference-based metrics, chrF and LLM judge (ref), con-sistently outperform the reference-free metrics on every axis and at both granularities, in line with COMET-Kiwi being trained predominantly on flu-ent translation data (Züfle et al., 2026) and there-fore less sensitive to disfluency removal when se-mantic content is preserved. Among the reference-based metrics, LLM judge (ref) attains the high-est segment-level τ across all three axes, while at the system level the two are virtually indistin-guishable. However, the LLM judge is only ap-plied to the four systems selected for human eval-uation and cannot rank all models in our bench-mark. chrF captures character-level overlap with the disfluent reference, rewards outputs that retain disfluencies, and achieves the highest system-level SPA overall and for style. We therefore use it as our primary metric in the following. 
+
+5.2 Translation Quality 
+
+Table 2 presents results on U H-M AZING across architectures, using the standard prompt. Full results including the disfluency-aware prompt as well as the COMET and LLM judge results are given in Appendix D. 
+
+Architecture. We compare four architecture categories: cascaded, end-to-end, SpeechLLM, and commercial. The strongest systems overall are TOWER Human transcript among open-source mod-els and C HAT GPT ASR transcript among commercial models, both using transcript input. Cascaded sys-tems lead by a wide margin over all audio-input Category Model AR CS DE ES FR HI IT ZH 
+
+EN → X: Speech-to-Text Translation 
+
+Cascaded LLAMA Canary ASR 22.16 38.37 49.30 52.53 52.12 35.91 50.06 13.42 LLAMA Whisper ASR 30.02 37.96 48.19 51.78 51.69 38.99 49.11 13.59 LLAMA Human transcript 16.64 43.97 56.30 61.40 59.29 33.25 59.11 17.07 TOWER Canary ASR 22.87 44.43 53.86 54.40 55.67 52.24 53.21 21.13 TOWER Whisper ASR 23.42 43.90 51.76 53.40 53.03 51.93 51.87 20.68 TOWER Human transcript 22.39 52.90 61.34 64.05 63.65 61.43 62.93 25.89 End-to-end OWSM 26.47 27.38 47.76 43.02 43.17 – 40.93 15.37 CANARY – 43.89 52.13 51.65 54.30 – 52.80 –SpeechLLM PHI -4-MM-INSTRUCT 5.73 8.01 45.79 46.03 27.12 3.56 49.58 14.28 QWEN 2.5-O MNI 17.32 10.61 20.90 18.02 18.27 11.78 21.28 12.65 Commercial GEMINI ASR transcript 40.51 53.27 60.91 60.46 62.95 54.30 61.91 23.79 GEMINI Human transcript 38.00 46.18 52.62 52.51 53.44 47.18 53.60 19.87 GEMINI Audio 37.15 48.97 55.24 58.54 56.83 15.90 57.60 7.13 CHAT GPT ASR transcript 44.97 54.19 62.28 60.92 62.12 56.17 60.34 26.42 
+
+CHAT GPT Human transcript 41.74 45.82 53.97 53.35 54.15 46.22 53.45 19.65 CHAT GPT Audio 10.04 17.42 14.61 17.24 15.36 5.66 17.24 3.41 
+
+X → EN: Text-to-Text Translation 
+
+Cascaded LLAMA Human transcript 52.89 62.62 63.21 66.02 65.16 49.75 66.29 53.90 TOWER Human transcript 59.86 68.97 68.15 69.45 69.51 70.49 70.62 56.11 Commercial GEMINI Human transcript 67.53 68.13 69.14 78.26 77.04 73.46 76.51 57.36 
+
+CHAT GPT Human transcript 65.41 66.29 69.02 76.33 74.45 70.73 74.10 54.79 
+
+Table 2: Cascaded systems lead among open-source models, and commercial systems achieve the high-est scores overall. chrF scores (standard prompt) for all models and transcript conditions, English →X and X→English. Subscripts: Audio = speech input; ASR = automatic transcript; Human = human transcript. 
+
+approaches, including end-to-end models, Speech-LLMs, and commercial audio models. Within cascaded systems, both ASR models have substantial WER against the disfluent refer-ence (Whisper: 20 .31% ; Canary: 15 .69% ), yet their WER against the fluent reference is higher (Whisper: 22 .27% ; Canary: 24 .99% ), confirm-ing that both preserve some disfluencies in tran-scription (details in Table 7. The gap is con-siderably larger for Canary ( 9.3pp vs. 2pp for Whisper), indicating it retains more disfluency content, consistent with its lower E-Scores and Z-Scores. TOWER Canary therefore outperforms TOWER Whisper not only because of lower WER, but because Canary transcribes disfluencies more faithfully (details in Table 7). Interestingly, ASR transcript input outperforms human transcript in-put for commercial models on all eight languages, whereas for open-source cascaded systems the ex-pected pattern holds and human transcript yields the highest scores. C HAT GPT ASR transcript outper-forms all open-source systems, with one excep-tion: T OWER Human transcript , which uses a manually transcribed transcript rather than ASR output and is therefore not achievable in real deployment. Among audio-input models, G EMINI Audio out-performs end-to-end and SpeechLLM systems on most languages by a large margin. 
+
+Prompt formulation. The effect of explicitly asking models to preserve disfluencies is inconsis-tent across architectures (Table 5 in the appendix). Within cascaded systems, T OWER is largely unaf-fected, while L LAMA loses up to 17.3 chrF points on some languages. Commercial systems tend to improve instead, often substantially: G EMINI 
+
+gains under every condition and language, by as much as 38.6 points for G EMINI Audio on Hindi, 721                                                                                                       
+
+> 521
+> 219
+> 82
+> 1098
+> 222
+> 224
+> 5
+> 62
+> 721
+> 521
+> 219
+> 82
+> 1098
+> 222
+> 224
+> 5
+> 62
+> General
+> Errors
+> Disfluency
+> Errors
+> Other
+> Errors
+> Failure
+> Modes
+> by language
+> AR CS DE ES FR HI IT ZH
+> 203 93 33 49 76 42 141 84
+> 67 34 52 58 44 23 193 50
+> 13 10 30 38 17 11 70 30
+> 19 23 66416 17
+> 11 68 144 208 184 88 238 157
+> 55 538 27 819 61 9
+> 19 27 617 11 35 101 8
+> 122
+> 9317 10 20 12
+> 396 264 328 415 364 234 806 347
+> by model
+> canary gemini tower phi
+> 117 104 207 293
+> 133 151 84 153
+> 47 56 55 61
+> 2415 61
+> 353 276 165 304
+> 32 36 82 72
+> 50 49 67 58
+> 32
+> 14 12 17 19
+> 748 691 694 1021
+> total
+> 3154
+> total
+> 3154
+> Incorrect language
+> Missing content
+> Extra content
+> Looping
+> Deletion
+> Extra disfluency
+> Type mismatch
+> Other error
+> Uncategorized error
+
+Figure 3: Three failure modes ( ⋆), incorrect language, missing content, and deletion, dominate consistently ,regardless of whether error spans are broken down by language (left) or model (right). Human annotators marked the spans, assigning each a category from our taxonomy and a severity ( Major /Minor ). 
+
+while C HAT GPT improves under most conditions but stays roughly flat with an automatic tran-script. SpeechLLMs diverge in opposite direc-tions: PHI -4 drops sharply on most languages, while Q WEN 2.5 improves consistently. 
+
+X→EN Translation. Our benchmark supports the reverse direction in the text setting, which we use to test whether the EN →X gap reflects model weakness on lower-resource target lan-guages rather than disfluency handling specifi-cally. Using text input (no target-language audio exists for this direction), all three systems score substantially higher translating into English than out of it (bottom part of Table 2), consistent with English being a high-resource target language that models are trained to produce more reliably. 
+
+5.3 Disfluency Preservation 
+
+Having established overall translation quality (Section 5.2), we now turn to whether models pre-serve disfluencies, using the LLM judge and hu-man evaluation protocols described in Section 4.2. 
+
+Style vs. Meaning. Figure 4 plots the LLM judge Style and Meaning Preservation scores (0– 100) for the best-performing system per architec-ture category, selected by overall translation qual-ity (Section 5.2); full per-language scores are in Table 8 in the appendix. Meaning preservation ex-40 50 60 70 80 90 100 
+
+> Style Preservation
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> 100
+> Meaning Preservation
+> Ideal
+> Canary
+> Gemini
+> Phi-4
+> Tower
+> AR
+> CS
+> DE
+> ES
+> FR
+> HI
+> IT
+> ZH
+
+Figure 4: All systems preserve meaning better than style in translation. Style Preservation vs. Meaning Preservation scores for one representative system per architecture category, across eight languages. 
+
+ceeds style preservation for nearly every system and language, with almost all points lying above the diagonal. The gap is largest for C ANARY , con-sistent with an end-to-end model that defaults to a fluent rendering rather than reproducing disfluen-cies, and smallest for T OWER .
+
+5.4 Effect of Disfluency Type 
+
+The previous section treated disfluencies as a sin-gle phenomenon, now we analyse different disflu-ency types and how they affect translation. Failure Mode Taxonomy. To understand what kinds of errors occur, we built the failure-mode taxonomy in Figure 3 from the error spans hu-man annotators flagged during evaluation, to-gether with a severity rating for each span. The taxonomy splits nearly evenly between its two top-level branches, General Errors (1,543 spans) and Disfluency Errors (1,549 spans), with a small re-mainder (62 spans) falling outside either. Three categories, incorrect language, missing content, and deletion of the source disfluency, account for nearly three-quarters of all 3,154 annotated spans, regardless of whether errors are broken down by language or by model. Deletion, where the model omits the disfluency rather than mistranslating it, is the single largest category on its own. Overall, models tend to simply ignore disfluencies rather than mistranslate them: deletions alone (1,098 spans) outnumber disfluency mistranslations, i.e. extra disfluencies plus type mismatches combined (446 spans). This pattern is broadly consistent across languages and models, with one notable exception: for Hindi, incorrect language, miss-ing content, and deletion together account for only 65% of spans, the lowest of any language (vs. 70–84% elsewhere), driven by a comparably high share of disfluency type mismatches. We repeat this breakdown for the four models with the highest chrF scores in their respective system categories: T OWER (cascaded), C ANARY 
+
+(end-to-end), P HI -4 (SpeechLLM), and G EMINI 
+
+(commercial). The same three categories domi-nate for most models (73–81% of spans); the ex-ception is T OWER (65.7%), whose common errors are incorrect language rather than deletion. 
+
+Quality by Disfluency Type. We distinguish three types annotated in Switchboard: INTJ (filled pauses), PRN (discourse markers), and EDITED (false starts and self-repairs). Since these types are text-level annotations, this ablation is restricted to text-input systems. We reinsert combinations of these types into the fluent human transcript and translate with all four text models (Llama, Tower, Gemini, and ChatGPT). Figure 5 shows the change in COMET-Kiwi relative to the flu-ent baseline: for each condition, we compute COMET-Kiwi on the disfluency-inserted source paired with its translation, and subtract the score for the fluent source paired with its translation. We find that filled pauses and discourse markers, alone or together, have no measurable effect on trans-INTJ   
+
+> PRN
+> EDITED
+> INTJ+PRN
+> Ed.+INTJ
+> Ed.+PRN
+> Disfluent
+> 6
+> 4
+> 2
+> 0
+> 2
+> 4
+> 6
+> COMET from Fluent  EDITED (False Start) INTJ (Filled Pause) PRN (Discourse Marker)
+
+Figure 5: EDITED-type disfluencies drive the drop in translation performance. We show the change in COMET-Kiwi relative to the Fluent source baseline, by which disfluency type(s) the source text contains, pooled across four translation models (Llama, Tower, Gemini, ChatGPT) and eight target languages. 
+
+lation quality. Any condition containing a false start drops by roughly 3 to 4 points, regardless of what else is combined with it. The natural Dis-fluent transcript shows the same drop, confirming that false starts, not filler words or discourse mark-ers, are responsible. 
+
+6 Inference-Time Interventions 
+
+Having established that current models fall short on disfluency preservation, we now ask whether performance can be improved without retraining since post-training for disfluency robustness risks reducing generalisation (Teleki et al., 2026), and annotated disfluent training data is scarce. We therefore investigate three lightweight inference-time strategies, beam search, temperature sam-pling, and in-context learning (Dong et al., 2024; Mei et al., 2025), aimed at the failure modes from Figure 3, without modifying model parameters. 
+
+Interventions. We evaluate three families of intervention. First, we vary the decoding algorithm: greedy, beam search (beam size 
+
+n ∈ {5, 10 , 20 }), temperature sampling ( τ ∈{0.2, 0.4, 0.6, 0.8, 1.0}), beam sampling, and typical-p sampling. Second, we compare the stan-dard and disfluency-aware prompts of Section 4 as an input-level intervention. Third, we add in-context learning (Brown et al., 2020, ICL): for each test instance we sample k = 2 demonstrations uniformly at random from the reference pool D
+
+(N = 80 ) under a leave-one-out scheme that ex-cludes the current item to prevent leakage, where each demonstration is a disfluent source paired with its disfluent reference translation. 68       
+
+> 69
+> 70
+> 71
+> Tower Human Trans .(COMET)
+> 47.5
+> 50.0
+> 52.5
+> 55.0
+> Tower Human Trans .(chrF)
+> 60
+> 62
+> 64
+> 66
+> 68
+> Llama Human Trans .(COMET)
+> 42
+> 44
+> 46
+> 48
+> Llama Human Trans .(chrF)
+> 60
+> 62
+> 64
+> 66
+> 68
+> Canary (COMET)
+> 48
+> 49
+> 50
+> 51
+> Canary (chrF)
+> 5
+> 10
+> 20
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 5
+> 10
+> 20
+> 0.2
+> 0.5
+> 0.9
+> 20
+> 30
+> 40
+> 50
+> Beam
+> Sampl.
+> Beam S.
+> Typ. p
+> Phi-4 (COMET)
+> 5
+> 10
+> 20
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 5
+> 10
+> 20
+> 0.2
+> 0.5
+> 0.9
+> 15
+> 20
+> 25
+> 30
+> Beam
+> Sampl.
+> Beam S.
+> Typ. p
+> Phi-4 (chrF)
+> Standard prompt
+> Disfluency-aware prompt
+> ICL
+> Greedy baseline
+
+Figure 6: Decoding methods shape overall quality (COMET), while ICL improves disfluency preserva-tion (chrF); the two interventions complement each other, as do the metrics. Decoding strategies per model (rows), in COMET (left) and chrF (right), aver-aged over eight EN →X pairs. Lines compare the stan-dard (solid) and disfluency-aware (dashed) prompts; dotted lines are greedy baselines for the two prompt versions and ⋆ marks ICL runs. 
+
+Inference-Time Interventions have impact on disfluent translation. Figure 6 reports the effect of these methods on overall quality in COMET and chrF, averaged over the eight EN →X pairs. Across models, beam search consistently im-proves over greedy decoding, while quality falls as the sampling temperature rises. The two settings show complementary patterns: the disfluency-aware prompt leaves chrF largely unchanged but lowers COMET, whereas in-context learn-ing barely moves COMET yet produces a mean-ingful improvement on chrF. For example, on Tower Human Trans. , ICL shifts COMET by less than 0.2 points while raising chrF by up to 5 points rel-ative to the matched decoding setting, a pattern that recurs, in attenuated form, for Llama. Since chrF compares against the disfluent reference and is therefore sensitive to disfluency preservation (Section 5.1), this suggests that in-context learn-ing specifically helps models preserve disfluencies without sacrificing meaning. P HI -4 departs from these trends, though its overall quality is too low to draw reliable conclusions. Together, these results suggest that beam search and in-context learning are simple, low-risk ways to improve disfluency handling without sacrificing translation quality. 
+
+7 Discussion and Conclusion 
+
+Taken together, our findings on the introduced UH-M AZING benchmark make a connected argu-ment: disfluencies carry emotional signal that cur-rent speech translation systems fail to preserve. 
+
+Disfluencies are meaningful, structured signals that are often not translated. The case study in Section 2 shows that removing disfluencies from speech shifts perceived negative emotion. Our analysis of U H-M AZING shows disfluencies are not placed at random, systematically preced-ing the sentence subject and following a conjunc-tion. Yet current systems, across four architecture types, preserve meaning reliably but fail on style (Section 5): our human-annotated error taxonomy shows this failure is dominated by deletion, with models omitting disfluencies rather than mistrans-lating them. This failure is concentrated in false starts and self-repairs specifically. Beam search and in-context learning narrow this style gap with-out retraining, but do not close it. 
+
+Implications for practitioners and researchers. 
+
+The meaning-style gap identified in this work re-flects the fact that current systems were trained to produce fluent translations, not to preserve the manner of delivery. Closing this gap will require training that treats disfluency preservation as a tar-get in its own right. An open question is whether preserved disfluencies carry the same pragmatic and emotional meaning for target-language lis-teners as they do in the source. Studies at the intersection of translation and Human-Computer-Interaction could shed light on how translated hes-itations and self-corrections are perceived across languages and cultures (Carpuat et al., 2025; Liebling et al., 2022). We hope that our analysis and the release of U H-M AZING provide a starting point for closing this gap. 8 Generative AI Use Disclosure 
+
+Generative AI tools were used to assist with draft-ing and refining portions of the manuscript, as well as for coding and figure preparation. All scientific content, analyses, and conclusions were developed and verified by the authors. 
+
+9 Acknowledgments 
+
+We thank Haoran Liu, Anwesha Basu, Majid Al-fifi, Jobin Varughese, Xiangjue Dong, and Thomas Docog for expert annotation and valuable dis-cussions. This work has received funding from the European Union’s Horizon research and in-novation programme under grant agreement No 101135798, project Meetween (My Personal AI Mediator for Virtual MEETings BetWEEN Peo-ple). 
+
+References 
+
+Marah Abdin, Jyoti Aneja, Harkirat Behl, Sébastien Bubeck, Ronen Eldan, Suriya Gu-nasekar, Michael Harrison, Russell J. Hewett, Mojan Javaheripi, Piero Kauffmann, James R. Lee, Yin Tat Lee, Yuanzhi Li, Weishung Liu, Caio C. T. Mendes, Anh Nguyen, Eric Price, Gustavo de Rosa, Olli Saarikivi, Adil Salim, Shital Shah, Xin Wang, Rachel Ward, Yue Wu, Dingli Yu, Cyril Zhang, and Yi Zhang. 2024. Phi-4 technical report. David Ifeoluwa Adelani, Victor Agostinelli, Anto-nios Anastasopoulos, Luisa Bentivogli, Ondˇ rej Bojar, Sébastien Bratières, Marine Carpuat, Fabrício Carraro, Roldano Cattoni, Mauro Cet-tolo, Lizhong Chen, Marcello Federico, Marco Gaido, Mahendra Gupta, HyoJung Han, Ali Hatami, Lewis C. Howe, Dávid Javorský, Yejin Jeon, Marek Kasztelnik, Antoine Lau-rent, Danni Liu, Nam Luu, Min Ma, Dominik Macháˇ cek, Marie Maltais, Evgeny Matusov, John McCrae, Chutong Meng, Chandresh Ku-mar Maurya, Mohammad Mohammadamini, Yasmin Moslem, Kenton Murray, Satoshi Naka-mura, Matteo Negri, Jan Niehues, Atul Kr. Ojha, John E. Ortega, Siqi Ouyang, Sara Papi, Peter Polák, Fabian Retkowski, Stephanny Sánchez, Beatrice Savoldi, Claytone Sikasote, Matthias Sperber, Sebastian Stüker, Katsuhito Sudoh, Marie Tahon, Marco Turchi, Alexander Waibel, Patrick Wilken, Rodolfo Joel Zevallos, Vilem Zouhar, and Maike Züfle. 2026. Speech translation and metrics in 2026: Findings of the IWSLT campaign. In Proceedings of the 23rd International Conference on Spoken Language Translation (IWSLT 2026) , pages 336–422, San Diego, USA (in-person and online). Association for Computational Linguistics. Hayakawa Akira, Carl Vogel, Saturnino Luz, and Nick Campbell. 2017. Speech rate compari-son when talking to a system and talking to a human: A study from a speech-to-speech, ma-chine translation mediated map task. In INTER-SPEECH , pages 3286–3290. Robin Amann, Zhaolin Li, Barbara Bruno, and Jan Niehues. 2024. Augmenting automatic speech recognition models with disfluency detection. In 2024 IEEE Spoken Language Technology Workshop (SLT) , pages 224–231. Claudia V Angelelli. 2004. Medical interpreting and cross-cultural communication . Cambridge University Press. Darren Scott Appling and Nick Campbell. 2007. Translating conversational speech to standard linguistic form. In Interspeech 2007 , pages 2825–2828. Siddhant Arora, Kai-Wei Chang, Chung-Ming Chien, Yifan Peng, Haibin Wu, Yossi Adi, Em-manuel Dupoux, Hung-Yi Lee, Karen Livescu, and Shinji Watanabe. 2025. On the landscape of spoken language models: A comprehensive survey. Susan E Brennan. 2000. Invited talk: Processes that shape conversation and their implications for computational linguistics. In Proceedings of the 38th annual meeting of the Association for Computational Linguistics , pages 1–11. Tom B. Brown, Benjamin Mann, Nick Ry-der, Melanie Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, Sandhini Agar-wal, Ariel Herbert-Voss, Gretchen Krueger, Tom Henighan, Rewon Child, Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu, Clemens Win-ter, Christopher Hesse, Mark Chen, Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin Chess, Jack Clark, Christopher Berner, Sam McCan-dlish, Alec Radford, Ilya Sutskever, and Dario Amodei. 2020. Language models are few-shot learners. Marine Carpuat, Omri Asscher, Kalika Bali, Luisa Bentivogli, Fred Blain, Lynne Bowker, Mono-jit Choudhury, Hal Daumé III, Kevin Duh, Ge Gao, et al. 2025. An interdisciplinary ap-proach to human-centered machine translation. In Proceedings of the 2025 Conference on Em-pirical Methods in Natural Language Process-ing , pages 22870–22890. Anna Seo Gyeong Choi, Maria Teleki, James Caverlee, Miguel del Rio, Corey Miller, and Hoon Choi. 2026a. Beyond single ground truth: Reference monism as epistemic injustice in ASR evaluation. Anna Seo Gyeong Choi, Maria Teleki, Miguel del Rio, James Caverlee, Corey Miller, and Allison Koenecke. 2026b. Speechspectrum: A linguis-tic fidelity spectrum for accountable speech-to-text. Gheorghe Comanici et al. 2025. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next genera-tion agentic capabilities. Evgeniia Diachek and Sarah Brown-Schmidt. 2024. Linguistic features of spontaneous speech predict conversational recall. Psycho-nomic Bulletin & Review , 31(4):1638–1649. Qianqian Dong, Feng Wang, Zhen Yang, Wei Chen, Shuang Xu, and Bo Xu. 2019. Adapt-ing translation models for transcript disfluency detection. In The Thirty-Third AAAI Confer-ence on Artificial Intelligence, AAAI 2019, The Thirty-First Innovative Applications of Artifi-cial Intelligence Conference, IAAI 2019, The Ninth AAAI Symposium on Educational Ad-vances in Artificial Intelligence, EAAI 2019, Honolulu, Hawaii, USA, January 27 - February 1, 2019 , pages 6351–6358. AAAI Press. Xiangjue Dong, Maria Teleki, and James Caver-lee. 2024. A survey on llm inference-time self-improvement. Markus Freitag, George Foster, David Grang-ier, Viresh Ratnakar, Qijun Tan, and Wolfgang Macherey. 2021. Experts, errors, and context: A large-scale study of human evaluation for ma-chine translation. Transactions of the Associ-ation for Computational Linguistics , 9:1460– 1474. John Godfrey and Edward Holliman. 1993. Switchboard-1 release 2. [Online]. Available: https://catalog.ldc.upenn.edu/LDC97S62. Andrew Gordon, David Rothschild, Filipe M. Af-fonso, Justin Sulik, David Hauser, Kathleen Pepin, and Spencer Jones. 2026. AI agent prevalence and data quality across multiple on-line sample providers. PsyArXiv. Aaron Grattafiori, Abhimanyu Dubey, et al. 2024. The llama 3 herd of models. Kotaro Hara and Shamsi T Iqbal. 2015. Effect of machine translation in interlingual conver-sation: Lessons from a formative study. In 
+
+Proceedings of the 33rd Annual ACM Confer-ence on Human Factors in Computing Systems ,pages 3473–3482. Syed Zohaib Hassan, Pierre Lison, and Pål Halvorsen. 2025. Enhancing naturalness in llm-generated utterances through disfluency inser-tion. Paria Jamshid Lou and Mark Johnson. 2020. End-to-end speech recognition and disfluency re-moval. In Findings of the Association for Com-putational Linguistics: EMNLP 2020 , pages 2051–2061, Online. Association for Computa-tional Linguistics. Tom Kocmi, Vilém Zouhar, Eleftherios Avramidis, Roman Grundkiewicz, Marzena Karpinska, Maja Popovi´ c, Mrinmaya Sachan, and Mariya Shmatova. 2024. Error span annotation: A balanced approach for hu-man evaluation of machine translation. In 
+
+Proceedings of the Ninth Conference on Ma-chine Translation , pages 1440–1453, Miami, Florida, USA. Association for Computational Linguistics. Deepak Kumar, Baban Gain, and Asif Ekbal. 2026. Mind the pause: Disfluency-aware ob-jective tuning for multilingual speech correction with LLMs. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 46050–46070, San Diego, California, United States. Association for Computational Linguis-tics. Rohit Kundu, Preethi Jyothi, and Pushpak Bhat-tacharyya. 2022. Survey: Exploring disfluen-cies for speech-to-speech machine translation. Dawei Li, Bohan Jiang, Liangjie Huang, Alimo-hammad Beigi, Chengshuai Zhao, Zhen Tan, Amrita Bhattacharjee, Yuxuan Jiang, Canyu Chen, Tianhao Wu, et al. 2025. From genera-tion to judgment: Opportunities and challenges of llm-as-a-judge. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 2757–2791. Daniel Liebling, Katherine Heller, Samantha Robertson, and Wesley Deng. 2022. Opportuni-ties for human-centered evaluation of machine translation systems. In Findings of the Asso-ciation for Computational Linguistics: NAACL 2022 , pages 229–240. Andreas Liesenfeld, Alianda Lopez, and Mark Dingemanse. 2023. The timing bottleneck: Why timing and overlap are mission-critical for conversational user interfaces, speech recogni-tion and dialogue systems. In Proceedings of the 24th Annual Meeting of the Special Interest Group on Discourse and Dialogue , pages 482– 495, Prague, Czechia. Association for Compu-tational Linguistics. Hongcheng Liu, Yixuan Hou, Heyang Liu, Yuhao Wang, Yanfeng Wang, and Yu Wang. 2025. Vocalbench-df: A benchmark for evaluating speech llm robustness to disfluency. Consortium Meetween. 2024. Meetween: My personal AI mediator for virtual MEETings be-tWEEN people. Horizon Europe project no. 101135798, funded by the European Commis-sion. Lingrui Mei, Jiayu Yao, Yuyao Ge, Yiwei Wang, Baolong Bi, Yujun Cai, Jiazhi Liu, Mingyu Li, Zhong-Zhi Li, Duzhen Zhang, Chenlin Zhou, Jiayi Mao, Tianze Xia, Jiafeng Guo, and Shenghua Liu. 2025. A survey of context engi-neering for large language models. Meta. 2026. Meta AI glasses. George A. Miller. 1994. WordNet: A lexical database for English. In Human Language Technology: Proceedings of a Workshop held at Plainsboro, New Jersey, March 8-11, 1994 .Saif M. Mohammad and Peter D. Turney. 2013. Crowdsourcing a word-emotion association lex-icon. Comput. Intell. , 29(3):436–465. Sara Papi, Marco Gaido, Alina Karakanta, Mauro Cettolo, Matteo Negri, and Marco Turchi. 2023. Direct speech translation for automatic subti-tling. Transactions of the Association for Com-putational Linguistics , 11:1355–1376. Sara Papi, Peter Polák, Dominik Macháˇ cek, and Ondˇ rej Bojar. 2025. How “real” is your real-time simultaneous speech-to-text transla-tion system? Transactions of the Association for Computational Linguistics , 13:281–313. Yifan Peng, Jinchuan Tian, Brian Yan, Dan Berrebbi, Xuankai Chang, Xinjian Li, Jiatong Shi, Siddhant Arora, William Chen, Roshan Sharma, Wangyou Zhang, Yui Sudo, Muham-mad Shakeel, Jee weon Jung, Soumi Maiti, and Shinji Watanabe. 2023. Reproducing whisper-style training using an open-source toolkit and publicly available data. In Proceedings of the IEEE Automatic Speech Recognition and Un-derstanding Workshop (ASRU) .Robert Plutchik. 1980. A general psychoevolu-tionary theory of emotion. In Theories of emo-tion , pages 3–33. Elsevier. Maja Popovi´ c. 2015. chrF: Character n-gram F-score for automatic MT evaluation. In Proceed-ings of the Tenth Workshop on Statistical Ma-chine Translation , pages 392–395, Lisbon, Por-tugal. Association for Computational Linguis-tics. Martin F. Porter. 2001. Snowball: A language for stemming algorithms. Matt Post, Gaurav Kumar, Adam Lopez, Dami-anos Karakos, Chris Callison-Burch, and San-jeev Khudanpur. 2013. Improved speech-to-text translation with the fisher and callhome Spanish-English speech translation corpus. In 
+
+Proceedings of the 10th International Workshop on Spoken Language Translation: Papers , Hei-delberg, Germany. Peng Qi, Yuhao Zhang, Yuhui Zhang, Jason Bolton, and Christopher D. Manning. 2020. Stanza: A python natural language processing toolkit for many human languages. In Proceed-ings of the 58th Annual Meeting of the Asso-ciation for Computational Linguistics: System Demonstrations , pages 101–108, Online. Asso-ciation for Computational Linguistics. Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. 2022. Robust speech recognition via large-scale weak supervision. Ricardo Rei, Nuno M. Guerreiro, José Pombal, João Alves, Pedro Teixeirinha, Amin Farajian, and André F. T. Martins. 2025. Tower+: Bridg-ing generality and translation specialization in multilingual LLMs. Ricardo Rei, José G. C. de Souza, Duarte Alves, Chrysoula Zerva, Ana C Farinha, Taisiya Glushkova, Alon Lavie, Luisa Coheur, and An-dré F. T. Martins. 2022. COMET-22: Unbabel-IST 2022 submission for the metrics shared task. In Proceedings of the Seventh Conference on Machine Translation (WMT) , pages 578– 585, Abu Dhabi, United Arab Emirates (Hy-brid). Association for Computational Linguis-tics. Fabian Retkowski, Maike Züfle, Andreas Sud-mann, Dinah Pfau, Shinji Watanabe, Jan Niehues, and Alexander Waibel. 2025. Sum-marizing speech: A comprehensive survey. In 
+
+Proceedings of the 2025 Conference on Empir-ical Methods in Natural Language Processing ,pages 27275–27306, Suzhou, China. Associa-tion for Computational Linguistics. Alexander Rice. 2025. Mashti: A multipurpose filler in northern pastaza kichwa. In Fillers ,pages 373–439. Language Science Press. Elizabeth Salesky, Susanne Burger, Jan Niehues, and Alex Waibel. 2018. Towards fluent trans-lations from disfluent speech. In 2018 IEEE Spoken Language Technology Workshop (SLT) ,pages 921–926. Elizabeth Salesky, Matthias Sperber, and Alexan-der Waibel. 2019. Fluent translations from disfluent speech in end-to-end speech transla-tion. In Proceedings of the 2019 Conference of the North American Chapter of the Associ-ation for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers) , pages 2786–2792, Minneapolis, Minnesota. Association for Computational Lin-guistics. Monica Sekoyan, Nithin Rao Koluguri, Nune Tadevosyan, Piotr Zelasko, Travis Bartley, Nikolay Karpov, Jagadeesh Balam, and Boris Ginsburg. 2025. Canary-1b-v2 & Parakeet-TDT-0.6B-v3: Efficient and high-performance models for multilingual ASR and AST. Elizabeth Shriberg. 1994. Preliminaries to a The-ory of Speech Disfluencies . Ph.D. thesis, Uni-versity of California, Berkeley. Chihiro Taguchi, Seng Mai, Keita Kurabe, Yusuke Sakai, Georgina Agyei, Soudabeh Eslami, and David Chiang. 2025. Languages still left be-hind: Toward a better multilingual machine translation benchmark. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 20142– 20154. Maria Teleki, Xiangjue Dong, and James Caver-lee. 2024a. Quantifying the impact of disflu-ency on spoken content summarization. In Pro-ceedings of the 2024 Joint International Confer-ence on Computational Linguistics, Language Resources and Evaluation (LREC-COLING 2024) , pages 13419–13428, Torino, Italia. ELRA and ICCL. Maria Teleki, Xiangjue Dong, Soohwan Kim, and James Caverlee. 2024b. Comparing ASR sys-tems in the context of speech disfluencies. In 
+
+Interspeech 2024 , pages 4548–4552. Maria Teleki, Xiangjue Dong, Haoran Liu, and James Caverlee. 2025a. Masculine defaults via gendered discourse in podcasts and large lan-guage models. In Proceedings of the Third Workshop on Social Influence in Conversations (SICon 2025) , pages 90–96, Vienna, Austria. Association for Computational Linguistics. Maria Teleki, Sai Janjur, Haoran Liu, Oliver Grab-ner, Ketan Verma, Thomas Docog, Xiangjue Dong, Lingfeng Shi, Cong Wang, Stephanie Birkelbach, Jason Kim, Yin Zhang, and James Caverlee. 2025b. Z-scores: A metric for lin-guistically assessing disfluency removal. In 
+
+ICASSP .Maria Teleki, Sai Janjur, Haoran Liu, Oliver Grabner, Ketan Verma, Thomas Docog, Xi-angjue Dong, Lingfeng Shi, Cong Wang, Stephanie Birkelbach, Jason Kim, Yin Zhang, Éva Székely, and James Caverlee. 2026. Con-versational speech reveals structural robustness failures in SpeechLLM backbones. TranscribeGlass. 2025. Transcribeglass. Xander. 2025. Xander captioning glasses. Jin Xu, Zhifang Guo, Jinzheng He, Hangrui Hu, Ting He, Shuai Bai, Keqin Chen, Jialin Wang, Yang Fan, Kai Dang, Bin Zhang, Xiong Wang, Yunfei Chu, and Junyang Lin. 2025. Qwen2.5-omni technical report. Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin, Zhuohan Li, Dacheng Li, Eric Xing, et al. 2023. Judging llm-as-a-judge with mt-bench and chatbot arena. Advances in neu-ral information processing systems , 36:46595– 46623. Vilém Zouhar and Tom Kocmi. 2026. Pearmut: Human evaluation of translation made trivial. Maike Züfle, Danni Liu, Vilém Zouhar, and Jan Niehues. 2026. Why we need speech to evalu-ate speech translation. A Human Case Study of the Meaning Preservation of Disfluencies 
+
+Figure 7: Instructions to the annotators to identify the meaning of disfluencies using the Pearmut platform (Zouhar and Kocmi, 2026). The same example was seen by different annotators using the source speech, the fluent tran-script, and the disfluent transcript. Audio Disfluent Fluent                       
+
+> 2.0
+> 2.2
+> 2.4
+> 2.6
+> 2.8
+> 3.0
+> intensity (1 5)
+> anger (n=506, =+0.34)
+> Audio Disfluent Fluent
+> fear (n=544, =+0.30)
+> Audio Disfluent Fluent
+> sadness (n=657, =+0.24)
+> Audio Disfluent Fluent
+> surprise (n=288, =+0.19)
+> Audio Disfluent Fluent
+> 2.0
+> 2.2
+> 2.4
+> 2.6
+> 2.8
+> 3.0
+> intensity (1 5)
+> anticipation (n=558, =+0.13)
+> Audio Disfluent Fluent
+> trust (n=782, =+0.10)
+> Audio Disfluent Fluent
+> joy (n=545, =+0.07)
+> Audio Disfluent Fluent
+> disgust (n=402, =-0.10)
+
+Figure 8: Mean intensity ratings per NRC emotion across the three conditions (Audio, Disfluent, Fluent), with 95% confidence intervals. Each panel reports the total number of labels in that category ( n) and the overall shift 
+
+∆F−A = Fluent − Audio .utt. neg-share A/D/F Disfluent transcript Fluent transcript 36 23/60/94% It would, it would be pirated and they wouldn’t bother to check that carefully anyway to someone who’s offering, you know, full cash price, for it. it would be pirated and they wouldn’t bother to check that carefully anyway to someone who’s offering full cash price, for it. 
+
+33 14/80/83% Um, the, the other side of that might be if, if someone found out something or sur-mised something that weren’t true then I would feel probably more invaded in the gossipy sort of sense. the other side of that might be if someone found out something or surmised some-thing that weren’t true then I would feel probably more invaded in the gossipy sort of sense. 
+
+79 15/62/83% Yeah, they’re, they’re still around, they’ve got a ne-, new C D out, but I, I wouldn’t buy it. Because see, what happens is, the old, see whe-, I like, I like the old Rolling Stones. I don’t like the new stuff. they’re still around, they’ve got a new C D out, but I wouldn’t buy it. Because, what happens is, the old, whe-, I like the old Rolling Stones. I don’t like the new stuff. 
+
+70 7/7/75% Well, I don’t know, um, I, uh, have attended some seminars that had some tapes that went with them, but, uh, I guess not so much books although they some-times have manuals and things, but, uh, they would be things on like how to be successful and sort of talking to yourself. You know ge-, getting your, yourself in gear to, uh, sort of pull yourself up by your boot straps and do what you really want to do. Convincing you that you need to get on with it. I don’t know, I, have attended some semi-nars that had some tapes that went with them, but, not so much books although they sometimes have manuals and things, but, they would be things on how to be successful and sort of talking to yourself getting yourself in gear to, sort of pull yourself up by your boot straps and do what you really want to do. Convincing you that you need to get on with it. 
+
+37 33/73/100% I mean, you know, you can’t tell it, what a company really has to do with it and there’s something rather ominous about having virtually anyone, any hacker be-ing able to know what your income is, what your spending habits are, and, you know, and, and that hacker just has to get in to, in touch with the sneak thief and suddenly and then what started as an in-vasion of privacy can be an invasion of your actual home. you can’t tell it, what a company re-ally has to do with it and there’s some-thing rather ominous about having vir-tually anyone, any hacker being able to know what your income is, what your spending habits are, and that hacker just has to get in touch with the sneak thief and suddenly what started as an invasion of privacy can be an invasion of your ac-tual home. 
+
+Table 3: Utterances with the largest cross-condition swings in negative-label share (Audio / Disfluent / Fluent). Removing disfluencies replaces contemplative labels with hostile or distressed ones. B UH-M AZING Benchmark Details DE FR ES CS IT HI AR ZH       
+
+> target language
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> mean expert  Prolific cosine
+> =+0.03 =+0.04 =+0.05 =+0.07 =+0.07 =+0.19
+> =+0.20
+> =+0.20
+> Latin script non-Latin script
+> embedder
+> text-embedding-3-small
+> text-embedding-3-large
+> text-embedding-ada-002
+
+Figure 9: Mean expert ↔Prolific cosine similarity per target language under three OpenAI embed-ders ( text-embedding-3-small , -3-large ,and -ada-002 ). The Latin- vs. non-Latin-script gap shrinks and eventually inverts as the embedder changes, indicating that part of the apparent non-Latin disagreement is embedder representational asymmetry rather than translator disagreement. 
+
+∆ above each language shows the per-language change from text-embedding-3-small to 
+
+text-embedding-ada-002 .
+
+Lang Utt. length Disfl. length # Disfl. 
+
+AR 56.3 2.7 452 CS 63.8 2.8 440 DE 70.3 3.6 428 EN 64.9 3.0 457 ES 68.6 3.1 452 FR 73.7 3.0 482 HI 76.2 3.2 459 IT 66.7 2.8 443 ZH 98.3 3.8 452 Table 4: Average utterance length and disfluency length in words separated by whitespace, and to-tal number of disfluencies (contiguous disfluency-marked spans: a single filler word and a 5-word false start each count as one), per language. Chinese lengths use jieba word-segmentations. Round 1 Instructions: Translation 
+
+Background: This study is conducted for research purposes. Data will be collected and analyzed as described in our Privacy Policy, linked here [link]. Participation is voluntary, and you may exit the study at any time without penalty. By continuing, you confirm that you have reviewed the Privacy Policy and consent to take part in this study. 
+
+Task: In this task, you will act as a translator. You will be given short text passages written in a disfluent or non-standard form (e.g., grammatical errors, informal phrasing, incomplete sentences) and asked to translate them into the target language specified. Translate only the text provided. Do not correct, rewrite, or add information beyond what is present in the original text unless explicitly instructed. Preserve the meaning as accurately as possible, even when the source text is unclear or awkward. The ID inside the square brackets (e.g., [sw02005_A_55] ) at the beginning of each translation can be ignored — this is an internal identifier to be used by the researchers later. Work independently on each text. Spend no more than 5 minutes per item. 
+
+For each item: 
+
+1. Provide your best possible translation into the target language. 2. If a portion of the text is unclear, ambiguous, or impossible to translate directly, translate it as faithfully as you can without guessing missing content. 3. Use underscores (e.g., _uh_ ) to mark disfluent tokens in the translated speech. 
+
+Round 2 Instructions: Disfluency Highlighting 
+
+Background: These are transcripts of real spoken English conversations. Spoken language contains disfluen-cies — the repetitions, fillers, and false starts that naturally occur when people speak. For example: "I mean, I — I think that, you know, we should..." The highlighted words ( I mean , I, you know ) are disfluent — they add no meaning and are artefacts of speaking. 
+
+What you’ll see: Each screen shows one utterance: the English source on top, with disfluent tokens already highlighted in yellow, and a Spanish translation below it. 
+
+Your task 
+
+• Look at the highlighted English words — these are the disfluencies. • Find their equivalents in the Spanish translation and make sure they are highlighted too. • Click a plain word to highlight it as disfluent. • Click a highlighted word to remove the highlight if it shouldn’t be there. • If the translation text is missing words, mistranslated, or otherwise wrong, click Edit text to fix it — then re-check the highlights. • When the highlights in the translation match the English, click Save & Next .
+
+What counts as disfluent: We have already identified the disfluencies in the English using a formal linguistic definition — you don’t need to judge whether something is disfluent. Your only job is to find the equivalent words in the translation and make sure they are highlighted. Whatever is highlighted in English should have a corresponding highlight in the translation. 
+
+Figure 10: Instructions given to annotators for the creation of U H-MAZING . In round 1, annotators translated disfluent English source text into Spanish, marking disfluent tokens with underscores. In round 2, annotators verified and corrected disfluency highlights in the translations. C Speech Translation Model Details 
+
+Standard: “Listen to the following audio and translate the speech into {target_language} text.” 
+
+Disfluency-aware: “Listen to the following audio and translate the speech into {target_language} text, keeping any disfluencies (such as ‘um’, ‘uh’, repetitions, and hesitations) in the translation.” For text-input models, “Listen to the following audio” is replaced with “Translate the transcribed speech.” 
+
+We have a speech audio and its translation. The speech audio contains disfluencies, such as “uh,” “um,” repeated words, self-corrections, etc. Your task is to evaluate both: • How well the disfluencies are preserved in the translation • How natural these disfluencies sound in the target language Specifically, you will rate the overall quality of each translation in two aspects on a 0–100 scale, using sliders: • Style Preservation: How well are disfluencies preserved (presence, type, placement, spoken feel)? • Meaning Preservation: How accurately and completely is the source meaning preserved? Rate each from 0% (poor) to 100% (excellent). Here is a reference for the translation: {reference} 
+
+Return your evaluation in the following JSON format: 
+
+{"translation_{1-4}": {"style_preservation": <0-100>, "meaning_preservation": <0-100> }}
+
+Translation 1-4: {translation_1_text} 
+
+Figure 11: Top: Translation prompts for cascaded models, SpeechLLMs, and commercial models. The high-lighted clause is added only in the disfluency-aware variant. Bottom: LLM-as-a-judge prompt for disfluency-aware translation evaluation. The highlighted line is omitted in the reference-free version. 
+
+Figure 12: Annotation guidelines for marking and categorising error spans and general judgments of translation quality, in the Pearmut system (Zouhar and Kocmi, 2026). D Results 
+
+Category Model Prompt AR CS DE ES FR HI IT ZH 
+
+EN → X Translations 
+
+Cascaded LLAMA Canary ASR 
+
+Std. 22.16 38.37 49.30 52.53 52.12 35.91 50.06 13.42 Disfl. 18.96 31.67 42.07 53.20 53.12 35.98 50.21 13.10 LLAMA Whisper ASR 
+
+Std. 30.02 37.96 48.19 51.78 51.69 38.99 49.11 13.59 Disfl. 18.36 39.79 49.33 46.99 52.54 35.15 45.04 12.84 LLAMA Human transcript 
+
+Std. 16.64 43.97 56.30 61.40 59.29 33.25 59.11 17.07 Disfl. 14.49 37.60 39.00 49.21 57.13 38.43 47.78 14.72 TOWER Canary ASR 
+
+Std. 22.87 44.43 53.86 54.40 55.67 52.24 53.21 21.13 Disfl. 21.66 45.91 54.33 55.14 56.97 50.15 55.20 20.26 TOWER Whisper ASR 
+
+Std. 23.42 43.90 51.76 53.40 53.03 51.93 51.87 20.68 Disfl. 20.36 44.20 52.48 53.79 55.09 51.00 52.57 19.70 TOWER Human transcript 
+
+Std. 22.39 52.90 61.34 64.05 63.65 61.43 62.93 25.89 Disfl. 19.37 53.88 62.23 64.67 66.17 59.82 58.42 25.92 End-to-end OWSM N/A 26.47 27.38 47.76 43.02 43.17 – 40.93 15.37 CANARY N/A – 43.89 52.13 51.65 54.30 – 52.80 –SpeechLLM PHI -4-MM-INSTRUCT Std. 5.73 8.01 45.79 46.03 27.12 3.56 49.58 14.28 Disfl. 0.71 13.52 20.84 27.21 20.44 1.42 37.79 8.97 QWEN 2.5-O MNI Std. 17.32 10.61 20.90 18.02 18.27 11.78 21.28 12.65 Disfl. 17.68 15.06 33.04 28.29 24.48 12.38 27.11 15.74 Commercial GEMINI Human transcript 
+
+Std. 38.00 46.18 52.62 52.51 53.44 47.18 53.60 19.87 Disfl. 39.52 50.39 57.10 57.75 59.94 50.55 60.02 22.80 CHAT GPT Human transcript 
+
+Std. 41.74 45.82 53.97 53.35 54.15 46.22 53.45 19.65 Disfl. 36.93 51.94 58.08 58.96 60.63 49.72 58.71 22.73 GEMINI ASR transcript 
+
+Std. 40.51 53.27 60.91 60.46 62.95 54.30 61.91 23.79 Disfl. 42.25 58.74 65.99 66.23 69.96 61.48 68.31 30.67 
+
+CHAT GPT ASR transcript 
+
+Std. 44.97 54.19 62.28 60.92 62.12 56.17 60.34 26.42 Disfl. 41.12 56.14 61.95 61.98 63.27 55.07 61.97 29.73 GEMINI Audio 
+
+Std. 37.15 48.97 55.24 58.54 56.83 15.90 57.60 7.13 Disfl. 41.62 52.66 62.11 62.29 62.79 54.51 62.86 25.05 CHAT GPT Audio 
+
+Std. 10.04 17.42 14.61 17.24 15.36 5.66 17.24 3.41 Disfl. 8.13 19.06 18.83 24.32 20.84 15.15 19.48 5.63 
+
+X → EN Translations 
+
+Cascaded LLAMA Human transcript Std. 52.89 62.62 63.21 66.02 65.16 49.75 66.29 53.90 TOWER Human transcript Std. 59.86 68.97 68.15 69.45 69.51 70.49 70.62 56.11 Commercial CHAT GPT Human transcript Std. 65.41 66.29 69.02 76.33 74.45 70.73 74.10 54.79 GEMINI Human transcript Std. 67.53 68.13 69.14 78.26 77.04 73.46 76.51 57.36 
+
+Table 5: chrF scores across models, prompts, and target languages for English →X and X →English translation. Std. = standard prompt; Disfl. = disfluency-aware prompt. Category Model Prompt AR CS DE ES FR HI IT ZH 
+
+EN → X Translations 
+
+Cascaded LLAMA Canary ASR 
+
+Std. 58.11 64.96 66.78 70.30 72.02 67.40 70.83 66.22 Disfl. 57.29 63.55 65.57 68.11 70.38 65.45 68.19 64.04 LLAMA Whisper ASR 
+
+Std. 59.46 64.22 65.40 70.16 71.33 67.18 71.04 65.92 Disfl. 55.64 63.55 64.23 68.59 69.32 66.62 68.09 62.03 LLAMA Human transcript 
+
+Std. 58.45 65.45 69.09 72.33 73.23 67.60 71.89 67.88 Disfl. 54.45 63.17 64.45 67.66 71.22 67.86 69.28 63.98 TOWER Canary ASR 
+
+Std. 54.16 72.48 71.25 73.41 74.59 73.94 74.47 71.24 Disfl. 49.45 71.34 69.53 72.97 73.47 73.11 73.82 70.78 TOWER Whisper ASR 
+
+Std. 52.74 70.91 69.89 72.75 73.99 73.19 73.45 71.05 Disfl. 49.07 70.53 69.48 72.71 72.75 73.30 72.62 70.92 TOWER Human transcript 
+
+Std. 51.85 74.63 74.25 75.73 77.54 75.22 77.56 72.96 Disfl. 50.30 73.64 73.52 74.73 76.68 75.02 74.71 72.79 End-to-end OWSM N/A 40.97 30.89 49.48 50.40 47.71 – 47.19 56.03 CANARY N/A – 70.80 68.26 71.91 73.77 – 72.35 –SpeechLLM PHI -4-MM-INSTRUCT Std. 37.96 33.13 67.62 68.65 63.45 51.83 68.83 66.15 Disfl. 18.63 18.72 28.66 38.37 23.09 21.54 49.98 47.22 QWEN 2.5-O MNI Std. 41.14 29.15 38.80 39.09 38.31 36.24 38.48 57.45 Disfl. 46.07 31.78 49.54 50.42 45.01 35.60 46.80 63.88 Commercial GEMINI Human transcript 
+
+Std. 70.45 73.29 71.83 74.19 75.28 75.01 74.58 72.04 Disfl. 68.82 71.99 70.49 72.08 74.04 73.90 73.65 72.00 CHAT GPT Human transcript 
+
+Std. 72.20 75.32 73.15 75.57 76.86 76.48 76.56 74.52 Disfl. 67.96 72.25 71.43 72.62 74.80 74.52 73.33 72.95 GEMINI ASR transcript 
+
+Std. 71.96 76.67 74.38 76.33 78.55 78.22 76.87 75.15 Disfl. 68.52 71.32 71.63 72.12 74.67 74.31 73.83 72.33 CHAT GPT ASR transcript 
+
+Std. 74.16 78.32 76.44 78.08 79.21 78.81 78.59 76.69 
+
+Disfl. 67.73 69.33 69.71 68.43 70.87 73.65 69.64 72.13 GEMINI Audio 
+
+Std. 64.43 66.79 66.11 69.75 72.15 70.50 69.82 64.87 Disfl. 62.61 63.40 65.57 66.00 68.36 70.15 67.12 66.90 CHAT GPT Audio 
+
+Std. 35.49 31.43 25.75 27.65 25.26 30.64 27.71 34.93 Disfl. 29.04 32.72 28.87 32.38 32.67 36.99 27.86 36.73 
+
+X → EN Translations 
+
+Cascaded LLAMA Human transcript Std. 64.76 66.84 69.14 69.47 72.01 71.12 72.39 69.56 TOWER Human transcript Std. 67.23 69.14 69.88 72.14 72.87 76.60 73.30 70.36 Commercial CHAT GPT Human transcript Std. 73.91 76.22 75.33 77.50 76.76 79.01 77.83 73.75 
+
+GEMINI Human transcript Std. 73.66 74.07 72.45 75.32 74.66 78.82 75.57 73.75 
+
+Table 6: COMET-Kiwi scores across models, prompts, and target languages for English →X and X →English translation. Std. = standard prompt; Disfl. = disfluency-aware prompt. 
+
+WER (%) E-Score Z-Score Model Prompt Disfl. ref Fluent ref P R F1 EDITED INTJ PRN 
+
+WHISPER - 20.31 22.27 68.69 67.47 64.91 86.22 71.20 32.33 CANARY - 15.69 24.99 64.33 55.03 54.53 68.02 63.99 26.43 CHAT GPT Std. 31.68 24.12 61.25 82.63 65.61 91.61 80.12 68.83 CHAT GPT Disfl. 22.93 22.01 64.44 67.42 63.00 88.44 70.46 36.28 GEMINI Std. 21.19 47.84 42.34 17.98 27.85 27.74 18.39 5.80 GEMINI Disfl. 22.35 51.36 42.97 16.45 28.73 26.56 16.11 4.39 
+
+Table 7: Automatic speech recognition (ASR) results: word error rate (WER) against disfluent and fluent refer-ences, and disfluency retention (E-Score, Z-Score) for EDITED, INTJ, and PRN node types. Model Prompt AR CS DE ES FR HI IT ZH 
+
+Meaning 
+
+TOWER Human transcript Std. 47.19 83.69 83.48 85.43 85.28 82.79 84.58 81.01 CANARY Std. – 80.06 74.95 78.61 78.42 – 76.58 –PHI -4-MM-INSTRUCT Std. 53.08 49.99 72.67 75.38 63.68 63.12 71.96 68.06 GEMINI Audio Std. 78.94 81.66 78.96 82.03 82.49 81.04 80.73 76.44 
+
+Style 
+
+TOWER Human transcript Std. 43.19 70.68 73.21 78.45 76.58 77.81 77.29 72.63 CANARY Std. – 37.31 41.83 39.51 43.26 – 42.41 –PHI -4-MM-INSTRUCT Std. 45.12 52.50 61.08 63.45 55.43 56.30 62.30 53.89 GEMINI Audio Std. 56.64 71.91 71.61 71.75 75.75 54.43 72.13 65.50 
+
+Table 8: LLM-judge Meaning and Style Preservation scores by system and language. 
+
+Metric Ref? Human Axis AR CS DE ES FR HI IT ZH 
+
+Segment-Corr 
+
+LLM-judge Style 
+
+×
+
+Style 33.4 -4.5 37.9 51.4 45.7 43.6 44.7 46.0 LLM-judge Meaning Meaning 56.6 0.1 29.3 32.3 39.7 36.9 30.4 48.0 LLM-judge Overall Overall 47.1 -1.5 38.8 52.4 48.1 47.2 44.7 59.8 LLM-judge Style 
+
+✓
+
+Style 38.1 0.8 38.7 53.2 44.1 53.7 49.5 45.4 LLM-judge Meaning Meaning 60.5 5.4 38.3 44.7 39.7 53.2 32.8 51.5 
+
+LLM-judge Overall Overall 49.4 3.4 43.0 55.0 45.4 63.4 52.6 62.6 
+
+chrF ✓
+
+Style 45.8 8.6 38.9 38.9 37.6 52.2 37.5 46.1 
+
+Meaning 53.9 9.0 28.4 36.0 26.8 56.9 22.0 43.5 Overall 51.2 10.6 36.4 40.9 34.4 55.9 30.4 49.1 COMET-Kiwi ×
+
+Style 40.4 9.0 31.2 7.9 22.2 45.5 23.5 35.4 Meaning 47.5 8.4 32.2 18.7 28.9 48.2 37.5 45.7 Overall 47.2 11.0 32.6 12.2 26.3 44.8 31.2 42.0 
+
+System-Corr 
+
+LLM-judge Style 
+
+×
+
+Style 92.0 61.5 93.0 99.4 80.8 77.1 99.5 90.8 LLM-judge Meaning Meaning 70.9 68.8 97.5 93.5 99.2 96.5 99.4 95.8 LLM-judge Overall Overall 78.1 72.2 95.8 99.9 93.6 99.8 93.9 94.8 LLM-judge Style 
+
+✓
+
+Style 99.4 68.8 96.7 99.4 86.5 98.8 99.8 91.0 LLM-judge Meaning Meaning 74.0 67.2 92.0 96.2 99.2 99.9 97.4 96.1 LLM-judge Overall Overall 84.1 75.3 96.0 99.9 96.6 100.0 93.9 94.8 chrF ✓
+
+Style 85.2 84.4 91.3 99.0 96.4 100.0 97.1 91.1 
+
+Meaning 98.1 68.0 74.4 90.2 99.1 99.9 81.0 96.3 
+
+Overall 94.0 75.8 87.6 99.5 99.8 100.0 91.2 95.0 
+
+COMET-Kiwi ×
+
+Style 85.2 85.4 62.7 63.3 81.2 100.0 63.0 84.5 Meaning 98.1 83.1 71.9 73.3 85.3 99.9 79.1 79.3 Overall 94.0 87.1 64.1 63.9 84.7 100.0 68.9 80.7 
+
+Table 9: Correlation (%) between human Style/Meaning/Overall judgments and automatic metrics, averaged over the eight languages and four systems in the human evaluation. Segment-level: mean Kendall’s τ (within-item, across systems). System-level: soft pairwise accuracy (SPA).
