@@ -1,0 +1,371 @@
+Title: Efficient Audio Enhancement with a Differentiable Psychoacoustic Loss
+
+URL Source: https://arxiv.org/pdf/2608.02918v1
+
+Published Time: Wed, 05 Aug 2026 00:21:48 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+> AUTHOR’S ACCEPTED MANUSCRIPT — PUBLISHED IN JOURNAL OF THE AUDIO ENGINEERING SOCIETY 1
+
+# Efficient Audio Enhancement with a Differentiable Psychoacoustic Loss 
+
+Wallace Abreu, Bernardo V. Miranda, and Luiz W. P. Biscainho 
+
+Abstract —Audio enhancement consists of improving the per-ceived quality of audio signals. Initially, with the aim of address-ing bandwidth extension, this work proposes AEROMamba P,an efficient variant of the AERO super-resolution architecture where attention and LSTM layers are replaced by the Mamba state-space model, and which incorporates a newly developed differentiable perceptual loss derived from the Perceptual Audio Quality Measure (PAQM). During training, the architecture requires approximately 2–4x less GPU memory than the baseline; during inference, it achieves a 14x speedup while using only one-fifth of the GPU memory. When upsampling both a piano dataset and MUSDB18 from 11.025 kHz to 44.1 kHz, subjective listening tests show that AEROMamba P outperforms AERO by 15% in perceived quality scores. Next, to handle the enhancement of audio signals that have been highly compressed by lossy coding, it is further proposed AEROMamba P¯S, which applies the same framework but replaces STFT reconstruction losses with the PAQM loss, specifically to enhance MP3 encoded audio at 32 kbps. In listening evaluations, AEROMamba P¯S achieves 52% higher quality rating than AEROMamba P when restoring compressed audio. These results demonstrate that PAQM-driven training coupled with lightweight state-space modeling yields high perceptual quality and computational efficiency in both band-limited and compressed audio scenarios. 
+
+Index Terms —Audio enhancement, Psychoacoustic loss, Mamba state-space model, PAQM, Bandwidth extension. 
+
+I. INTRODUCTION Since the development of sound recording devices in the 19th century [1], audio signals have been dealt with in a multitude of applications, especially in communications and entertainment sectors. Technology in these fields has evolved to meet the main requirements of each specific application, which can be different due to their own concept of quality. For example, in speech systems, such as telephony, providing intelligibility is the main goal, whereas the target in general audio devices is fidelity [2]. The frequency span of human hearing extends approxi-mately from 20 Hz to 20 kHz [3] (for tones), requiring that high-fidelity systems of audio recording, reproduction, and their storage media operate at least in that frequency range. However, especially for analog audio, factors such as limitations in technology or degradation of physical media can affect the preservation of full-range spectrum [4]. In digital audio, transmission and storage costs can be reduced through data compression, for which the simplest so-lution is direct sample discarding (decimation). This procedure 
+
+W. Abreu, B. V. Miranda, and L. W. P. Biscainho are with SMT, DEL/Poli & PEE/COPPE, Federal University of Rio de Janeiro, Brazil (corresponding e-mail: wallace.abreu@smt.ufrj.br). B. V. Miranda is also with LCTI, T´ el´ ecom Paris, IP Paris, France. Author’s Accepted Manuscript (AAM). Published in the Journal of the Audio Engineering Society (JAES). DOI: 10.17743/jaes.2022.0277 
+
+requires prior low-pass filtering to prevent aliasing, directly reducing the maximum frequency present in the resulting signal. If a high downsampling factor is used, even midrange frequencies (the most important ones) can be cut. Another common method to reduce storage requirements for digital audio is to use lossy perceptual audio coding [5] algorithms, such as MP3 [6]. In this case, the overall frequency content is quantized according to a psychoacoustic model for minimum perceptual degradation. This procedure has a more significant impact at high frequencies, even limiting bandwidth if the target bitrate requires it, but low frequencies can also be considerably affected. Solutions based on classical signal processing that address these degradations within certain limits have been developed and made available in the literature. An extensive study of audio (including music and speech) bandwidth extension (BWE) targeting different applications can be found in [7], encompassing nonlinear transformations and linear filtering. In particular, spectral band replication (SBR) [8] has been shown to enable compressed signal reconstruction with extended bandwidth at decoding. A comprehensive study on BWE in the context of speech telephony is provided in [9], emphasizing solutions using source-filter modeling. In this context, [10] explores psychoacoustic criteria for improved naturalness. However, in the case of audio encoded (lossily) at very low bit rates, undoing the nonlinear distortions that have been imposed on the signal content according to perceptual criteria involves a coherent reconstruction of the entire spectrum. And the “intelligent” decisions needed to approach this task exceed the capabilities of traditional signal processing. As a note, the term super-resolution is often related to audio BWE [11], [12], [13], and this work follows the same terminology. In turn, the process of inverting lossy coding is referred to here as encoded audio enhancement .Techniques based on neural networks (NNs) became the state of the art in audio super-resolution, operating on raw waveforms [14] or in the spectral domain [11], [15], [16]. Initially, these models used feedforward architectures with standard supervised learning strategies, but subsequently evolved into solutions built as a combination of modules, such as convolutional and recurrent networks, and following different paradigms, such as generative adversarial networks (GANs) [11], [17] or diffusion models [12]. In [11], the authors introduce AERO, an encoder-decoder NN implemented within a GAN framework, designed for 4-fold upsampling of music and speech signals having particular initial sampling frequencies. AERO showcases the impor-tance of adversarial training for natural-sounding BWE and achieves higher scores than later methods such as the zero-shot arXiv:2608.02918v1 [eess.AS] 3 Aug 2026 AUTHOR’S ACCEPTED MANUSCRIPT — PUBLISHED IN JOURNAL OF THE AUDIO ENGINEERING SOCIETY 2
+
+diffusion-based network BABE [18] in BWE tasks. However, AERO is computationally demanding, both in training and inference, mainly because of its use of recurrent and attention layers. These issues are alleviated in AEROMamba [19], where the mentioned layers are replaced by the state-space model Mamba [20], yielding better performance without de-grading the perceptual quality in music enhancement. Another noteworthy deep learning model for BWE is Au-dioSR [12], which, unlike AERO, is capable of enhancing signals with any initial sampling frequency up to the sampling rate of 48kHz. The authors demonstrate the capability of diffusion models to enhance audio signals of different natures, such as music, speech, and sound effects, to a very high quality. As a diffusion model, AudioSR has a slow inference procedure as a significant drawback, and is unsuitable for real-time applications. Finally, the (recent) Apollo [17] model is also an important contribution in the field of audio enhancement. This model employs RoFormers [21] and Temporal Convolutional Net-works (TCNs) [22] to generate features in time for different frequency sub-bands. These features are used to restore signals compressed by MP3 at 32 and 48 kbps. As AERO, Apollo includes attention modules that increase its computational cost considerably. This is illustrated by the use of eight NVIDIA RTX 4090 GPUs for its training. AERO, AudioSR, and Apollo are included here as state-of-the-art models for music enhancement. However, their performances are not compared (which, incidentally, is also not done in their respective publications). This paper introduces AEROMamba P, a first-of-its-kind audio super-resolution network, to the best of the author’s knowledge, that includes a model-based perceptual quality evaluation in its loss function, namely the Perceptual Audio Quality Measure (PAQM) [23]. This novelty is enabled by the development of a differentiable implementation of PAQM that is appropriate as a training loss for deep learning models. The proposed model is evaluated using objective measures as well as subjective listening tests in two different appli-cations. The first experiment concerns super-resolution of bandlimited audio: the performance of AEROMamba P is com-pared to AERO and AEROMamba when upsampling test sig-nals from 11.025 kHz to 44.1 kHz, also including a pre-trained AudioSR model in the objective evaluation. The second exper-iment deals with the enhancement of highly compressed audio, comparing the effectiveness of AEROMamba, AEROMamba P,and AEROMamba P¯S (a variation of the latter) in undoing the losses caused by MP3 audio encoding at 32 kbps (which also reduces the bandwidth to 11.025 kHz). The tests were based on music signals from two databases: PianoEval (homemade) and MUSDB. To ensure reproducibility and allow perceptual examination, a public repository and a webpage 1 accompany this work, containing the source code, model checkpoints, and audio examples, as well as supplementary materials for the conducted experiments. The paper is organized as follows. Section 1 presents the AERO NN architecture. Section 2 introduces deep state 
+
+> 1aeromamba-paqm.github.io
+
+space models, focusing on the Mamba architecture. Section 3 outlines the PAQM. Section 4 details the proposed mod-els (AEROMamba and its variants). Section 5 describes the datasets used in the experiments. Section 6 discusses the eval-uation methodologies. Sections 7 and 8 present experimental setup and results for super-resolution of bandwidth-reduced and enhancement of highly compressed audio, respectively. Finally, Section 9 concludes the paper. II. AERO 
+
+A. Architecture 
+
+AERO [11] is an audio super-resolution model inspired by Demucs [24], a NN architecture for music source separa-tion. Given a signal y ∈ RT and its downsampled version 
+
+xl ∈ RT /s , where T is the original signal length and s is a fixed integer downsampling factor, AERO aims to generate 
+
+ˆy ≈ y, reconstructing the lost high-frequency content of xl.For speech signals, Mandel et al. [11] trained / tested the model on VCTK [25] in various settings. For music, they used MUSDB [26] in the 11 .025 → 44 .1 kHz setting. As shown in Figure 1, the AERO architecture is composed of a generator based on a U-Net and a multi-scale discrim-inator. In the generator (left-hand side), the input audio xl,with T /s samples, is transformed to a complex spectrogram 
+
+Xl with F frequency bins using a window size W = F/s 
+
+and hop length H/s , where s is a downsampling factor. The window is zero-padded to ensure F bins as W < F . The NN processes the low-resolution spectrogram Xl, yielding a high-resolution spectrogram ˆY to match Xl, filling high-frequency content. The network treats the real and imaginary components of the spectrogram as separate channels, thus jointly estimating the magnitude and phase. An inverse STFT with F FFT points, window size sW , and hop size H then reconstructs the signal ˆy. During training, the generated and target signals are fed into multi-scale discriminators (MSD) [27] trained with time-domain adversarial losses, feature losses, and spectral reconstruction losses. Fundamentally, AERO maps a zero-
+
+Fig. 1: AERO architecture. AUTHOR’S ACCEPTED MANUSCRIPT — PUBLISHED IN JOURNAL OF THE AUDIO ENGINEERING SOCIETY 3
+
+Fig. 2: AERO encoder layer. padded spectrogram to a high-resolution spectrogram via a NN transformation that is similar to interpolation in the frequency axis, with both the input and output having the same shapes. This procedure contrasts to other common methods, such as resampling prior to a spectral content fill [28], or generating a separated high-frequency spectrum that is concatenated with the low-frequency spectrogram [29] — a strategy that often creates artifacts at the frontier of the union. The AERO U-Net encoder is shown in Figure 2. In the first stages of the encoder, the complex-by-channels spectrum of the input signal is modified through 1D convolutions in frequency followed by a Frequency Transformer Block (FTB) [30], essentially an attention layer that helps detect non-local correlations in the frequency axis. This allows the network to have a larger receptive field over the frequency axis thanks to the attention mechanism (in a fully convolutional architecture, the receptive field from relatively small kernels should cover the whole spectrum). Its output is processed by a 1D convolutional layer followed by a GELU [31] non-linearity. The core of the encoder is made of two identical residual blocks composed of layer normalization (LN), Conv1D, BiL-STM (Bidirectional Long Short-Term Memory layer), local attention and GLU [32]. They are preceded by 1D convo-lutional layers followed by LN and a Snake [33] activation function. LN reduces training time through recentering and rescaling of the input data [34], and Snake has been shown to be effective for periodic data [33]. A distinction between AERO and Demucs lies in their choice of activation functions: AERO employs GLU and Snake, while Demucs uses only the first. A layer scale (LS) [35] operation follows each residual block to enhance model accuracy and convergence by rescaling residual layer outputs with learnable parameters. Intuitively, the encoder architecture tries to capture local spectral patterns through 1D convolutions. However, as fre-quency components can be influenced by bins outside of their close neighborhood, FTB and BiLSTMs are essential to include long-range memory and identify spaced features in the time and frequency dimensions. The AERO decoder is symmetrical to the encoder and shares skip connections with the encoder layers. AERO employs a MelGAN [27] multi-scale discriminator for adversarial train-ing: an ensemble of three independent discriminators, each of them a set of strided convolutional layers operating directly on the waveform. The strided convolutions act as downsamplers and allow the discriminators to focus on patterns in different spectral regions. 
+
+B. Training 
+
+The training objective for the discriminator is the Mel-GAN [27] hinge loss 
+
+LD = Ey
+
+"
+
+1
+
+R
+
+X
+
+> r
+
+max (0 , 1 − D r (y)) 
+
+#
+
+(1) 
+
++ Eˆy
+
+"
+
+1
+
+R
+
+X
+
+> r
+
+max (0 , 1 + Dr ( ˆ y)) 
+
+#
+
+, (2) where r indexes each of the R discriminator resolutions. For the generator, the training cost function has three components: a multi-resolution STFT reconstruction loss Lrec , an adversar-ial loss Ladv , and a feature map loss Lfmap .The multi-resolution reconstruction loss 
+
+Lrec = Ey, ˆy
+
+"
+
+1
+
+NwNwX
+
+> w=1
+
+
+
+L(w)sc + L(w)mag 
+
+#
+
+(3) is the expected value, considering true and generated samples, of the average sum of the spectral convergence loss 
+
+L(w)sc = ∥| Y (w)| − | ˆY (w)|∥ F
+
+∥| Y (w)|∥ F
+
+, (4) where || · || F is the Frobenius norm, and the log magnitude loss 
+
+L(w)mag = 1
+
+Nw
+
+∥ log |Y (w)| − log | ˆY (w)|∥ , (5) both computed for a specific window size w, over all Nw
+
+window sizes w. The adversarial generator loss 
+
+Ladv = Eˆy
+
+"
+
+1
+
+R
+
+X
+
+> r
+
+max (0 , 1 − D r ( ˆ y)) 
+
+#
+
+(6) is a standard GAN generator loss. And the feature map loss 
+
+Lfmap = Eˆy
+
+ 1
+
+RL 
+
+X
+
+> r,l
+
+1
+
+Tr,l 
+
+X
+
+> t
+
+D(l)
+
+> r,t
+
+(y) − D (l)
+
+> r,t
+
+( ˆ y)
+
+ , (7) where L is the number of layers of the discriminators, D(l) 
+
+> r,t
+
+is the t-th output of the discriminator r at layer l, and Tr,l denotes the length of the layer in the time dimension, is inspired by [28]. It compares the feature maps of the layers of the discriminators for true and generated samples. The expression for the total generator loss is 
+
+LG = Ladv + Lrec + λL fmap , (8) AUTHOR’S ACCEPTED MANUSCRIPT — PUBLISHED IN JOURNAL OF THE AUDIO ENGINEERING SOCIETY 4
+
+where λ is a scaling factor. Note that the reconstruction cost operates only on the magnitude spectrogram, but the adversarial and feature costs also penalize phase mismatches, as they act on the true and estimated waveforms. III. MAMBA 
+
+A. Motivation 
+
+Despite the remarkable success of Transformers [36] in modeling sequential data, their self-attention mechanism suf-fers from an intrinsic limitation: the context length is finite and often fixed by design. This restricts the ability of the model to capture dependencies across arbitrarily long sequences since the memory of the model is bounded by the size of the attention window. Additionally, the quadratic computational and memory cost of the attention mechanism with respect to the sequence length makes Transformers inefficient for long or continuous signals [20], such as audio or time series data. In contrast, recurrent neural networks (RNNs) [37] nat-urally process sequences of arbitrary length, maintaining a hidden state that theoretically allows for infinite context. Their recursive formulation provides a memory-efficient way to represent temporal dependencies, making them appealing for sequential data modeling. However, standard RNNs are limited in preserving long-range dependencies (LRD) over extended time horizons, as gradients tend to vanish or explode through time [38]. Moreover, traditional RNNs lack selectivity, missing input-dependent mechanisms to most effectively use past information. In response to the mentioned limitations, various deep state space models (SSMs) have been developed to address each of the specified challenges progressively. These models include the Linear State-Space layer (LSSL) [39], Structured State-Spaces (S4) [40], and Mamba [20]. 
+
+B. Linear state-space layer 
+
+Linear State-Space layers (LSSLs) [39] present a compro-mise between convolutional models, which are efficient yet constrained in context, and RNNs, which provide infinite context but exhibit instability. LSSLs are derived from the state-space representation of linear dynamical systems as seen in control theory. In continuous time, the operation of a linear time-invariant system can be described as 
+
+˙q(t) = Aq (t) + Bx (t), (9) 
+
+y(t) = Cq (t) + Dx (t), (10) where q(t), x(t) and y(t) are respectively the state, input and output vectors, containing the processed signals; and A, B,
+
+C and D are respectively the state, input, output and feed-forward matrices that describe the system. The LSSL uses the discrete-time version of this formalism in a deep learning framework: the matrices A, B and C
+
+become learnable parameters optimized via gradient descent. This provides a differentiable linear dynamical system that models temporal dependencies efficiently. However, since the solution to the system is a function of exponentials of A,LSSLs still suffer from exponential decay or growth, leading to vanishing or exploding gradients in long sequences [40]. Therefore, while LSSLs improve stability and interpretability, they still “forget” distant information. 
+
+C. Structured State-Spaces (S4) 
+
+To mitigate the forgetting problem, S4 [40] introduces a way to choose the state transition matrix A based on high-order polynomial projection operators (HiPPOs). These operators impose a structure on matrix A that improves the model’s ability to retain past information, effectively extending its memory horizon. Intuitively, HiPPOs maintain a compressed summary of all past inputs, enabling the system to approximate functions of the entire input history. Since the theoretical background of S4 is set over contin-uous systems, its implementation requires discretization with some step ∆ (e.g. via bilinear transform) into the form 
+
+q[n] = Aq [n − 1] + Bx [n], (11) 
+
+y[n] = Cq [n], (12) with 
+
+A = ( I − ∆/2 · A)−1(I + ∆ /2 · A), (13) 
+
+B = ( I − ∆/2 · A)−1∆B, (14) 
+
+C = C. (15) S4 further reformulates the recurrence of (11) as a time convolution, enabling parallelization and efficient computation through the Fast Fourier Transform (FFT). This would nor-mally require calculating specific convolution kernels, increas-ing the computational overhead of using these state-spaces. However, a key innovation of S4 is the use of a normal plus low-rank (NPLR) decomposition of A, which alleviates this burden. 
+
+D. Selective State-Spaces (Mamba) 
+
+While S4 captures long-range dependencies efficiently, it remains a linear time-invariant model. This can be a funda-mental limitation in modeling data that comes from nonlinear and time-variant phenomena, where the importance of past information changes dynamically with the context. In contrast to S4, Mamba [20] introduces a parameterization of (∆ , B, C) with respect to x. Although A is not explicitly parameterized, it interacts with the input through the parameter 
+
+∆ of the discretization procedure. This mechanism introduces selectivity: the model learns to focus on relevant inputs while ignoring irrelevant ones, effec-tively emulating the context-dependent weighting of attention mechanisms. Unlike attention, however, Mamba maintains constant-time inference and linear-time training, owing to a hardware-aware implementation that performs all recurrence computations within the GPU’s fast memory (SRAM) using a parallel scan algorithm [20]. This combination of efficiency and selectivity allows Mamba to achieve attention-like mod-eling capacity without the related computational burden. The final product of Selective State-Spaces is the Mamba architecture, shown in Figure 3: a combination of linear projections, a convolutional layer, a residual connection, a AUTHOR’S ACCEPTED MANUSCRIPT — PUBLISHED IN JOURNAL OF THE AUDIO ENGINEERING SOCIETY 5
+
+selective SSM, and SiLU/Swish [41] functions as nonlinear activations. 
+
+Fig. 3: Mamba block architecture. IV. PERCEPTUAL AUDIO QUALITY MEASURE (PAQM) Audio quality measures based on models of human auditory perception correlate better with subjective quality assessment than simple signal-based measures such as signal-to-noise ratio (SNR), and are the standard for audio quality evaluation since the 1990s [42]. The perceptual audio quality measure (PAQM) is one of the first perceptually inspired objective audio quality measures. Introduced in [23] in the context of the evaluation of digital audio codecs, it is based on calculating the difference between the internal — or psychoacoustic — representations of a reference and a test signal, as follows. First, a time-frequency representation of the signal is ob-tained using a short-time Fourier transform (STFT). A pitch-based representation is then obtained by mapping the fre-quency axis of the STFT from hertz to barks. The bark scale models human perception of pitch and is the psychoacoustic equivalent of the frequency scale. After this, the bark spectrogram frames are processed by a linear filter, which models the physical transfer of sound from the outer to the inner ear. The results of this operation are then treated by models for time and frequency masking. Masking is a psychoacoustic phenomenon in which the perception of a sound stimulus closely located to another in time or in frequency is changed due to their proximity. In PAQM, time masking is modeled by an exponential moving average over frames, with a different decay factor for each frequency bin. Frequency masking is modeled with two slopes in the bark scale that represents the mask spread across neighboring bins. The reader is invited to refer to [23] for more details on both masking models. The resulting representations (dubbed excitation patterns in [23]) are then compressed to account for the fact that perceived loudness is a nonlinear function of signal intensity, using a polynomial function with an exponent fitted in [23] for the best correlation with an ISO/MPEG set of subjective audio quality evaluations. After obtaining the internal representations of the reference and test signals, the test signal is separately scaled in the pitch ranges of 0 to 2 barks, 2 to 22 barks, and 22 to 25 barks by the ratio between the total energies of the reference and test signal within that pitch range. This ensures that the total loudness of reference and test are comparable. The scaled test signal is then subtracted from the reference to obtain the raw PAQM score. Using a carefully fitted sigmoid function [43], raw PAQM scores can be mapped to objective mean opinion scores (MOS) which are highly correlated to mean opinion scores obtained through subjective testing. Since PAQM is calculated using only differentiable operations, the correlation of PAQM objective MOS with subjective MOS suggests that it could be used as a loss function for NNs. With this in mind, the authors of this paper created 
+
+torchpaqm 2, a pytorch based implementation of PAQM (as described in [23]) that uses only pytorch vector operations. Conversion from hertz to barks by filter bank was implemented as a matrix multiplication; outer to inner ear transfer was performed for all frames using broadcasting; and frequency masks were calculated with broadcasting for all bins and stacked in a single tensor before using the composite stimulus formula of [23] to obtain the combined excitation pattern. The library also includes a pytorch dataset class and a pre-made collator function that, when used together, allow the user to conveniently calculate PAQM scores for a batch of signals. The advantages of this implementation are two-fold. First, it allows using GPU acceleration to calculate PAQM scores for batches of reference and test signals, which provides significant speed gains and allows scaling up audio quality evaluation. Second, and most importantly, it enables the use of pytorch ’s automatic differentiation engine to obtain the derivatives of the PAQM scores with respect to a set of parameters. This in turn enables incorporating PAQM scores as a perceptual loss for a NN, which can have a particularly positive impact on the performance of super-resolution models, such as AERO. V. AEROMAMBA Despite the state-of-the-art performance of AERO, both its output quality and computational efficiency can be improved. In this direction, the previous NN model AEROMamba [19] was designed to take advantage of Mamba selectiveness as a replacement for the attention mechanism. In AEROMamba, local attention and BiLSTM layers are replaced by Mamba layers and included in all encoder depths. The modified method performs the same tasks using reduced computa-tional resources, as the Mamba architecture exploits the GPU memory hierarchy for optimized computations. The resulting architecture is shown in Figure 4, with the added layer in gray. This paper proposes AEROMamba P, an improved version of AEROMamba that includes a perceptual component in its generator loss. In AERO and AEROMamba, the spectral reconstruction loss Lrec identifies energy distortions without evaluating whether these distortions are perceptually signifi-cant. Although the adversarial and feature map losses Ladv 
+
+and Lfmap might act as perceptual proxies in some sense for these models, this behavior is not guaranteed. This motivated the idea of creating a model that explicitly incorporated a perceptual loss component.  
+
+> 2https://github.com/bvm810/torchpaqm/tree/main AUTHOR’S ACCEPTED MANUSCRIPT — PUBLISHED IN JOURNAL OF THE AUDIO ENGINEERING SOCIETY 6
+
+Fig. 4: AEROMamba architecture. Specifically, a PAQM loss term LPAQM , standing for the MOS obtained from the application of PAQM to a pair of degraded and original signals, is incorporated into (8). The 
+
+torchpaqm package was used to obtain LPAQM . The modified loss ˜LG becomes 
+
+˜LG = Ladv + Lrec + λL fmap − γL PAQM , (16) where γ is a scaling factor. Clearly, for γ = 0 it aligns with the AEROMamba setting. Since LPAQM produces values in the range [1 , 5] , and the goal is to minimize ˜LG , the optimization procedure drives the model parameters to maximize LPAQM 
+
+and, as a consequence, increases the perceptual quality of the generated samples. A particular variation of AEROMamba P, called 
+
+AEROMamba P¯S, is obtained when the reconstruction loss is effectively replaced by the PAQM loss, that is, a non-zero γ is applied and the Lrec loss is completely removed, yielding ˜LG = Ladv + λL fmap − γL PAQM . (17) he motivation for using AEROMamba P¯S to enhance encoded audio lies in two considerations: i) PAQM was originally conceived to evaluate lossy encoded audio; ii) a spectral reconstruction operation (based on mapping to an auditory model) is already implicit in LPAQM . It should be noted that, in addition to LPAQM , AEROMamba P¯S also preserves the feature map and adversarial losses, which operate in the time domain to avoid phase artifacts. VI. DATASETS The experiments in this work used the two datasets de-scribed below. 
+
+A. PianoEval 
+
+The PianoEval data set, collected by one of the authors, consists of two parts. Part 1 is composed of the 24 Preludes for Piano, op . 28, by Chopin performed by 33 pianists in 45 different recordings available on CD (Compact Disc), totaling approximately 24 h. Part 2 contains excerpts of Ligeti piano ´etudes, a Schumann sonata, and Barber sonata, played by three different pianists, and totaling approximately 3.5 h. Each file is stored in WAV format, stereo mode, and sampled at 44.1 kHz. Information about performers, record label, and year of recording is detailed in the accompanying webpage. 
+
+B. MUSDB 
+
+The MUSDB [26] dataset is composed of 150 full-length music tracks of different genres along with their isolated drums, bass, vocals, and other stems, and totaling approxi-mately 10 h of duration. The training folder contains 100 songs (around 7 h), while the test folder contains 50 songs (around 3 h), all of them in WAV format, stereo mode, and sampled at 44.1 kHz. The number of tracks per genre is distributed as follows: 83 Pop/Rock, 24 Rock, 15 Singer/Songwriter, 14 Heavy Metal, 13 Pop, 10 Rap, 9 Electronic, 3 Country, 3 Jazz, and 2 Reggae tracks. VII. EVALUATION PROCEDURES The following evaluation procedures were applied to the two experiments considered in this paper, namely super-resolution of bandlimited audio and enhancement of heavily compressed audio, except for the efficiency evaluation, which was performed exclusively in the former. 
+
+A. Efficiency evaluation 
+
+The use of GPU by both AERO and the proposed meth-ods was evaluated using the ‘nvidia-smi’ command, with all models in pytorch ’s evaluation mode, and using different audio tracks. For inference time, the execution time for processing 10-s segments was recorded and the average duration for both methods was calculated. Since the architectural components of AEROMamba and its variants remain consistent within the experiments, the efficiency measures were only evaluated for AERO and AEROMamba within the bandlimited audio experiment. 
+
+B. Objective evaluation 
+
+For objective quality evaluation, the log-spectral distance (LSD) [11] was used in combination with two distinct percep-tual audio quality measures: PAQM (described in Section IV) and ViSQOLAudio (Virtual Speech Quality Objective Listener extended for general audio) [44] 3. PAQM served as a vali-dation measure to select the optimal models during training, whereas ViSQOLAudio was used to evaluate the quality of the processed signals with respect to references in the test sets on a scale from 1 to 5. The latter is a necessary impartial measure of quality, since PAQM is integrated into the AEROMamba P loss. Moreover, the findings suggested that comparing the quality of two signals with LSD is effective only when the values diverge significantly. Thus, ViSQOLAudio funcions as a more reliable measure of perceptual audio quality — notably, it was also used in the AERO publication.  
+
+> 3referred to as ViSQOL in the tables AUTHOR’S ACCEPTED MANUSCRIPT — PUBLISHED IN JOURNAL OF THE AUDIO ENGINEERING SOCIETY 7
+
+C. Subjective evaluation 
+
+Due to limitations of the objective metrics, a subjective evaluation test was designed to assess the quality of the outputs of each model. Among the different testing methodologies available, MUSHRA [45] would have been the closest to our needs. However, our study required the evaluation of enhance-ment systems, which is not directly addressed in the standard MUSHRA framework, mainly focused on coding systems. Therefore, a specifically tailored evaluation methodology was designed. As detailed below, the structure of the listening test remains similar to that of MUSHRA, measuring fidelity to a high-quality reference, but with two main modifications: i) to reduce participant fatigue, only one anchor was used and no hidden reference was included; ii) the scoring scale was carefully designed to reduce biases induced by categorical labels or a numbered grid [46]. For each experiment, the opinion of 20 subjects was col-lected regarding the overall similarity of four test signals — one corresponding to each model plus one anchor bandlimited to 5.5 kHz or encoded at 32 kbps, depending on the experiment — to a known reference. Participants were recruited from students and faculty mem-bers affiliated with signal processing laboratories, a consider-able number of whom had previous experience with auditory assessments. Specifically, more than half had over 5 years of experience working with audio. Participants’ ages ranged from 20 to 61 years. Experiments were carried out in an acoustically isolated environment within the Signals, Multimedia, and Telecommu-nications Laboratory at UFRJ, keeping consistent hardware and software configurations. The evaluation platform was accessed via a web browser, and participants listened to the audio using Sennheiser HD 265 linear headphones. The score was assigned on an unnumbered sliding bar, with the words “exactly the same” on the right end and “increasing difference” indicated by a left arrow. The selected position was internally mapped to an integer from 0 to 100. Subjective testing was based on 12 tracks from the PianoE-val dataset and 12 tracks from the MUSDB test set, detailed in the accompanying webpage. Each signal was evaluated by 10 subjects, and the order of the test questions was randomized to mitigate bias. 
+
+D. Statistical significance 
+
+All ViSQOL and subjective average scores were evaluated in pairs with Mann-Whitney statistical significance tests (due to the non-gaussianity of score distributions) and, except when explicitly stated, the mean values were considered to reject the null hypothesis of no significant difference with p−value <
+
+0.05 . The statistics for each evaluation are tabulated in the accompanying webpage. VIII. SUPER-RESOLUTION OF BANDLIMITED AUDIO 
+
+A. Models 
+
+In this experiment, different models were considered for subjective and objective evaluation. In the objective tests, AERO, AEROMamba, AEROMamba P and a pretrained ver-sion of AudioSR were evaluated by comparing their outputs with those of a simple bandlimiting process. In the subjective tests, AudioSR was not considered. The pretrained AudioSR model served solely as a supple-mentary baseline, due to its distinct characteristics compared to the other architectures, such as its flexibility in handling various initial sampling frequencies and its extensive training of 7000 h (encompassing the entire MUSDB dataset). It was included in the objective evaluation using ViSQOL only to show how the other methods compared to 1) a much larger model that, 2) in the context of the MUSDB evaluation, had been exposed to the test data. For AEROMamba P, the PAQM loss weighting factor γ was fixed without performing an extensive hyperparameter search. Although alternative weightings of the loss components might yield improved performance, this investigation was left for future work. Preliminary experiments with AEROMamba P¯S in the context of super-resolution of bandlimited audio did not indicate perceptual advantages over AEROMamba P; therefore, this variant was not included in the present analysis. 
+
+B. Data 
+
+This experiment used versions of AERO, AEROMamba and AEROMamba P trained on the datasets described in Section VI. Evaluation was later performed considering the test splits of these datasets (e.g. AERO trained on MUSDB was evaluated with the test split of MUSDB). For evaluation with MUSDB, the original split was used, as in [11]: 100 tracks for training, and 50 for testing. Although MUSDB provides the isolated stems for each track, only the mixtures were used in the experiments below. For evaluation with PianoEval, two subdatasets were cre-ated, and models were trained on each of them. The first subset, PianoEval-GQ (GQ for general quality) comprises all tracks recorded after 1950, while the second subset 
+
+PianoEval-HQ (HQ for high quality) comprises all tracks recorded after 1960. Recordings prior to 1950 were absent from both subsets due to their very high noise levels. PianoEval-HQ contains the ‘HQ’ tracks of Part 1 and all tracks of Part 2 of PianoEval; PianoEval-GQ adds the ‘non-HQ’ tracks of Part 2 to PianoEval-HQ. This division of PianoEval aimed to take into account the impact of the intrinsic noise characteristic of older recordings during model training. For each architecture, versions trained on PianoEval-GQ and PianoEval-HQ were created, and the variant with the best performance, according to the objective evaluation, was retained for further subjective testing. In the results for PianoEval, models with the ‘HQ’ suffix use PianoEval-HQ, while the others use PianoEval-GQ. PianoEval-GQ and PianoEval-HQ were partitioned as fol-lows: the same test set ( ≈ 3.5 h) containing all the pieces from Part 2 of PianoEval; the same validation set ( ≈ 2 h) containing ‘HQ’ tracks from Part 1 of PianoEval; and training sets with the remaining 22 h of PianoEval-GQ or 20.5 h of PianoEval-HQ, respectively. AUTHOR’S ACCEPTED MANUSCRIPT — PUBLISHED IN JOURNAL OF THE AUDIO ENGINEERING SOCIETY 8
+
+C. Training procedure 
+
+As the baseline, AERO was trained using a window size of W = 512 samples and a hop length of H = 256 
+
+samples, due to the computational requirements associated with training at hop sizes of 64 or 128 samples. This was not deemed a problem as, according to the original paper, AERO consistently outperforms competing methods when evaluated using the MUSDB dataset, even for the larger 
+
+H = 256 . To ensure consistency across comparisons, AERO-Mamba and AEROMamba P were also trained using the same parameters employed for AERO, except for batch size. For AEROMamba P, the PAQM loss scaling factor was set to 
+
+γ = 1. Non overlapping segments of 4 s (MUSDB) and 6 s (PianoEval, both) were used during training. Silent or excessively short segments were discarded. All models were trained for ≈ 800 epochs. Model selection was determined by the convergence of the PAQM score on the validation set for PianoEval or on the test set for MUSDB 4.The convergence criterion was defined as less than 0.01 variation in the PAQM score over 5 epochs. For AERO in MUSDB, a checkpoint after a pretraining of 696 epochs with batch size of 16 [11] was used as a starting point; training was then resumed for 100 fine-tuning epochs, with a batch size of 4 due to GPU limitations. With the PianoEval subsets, AERO was consistently trained with a batch size of 4 throughout the 800 epochs. AEROMamba and AEROMamba P were trained along the 800 epochs with a batch size of 8 across all datasets, thanks to their reduced computational demands. All relevant training parameters (except for γ, which only applies to AEROMamba P) are summarized in Table I; they were adopted in accordance with the AERO default settings, unless previously stated otherwise. TABLE I: Summary of key training parameters across datasets.  
+
+> ∗
+
+AERO fine-tuning; ∗∗ Other models.                            
+
+> Parameter MUSDB PianoEval (GQ/HQ)
+> Window Size ( W)512 samples 512 samples Hop Length ( H)256 samples 256 samples Segment Length 4 s 6 s Stride Length 4 s 6 s Number of Epochs ∼800 ∼800 Batch Size 4∗/8∗∗ 4∗/8∗∗
+> Optimizer Adam [47] Adam Learning Rate 3×10 −43×10 −4
+
+TABLE II: GPU usage (VRAM), inference time for a 10-s segment, and number of parameters for each model.          
+
+> Method VRAM (MB) Time (s) Parameters
+> AERO 17091 1.246 19,432,958 AEROMamba 3000 0.087 20,964,190
+
+D. Results Efficiency evaluation: The computational requirements of AERO and AEROMamba are compared in Table II, which 
+
+> 4Although selecting the optimal model based on the test set is generally discouraged due to the risk of overfitting, the same methodology of the AERO paper was followed for consistency.
+
+reports GPU usage and time required to process a 10-s signal segment along with the number of parameters of each model. AEROMamba P was not included, since it uses the same backbone architecture as AEROMamba. Testing was performed with a NVIDIA RTX 3090 GPU. 
+
+PianoEval: As mentioned in Section VII-B, ViSQOL and LSD were used to compare references to test signals processed by each model. Each signal consisted of a 10-s excerpt from the respective track within the test dataset. Table III shows the average ViSQOL and LSD scores along with the corre-sponding average subjective scores attained by each method. The “Low-Resolution” line displays quality metrics for the bandlimited signals without any enhancement. The selection of models to be considered in the subjective evaluation followed a systematic two-step procedure: i) For each model, a statistical significance test (SST) was conducted comparing its ViSQOL scores with those of the low-resolution signals. Models for which no statistically significant difference (SSD) was observed were discarded. ii) If both the HQ and non-HQ variants of a model passed this step, a second SST was performed between them. If there was an SSD, the variant with the higher ViSQOL score was chosen; otherwise, the LSD score was used as a tiebreaker. This procedure ensured that only the best models were selected for the subjective evaluation. This procedure ensured that only the best models were selected for the subjective evaluation. TABLE III: Objective and subjective scores for low-resolution signals and various models evaluated on PianoEval. ∗Did not reject the null hypothesis compared to low-resolution.                               
+
+> System ViSQOL ↑LSD ↓Score ↑
+> Low-Resolution 4.36 1.09 72.92 AERO 4.38 0.99 76.89 AERO-HQ 4.34 1.04 -AEROMamba 4.43 ∗0.98 -AEROMamba-HQ 4.38 1.00 84.41
+> AEROMamba P4.42 0.98 -AEROMamba P-HQ 4.41 0.90 78.76 AudioSR 3.89 --
+
+MUSDB: As for PianoEval, Table IV shows the average objective metrics along with the average subjective scores achieved by each method. 
+
+E. Discussion Efficiency aspects: From Table II, it is possible to see that Mamba allowed to reduce AERO’s inference GPU require-ments almost 6x while at the same time speeding inference almost 15x. Also, from the subjective and objective results in Tables III and IV, it is clear that the performances of Mamba variations of AERO (and of their HQ variants, for PianoEval) were superior or equal to AERO’s. These perfor-mance improvements are due to the efficiency provided by the Mamba layer and also to its capacity in sequence modeling tasks. Furthermore, as seen in Table II, AEROMamba is a larger architecture in number of parameters that uses fewer computational resources, thus theoretically being a more pow-erful model. As an additional informal comparison, the same AUTHOR’S ACCEPTED MANUSCRIPT — PUBLISHED IN JOURNAL OF THE AUDIO ENGINEERING SOCIETY 9
+
+experiment using AudioSR with its default 50 diffusion steps resulted in an average inference time of 5.6 s, reflecting the slower sampling process inherent in diffusion models. TABLE IV: Objective and subjective scores for low-resolution signals and various models evaluated on MUSDB.                      
+
+> System ViSQOL ↑LSD ↓Score ↑
+> Low-Resolution 1.82 3.98 38.22 AERO 2.90 1.34 60.03 AEROMamba 2.93 1.23 66.47 AEROMamba P3.04 1.19 79.26
+> AudioSR 3.01 --
+
+PianoEval: Results in Table III show that, in the objective evaluation, the scores were approximately equivalent across all systems. This outcome is attributed to the characteristics of the test data: the selected piano pieces exhibit, on average, a quiet, sparse, and delicate spectral-temporal structure. Considering the subjective scores of AEROMamba-HQ, AEROMamba is more effective in producing enhanced sam-ples than AERO for piano tracks, and the incorporation of a PAQM loss is counterproductive in this setting. The statistical tests show that the only model that rejects the null hypothesis is AEROMamba-HQ. The considerable differences observed among the subjective scores of different systems suggest that the objective measures employed may lack sufficient sensitivity to capture perceptual differences in signals of this nature. Qualitatively, AEROMamba-HQ was regarded by listeners as more prone to causing artifacts, which is a consequence of its tendency to generate higher frequencies even if it leads to an intensification of noise content. For piano signals, this was not necessarily detrimental to the musical result, sometimes bringing a brighter tone to the instrument. This was likely because the piano did not overload the model with too wide spectral content. As a consequence, the perceived quality of AEROMamba-HQ was deemed higher than its PAQM counterpart, which performed similarly to AERO. An interesting observation is how AudioSR ViSQOL scores are lower than Low Resolution ones. This is caused by a common characteristic of perceptual evaluators: they penalize more severely the addition of spectral content not found in the reference than the removal of content (as in the filtered signal). Indeed, the pretrained AudioSR is prone to adding excessive percussive energy to its outputs, which also sounds unnatural for piano. 
+
+MUSDB: As seen in Table IV, AEROMamba P outper-formed the other models in all metrics on MUSDB. This is particularly noticeable for the subjective scores, and showcases the success of PAQM as a perceptual loss function. Intuitively, the effect of the PAQM loss term can be compared to that of a regularizer, steering the model in a direction that maximizes the perceptual quality, while balancing the generation of spectral content. With the inclusion of the PAQM loss term, the proposed model was able to achieve average ViSQOL results higher than those of AudioSR, which had previously been exposed to MUSDB. It should be noted, however, that the Mann-Whitney statistic comparing AEROMamba P and AudioSR for MUSDB had p-value higher than 5%, as stated in the auxiliary web-page. It is also interesting to see that in Table IV signals processed by AERO and AEROMamba also rated much better than the Low Resolution signals. This discrepancy in relation to what was seen in PianoEval, where all scores were roughly the same, is due to the nature of the data: MUSDB tracks tend to span the entire spectrum and exhibit relatively stable high loudness, causing low-pass filtering to severely affect their overall quality. For a detailed visualization, Figure 5 shows the scores for each track included in the subjective evaluation procedure, identified by their Id number on the testing interface. 
+
+Fig. 5: Subjective scores for low-resolution signals and various models per track of MUSDB. For signal 15, on which AEROMamba P performed much better than the other methods, the spectra generated by the different processed signals are illustrated in Figure 6. In this case, the reference signal occupies the full spectrum, including vocals delineated by singing patterns. The downsampling operation erases a considerable portion of frequency content, which is hard to recover for all models, especially in the vocals. However, AEROMamba P seems to achieve the most natural profile in the extended frequencies, with no clearly delimited regions in the extended range nor ghost spectral lines (which cause audible artifacts) as found in AERO or AEROMamba outputs. 
+
+Concluding remarks: In light of the obtained results, it is possible to outline, in fairly general terms, some guidelines for choosing between the algorithms. (i) Taking the classical piano as a representative example of signals with predominantly tonal content, where the emphasis is on preserving timbre, the AEROMamba-HQ demonstrates greater freedom to gen-erate more high-frequency content without creating artifacts —– since the nature of the signal, with moderate transient characteristics, makes it less susceptible to this. (ii) In contrast, in popular music in general, the frequent occurrence of a rhythmic base, often based on percussion, demands greater precision from the system in transient events, which easily induce perceptible distortions. In this case, the additional ”regularization” inherent in AEROMamba P makes it more recommendable. AUTHOR’S ACCEPTED MANUSCRIPT — PUBLISHED IN JOURNAL OF THE AUDIO ENGINEERING SOCIETY 10 
+
+Fig. 6: Spectrograms for signal 15: (a) Reference, (b) Low-resolution, (c) AERO, (d) AEROMamba, and (e) AEROMamba P.IX. ENHANCEMENT OF HEAVILY COMPRESSED AUDIO 
+
+A. Models 
+
+AEROMamba, AEROMamba P, and AEROMamba P¯S are all evaluated in this experiment for the enhancement of heavily compressed audio. Their processed outputs are compared with a low-bitrate versions of reference signals, encoded using MP3. 
+
+B. Data 
+
+This experiment used the same datasets as the previous one, with the difference that only the GQ subset of PianoEval was used. This was motivated by the the fact that the degradations introduced by lossy coding can be considered to be more relevant than the presence of moderate noise in the case of heavily compressed audio. Low-bitrate files were generated by encoding the original files to MP3 format using FFmpeg [48]). Since for a target bitrate of 32 kbps the encoder clips all spectral content of the audio above 5.5 kHz [49], choosing this bitrate would allow us to investigate the applicability of the proposed solutions in the context of lossy compressed audio, without having to remove their current fixed cutoff frequency constraint. In addition to narrowing the spectral width, the compression operation also severely distorts the remaining part of the spectrum, causing artifacts such as spectral holes. The resulting decoded files were downsampled to 11.025 kHz. 
+
+C. Training procedure 
+
+Aside from the number of epochs, AEROMamba, AEROMamba P, and AEROMamba P¯S were trained with the parameters of Table I, with γ = 1 for AEROMamba P and 
+
+γ = 10 for AEROMamba P¯S. The hypothesis behind this choice was that a greater weight on the perceptual cost could help the model achieve better performance, since PAQM was originally designed to evaluate the performance of lossy audio encoders. Models converged much faster in this experiment than in the previous, and so they were only trained for 200 epochs. The same criterion used previously for stopping training was adopted here. 
+
+D. Results PianoEval: The objective metrics achieved for each method are shown together with the average subjective scores in Table V. 
+
+MUSDB: As for the PianoEval case, the average objective metrics achieved for each method, together with the average subjective scores is shown in Table VI. 
+
+E. Discussion PianoEval: The subjective scores in Table V indicate that all models demonstrate nearly equivalent performance for the evaluated piano signals, exhibiting a subjective score im-provement of approximately 14 points compared to the Low-Bitrate baseline. Notably, these scores closely resemble those achieved by AEROMamba-HQ in the preceding experiment. This suggests that the performance of the evaluated super-resolution tools on heavily compressed signals is comparable to that achieved for bandlimited audio. TABLE V: Objective and subjective scores for the low-bitrate signals and various models models evaluated on PianoEval.                   
+
+> System ViSQOL ↑LSD ↓Score ↑
+> Low-Bitrate 4.35 2.33 69.5 AEROMamba 4.22 1.14 83.4 AEROMamba P4.24 1.12 84.1 AEROMamba P¯S4.41 1.13 85.5
+
+The starting low-resolution and low-bitrate scores are also similar, which, in addition to the comparison above, indicates that for these tracks, heavy compression does not impose significantly worse perceptual degradation than linear filtering. Those distortions are more pronounced in segments where the signal has either high intensity or fast spectral variations, AUTHOR’S ACCEPTED MANUSCRIPT — PUBLISHED IN JOURNAL OF THE AUDIO ENGINEERING SOCIETY 11 
+
+TABLE VI: Objective and suibjective scores for low-bitrate signals and various models evaluated on MUSDB.                   
+
+> System ViSQOL ↑LSD ↓Score ↑
+> Low-Bitrate 1.80 2.02 50.7 AEROMamba 2.45 1.24 49.8 AEROMamba P2.99 1.27 49.7 AEROMamba P¯S2.90 1.23 75.6
+
+however, they represent small portions of the piano pieces. Therefore, AEROMamba P and AEROMamba P¯S provide only incremental increases in subjective scores compared to AERO-Mamba. 
+
+MUSDB: Looking at Table VI, it is possible to see that the starting low-bitrate scores for MUSDB were much lower than for PianoEval. As in the previous experiment, this can be explained by the fact that MUSDB signals tend to fill the spectrum much more than the piano-only signals of PianoEval; heavy MP3 compression introduces low-pass artifacts that are much more noticeable for MUSDB. Another interesting observation is that AEROMamba and AEROMamba P show similar subjective scores to the low-bitrate signals, despite having higher ViSQOL scores. A possi-ble explanation is that heavily compressed signals exhibit a of low-pass degradations and perceptually optimized non-linear distortions that might sound more or less natural sounding. The perceptual component of these degradations could have resulted in higher baseline subjective scores for the low-bitrate signals. At the same time, the use of non-perceptual reconstruction loss terms in AEROMamba and AEROMamba P could have led these models to introduce audible artifacts in the pro-cessed signals while restoring high-frequency content. These artifacts were likely perceived during subjective evaluation, despite the extended bandwidth. The AEROMamba P¯S variant, relying fully on a perceptually motivated frequency-domain loss, produces reconstructions that are more consistent with human auditory perception as per the subjective scores. Figure 7 shows the scores for each track included in the subjective evaluation procedure. 
+
+Fig. 7: Subjective scores for low-bitrate and various models per track of MUSDB. Track 13 was selected for visualization of spectra in Figure 8, due to AEROMamba P¯S performing much better than the other models. The mentioned artifacts created by AEROMamba and AEROMamba P are visible in images (c) 
+
+Fig. 8: Spectrograms for signal 13: (a) Reference, (b) Low-bitrate, (c) AEROMamba, (d) AEROMamba P, and (e) AEROMamba P¯S.and (d), respectively. In contrast to the previous models, AEROMamba P¯S is able both to reconstruct the low-frequency region and retrieve high-frequency content without creating noticeable anomalies, as shown in image (e). This can be attributed to the use of PAQM as the only frequency-domain loss, which is not only perceptually motivated, but also optimized to audio encoding scenarios, thus confirming the expectation of its efficacy in this scenario. 
+
+Concluding remarks: Experiments performed suggest that AEROMamba PS is the best choice for enhancing heavily compressed audio signals in general. X. CONCLUSION This paper proposes an efficient model for both bandlimited audio super-resolution and encoded audio enhancement using a perceptually motivated loss based on PAQM. It was shown, through objective and subjective metrics, that using this loss function can significantly improve the audio enhancement AUTHOR’S ACCEPTED MANUSCRIPT — PUBLISHED IN JOURNAL OF THE AUDIO ENGINEERING SOCIETY 12 
+
+performance of the AEROMamba architecture in relation to other models, such as AERO and AudioSR, while at the same time keeping its computation efficiency. Audio quality improvements were consistent for both ban-dlimited and heavily compressed audio, especially in popular music, which is well represented by MUSDB. In particular, the experiments indicate that the commonly used STFT recon-struction loss, while useful for extending bandlimited audio, can be entirely replaced by a PAQM loss when addressing heavily compressed audio. It is worth noting that informal tests of super-resolution of old piano recordings suggest that including noisy recordings in training enables models to han-dle degraded material, to the point of performing denoising in conjunction with bandwidth extension — an interesting topic for future investigation. Next steps should include addressing the model limitation in operating only with a fixed oversampling factor, and perform-ing a more thorough performance comparison with AudioSR and Apollo systems. Furthermore, since the STFT loss is used in many audio applications, a perceptually inspired loss can be effectively explored in scenarios other than bandwidth extension and inversion of lossy coding, e.g. audio restoration or music source separation. Finally, it is worth mentioning that PAQM is an effective and simple model of perceptual quality that is included in the larger standardized tool known as Perceptual Evaluation of Audio Quality (PEAQ) [50]. In future work, the latter should be implemented in pytorch and evaluated as a more comprehensive perceptual cost for NN-based audio applications. This work is accompanied by a code repository with training / inference scripts and model checkpoints, along with an online webpage (aeromamba-paqm.github.io) containing additional experimental material. The webpage provides playable audio examples, statistical test results, and score-distribution visu-alizations, supporting the transparency and reproducibility of the presented research. XI. ACKNOWLEDGMENT This study was financed in part by the Coordenac ¸ ˜ ao de Aperfeic ¸oamento de Pessoal de N´ ıvel Superior – Brasil (CAPES) – Finance Code 001, the National Council for Scientific and Technological Development (CNPq) - Process # 306395/2025-8, and the Carlos Chagas Filho Foundation for Research Support in the State of Rio de Janeiro (FAPERJ) -Grant # E-26/204.092/2022). REFERENCES [1] D. Sch¨ uller, “Introduction to IASA-TC 05: Handling and Storage of Audio and Video Carriers,” Int. J. Humanit. Arts Comput. , vol. 7, no. supplement, pp. 216–221 (2013 Mar.), doi:https://doi.org/10.3366/ijhac. 2013.0071. [2] L. W. P. Biscainho and L. O. Nunes, “Automatic Evaluation of Acousti-cally Degraded Full-band Speech,” in Signals and Images Advances and Results in Speech, Estimation, Compression, Recognition, Filtering, and Processing , pp. 181–208 (CRC Press, Boca Raton, USA, 2017 Jan.). [3] M. Bosi and R. E. Goldberg, Introduction to Digital Audio Coding and Standards (Kluwer Academic Publishers, Norwell, USA, 2002). [4] P. Copeland, Manual of Analogue Sound Restoration Techniques (British Library, London, UK, 2008). [5] J. Blauert, Spatial Hearing: The Psychophysics of Human Sound Local-ization (MIT Press, Cambridge, USA, 1997). [6] K. Brandenburg, “MP3 and AAC Explained,” in Proceedings of the AES 17th International Conference on High-quality. Audio Coding , pp. 99– 110 (Florence, Italy) (1999 Sep.). [7] E. Larsen and R. Aarts, Audio Bandwidth Extension (John Wiley & Sons, Ltd, Hoboken, USA, 2004). [8] P. Ekstrand, “Bandwidth Extension of Audio Signals by Spectral Band Replication,” in Proceedings of the 1st IEEE Benelux Workshop on Model Based Processing and Coding of Audio , pp. 73–79 (Leuven, Belgium) (2002 Nov.). [9] B. Iser and G. Schmidt, Bandwidth Extension of Telephony Speech , p. 135–184 (Springer, Berlin, Germany) (2008). [10] V. Berisha and A. Spanias, “Bandwidth Extension of Audio Based on Partial Loudness Criteria,” in Proceedings of the 8th IEEE Workshop on Multimedia Signal Processing , p. 146–149 (Victoria, Canada) (2006 Oct.). [11] M. Mandel, O. Tal, and Y. Adi, “AERO: Audio Super Resolution in the Spectral Domain,” in Proceedings of the IEEE International Conference on Acoustics, Speech and Signal Processing (Rhodes Island, Greece) (2023 Jun.). [12] H. Liu, K. Chen, Q. Tian, W. Wang, and M. D. Plumbley, “AudioSR: Versatile Audio Super-resolution at Scale,” in Proceedings of the IEEE International Conference on Acoustics, Speech and Signal Processing ,p. 1076–1080 (Seoul, South Korea) (2024 Apr.). [13] H. Liu, W. Choi, X. Liu, Q. Kong, Q. Tian, and D. Wang, “Neural Vocoder Is All You Need for Speech Super-resolution,” in Proceedings of the 23rd Annual Conference of the International Speech Communication Association , p. 4227–4231 (Incheon, South Korea) (2022 Sep.). [14] V. Kuleshov, S. Z. Enam, and S. Ermon, “Audio Super-resolution Using Neural Nets,” in Proceedings of the 5th International Conference on Learning Representations (Workshop Track) (Toulon, France) (2017 Apr.). [15] E. Moliner and V. V¨ alim¨ aki, “BEHM-GAN: Bandwidth Extension of Historical Music Using Generative Adversarial Networks,” IEEE/ACM Trans. Audio Speech Lang. Process. , vol. 31, pp. 943–956 (2023 Jul.), doi:https://doi.org/10.1109/TASLP.2022.3190726. [16] M. Lagrange and F. Gontier, “Bandwidth Extension of Musical Audio Signals with No Side Information Using Dilated Convolutional Neural Networks,” in Proceedings of the IEEE International Conference on Acoustics, Speech and Signal Processing , pp. 801–805 (Barcelona, Spain) (2020 May). [17] K. Li and Y. Luo, “Apollo: Band-sequence Modeling for High-quality Audio Restoration,” in Proceedings of the IEEE International Confer-ence on Acoustics, Speech and Signal Processing , pp. 1–5 (Hyderabad, India) (2025). [18] E. Moliner, F. Elvander, and V. V¨ alim¨ aki, “Blind Audio Bandwidth Extension: A Diffusion-based Zero-shot Approach,” IEEE/ACM Trans. Audio Speech Lang. Process. , vol. 32, pp. 5092–5105 (2024), doi: 10.1109/TASLP.2024.3507566. [19] W. Abreu and L. W. P. Biscainho, “AEROMamba: An Efficient Architec-ture for Audio Super-resolution Using Generative Adversarial Networks and State Space Models,” in Proceedings of the 1st Latin American Music Information Retrieval Workshop , pp. 74–79 (Rio de Janeiro, Brazil) (2024 Dec.). [20] A. Gu and T. Dao, “Mamba: Linear-time Sequence Modeling with Selective State Spaces,” https://arxiv.org/abs/2312.00752 (accessed Oct. 30, 2025). [21] J. Su, M. Ahmed, Y. Lu, S. Pan, W. Bo, and Y. Liu, “RoFormer: En-hanced Transformer with Rotary Position Embedding,” Neurocomputing ,vol. 568, no. 127063 (2024), doi:https://doi.org/10.1016/j.neucom.2023. 127063. [22] C. Lea, M. D. Flynn, R. Vidal, A. Reiter, and G. D. Hager, “Temporal Convolutional Networks for Action Segmentation and Detection,” in 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition , pp. 1003–1012 (Honolulu, USA) (2017 Jul.). [23] J. G. Beerends and J. A. Stemerdink, “A Perceptual Audio Quality Measure Based on a Psychoacoustic Sound Representation,” J. Audio Eng. Soc. , vol. 40, pp. 963–978 (1992 Dec.). [24] A. D´ efossez, “Hybrid Spectrogram and Waveform Source Separation,” in Proceedings of the ISMIR Workshop on Music Source Separation , pp. 11–18 (Virtual Event) (2021 Nov.). [25] J. Yamagishi, C. Veaux, and K. MacDonald, “CSTR VCTK Corpus: English Multi-speaker Corpus for CSTR Voice Cloning Toolkit,” https: //datashare.ed.ac.uk/handle/10283/3443 (accessed Oct. 30, 2025). [26] Z. Rafii, A. Liutkus, F.-R. St¨ oter, S. I. Mimilakis, and R. Bittner, “MUSDB18-HQ - An Uncompressed Version of MUSDB18,” https: //doi.org/10.5281/zenodo.3338373 (accessed Oct. 30, 2025). AUTHOR’S ACCEPTED MANUSCRIPT — PUBLISHED IN JOURNAL OF THE AUDIO ENGINEERING SOCIETY 13 
+
+[27] K. Kumar et al. , “MelGAN: Generative Adversarial Networks for Con-ditional Waveform Synthesis,” in Proceedings of the 33rd International Conference on Neural Information Processing Systems , pp. 14910– 14921 (Red Hook, USA) (2019 Dec.). [28] Y. Li, M. Tagliasacchi, O. Rybakov, V. Ungureanu, and D. Roblek, “Real-time Speech Frequency Bandwidth Extension,” in Proceedings of the IEEE International Conference on Acoustics, Speech and Signal Processing , pp. 691–695 (Ontario, Canada) (2021 Jun.). [29] S. Hu, B. Zhang, B. Liang, E. Zhao, and S. Lui, “Phase-Aware Music Super-resolution Using Generative Adversarial Networks,” in 
+
+Proceedings of the 21st Annual Conference of the International Speech Communication Association , pp. 4074–4078 (Virtual Event) (2020). [30] D. Yin, C. Luo, Z. Xiong, and W. Zeng, “PHASEN: A Phase-and-harmonics-aware Speech Enhancement Network,” in Proceedings of the AAAI Conference on Artificial Intelligence , pp. 9458–9465 (New York, USA) (2020 Feb.). [31] D. Hendrycks and K. Gimpel, “Gaussian Error Linear Units,” https: //arxiv.org/abs/1606.08415 (accessed Oct. 30, 2025). [32] Y. N. Dauphin, A. Fan, M. Auli, and D. Grangier, “Language Modeling with Gated Convolutional Networks,” in Proceedings of the 34th Inter-national Conference on Machine Learning , p. 933–941 (2017 Aug.). [33] L. Ziyin, T. Hartwig, and M. Ueda, “Neural Networks Fail to Learn Periodic Functions And How to Fix It,” in Proceedings of the 34th International Conference on Neural Information Processing Systems , pp. 1583–1594 (2020 Dec.). [34] J. L. Ba, J. R. Kiros, and G. E. Hinton, “Layer Normalization,” https: //arxiv.org/abs/1607.06450 (accessed Oct. 31, 2025). [35] H. Touvron, M. Cord, A. Sablayrolles, G. Synnaeve, and H. J´ egou, “Go-ing Deeper with Image Transformers,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 32–42 (Montreal, Canada) (2021 Oct.). [36] A. Vaswani et al. , “Attention is All You Need,” in Proceedings of the 31st International Conference on Neural Information Processing Systems , p. 6000–6010 (Curran Associates Inc., Red Hook, USA) (2017 Dec.). [37] I. Goodfellow et al. , “Generative Adversarial Nets,” in Proceedings of the 28th Annual Conference on Neural Information Processing Systems ,pp. 2672–2680 (Montreal, Canada) (2014 Dec.). [38] R. Pascanu, T. Mikolov, and Y. Bengio, “On the Difficulty of Training Recurrent Neural Networks,” in Proceedings of the 30th International Conference on Machine Learning , pp. 1310–1318 (Atlanta, USA) (2013 Jun.). [39] A. Gu et al. , “Combining Recurrent, Convolutional, and Continuous-time Models with Linear State Space Layers,” in Proceedings of the 35th Conference on Neural Information Processing Systems , pp. 572– 585 (Virtual Event) (2021 Dec.). [40] A. Gu, K. Goel, and C. R´ e, “Efficiently Modeling Long Sequences with Structured State Spaces,” in Proceedings oh the 10th International Conference on Learning Representations (Virtual Event) (2022 Apr.). [41] P. Ramachandran, B. Zoph, and Q. V. Le, “Searching for Activation Functions,” in Proceedings of the 6th International Conference on Learning Representations (Workshop Track) (Vancouver, Canada) (2018 Apr.). [42] M. Torcoli, T. Kastner, and J. Herre, “Objective Measures of Perceptual Audio Quality Reviewed: An Evaluation of Their Application Domain Dependence,” IEEE Transactions on Audio, Speech, and Language Processing , vol. 29, pp. 1530–1541 (2021 March), doi:https://doi.org/ 10.1109/TASLP.2021.3069302. [43] M. Moreno, “An´ alise Comparative de M´ etodos de Identificac ¸ ˜ ao de Sistemas N˜ ao-Lineares Aplicados a Sinais de ´ Audio,” Tech. rep., Dept. Electronic Engineering, Federal University of Rio de Janeiro, Rio de Janeiro, Brazil (2021). [44] M. Chinen, F. S. Lim, J. Skoglund, N. Gureev, F. O’Gorman, and A. Hines, “ViSQOL v3: An Open Source Production Ready Objective Speech and Audio Metric,” in Proceedings of the 12th International Conference on Quality of Multimedia Experience , pp. 1–6 (2020 Jun.). [45] International Telecommunication Union (ITU), “Method for the Sub-jective Assessment of Intermediate Quality Level of Coding Systems,” Tech. rep., ITU-R, Geneva, Switzerland (2003). [46] S. Bech and N. Zacharov, Perceptual Audio Evaluation-Theory, Method and Application (John Wiley & Sons, New York, USA, 2007). [47] D. Kingma and J. Ba, “Adam: A Method for Stochastic Optimization,” in Proceedings of the 3rd International Conference on Learning Repre-sentations (San Diego, USA) (2015 Dec.). [48] S. Tomar, “Converting Video Formats with FFmpeg,” Linux Journal ,vol. 2006, no. 146, p. 10 (2006 Apr.), doi:https://dl.acm.org/doi/10.5555/ 1134782.1134792. [49] M. Cheng, “LAME: LAME ain’t an MP3 Encoder,” https://lame. sourceforge.io/index.php (accessed 5, Nov. 2025). [50] T. V. Thiede et al. , “PEAQ - The ITU Standard for Objective Measure-ment of Perceived Audio Quality,” J. Audio Eng. Soc. , vol. 48, pp. 3–29 (2000 Jan.).
