@@ -6,63 +6,50 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-08-05
-- 运行时间：2026-08-05 22:04:02 UTC
+- 最新运行日期：2026-08-07
+- 运行时间：2026-08-07 01:09:10 UTC
 - 运行状态：成功
-- 本次总论文数：13
-- 精读区：6
-- 速读区：7
+- 本次总论文数：10
+- 精读区：4
+- 速读区：6
 
 ### 今日简报（AI）
-今日精选13篇音频AI论文，聚焦零样本语音合成与多说话人音频生成两大突破。
-
-最值得关注：真实环境感知TTS（10分）与统一多说话人音频生成模型SwanTale（9分），前者用解耦音频填充提升真实感，后者支持指令与零样本任务。
-
-建议优先精读上述两篇高分论文，可重点关注其训练数据与推理成本；若关注音效生成或语音伪造检测，可辅读两篇速读报告。
-- 详情：[/202608/05/README](/202608/05/README)
+今日精读10篇，聚焦音频场景评估与多语言语音翻译两大高分突破。最值得关注《AudioScape-TTA》构建细粒度声景基准，以及资源感知混合编码器破解多语言翻译瓶颈。建议普通读者优先精读这两篇，速读可侧重音频深度伪造检测方向。
+- 详情：[/202608/07/README](/202608/07/README)
 
 ### 精读区论文标签
-1. [Towards Real-world Environment-aware Zero-shot Text-to-speech Synthesis via Disentangled Audio Infilling](/202608/05/2608.03011v1-towards-real-world-environment-aware-zero-shot-text-to-speech-synthesis-via-disentangled-audio-infilling)  
-   标签：评分：10.0/10、query:speech-audio
-   evidence：基于解耦音频填充的零样本语音合成，直接属于TTS
-2. [SwanTale: Unified Multi-Speaker Speech and Audio Generation for Instruct and Zero-Shot Tasks](/202608/05/2608.02023v2-swantale-unified-multi-speaker-speech-and-audio-generation-for-instruct-and-zero-shot-tasks)  
+1. [AudioScape-TTA: A Structured Soundscape Benchmark for Fine-Grained Text-to-Audio Evaluation](/202608/07/2608.04479v1-audioscape-tta-a-structured-soundscape-benchmark-for-fine-grained-text-to-audio-evaluation)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：面向指令与零样本任务的统一多说话人语音与音频生成
-3. [GROW: Group-Relative Advantage-Weighted On-Policy Reinforcement Learning of Autoregressive-Diffusion Text-to-Speech model](/202608/05/2608.03215v1-grow-group-relative-advantage-weighted-on-policy-reinforcement-learning-of-autoregressive-diffusion-text-to-speech-model)  
+   evidence：用于细粒度文本到音频评估的结构化声景基准
+2. [Breaking the Curse ofMultilinguality inMany-to-Many Speech-to-Text Translation via a Resource-AwareMixture of Speech Encoders](/202608/07/2608.04586v1-breaking-the-curse-ofmultilinguality-inmany-to-many-speech-to-text-translation-via-a-resource-awaremixture-of-speech-encoders)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：提出面向文本转语音模型的强化学习方法，直接针对TTS合成训练。
-4. [Identity-Faithful Audio-Visual Target Speaker Extraction with QIANGDA and VOXBLINK2-AVSE](/202608/05/2608.03964v1-identity-faithful-audio-visual-target-speaker-extraction-with-qiangda-and-voxblink2-avse)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：构建了普通话音视频目标说话人提取基准与大规模数据集，属于语音/音频数据集与基准。
-5. [Towards More Expressive Spoken LLMs: Fine-Grained Intent Benchmarking and Acoustic-Lexical Decoupled Policy Optimization](/202608/05/2608.03054v1-towards-more-expressive-spoken-llms-fine-grained-intent-benchmarking-and-acoustic-lexical-decoupled-policy-optimization)  
+   evidence：提出资源感知的混合语音编码器以改善多语言语音到文本翻译，尤其提升低资源语言效果。
+3. [The Learning Objective Governs Perceptual Narrowing: A Cross-Lingual, Layer-Wise, Ten-Seed Study of Self-Supervised Speech Encoders](/202608/07/2608.00507v1-the-learning-objective-governs-perceptual-narrowing-a-cross-lingual-layer-wise-ten-seed-study-of-self-supervised-speech-encoders)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：口语大模型表现力提升的基准与策略优化
-6. [CLASVS: Continuous-Latent Autoregression for Melody-Preserving Lyric Editing in Singing Voice Synthesis](/202608/05/2608.03253v1-clasvs-continuous-latent-autoregression-for-melody-preserving-lyric-editing-in-singing-voice-synthesis)  
+   evidence：自监督语音编码器的跨语言逐层音素区分研究
+4. [MeloCodec: Harnessing Melodic Priors for High-Fidelity Singing Voice Representation](/202608/07/2608.03021v1-melocodec-harnessing-melodic-priors-for-high-fidelity-singing-voice-representation)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：歌声合成中的旋律保持歌词编辑
+   evidence：面向高保真歌声表示的神经音频编解码器，利用旋律先验支持基于大模型的音频合成。
 
 ### 速读区论文标签
-1. [AI-Based Sound Effect Generation: A Narrative Review of Generative Models Across Input Modalities](/202608/05/2608.03742v1-ai-based-sound-effect-generation-a-narrative-review-of-generative-models-across-input-modalities)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：综述文本到音频合成方法及多模态生成模型
-2. [REIMU: Efficient Heterogeneous Hierarchical Reasoning for SSL-Based Speech Deepfake Detection](/202608/05/2608.00857v1-reimu-efficient-heterogeneous-hierarchical-reasoning-for-ssl-based-speech-deepfake-detection)  
+1. [Hidden-Domain Routing for All-Type Audio Deepfake Detection](/202608/07/2608.00493v1-hidden-domain-routing-for-all-type-audio-deepfake-detection)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：利用自监督表征进行语音深度伪造检测，针对TTS和语音转换带来的安全威胁。
-3. [MeloCodec: Harnessing Melodic Priors for High-Fidelity Singing Voice Representation](/202608/05/2608.03021v1-melocodec-harnessing-melodic-priors-for-high-fidelity-singing-voice-representation)  
+   evidence：全类型音频深伪检测，属于语音/音频安全的复合主题。
+2. [REIMU: Efficient Heterogeneous Hierarchical Reasoning for SSL-Based Speech Deepfake Detection](/202608/07/2608.00857v1-reimu-efficient-heterogeneous-hierarchical-reasoning-for-ssl-based-speech-deepfake-detection)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：面向歌唱声音的神经音频编解码器，将旋律先验引入表示学习，服务于语音/音频合成
-4. [Ripple: Real-Time Streaming Audio-Video Generation With Cross-Modal Recurrent Memory](/202608/05/2607.26818v1-ripple-real-time-streaming-audio-video-generation-with-cross-modal-recurrent-memory)  
+   evidence：利用SSL表征检测TTS与语音转换生成的深度伪造语音
+3. [Speaker Verification Under Real Classroom Conditions for English Speech](/202608/07/2608.03623v1-speaker-verification-under-real-classroom-conditions-for-english-speech)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：教室噪声下的说话人验证，属于语音/音频处理方法的复合主题。
+4. [Anomalous Sound Detection Meets Noise-Aware Self-Supervised Learning](/202608/07/2608.00447v1-anomalous-sound-detection-meets-noise-aware-self-supervised-learning)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：实时流式音频视频联合生成，引入跨模态循环记忆，属于音频生成与同步研究。
-5. [The Learning Objective Governs Perceptual Narrowing: A Cross-Lingual, Layer-Wise, Ten-Seed Study of Self-Supervised Speech Encoders](/202608/05/2608.00507v1-the-learning-objective-governs-perceptual-narrowing-a-cross-lingual-layer-wise-ten-seed-study-of-self-supervised-speech-encoders)  
+   evidence：基于DCASE基准的音频异常检测与自监督音频表征
+5. [DDSynth-RL: Audio Synthesizer Inversion via Discrete Diffusion with Reinforcement Learning](/202608/07/2608.03032v1-ddsynth-rl-audio-synthesizer-inversion-via-discrete-diffusion-with-reinforcement-learning)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：跨语言逐层的自监督语音编码器研究
-6. [Music Restoration via Latent Operator Optimization and Diffusion Model Priors](/202608/05/2608.01972v1-music-restoration-via-latent-operator-optimization-and-diffusion-model-priors)  
+   evidence：通过离散扩散与强化学习实现音频合成器参数反演，属于音频合成方法范畴
+6. [Spoken Function Calling: A New Perspective on Spoken Language Understanding for Large Audio Language Models](/202608/07/2608.05126v1-spoken-function-calling-a-new-perspective-on-spoken-language-understanding-for-large-audio-language-models)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：音频恢复方法，属于语音音频大主题下的音频处理。
-7. [DDSynth-RL: Audio Synthesizer Inversion via Discrete Diffusion with Reinforcement Learning](/202608/05/2608.03032v1-ddsynth-rl-audio-synthesizer-inversion-via-discrete-diffusion-with-reinforcement-learning)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：基于离散扩散与强化学习的音频合成器反演
+   evidence：面向大型音频语言模型的口语语言理解，与语音识别和对话理解相关
 
 
 <div class="dpr-home-promo-card">
