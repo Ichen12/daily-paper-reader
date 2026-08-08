@@ -1,0 +1,447 @@
+Title: dots.tts.edit: Precisely Controlled Speech Editing with a Continuous Autoregressive Model
+
+URL Source: https://arxiv.org/pdf/2608.02673v1
+
+Published Time: Wed, 05 Aug 2026 00:03:00 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+> WORK IN PROGRESS
+
+# dots.tts.edit : Precisely Controlled Speech Editing with a Continuous Autoregressive Model 
+
+dots.tts Team 
+
+Playground: huggingface.co/spaces/dots-studio/dots.tts.edit 
+
+Demo Page: huggingface.co/spaces/dots-studio/dots-tts-edit-demo 
+
+# Abstract 
+
+Speech editing for content creation requires precise control over both what an edit should do and where it should apply. Free-form natural language provides a flexible interface for expressing edit requests, but its ambiguity may leave the intended operation, parameters, or target region underspecified. We study a precise and explicit interface for speech edit-ing: a transcript-grounded structural edit instruction with XML-style tags explicitly speci-fies typed operations and localizes them to transcript spans or boundaries. This semantic timeline avoids explicit timestamp alignment and provides an externally inspectable con-tract for compositional edits. We instantiate the interface in dots.tts.edit , an editor adapted from the continuous autoregressive dots.tts foundation model. Four representative speech-creation controls cover lexical content, affective expression, pitch and speaking-rate delivery, and temporal phrasing through text, emotion, prosody, and pause editing. Task-specific data pipelines construct operation- and scope-controlled pairs while retaining source-derived con-text outside each target region. We further introduce doteBench , a bilingual evaluation suite that measures precise instruction following, local preservation, and audio quality across the four controls and their composition. Experiments show leading overall instruction following and local preservation across its five editing categories, while audio quality remains com-parable to existing open-source systems. Across three Seed-TTS-Eval shards, the model shows negligible differences from the base model in zero-shot TTS recognition error rate and speaker similarity. The code and model will be released soon. 
+
+# 1 Introduction 
+
+Speech editing for content creation requires more than generating plausible speech. An editor must let a creator state which property should change, in which direction and by how much, and over exactly which part of an existing recording. Speech editing has historically provided this control most explicitly for lexical correction: inserting, deleting, or replacing words while matching the surrounding voice and acoustics (Jin et al., 2017; Tan et al., 2021; Wang et al., 2022; Bai et al., 2022). Practical creation also calls for changing the affective expression or pitch and rate of a selected phrase, or adjusting a phrasing boundary, without disturbing the rest of the utterance. Recent editing benchmarks such as MMAE use free-form natural language as an interface for specify-ing edit requests (Ma et al., 2026). This representation is flexible, but its flexibility can also introduce ambiguity: textual references may admit multiple interpretations, while the intended operation category, parameters, or target region may remain underspecified. Additionally, professional creation frequently requires repeatable controls whose requested effect and scope can be checked independently. Such set-tings benefit from a precise and explicit representation of editing instructions. A machine-readable, in-spectable, and composable representation is also suitable as a controllable backend for audio-creation 1arXiv:2608.02673v1 [cs.SD] 2 Aug 2026 WORK IN PROGRESS                    
+
+> Source transcript Tsrc “I thought the meeting starts after lunch today.”
+> Structural instruction uI thought the <sub targ="concert">meeting</sub> <emo desc="a happy and excited tone">starts after lunch</emo> <pause act="ins" level="2"/> today.
+> Expected target transcript Ttgt “I thought the concert starts after lunch ∥today.”
+> Figure 1: An explicit edit program. A transcript-grounded structural edit instruction with XML-style tags spec-ifies operation categories and parameters while colored spans and a boundary localize their effects. The transcript rendering replaces meeting with concert ; emotion and pause operations alter delivery without changing the remain-ing words. Colors and ∥in the target rendering are visual annotations that mark edited content, delivery, and the inserted pause; they are not part of Ttgt .
+
+studios or as a callable tool in agentic audio-creation workflows. We formalize this precision along two axes. Precise operation specification makes the operation cate-gory, direction, and parameters explicit—what to edit and how. Precise localization states where it ap-plies. Absolute timestamps require explicit temporal-alignment awareness, which is challenging for users and many audio-understanding systems, while acoustic boundaries are often ambiguous. A transcript-based semantic timeline is therefore more practical and easier to interact with in most speech-editing scenarios. We therefore propose a transcript-grounded structural edit instruction with XML-style tags. Natural-language descriptions can still express open-ended attributes such as emotion, while typed tags make the operation category and parameters explicit, bind each operation’s scope to linguistic spans or word boundaries, and serialize multiple non-overlapping operations in source order. The representation makes the requested behavior externally inspectable. Figure 1 illustrates the two forms of precision in a compositional edit. The space of speech-creation requests is broader than any fixed task list. We select four representative, re-curring controls that exercise distinct operation categories and localization patterns. Text editing changes lexical content at spans or boundaries. Emotion editing changes affective expression globally or over a se-lected span. Prosody editing controls pitch or speaking rate over a span. Pause editing changes temporal structure at a word boundary. Realizing this formulation remains difficult. The output must execute every requested operation, preserve non-target content and acoustics, and remain coherent even when a local edit changes duration. Natural recordings rarely provide paired utterances that differ only in one requested property, while alignment, resynthesis, and stitching can introduce incidental changes. The evaluation must therefore distinguish target execution from local preservation and overall audio quality. We instantiate the formulation in dots.tts.edit , adapting the continuous autoregressive dots.tts TTS foundation model (Lian et al., 2026). The model conditions on source speech and the explicit edit pro-gram, whose deterministic transcript renderings provide source and target transcripts, then generates target speech in the base model’s continuous latent space. Task-specific pipelines construct controlled pairs for the four representative categories under a common audio–instruction–audio contract. Multiple operations can be composed in one instruction and executed in one generation pass. We also introduce doteBench , a bilingual evaluation suite with precise, scope-aware metrics. Instruction Following tests whether the requested operation is realized, Local Preservation tests the complement of its specified location, and Audio Quality evaluates the complete output. Across text, emotion, prosody, pause, and compositional editing, dots.tts.edit achieves leading overall instruction following and local preservation among the evaluated open-source audio-generation and speech-editing systems, while main-taining comparable audio quality. Its Seed-TTS-Eval recognition and speaker-similarity scores remain close to the strongest dots.tts variants. 2WORK IN PROGRESS 
+
+Our contributions are: • a precise edit representation that explicitly specifies typed operations and parameters and localizes them to transcript spans or boundaries, supporting inspectable compositional control; • a continuous autoregressive speech editor and task-specific data pipelines that learn four representative creation controls under the same operation- and scope-controlled paired-data interface; and • doteBench, a bilingual suite that evaluates precise instruction following, local preservation, and audio quality for individual and compositional edits. 
+
+# 2 Related Work 
+
+Text-based speech editing. VoCo combines synthesis, retrieval, voice conversion, and stitching to re-place speech in an existing narration (Jin et al., 2017). Neural editors then learned missing-region acous-tics from text and surrounding speech: EditSpeech uses partial inference and bidirectional fusion (Tan et al., 2021), CampNet predicts masked speech (Wang et al., 2022), and A 3T introduces alignment-aware acoustic–text pretraining (Bai et al., 2022). FluentEditor variants regularize boundary acoustics and global prosody (Liu et al., 2023, 2024), whereas UniCATS uses contextual VQ-diffusion over semantic tokens (Du et al., 2023). Foundation-scale systems extend infilling through flow matching in Voicebox (Le et al., 2023) and autoregressive codec generation in VoiceCraft (Peng et al., 2024); CosyEdit and AST adapt pretrained TTS models for precise content edits (Chen et al., 2026; Lv et al., 2026). Many such systems rely on an explicit aligner module to map the edited transcript span to the acoustic region that is masked or regenerated. This progression improves realization, boundary fluency, and contextual continuity, but predominantly studies lexical edits rather than localized control of delivery. 
+
+Generalized generation and attribute editing. SpeechX prompts one codec language model for TTS, enhancement, extraction, and editing (Wang et al., 2023a). Step-Audio-EditX performs itera-tive utterance-level editing of emotion, speaking style, and paralinguistics (Yan et al., 2025a), while SpeechEdit selectively controls speaker, emotion, and prosody attributes during TTS generation (Pei et al., 2026). Ming-UniAudio supports free-form content editing and utterance-level acoustic changes (Yan et al., 2025b). UniSAE extends local content editing from sub-phoneme to word level and composes it with speaker and emotion control (Zhu et al., 2026). Beyond speech attributes, MMEdit localizes general-audio events, while Audio-Omni and UNISON unify editing across speech, sound, music, or audio scenes (Tao et al., 2025; Tian et al., 2026; Li et al., 2026a). Existing systems thus provide local control over content or events and utterance-level control over speech attributes. To our knowledge, 
+
+dots.tts.edit is the first end-to-end editor to jointly support fine-grained local text, emotion, prosody, and pause editing while preserving unrequested regions and attributes. 
+
+Speech editing benchmarks. RealEdit targets zero-shot content editing in diverse acoustics (Peng et al., 2024), and LibriSpeech-Edit adds controlled text and style edits with temporal-consistency mea-sures (Lv et al., 2026). SpeechEditBench covers content, emotion, prosody, and four other atomic edit-ing tasks, together with compositional editing (Zhang et al., 2026). Its preservation-success gate for non-content tasks checks only ASR WER/CER and therefore does not assess whether source prosody or other paralinguistic attributes remain preserved. MMAE broadens coverage to multimodal and mixed acoustic scenarios with complex instructions and local or global operations (Ma et al., 2026). Its fine-grained instruction-following and consistency rubrics rely on Qwen3-Omni judgments (Xu et al., 2025). Three independent queries, majority voting, and option shuffling mitigate variation in discrete rubric decisions and positional bias, but the resulting scores remain constrained by the judge’s fine-grained perceptual capability and offer limited interpretability. doteBench instead defines category-specific, scope-aware 3WORK IN PROGRESS 
+
+protocols for text, emotion, prosody, pause, and compositional editing under a common evaluation of instruction following, local preservation, and audio quality. MMAE emphasizes breadth and free-form tasks, whereas doteBench emphasizes interpretable execution and preservation measurements for explic-itly localized speech controls. 
+
+# 3 Problem Definition and Benchmark 
+
+3.1 Precisely Controlled Speech Editing 
+
+We define an edit sample as the five-tuple 
+
+dedit = (Tsrc , A src , u, T tgt , A tgt 
+
+) , Tsrc = gsrc (u) , Ttgt = gtgt (u) . (1) Here Tsrc and Ttgt are the source and target transcripts, Asrc and Atgt are the corresponding waveforms, and u is a transcript-grounded structural edit instruction with XML-style tags. The deterministic renderer 
+
+gsrc (u) removes the tags while retaining source-side lexical content, whereas gtgt (u) applies lexical inser-tions, deletions, and substitutions. Attribute tags leave the transcript unchanged. The editor produces 
+
+ˆAtgt = fθ
+
+(Tsrc , A src , u, T tgt 
+
+) . (2) Here fθ is the editor with trainable parameters θ, and ˆAtgt is its predicted target waveform. Each tag provides an operation category, its parameters, and a localization. Span operations wrap transcript tokens, whereas point operations mark word boundaries. This separates precise operation specification from precise localization and avoids making the generative model infer either field from an underspecified request. A successful output must (i) realize every tagged operation, (ii) preserve content and attributes outside the tagged locations, and (iii) remain natural and coherent as a complete utterance. The four evaluated categories are representative controls rather than an exhaustive speech-editing tax-onomy. Text operations modify lexical content through insertion, deletion, or substitution at spans or boundaries. Emotion operations modify affective expression globally or over a span. Prosody operations change pitch or speaking rate over a span, and pause operations insert, lengthen, or shorten temporal structure at a boundary. A compositional instruction contains several non-overlapping operations and succeeds only when all components are realized. 
+
+Extensibility. Within speech, the typed vocabulary can incorporate additional attributes and edit ac-tions. Its explicit schema also provides a stable tool boundary through which a studio frontend, planner, or agent can construct, validate, and invoke an edit program. More broadly, the structural-program prin-ciple could extend to non-verbal events, general audio, or music given a suitable symbolic timeline and paired supervision; this work evaluates speech only. 
+
+3.2 doteBench 
+
+We propose doteBench, a bilingual evaluation suite for precisely controlled speech editing. It comprises five categories: text editing, emotion editing, prosody editing, pause editing, and compositional editing. The first four evaluate one edit family at a time on single-speaker utterances, with explicit target and pre-served regions. Text editing has Easy and Hard splits; each other single-task category has one primary set. The compositional editing category covers two-, three-, and four-operation instructions; its instruc-tion following metrics report component-wise and all-component success. Together, the three evaluation dimensions match the control contract: Instruction Following tests execution of the specified operation, Local Preservation tests speech outside its localization, and Audio Quality tests the complete result. The hierarchy and case counts are shown in Figure 2, and Table 1 summarizes the measured dimensions. 4WORK IN PROGRESS Compositional Editing 240 
+
+> 2 Operations 180
+> Single Task Editing 1,541
+> Text 569
+> Easy 209 Hard 360
+> Emotion 312
+> Utterance 104 Local Span 104 Multi-span 104
+> Prosody 360
+> Pitch 120 Rate 120 Mixed 120
+> Pause 300
+> Insert 150 Reduce 150
+> 3 Operations 48 4 Operations 12
+
+## doteBench 
+
+> 1,781 cases
+
+Figure 2: Hierarchical composition of doteBench. Sector area is proportional to the number of cases. The single-task editing suite contains 1,541 cases across text, emotion, prosody, and pause editing. 
+
+Table 1: doteBench categories, case counts, and evaluation dimensions. Category #Cases Instruction following Local preservation Text 569 Edited-region WER/CER Non-edit WER/CER, WDTW-Dur/F0, SpkSim Emotion 312 Edited-emotion accuracy (Gemini) WER/CER, WDTW-Dur/F0, SpkSim Prosody 360 Duration/pitch error WER/CER, WDTW-Dur/F0, SpkSim Pause 300 Pause insertion/reduction accuracy WER/CER, WDTW-Dur/F0, SpkSim Compositional 240 Component/all-component success WER/CER, WDTW-Dur/F0, SpkSim 
+
+Instruction following. Text editing uses edited-region WER/CER. Emotion editing uses Gemini-evaluated edited emotion accuracy. Prosody editing measures error in the requested duration or pitch change. Pause editing reports the accuracy of completing the requested pause insertion or reduction. Compositional editing reports component-wise and all-component success. 
+
+Local preservation. For text editing, Qwen3-ASR (Shi et al., 2026) measures recognition error out-side the instruction-derived edit neighborhood. Because the other tasks retain the transcript, they use full-utterance WER/CER. We additionally compare matched, preserved words acoustically. WDTW-Dur inherits the word-level duration comparison introduced by AST (Lv et al., 2026); intuitively, it force-aligns instruction-selected words and measures the normalized change in their duration sequences, where lower values indicate better timing preservation. Duration alone cannot expose pitch drift, so we intro-duce WDTW-F0, which compares the minimum, maximum, and mean voiced F0 of eligible preserved words in semitones; lower values indicate less pitch drift. We report valid and skipped counts with the score. Speaker preservation (SpkSim) is the cosine similarity between WavLM-large/ECAPA-TDNN embeddings (Chen et al., 2022; Desplanques et al., 2020). Appendix A specifies these metrics. 5WORK IN PROGRESS Sampler  Weighted Randomizer  LLM-based     
+
+> Instruction Generator
+> Planner
+> Evaluator
+> effect, preservation, quality
+> Saver
+> Synthesizer
+> Text · duration estimation + F5-TTS infilling
+> Emotion · IndexTTS2 emotion guidance
+> Prosody · PSOLA / WSOLA + resynthesis
+> Pause · silence insert + F5-TTS repair
+
+Figure 3: Data construction pipeline. A sampler selects an original utterance, a planner produces an instruction and target transcript, and a task-specific synthesizer constructs the generated counterpart. The evaluator checks edit effect, preservation, and quality before the saver materializes accepted examples. Each constructed pair supplies both original-to-generated and generated-to-original supervision. 
+
+Audio quality and complementary evaluation. Beyond instruction following and preservation of unedited regions, evaluation must also measure the overall acoustic quality of the generated speech. Au-dio quality is measured by UTMOS (Saeki et al., 2022). Seed-TTS-Eval (Seed Team, ByteDance, 2024) tests whether base synthesis capability is retained. 
+
+# 4 Data Pipelines for Precisely Controlled Speech Editing 
+
+4.1 Construction Challenges and Shared Principle 
+
+Challenges. Natural recordings rarely provide two versions of the same utterance that differ only in one local attribute. A useful training pair must exhibit the requested change while keeping content, speaker identity, and the surrounding acoustics consistent. This is difficult to achieve by independently synthe-sizing the two sides: differences in timing, timbre, and rendering quality may then be mistaken for the intended edit. The difficulty is compounded by duration-changing operations, for which the same lin-guistic span occupies different source and target timelines. 
+
+Principle. Each task-specific pipeline constructs a provenance-aware original/generated pair around an intervention with an explicit operation category, parameters, and localization, then serializes it through the common edit sample in Equation 1. The pipelines differ in how they realize a control, but every accepted pair exposes the same operation- and scope-controlled supervision rather than an unrelated task-specific target. Inspired by the use of recorded anchors and synthetic counterparts in ISSE (Chen et al., 2025), we serialize every constructed pair in both directions. Besides doubling the supervision obtained from one intervention, the generated-to-original direction places the original audio on the target side. When the original is a recording, this prevents target supervision from depending exclusively on synthetic audio. Local assembly introduces a second problem. Directly joining a synthesized or signal-processed segment to its surrounding context often produces an audible seam, and a forced aligner does not always place the join exactly at the acoustic boundary. For pipelines that require such joins, we therefore use the masked-regeneration ability of F5-TTS (Chen et al., 2024) to resynthesize a short neighborhood around the boundary from both its transcript and acoustic context. This repair can modify a small amount of nominally unedited speech; we accept that controlled relaxation of exact preservation as a necessary trade-off for natural transitions and accurate content. The evaluator then checks instruction validity, edit realization, intelligibility, preservation, speaker consistency, and quality before the saver retains the pair together with its alignments, intervention parameters, validation results, and source provenance. 6WORK IN PROGRESS 
+
+4.2 Task-Specific Editing Pipelines 
+
+Text editing. Lexical edits change both the spoken content and its timeline. For insertion, deletion, and substitution, forced alignment first maps the instructed source spans to waveform intervals. We then construct a target-timeline condition whose unedited intervals copy samples from the original recording and whose edit intervals are masked. F5-TTS infills these masks from the target transcript while condi-tioning on the preserved speech on both sides. Thus the model sees a locally regenerated lexical change rather than an independently synthesized target utterance, and the reverse instruction turns insertions into deletions, deletions into insertions, and substitutions into their inverse. 
+
+Emotion editing. Emotion editing must alter several correlated acoustic cues without turning speaker or content variation into supervision. We build a speaker-balanced neutral timbre pool from open-source datasets, with 4,000 speakers and approximately 1 million utterances, and hold one speaker prompt fixed while IndexTTS2 (Zhou et al., 2025) renders the same text under different emotion conditions. For a local edit, the complete target-emotion realization is kept as the target audio. To construct its paired source, we use that same realization as the acoustic base and splice only the corresponding span from the source-emotion realization back into it. Consequently, the target remains a coherent, unspliced TTS output and the two sides share the same waveform away from the donor and repair regions. F5-TTS regenerates a narrow neighborhood around each join to suppress alignment and splicing artifacts. Repeating this construction with the two emotion realizations exchanged provides the reverse edit with the same clean-target property. 
+
+Prosody editing. Signal-level prosody control is precise, but by itself can distort speech and shift the perceived speaker timbre. PSOLA (Moulines and Charpentier, 1990) applies the requested pitch change and WSOLA (Verhelst and Roelands, 1993) applies the requested time stretch. We then resynthesize the transformed segment with the IndexTTS2 tokenizer and decoder. The transformed segment supplies semantic tokens, speaker-conditioning, and style features, while the original segment supplies the base speaker prompt and mel reference. This arrangement retains the intended prosody change while restoring identity and naturalness from the original recording. Rate editing similarly applies IndexTTS2 after WSOLA with the original utterance as its speaker reference. We cross-fade both types of transformed segments into the source; for pitch edits, we additionally apply narrow F5-TTS boundary repair. The rest of the utterance is copied from the original. 
+
+Pause editing. Pause editing requires explicit duration control, but inserting silence alone creates un-natural entry and exit transitions. Forced alignment locates the instructed linguistic boundary, where we insert exactly 200, 500, or 800 ms of zero-valued samples according to the requested level. F5-TTS then regenerates one short window covering the pause and speech context on both sides, allowing the two transitions to adapt to the new timing. Samples outside that repair window remain unchanged. The original-to-generated record teaches pause insertion, while swapping the two waveforms and reversing the instruction supplies the corresponding pause reduction. 
+
+# 5 dots.tts.edit : Continuous Autoregressive Speech Editing 
+
+5.1 Continuous Autoregressive Backbone 
+
+dots.tts is a 2B-parameter continuous autoregressive TTS foundation model (Lian et al., 2026). It rep-resents 48 kHz speech with an AudioVAE based on HoliTok (Li et al., 2026b), producing a 25 Hz la-tent stream. It reduces each four-frame patch to a 6.25 Hz semantic representation, and autoregressively predicts representations from which a flow-matching head renders continuous latent patches. A frozen CAM++ speaker encoder (Wang et al., 2023b) provides global identity conditioning. 7WORK IN PROGRESS LLM         
+
+> Causal Semantic Encoder
+> AR-DiT
+> Text Token
+> LLM Hidden
+> Semantic Embedding
+> VAE Latent
+> Noise
+> Target Speech
+> Structural Edit Instruction and Derived Target Transcript
+> I thought the <sub targ="concert"> meeting </sub> <emo desc="a happy
+> and excited tone"> starts after lunch </emo> <pause act="ins"/> today.
+> I thought the meeting starts after lunch today.
+> Source Transcript and Speech
+> I thought the concert starts after lunch || today.
+
+Figure 4: dots.tts.edit overview. Source transcript and speech, together with the transcript-grounded structural edit instruction with XML-style tags and its target-transcript rendering, condition the retained continuous autore-gressive dots.tts backbone; only target speech is generated. 
+
+dots.tts.edit retains this architecture and generation interface. We change the conditioning sequence and paired training examples rather than adding task-specific inpainting networks. The resulting model tests whether a continuous autoregressive TTS backbone can learn editing when source, intent, and target are represented explicitly. Figure 4 shows the retained backbone and the editing conditioning sequence. 
+
+5.2 Editing and TTS Training 
+
+Training mixes ordinary TTS examples with the paired editing examples from section 4. Let Zsrc =
+
+EVAE (Asrc ) and Ztgt = EVAE (Atgt ) denote the source and target AudioVAE latent sequences produced by the frozen encoder EVAE , and let espk denote the frozen CAM++ speaker embedding. Editing examples follow the sequence [ Tsrc , Z src , u, T tgt , Z tgt ]. The target-audio positions carry flow-matching and stopping supervision, and Zsrc provides the complete source utterance as acoustic context. TTS and editing retain distinct conditioning contexts but share the same target-latent generator: 
+
+pθ
+
+(Z | T, espk 
+
+)︸ ︷︷ ︸
+
+> TTS
+
+and pθ
+
+(Ztgt | Tsrc , Z src , u, T tgt , espk 
+
+)︸ ︷︷ ︸
+
+> editing
+
+. (3) Here T denotes a generic transcript, Z a target AudioVAE latent sequence, and pθ the shared conditional generator. Thus TTS is conditioned on the requested transcript and speaker identity, whereas editing additionally observes the source transcript, source speech, instruction, and target transcript. All edit families use this second factorization rather than separate task heads. For each supervised target patch x1, flow matching (Lipman et al., 2023) draws standard Gaussian noise 
+
+x0 ∼ N (0 , I ), where I is the identity covariance, and time t ∼ U (0 , 1) . With the configured zero terminal-noise scale, it forms xt = tx 1 + (1 − t)x0 and uses the target velocity v⋆ = x1 − x0. The autoregressive backbone supplies the causal semantic history and conditioning context for this patch-level velocity field. The training objective is 
+
+L = λFM E
+
+[
+
+∥vθ(xt, t ; c) − v⋆∥22
+
+]
+
++ λCE LCE + λEOS LEOS , (4) where vθ is the predicted velocity and c is the corresponding TTS or editing context in Equation 3. The expectation is over training examples, target patches, Gaussian noise, and interpolation times. LCE is masked next-token cross-entropy and LEOS predicts the end of each audio span; the loss weights λFM ,
+
+λCE , and λEOS are all one. Losses are normalized over their active token or latent-patch masks before being combined. 8WORK IN PROGRESS 
+
+# 6 Experiments 
+
+Our experiments ask four questions: whether the editor executes explicitly specified operations, whether it preserves speech outside their localizations, whether several operations can be composed in one gen-eration pass, and whether editing post-training retains the zero-shot TTS capability of the base model. doteBench answers the first three through Instruction Following, Local Preservation, and Audio Quality comparisons against existing open-source audio-generation and speech-editing models and task-specific pipelines. Seed-TTS-Eval provides the complementary TTS-retention test. 
+
+6.1 Setup 
+
+6.1.1 Training Model initialization. dots.tts.edit initializes all editor parameters from the public 2B-parameter 
+
+dots.tts checkpoint (Lian et al., 2026), whose weights are available online. 1 The backbone comprises a Qwen2.5-1.5B language model (Qwen Team, 2024), a 24-layer semantic encoder, and an 18-layer autoregressive flow-matching DiT (Peebles and Xie, 2023) operating on four-frame patches of a frozen 48 kHz AudioVAE. A frozen 512-dimensional CAM++ speaker encoder (Wang et al., 2023b) supplies the voice condition; we use the VoxCeleb-trained public checkpoint. 2
+
+Objectives and optimization. We optimize the flow-matching, audio-stop, and language-model ob-jectives end-to-end while keeping the AudioVAE and speaker encoder fixed. Training uses bfloat16 arithmetic, AdamW (Loshchilov and Hutter, 2019) with learning rate 2 × 10 −5, moment coefficients 
+
+β1 = 0 .9 and β2 = 0 .99 , weight decay 0.01 , gradient accumulation 2, and gradient clipping at 2. The WSD schedule (Hu et al., 2024) uses 1,000 linear warm-up updates and a 15,000-update linear decay to 15% of the peak rate. 
+
+Training mixture. TTS replay is sampled from the 1.5M-hour multilingual corpus used by the base model (Lian et al., 2026). Before the online quality filters in the training loader, the edit manifests contain approximately 11M text, 10M emotion, 8M prosody, and 5M pause pairs. The rounded sampling weights for TTS:text:emotion:prosody:pause are 48:4:4:2:1 ; the mixture therefore preserves the original synthesis pathway while repeatedly exposing the model to localized edits. 
+
+Augmentation. For 60% of edit examples, we concatenate two or three independently sampled seg-ments, up to 40 s total, creating longer, compositional, and potentially multi-speaker contexts that train preservation of each speaker identity. All concatenated examples drop the global CAM++ speaker em-bedding. Noise augmentation at 10–20 dB SNR supports speech enhancement and background-noise preservation. TTS replay is not augmented. 
+
+6.1.2 Evaluation Baselines. The open-source model comparison includes Step-Audio-EditX (Yan et al., 2025a), Ming-UniAudio (Yan et al., 2025b), Qwen3-Omni (Xu et al., 2025), MiMo-Audio-Instruct and MiMo-Audio-Base (Xiaomi LLM-Core Team, 2025), and Kimi-Audio (Kimi Team, 2025). For each baseline, we adapt the edit instruction as closely as possible to the instruction format and conditioning examples supported by its public interface. The tables additionally report an Identity reference that copies the source audio without executing the instruction. For Seed-TTS-Eval, we report the dots.tts.edit result and quote all baseline values from the dots.tts Technical Report (Lian et al., 2026). The compared systems are 
+
+> 1https://huggingface.co/collections/rednote-hilab/dotstts
+> 2https://modelscope.cn/models/iic/speech_campplus_sv_en_voxceleb_16k
+
+9WORK IN PROGRESS 
+
+Table 2: Text editing results are reported on both the Easy and Hard splits.                                                                                                                 
+
+> Edit WER/CER(%) ↓
+> Non-Edit WER/CER(%) ↓WDTW-Dur(%) ↓WDTW-F0(st) ↓SpkSim ↑UTMOS ↑
+> System Easy Hard Easy Hard Easy Hard Easy Hard Easy Hard Easy Hard Identity (source audio) 45.42 191.25 1.52 13.83 1.50 7.99 0.04 0.36 1.000 1.000 3.37 2.98 Task-specific pipeline 1.12 26.48 0.67 22.48 3.91 24.59 0.89 2.36 0.918 0.748 3.22 2.62 Step-Audio-EditX 16.80 21.69 2.39 5.87 8.29 13.19 3.15 3.27 0.762 0.708 3.69 3.63 Ming-UniAudio 26.73 150.25 3.33 16.57 7.39 16.36 2.06 2.50 0.801 0.817 3.22 2.84 Qwen3-Omni 4.53 26.18 0.47 4.36 13.61 15.46 6.08 6.19 0.149 0.178 4.24 4.21
+> MiMo-Audio-Instruct 5.87 20.80 5.62 6.86 13.81 13.71 4.14 3.93 0.636 0.619 3.27 3.06 MiMo-Audio-Base 87.61 182.83 97.71 104.82 42.57 41.05 4.89 5.40 0.379 0.495 3.68 3.34 Kimi-Audio 50.99 69.30 52.86 44.45 32.37 29.11 7.96 6.95 0.158 0.193 3.04 2.84
+> dots.tts.edit 1.25 13.70 0.71 1.51 6.76 7.89 2.33 2.47 0.847 0.757 3.40 3.13
+
+Table 3: Emotion editing results compare instruction following, local preservation, and audio quality.                                                            
+
+> System Emotion Acc.(%) ↑WER/CER(%) ↓WDTW-Dur(%)/F0(st) ↓SpkSim ↑UTMOS ↑
+> Identity (source audio) 16.59 2.76 0.00 0.00 1.000 3.07 Task-specific pipeline 27.88 2.88 3.61 0.62 0.871 2.77 Step-Audio-EditX 18.27 3.66 10.23 3.57 0.727 3.46 Ming-UniAudio 17.31 12.36 9.23 2.89 0.631 3.20 Qwen3-Omni 17.07 3.60 18.68 6.47 0.183 4.14
+> MiMo-Audio-Instruct 18.03 13.58 21.29 4.15 0.664 3.00 MiMo-Audio-Base 20.91 164.83 30.99 4.93 0.487 3.25 Kimi-Audio 22.36 24.98 16.60 7.90 0.195 2.72
+> dots.tts.edit 21.63 2.97 6.87 2.22 0.833 3.08
+
+three dots.tts variants, Seed-TTS (Seed Team, ByteDance, 2024), Qwen3-TTS (Hu et al., 2026), and VoxCPM2 (Zhou et al., 2026). 
+
+Benchmarks. The primary evaluation comprises the five doteBench categories. For text editing, the main comparison uses the Hard split; the Easy split is included in Table 2 for reference and is not merged into the headline scores. All doteBench systems are evaluated against the same frozen manifests. Gener-ation failures remain in metric denominators with fixed penalties, while a WDTW item is omitted only when the manifest defines no eligible preserved region. The resulting skip set is independent of the candi-date system. Seed-TTS-Eval uses 1,088 English, 2,020 Chinese, and 400 Chinese Hard examples under the official WER/CER and speaker-similarity protocol. 
+
+Inference parameters. At inference time, dots.tts.edit uses Euler integration with 10 flow steps, a classifier-free guidance scale of 1.2 (Ho and Salimans, 2022), speaker guidance of 1.5, bfloat16 inference, and a maximum generation length of 500 latent steps. 
+
+6.2 doteBench Results 
+
+Figure 5 summarizes the learned-model comparison. Across the five doteBench categories, dots.tts.edit 
+
+achieves leading overall instruction following and local preservation among the evaluated open-source audio-generation and speech-editing systems, while maintaining comparable audio quality. 
+
+Single-task editing. On Text Hard (Table 2), dots.tts.edit obtains 13.70% edited-region WER/CER and 1.51% non-edit WER/CER, and also gives the lowest open-source-model WDTW-Dur and WDTW-10 WORK IN PROGRESS Edit WER/CER Non-Edit WER/CER WDTW-Dur WDTW-F0 SpkSim UTMOS Emotion Acc. WER/CER WDTW-Dur WDTW-F0 SpkSim UTMOS Duration L1 Pitch L1 WER/CER WDTW-Dur WDTW-F0 SpkSim UTMOS Direction Acc. WER/CER WDTW-Dur WDTW-F0 SpkSim UTMOS Text Success Emotion Success Prosody Success Pause Success WER/CER WDTW-Dur WDTW-F0 SpkSim UTMOS dots.tts.edit Step-Audio-EditX Ming-UniAudio Qwen3-Omni MiMo-Audio-Instruct MiMo-Audio-Base Kimi-Audio Instruction Following Local Preservation Audio Quality Instruction Following Local Preservation Audio Quality 
+
+Text Editing Emotion Editing Prosody Editing Pause Editing Compositional Editing 
+
+Figure 5: Open-source model comparison on doteBench. Five panels summarize the text, emotion, prosody, pause, and compositional editing categories. Axes form contiguous groups for instruction following, local preser-vation, and audio quality. Fixed model-independent semantic bounds map every metric to [0 , 1] , with outward indicating better performance. All seven learned systems are shown for every category; the table-only Identity reference is not plotted. 
+
+Table 4: Prosody editing results compare instruction following, local preservation, and audio quality. 
+
+System Dur.L1(s) ↓ Pitch L1(st) ↓ WER/CER(%) ↓ WDTW-Dur(%)/F0(st) ↓ SpkSim ↑ UTMOS ↑
+
+Identity (source audio) 0.246 4.44 1.56 0.00 0.00 1.000 3.45 Task-specific pipeline 0.044 1.35 2.12 3.67 0.56 0.902 3.16 Step-Audio-EditX 0.256 4.48 3.22 6.37 2.34 0.793 3.75 Ming-UniAudio 0.234 4.59 34.36 7.73 2.14 0.743 2.89 Qwen3-Omni 0.478 6.40 21.83 31.14 6.54 0.119 3.90 
+
+MiMo-Audio-Instruct 0.335 5.08 8.06 19.54 3.73 0.630 3.23 MiMo-Audio-Base 0.649 6.04 131.21 27.40 5.46 0.336 3.33 Kimi-Audio 0.366 6.97 15.83 17.57 6.30 0.210 2.93 
+
+dots.tts.edit 0.083 2.73 1.91 6.38 1.66 0.871 3.56 
+
+F0. Its strongest gains therefore lie in editing control and local preservation rather than uniform domi-nance across evaluation axes. On emotion editing (Table 3), dots.tts.edit reaches 21.63% emotion accuracy while obtaining the lowest recognition error, WDTW-Dur, and WDTW-F0 and the highest speaker similarity among the learned systems. This combines competitive instruction following with leading local-preservation val-ues. On prosody editing (Table 4), dots.tts.edit obtains the lowest learned-system duration and pitch L1, recognition error, and WDTW-F0, together with near-best WDTW-Dur. On pause editing (Table 5), 
+
+dots.tts.edit reaches 83.17% direction accuracy and leads the learned systems on recognition error, WDTW-F0, and speaker similarity while maintaining near-best WDTW-Dur. 11 WORK IN PROGRESS 
+
+Table 5: Pause editing results compare instruction following, local preservation, and audio quality. 
+
+System Dir.Acc.(%) ↑ WER/CER(%) ↓ WDTW-Dur(%)/F0(st) ↓ SpkSim ↑ UTMOS ↑
+
+Identity (source audio) 10.83 4.25 0.00 0.00 1.000 3.07 Task-specific pipeline 84.17 4.94 6.79 1.18 0.982 3.01 Step-Audio-EditX 32.33 7.97 8.72 2.93 0.807 3.42 Ming-UniAudio 37.50 21.86 13.97 2.41 0.799 2.87 Qwen3-Omni 66.33 8.23 18.38 6.49 0.184 4.08 
+
+MiMo-Audio-Instruct 52.83 11.97 19.27 4.24 0.655 3.05 MiMo-Audio-Base 55.50 94.37 31.83 5.59 0.395 3.33 Kimi-Audio 56.83 38.89 25.17 7.88 0.187 2.82 
+
+dots.tts.edit 83.17 6.45 9.38 2.36 0.877 3.13 
+
+Table 6: Compositional editing results compare component-wise and all-component success. Component averages over requested operations; All requires every component to succeed. Pipeline baselines use multiple passes (i.e., are invoked repeatedly) to perform compositional editing, while all learned models are executed only once.                                                                                                               
+
+> Instruction Following Preservation and Quality System Component(%) ↑All(%) ↑Text(%) ↑Emotion(%) ↑Prosody(%) ↑Pause(%) ↑WER/CER(%) ↓
+> WDTW-Dur(%)/ F0(st) ↓SpkSim ↑UTMOS ↑
+> Identity (source audio) 12.86 1.67 33.33 13.04 2.17 2.90 9.33 2.43 0.11 1.000 3.07 Task-specific pipeline s67.57 34.17 85.51 23.19 98.55 63.04 2.84 5.96 1.19 0.951 2.88 Step-Audio-EditX 16.12 1.67 39.13 13.77 7.97 3.62 10.38 9.96 3.23 0.825 3.41 Ming-UniAudio 25.18 6.25 33.33 16.67 36.23 14.49 18.20 10.90 3.03 0.771 2.39 Qwen3-Omni 30.43 7.08 78.26 15.22 18.84 9.42 4.68 9.11 3.82 0.539 3.69
+> MiMo-Audio-Instruct 30.62 7.08 71.01 10.87 26.09 14.49 22.17 25.21 4.66 0.691 3.04 MiMo-Audio-Base 22.10 4.17 48.55 12.32 21.74 5.80 34.46 21.73 2.99 0.735 3.13 Kimi-Audio 21.92 4.17 49.28 13.04 16.67 8.70 30.35 19.45 4.64 0.530 2.89
+> dots.tts.edit 60.87 30.00 86.23 18.84 79.71 58.70 3.51 8.48 2.52 0.894 3.10
+
+Table 7: Retention of zero-shot TTS capability on Seed-TTS-Eval. 
+
+English Chinese Chinese Hard System Steps WER(%) ↓ SIM ↑ CER(%) ↓ SIM ↑ CER(%) ↓ SIM ↑
+
+Seed-TTS (Seed Team, ByteDance, 2024) – 2.25 0.762 1.12 0.796 7.59 0.776 Qwen3-TTS 1.7B (Hu et al., 2026) – 1.23 0.717 1.22 0.770 6.76 0.748 VoxCPM2 2B (Zhou et al., 2026) – 1.84 0.753 0.97 0.795 8.13 0.753 
+
+dots.tts 10 1.34 0.768 0.96 0.805 6.46 0.792 
+
+dots.tts + SOAR 10 1.30 0.771 0.94 0.810 6.60 0.795 
+
+dots.tts MeanFlow 4 1.29 0.762 0.94 0.800 6.60 0.785 
+
+dots.tts.edit 10 1.39 0.760 0.96 0.805 6.75 0.790 
+
+Compositional editing. On the compositional editing category, dots.tts.edit improves component success by 98.82% relative to MiMo-Audio-Instruct, whose component success is 30.62%, and all-component success by 323.53% relative to the tied Qwen3-Omni and MiMo-Audio-Instruct result of 7.08%. It also leads all evaluated open-source models on each family-specific success rate and on every preservation metric except UTMOS in Table 6. Its 60.87% component success and 30.00% all-component success correspond to 86.23/18.84/79.71/58.70% text/emotion/prosody/pause component rates. Text remains the strongest component and emotion the weakest, while prosody and pause also leave substantial room for improvement in multi-operation edits. Sequentially composing the task-specific pipelines yields 67.57% component success and 34.17% all-component success. The pipeline baseline obtains 85.51/23.19/98.55/63.04% text/emotion/prosody/pause component success. We further compare the editor with the data-construction pipelines. On text editing, the foundation-model backbone handles difficult target transcripts more robustly than the align-then-edit pipeline. For acoustic edits, the expert pipelines establish strong instruction-following and preservation toplines by isolating each edit region, applying the requested operation locally, and retaining the remaining wave-12 WORK IN PROGRESS                   
+
+> Table 8: The table compares dedicated editing with full-utterance zero-shot TTS on Text Hard.
+> Mode Target WER/CER(%) ↓
+> Edit WER/CER(%) ↓
+> Non-Edit WER/CER(%) ↓WDTW-Dur(%)/F0(st) ↓SpkSim ↑UTMOS ↑
+> Editing 11.15 13.70 1.51 7.89 2.47 0.757 3.129 Zero-shot TTS 14.72 17.88 2.79 11.38 3.43 0.799 3.327
+
+form. dots.tts.edit does not match every pipeline topline on these axes, but achieves higher UTMOS across all five categories with one model and one generation pass; the compositional pipeline baseline requires sequential calls to multiple task-specific pipelines. This one-model, one-pass design simplifies deployment. 
+
+6.3 TTS Capability Retention 
+
+Table 7 compares the release model with three dots.tts variants and three external TTS systems on all three Seed-TTS-Eval shards. Relative to the best dots.tts value in each column, dots.tts.edit differs by at most 0.29% absolute WER/CER and 0.011 in speaker similarity. English and standard Chinese remain nearly unchanged; Chinese Hard shows the largest, but still moderate, recognition degradation. Thus editing post-training largely retains zero-shot TTS intelligibility and speaker similarity rather than eliminating every regression. 
+
+6.4 Ablation Studies 
+
+Table 8 compares the dedicated editor with full-utterance zero-shot TTS on the same Text Hard cases. Editing lowers target WER/CER from 14.72% to 11.15%, edit-region WER/CER from 17.88% to 13.70%, WDTW-Dur from 0.1138 to 0.0789, and WDTW-F0 from 3.43 to 2.47. Full-utterance resyn-thesis retains higher speaker similarity and UTMOS. The dedicated editor therefore improves lexical accuracy and local temporal–prosodic preservation on challenging edits, while zero-shot resynthesis favors speaker similarity and predicted audio quality. 
+
+# 7 Conclusion 
+
+We presented dots.tts.edit , a precisely controlled speech editor built on a continuous autoregressive TTS model. Its transcript-grounded structural edit instruction with XML-style tags makes operation categories and parameters explicit and localizes them to transcript spans or boundaries. Text, emotion, prosody, and pause editing instantiate four representative creation controls, while task-specific pipelines construct operation- and scope-controlled pairs. The doteBench categories then evaluate whether re-quested operations execute, whether non-target speech remains preserved, and whether the complete result remains natural. Across the five doteBench categories, dots.tts.edit demonstrates leading overall instruction following and local preservation among the evaluated open-source systems, while maintaining comparable audio quality. Seed-TTS-Eval further shows that editing post-training largely retains the foundation model’s synthesis capability: across three shards, recognition differs from the strongest dots.tts variant by at most 0.29% absolute and speaker similarity by at most 0.011. These results support the structural instruction as a practical, inspectable interface for individual and compositional speech edits in human-directed studio interfaces and agent-mediated editing workflows. 13 WORK IN PROGRESS 
+
+# Limitations 
+
+The current model can preserve the identities of multiple speakers in an utterance, but it does not support speaker conversion; doteBench also does not yet cover multi-speaker editing tasks. The current exper-iments also do not provide a matched comparison between natural-language and structural interfaces. Consequently, our precision claim concerns the explicitness and inspectability of the control contract rather than deterministic generation or causal superiority over natural-language editing. We have not evaluated dots.tts.edit in an end-to-end agent integration. Moreover, although dots.tts.edit achieves higher predicted perceptual quality than the data-construction pipeline baselines across the evaluated cat-egories, its audio quality still has substantial room for improvement. More advanced non-autoregressive foundation TTS or caption-to-speech models could enable data-construction pipelines with fewer synthe-sis and smoothing stages and more fluent audio; we leave this direction to future work. 
+
+# Contributors 
+
+dots.tts.edit is jointly developed by dots, Xiaohongshu Inc. and the X-LANCE Lab at the School of Computer Science, Shanghai Jiao Tong University. 
+
+Authors: Hankun Wang, Bohan Li, Shi Lian, Xiaoyu Gu, Jing Peng, Da Zheng, Colin Zhang, Kai Yu. 
+
+# A doteBench Local-Preservation Metrics 
+
+A.1 Instruction-Derived Preservation Mask 
+
+Each doteBench instruction identifies a transcript span or boundary to be edited. For text editing, source– target transcript differences first identify the target tokens; the excluded neighborhood is expanded by three tokens on both sides. Recognition substitutions, deletions, and insertions are counted only on the complement of that neighborhood. Emotion, prosody, and pause edits do not change the transcript, so their content-preservation score is full-utterance WER/CER. For acoustic preservation, source and edited utterances are force-aligned. Matching transcript tokens are paired in order, and pairs associated with an edited span or its excluded neighborhood are removed. This instruction-derived mask prevents a metric from penalizing the requested change as preservation failure. 
+
+A.2 WDTW-Dur 
+
+WDTW-Dur builds on the word-level WDTW duration formulation introduced by AST (Lv et al., 2026). Dynamic time warping (Sakoe and Chiba, 1978) is applied to the duration sequences of the selected source and output words. Let X = (( xi, d src  
+
+> i
+
+)) mi=1 and Y = (( yj , d out  
+
+> j
+
+)) nj=1 , where xi and yj are normal-ized word forms, dsrc  
+
+> i
+
+and dout  
+
+> j
+
+their durations, and m and n the source and output word counts. The local cost is 
+
+cij =
+
+{|dsrc  
+
+> i
+
+− dout  
+
+> j
+
+|, xi = yj ,dsrc  
+
+> i
+
++ dout  
+
+> j
+
++ λmis , xi̸ = yj , λmis = 1 .0 s. (5) Here λmis is the word-mismatch penalty. Let Dij be the minimum accumulated alignment cost through source word i and output word j. With D00 = 0 , Di0 = D0j = ∞ for positive indices, it follows 
+
+Dij = cij + min {Di−1,j , D i,j −1, D i−1,j −1}. (6) 14 WORK IN PROGRESS 
+
+The normalized score is WDTW-Dur (X, Y ) = Dmn 
+
+∑mi=1 dsrc  
+
+> i
+
++ ∑nj=1 dout 
+
+> j
+
+. (7) Items with no selected duration are omitted. Tables report 100 times this ratio as a percentage; lower val-ues indicate better timing preservation. AST supplies the forced-alignment, duration-DTW, and length-normalization premise, while doteBench makes the instruction-derived selection and local cost explicit. 
+
+A.3 WDTW-F0 
+
+WDTW-Dur is insensitive to pitch drift. For every eligible preserved word, WDTW-F0 uses Praat through Parselmouth (Boersma, 2001; Jadoul et al., 2018) to extract the minimum, maximum, and mean voiced F0 from the aligned source and output intervals. For statistic k ∈ K = {min , max , mean } of valid word 
+
+r, let F src  
+
+> 0,r,k
+
+and F out  
+
+> 0,r,k
+
+denote the corresponding source and output F0 statistics. The semitone error is 
+
+er,k =
+
+∣∣∣∣∣12 log 2
+
+F out 
+
+> 0,r,k
+
+F src 
+
+> 0,r,k
+
+∣∣∣∣∣ ,
+
+WDTW-F0 = 1
+
+|V| 
+
+∑
+
+> r∈V
+
+13
+
+∑
+
+> k∈K
+
+er,k .
+
+(8) where V contains words with valid voiced estimates on both sides. Other eligible words are excluded rather than assigned zero error. Every result therefore includes eligible, valid, and skipped word counts; comparisons with different valid counts should not be interpreted as equivalent. Despite its name, WDTW-F0 is not dynamic time warping over complete F0 trajectories: it is a word-aligned summary designed to complement the duration measure. 
+
+# References 
+
+Zeyu Jin, Gautham J. Mysore, Stephen DiVerdi, Jingwan Lu, and Adam Finkelstein. VoCo: Text-based insertion and replacement in audio narration. ACM Transactions on Graphics , 36(4):1–13, 2017. doi: 10.1145/3072959.3073702. URL https://doi.org/10.1145/3072959.3073702 .Daxin Tan, Liqun Deng, Yu Ting Yeung, Xin Jiang, Xiao Chen, and Tan Lee. EditSpeech: A text based speech editing system using partial inference and bidirectional fusion. In 2021 IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) , pages 626–633, 2021. doi: 10.1109/ASRU51503. 2021.9688051. URL https://arxiv.org/abs/2107.01554 .Tao Wang, Jiangyan Yi, Ruibo Fu, Jianhua Tao, and Zhengqi Wen. CampNet: Context-aware mask prediction for end-to-end text-based speech editing. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 30:2241–2254, 2022. doi: 10.1109/TASLP.2022.3190717. URL https: //arxiv.org/abs/2202.09950 .He Bai, Renjie Zheng, Junkun Chen, Mingbo Ma, Xintong Li, and Liang Huang. A3T : Alignment-aware acoustic and text pretraining for speech synthesis and editing. In Proceedings of the 39th International Conference on Machine Learning , volume 162 of Proceedings of Machine Learning Research , pages 1399–1411, 2022. URL https://proceedings.mlr.press/v162/bai22d.html .Ziyang Ma, Ruiqi Yan, Ruiyang Xu, Jie Fang, Zhikang Niu, Yi-Wen Chao, Wenming Tu, Tianrui Wang, Auden, Qi Chen, Wenxi Chen, Jiaying Chi, Yanru Huo, Zixuan Jiang, Xiquan Li, Yalin Li, Junxi Liu, Minghao Liu, Binghao Qiang, Yijia Shan, Zheshu Song, Tian Tan, Zixiang Wang, Zeyu Xie, Zhifei Xie, Xiaoyu Xing, Qixiang Xu, Chen Yang, Guanrou Yang, Shan Yang, Yifan Yang, Steve Yves, Haotian 15 WORK IN PROGRESS 
+
+Zhang, Haina Zhu, Kai Yu, Liefeng Bo, Eng-Siong Chng, and Xie Chen. MMAE: A massive multitask audio editing benchmark, 2026. URL https://arxiv.org/abs/2606.07229 .Shi Lian, Changtao Li, Bohan Li, Hankun Wang, Da Zheng, Junfeng Tian, Yufeng Ma, Colin Zhang, and Kai Yu. dots.tts technical report, 2026. URL https://arxiv.org/abs/2606.07080 .Rui Liu, Jiatian Xi, Ziyue Jiang, and Haizhou Li. FluentEditor: Text-based speech editing by considering acoustic and prosody consistency, 2023. URL https://arxiv.org/abs/2309.11725 .Rui Liu, Jiatian Xi, Ziyue Jiang, and Haizhou Li. FluentEditor2: Text-based speech editing by model-ing multi-scale acoustic and prosody consistency, 2024. URL https://arxiv.org/abs/2410. 03719 .Chenpeng Du, Yiwei Guo, Feiyu Shen, Zhijun Liu, Zheng Liang, Xie Chen, Shuai Wang, Hui Zhang, and Kai Yu. UniCATS: A unified context-aware text-to-speech framework with contextual VQ-diffusion and vocoding, 2023. URL https://arxiv.org/abs/2306.07547 .Matthew Le, Apoorv Vyas, Bowen Shi, Brian Karrer, Leda Sari, Rashel Moritz, Mary Williamson, Vimal Manohar, Yossi Adi, Jay Mahadeokar, and Wei-Ning Hsu. Voicebox: Text-guided multilingual uni-versal speech generation at scale. In Advances in Neural Information Processing Systems , volume 36, 2023. URL https://arxiv.org/abs/2306.15687 .Puyuan Peng, Po-Yao Huang, Shang-Wen Li, Abdelrahman Mohamed, and David Harwath. VoiceCraft: Zero-shot speech editing and text-to-speech in the wild. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics , 2024. URL https://aclanthology.org/ 2024.acl-long.673/ .Junyang Chen, Yuhang Jia, Hui Wang, Jiaming Zhou, and Yong Qin. CosyEdit: Unlocking end-to-end speech editing capability from zero-shot text-to-speech models, 2026. URL https://arxiv.org/ abs/2601.05329 .Sihan Lv, Yechen Jin, Zhen Li, Jintao Chen, Jinshan Zhang, Ying Li, Jianwei Yin, and Meng Xi. AST: Adaptive, seamless, and training-free precise speech editing, 2026. URL https://arxiv.org/ abs/2604.16056 .Xiaofei Wang, Manthan Thakker, Zhuo Chen, Naoyuki Kanda, Sefik Emre Eskimez, Sanyuan Chen, Min Tang, Shujie Liu, Jinyu Li, and Takuya Yoshioka. SpeechX: Neural codec language model as a versatile speech transformer, 2023a. URL https://arxiv.org/abs/2308.06873 .Chao Yan, Boyong Wu, Peng Yang, Pengfei Tan, Guoqiang Hu, Li Xie, Xiangyu (Tony) Zhang, Fei Tian, Xuerui Yang, Xiangyu Zhang, Daxin Jiang, Shuchang Zhou, and Gang Yu. Step-Audio-EditX technical report, 2025a. URL https://arxiv.org/abs/2511.03601 .Hanchen Pei, Shujie Liu, Yanqing Liu, Jianwei Yu, Yuanhang Qian, Gongping Huang, Sheng Zhao, and Yan Lu. A unified neural codec language model for selective editable text to speech generation, 2026. URL https://arxiv.org/abs/2601.12480 .Canxiang Yan, Chunxiang Jin, Dawei Huang, Haibing Yu, Han Peng, Hui Zhan, Jie Gao, Jing Peng, Jingdong Chen, Jun Zhou, Kaimeng Ren, Ming Yang, Mingxue Yang, Qiang Xu, Qin Zhao, Ruijie Xiong, Shaoxiong Lin, Xuezhi Wang, Yi Yuan, Yifei Wu, Yongjie Lyu, Zhengyu He, Zhihao Qiu, Zhiqiang Fang, and Ziyuan Huang. Ming-UniAudio: Speech LLM for joint understanding, generation and editing with unified representation, 2025b. URL https://arxiv.org/abs/2511.05516 .Chuanbo Zhu, Wuyou Zhou, Rongxiu Zhong, Shilei Zhang, Kun Qian, Yike Guo, and Wei Xue. UniSAE: Unified speech attribute editing on speaker, emotion and low-level content via discrete phonetic pos-teriorgram modelling, 2026. URL https://arxiv.org/abs/2606.31128 .Ye Tao, Wen Wu, Chao Zhang, Mengyue Wu, Shuai Wang, and Xuenan Xu. MMEDIT: A unified 16 WORK IN PROGRESS 
+
+framework for multi-type audio editing via audio language model, 2025. URL https://arxiv. org/abs/2512.20339 .Zeyue Tian, Binxin Yang, Zhaoyang Liu, Jiexuan Zhang, Ruibin Yuan, Hubery Yin, Qifeng Chen, Chen Li, Jing Lyu, Wei Xue, and Yike Guo. Audio-Omni: Extending multi-modal understanding to versatile audio generation and editing, 2026. URL https://arxiv.org/abs/2604.10708 .Zhaoqing Li, Haoning Xu, Jingran Su, Yaofang Liu, Zhefan Rao, Huimeng Wang, Jiajun Deng, Tianzi Wang, Zengrui Jin, Rui Liu, Haoxuan Che, and Xunying Liu. UNISON: A unified sound generation and editing framework via deep LLM fusion, 2026a. URL https://arxiv.org/abs/2605. 31530 .Hanlin Zhang, Daxin Tan, Dehua Tao, Xiao Chen, Haochen Tan, and Linqi Song. SpeechEditBench: A bilingual multi-attribute benchmark for instruction-guided speech editing, 2026. URL https: //arxiv.org/abs/2606.01804 .Jin Xu, Zhifang Guo, Hangrui Hu, Yunfei Chu, Xiong Wang, Jinzheng He, Yuxuan Wang, Xian Shi, Ting He, Xinfa Zhu, et al. Qwen3-Omni technical report, 2025. URL https://arxiv.org/ abs/2509.17765 .Xian Shi, Xiong Wang, Zhifang Guo, Yongqi Wang, Pei Zhang, Xinyu Zhang, Zishan Guo, Hongkun Hao, Yu Xi, Baosong Yang, Jin Xu, Jingren Zhou, and Junyang Lin. Qwen3-ASR technical report, 2026. URL https://arxiv.org/abs/2601.21337 .Sanyuan Chen, Chengyi Wang, Zhengyang Chen, Yu Wu, Shujie Liu, Zhuo Chen, Jinyu Li, Naoyuki Kanda, Takuya Yoshioka, Xiong Xiao, Jian Wu, Long Zhou, Shuo Ren, Yanmin Qian, Yao Qian, Jian Wu, Michael Zeng, Xiangzhan Yu, and Furu Wei. WavLM: Large-scale self-supervised pre-training for full stack speech processing. IEEE Journal of Selected Topics in Signal Processing , 16(6):1505–1518, 2022. doi: 10.1109/JSTSP.2022.3188113. Brecht Desplanques, Jenthe Thienpondt, and Kris Demuynck. ECAPA-TDNN: Emphasized channel attention, propagation and aggregation in TDNN based speaker verification. In Proceedings of Inter-speech , pages 3830–3834, 2020. doi: 10.21437/Interspeech.2020-2650. Takaaki Saeki, Detai Xin, Wataru Nakata, Tomoki Koriyama, Shinnosuke Takamichi, and Hiroshi Saruwatari. UTMOS: UTokyo-SaruLab system for VoiceMOS challenge 2022. In Proceedings of Interspeech , pages 4521–4525, 2022. doi: 10.21437/Interspeech.2022-439. Seed Team, ByteDance. Seed-TTS: A family of high-quality versatile speech generation models, 2024. URL https://arxiv.org/abs/2406.02430 .Yun Chen, Qi Chen, Zheqi Dai, Arshdeep Singh, Philip J. B. Jackson, and Mark D. Plumbley. ISSE: An instruction-guided speech style editing dataset and benchmark, 2025. URL https://arxiv. org/abs/2509.24570 .Yushen Chen, Zhikang Niu, Ziyang Ma, Keqi Deng, Chunhui Wang, Jian Zhao, Kai Yu, and Xie Chen. F5-TTS: A fairytaler that fakes fluent and faithful speech with flow matching, 2024. URL https: //arxiv.org/abs/2410.06885 .Siyi Zhou, Yiquan Zhou, Yi He, Xun Zhou, Jinchao Wang, Wei Deng, and Jingchen Shu. IndexTTS2: A breakthrough in emotionally expressive and duration-controlled auto-regressive zero-shot text-to-speech, 2025. URL https://arxiv.org/abs/2506.21619 .Eric Moulines and Francis Charpentier. Pitch-synchronous waveform processing techniques for text-to-speech synthesis using diphones. Speech Communication , 9(5–6):453–467, 1990. doi: 10.1016/ 0167-6393(90)90021-Z. Werner Verhelst and Marc Roelands. An overlap-add technique based on waveform similarity (WSOLA) 17 WORK IN PROGRESS 
+
+for high quality time-scale modification of speech. In Proceedings of the IEEE International Conference on Acoustics, Speech, and Signal Processing , volume 2, pages 554–557, 1993. doi: 10.1109/ICASSP.1993.319366. Bohan Li, Shi Lian, Hankun Wang, Yiwei Guo, Yu Xi, Zhihan Li, Da Zheng, Colin Zhang, and Kai Yu. HoliTok: A continuous holistic tokenization with robust dual capabilities of speech generation and understanding, 2026b. URL https://arxiv.org/abs/2605.29948 .Hui Wang, Siqi Zheng, Yafeng Chen, Luyao Cheng, and Qian Chen. CAM++: A fast and efficient network for speaker verification using context-aware masking. In Proceedings of Interspeech , pages 5301–5305, 2023b. doi: 10.21437/Interspeech.2023-1513. Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. In International Conference on Learning Representations , 2023. URL https: //arxiv.org/abs/2210.02747 .Qwen Team. Qwen2.5 technical report, 2024. URL https://arxiv.org/abs/2412.15115 .William Peebles and Saining Xie. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 4195–4205, 2023. URL https: //arxiv.org/abs/2212.09748 .Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In International Conference on Learning Representations , 2019. URL https://arxiv.org/abs/1711.05101 .Shengding Hu, Yuge Tu, Xu Han, Chaoqun He, Ganqu Cui, Xiang Long, Zhi Zheng, Yewei Fang, Yux-iang Huang, Weilin Zhao, et al. MiniCPM: Unveiling the potential of small language models with scalable training strategies, 2024. URL https://arxiv.org/abs/2404.06395 .Xiaomi LLM-Core Team. MiMo-Audio: Audio language models are few-shot learners, 2025. URL 
+
+https://arxiv.org/abs/2512.23808 .Kimi Team. Kimi-Audio technical report, 2025. URL https://arxiv.org/abs/2504.18425 .Hangrui Hu, Xinfa Zhu, Ting He, Dake Guo, Bin Zhang, Xiong Wang, Zhifang Guo, Ziyue Jiang, Hongkun Hao, Zishan Guo, Xinyu Zhang, Pei Zhang, Baosong Yang, Jin Xu, Jingren Zhou, and Jun-yang Lin. Qwen3-TTS technical report, 2026. URL https://arxiv.org/abs/2601.15621 .Yixuan Zhou, Guoyang Zeng, Xin Liu, Xiang Li, Renjie Yu, Jiancheng Gui, Jiaheng Wu, Ziyang Wang, Xudong Wang, Runchuan Shen, et al. VoxCPM2 technical report, 2026. URL https://arxiv. org/abs/2606.06928 .Jonathan Ho and Tim Salimans. Classifier-free diffusion guidance, 2022. URL https://arxiv. org/abs/2207.12598 .Hiroaki Sakoe and Seibi Chiba. Dynamic programming algorithm optimization for spoken word recog-nition. IEEE Transactions on Acoustics, Speech, and Signal Processing , 26(1):43–49, 1978. doi: 10.1109/TASSP.1978.1163055. Paul Boersma. Praat, a system for doing phonetics by computer. Glot International , 5(9/10):341–345, 2001. URL https://www.fon.hum.uva.nl/paul/papers/speakUnspeakPraat_ glot2001.pdf .Yannick Jadoul, Bill Thompson, and Bart de Boer. Introducing Parselmouth: A python interface to Praat. 
+
+Journal of Phonetics , 71:1–15, 2018. doi: 10.1016/j.wocn.2018.07.001. 18
