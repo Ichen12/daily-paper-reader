@@ -6,61 +6,49 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-08-08
-- 运行时间：2026-08-08 20:44:08 UTC
+- 最新运行日期：2026-08-09
+- 运行时间：2026-08-09 20:39:42 UTC
 - 运行状态：成功
-- 本次总论文数：13
-- 精读区：2
-- 速读区：11
+- 本次总论文数：9
+- 精读区：5
+- 速读区：4
 
 ### 今日简报（AI）
-今日精读语音深度伪造检测与可控语音编辑两大方向，共处理13篇论文，其中2篇精读、3篇速读。  
-最值得关注的是《AffectDF》——针对情感表达攻击的最全面伪造检测基准（9.0分），以及《dots.tts.edit》——基于连续自回归模型的精确语音编辑（8.0分）。  
-建议后续重点追踪情感化攻击下的检测鲁棒性，并留意语音编辑技术的伪造风险。
-- 详情：[/202608/08/README](/202608/08/README)
+今日精读聚焦音频深伪检测，9篇文章中5篇精读、4篇速读，覆盖全类型音频与SSL语音伪造识别。  
+最值得关注的是两项9.0分研究：Hidden-Domain Routing实现全类型音频深伪检测，REIMU提出高效分层推理框架，均显著提升鲁棒性与效率。  
+普通读者可优先关注课堂场景说话人验证的实际表现，以及视频生成中视觉时序信息的利用价值。
+- 详情：[/202608/09/README](/202608/09/README)
 
 ### 精读区论文标签
-1. [AffectDF: The Most Comprehensive Benchmark for Speech Deepfake Detection against Emotionally Expressive Attacks](/202608/08/2608.05507v1-affectdf-the-most-comprehensive-benchmark-for-speech-deepfake-detection-against-emotionally-expressive-attacks)  
+1. [Hidden-Domain Routing for All-Type Audio Deepfake Detection](/202608/09/2608.00493v1-hidden-domain-routing-for-all-type-audio-deepfake-detection)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：覆盖TTS、VC与LALM攻击的语音深度伪造检测综合基准
-2. [dots.tts.edit: Precisely Controlled Speech Editing with a Continuous Autoregressive Model](/202608/08/2608.02673v1-dotsttsedit-precisely-controlled-speech-editing-with-a-continuous-autoregressive-model)  
+   evidence：跨语音、环境音、歌声和音乐的全类型音频深伪检测
+2. [REIMU: Efficient Heterogeneous Hierarchical Reasoning for SSL-Based Speech Deepfake Detection](/202608/09/2608.00857v1-reimu-efficient-heterogeneous-hierarchical-reasoning-for-ssl-based-speech-deepfake-detection)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：针对TTS/语音转换生成语音的深度伪造检测
+3. [Anomalous Sound Detection Meets Noise-Aware Self-Supervised Learning](/202608/09/2608.00447v1-anomalous-sound-detection-meets-noise-aware-self-supervised-learning)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：基于自回归TTS模型的精确语音编辑
+   evidence：使用双通道音频的噪声感知自监督学习进行异常声音检测
+4. [Vorch-Omni: Multi-Task Orchestration of Sight and Sound](/202608/09/2608.05803v1-vorch-omni-multi-task-orchestration-of-sight-and-sound)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：基于任意条件到任意输出的统一多任务视听生成框架
+5. [Bias Analysis of L2 Speaking Assessment Systems Using Concept Activation Vectors](/202608/09/2608.06300v1-bias-analysis-of-l2-speaking-assessment-systems-using-concept-activation-vectors)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：利用概念激活向量对自动口语评估系统进行偏差分析
 
 ### 速读区论文标签
-1. [Hidden-Domain Routing for All-Type Audio Deepfake Detection](/202608/08/2608.00493v1-hidden-domain-routing-for-all-type-audio-deepfake-detection)  
+1. [Speaker Verification Under Real Classroom Conditions for English Speech](/202608/09/2608.03623v1-speaker-verification-under-real-classroom-conditions-for-english-speech)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：面向全类型音频深度伪造检测的隐藏域路由方法
-2. [REIMU: Efficient Heterogeneous Hierarchical Reasoning for SSL-Based Speech Deepfake Detection](/202608/08/2608.00857v1-reimu-efficient-heterogeneous-hierarchical-reasoning-for-ssl-based-speech-deepfake-detection)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：基于SSL与异质层次推理的语音深度伪造检测，与TTS和语音转换生成语音的安全性相关。
-3. [Speaker Verification Under Real Classroom Conditions for English Speech](/202608/08/2608.03623v1-speaker-verification-under-real-classroom-conditions-for-english-speech)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：真实教室条件下的说话人验证，面向儿童与成人，提升鲁棒性
-4. [Decolonizing Linguistic Policies in Automated Speech Recognition: A Framework for Cross-Culturally Competent Speech AI](/202608/08/2608.06141v1-decolonizing-linguistic-policies-in-automated-speech-recognition-a-framework-for-cross-culturally-competent-speech-ai)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：面向ASR的公平与文化胜任框架
-5. [DDSynth-RL: Audio Synthesizer Inversion via Discrete Diffusion with Reinforcement Learning](/202608/08/2608.03032v1-ddsynth-rl-audio-synthesizer-inversion-via-discrete-diffusion-with-reinforcement-learning)  
+   evidence：真实课堂噪声条件下的说话人验证，属于语音/音频核心主题
+2. [Speaker Verification Under Real Classroom Conditions for English Speech](/202608/09/2608.03623v2-speaker-verification-under-real-classroom-conditions-for-english-speech)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：基于离散扩散与强化学习的音频合成器反演
-6. [Speaker Verification Under Real Classroom Conditions for English Speech](/202608/08/2608.03623v2-speaker-verification-under-real-classroom-conditions-for-english-speech)  
+   evidence：真实教室噪声下的英语说话人验证
+3. [Visual Representation Matters: Exploiting Temporal Differences in Video-to-Audio Generation](/202608/09/2608.04902v1-visual-representation-matters-exploiting-temporal-differences-in-video-to-audio-generation)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：真实课堂条件下的说话人验证，属于语音处理但不直接对应该要求列表中的合成/识别任务。
-7. [HyPASE: Hyperbolic Geometry for Parameter-Efficient Speech Emotion Fine-Tuning Framework for Large Audio-Language Models](/202608/08/2608.04351v1-hypase-hyperbolic-geometry-for-parameter-efficient-speech-emotion-fine-tuning-framework-for-large-audio-language-models)  
+   evidence：利用时间差分表示进行视频到音频生成，是音频合成方法的重要进展。
+4. [PD-GS: Phoneme-Driven 3DGS for Audio-Driven Talking Heads](/202608/09/2608.05218v1-pd-gs-phoneme-driven-3dgs-for-audio-driven-talking-heads)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：用于语音情感识别的双曲参数高效微调框架
-8. [MERaLiON-GR: Speech Gender Recognition Model for English and SEA Languages](/202608/08/2608.04433v1-meralion-gr-speech-gender-recognition-model-for-english-and-sea-languages)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：英语和东南亚语言的语音性别识别模型
-9. [Visual Representation Matters: Exploiting Temporal Differences in Video-to-Audio Generation](/202608/08/2608.04902v1-visual-representation-matters-exploiting-temporal-differences-in-video-to-audio-generation)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：利用时域差异的视频到音频生成，属于音频合成技术，但不是文本驱动。
-10. [Spoken Function Calling: A New Perspective on Spoken Language Understanding for Large Audio Language Models](/202608/08/2608.05126v1-spoken-function-calling-a-new-perspective-on-spoken-language-understanding-for-large-audio-language-models)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：面向大型音频语言模型的口语语言理解，相关但非核心语音识别
-11. [Vorch-Omni: Multi-Task Orchestration of Sight and Sound](/202608/08/2608.05803v1-vorch-omni-multi-task-orchestration-of-sight-and-sound)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：多任务视听生成，音频可作为条件或生成目标
+   evidence：基于音素驱动的说话头动画生成，与语音驱动动画相关而非核心TTS/ASR
 
 
 <div class="dpr-home-promo-card">

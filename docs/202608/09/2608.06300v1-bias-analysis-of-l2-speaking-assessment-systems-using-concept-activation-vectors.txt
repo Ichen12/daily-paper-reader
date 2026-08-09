@@ -1,0 +1,314 @@
+Title: Bias Analysis of L2 Speaking Assessment Systems Using Concept Activation Vectors
+
+URL Source: https://arxiv.org/pdf/2608.06300v1
+
+Published Time: Fri, 07 Aug 2026 01:16:08 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+# Bias Analysis of L2 Speaking Assessment Systems Using Concept Activation Vectors 
+
+Arya Labroo 
+
+University of Cambridge 
+
+al2135@cam.ac.uk 
+
+Mengjie Qian 
+
+University of Cambridge 
+
+mq227@cam.ac.uk 
+
+Kate Knill 
+
+University of Cambridge 
+
+kmk1001@cam.ac.uk 
+
+Abstract —Automatic speaking assessment systems are increas-ingly deployed in high-stakes settings to mark second lan-guage (L2) learners’ speaking tests, making it critical to show that their scores depend on speaking proficiency rather than irrelevant speaker attributes such as first language (L1) or age. Transformer-based foundation models have improved the accuracy of these L2 speaking graders, but their black-box representations make fairness and interpretability analysis more difficult. Building on prior work that used Concept Activation Vectors (CAVs) to detect bias towards unwanted attributes (‘concepts’) in feature-based graders, we extend CAV-based analysis to two neural speaking assessment systems: a text-based BERT grader and a speech-and-text multimodal grader based on Whisper. CAVs represent human-interpretable concepts as directions in a model’s activation space, allowing us to distinguish between whether a concept is encoded in a model’s internal representations and whether it influences the predicted score, the latter quantified using a gradient-based sensitivity metric. Since CAVs rely on linear separability, which is less likely in complex neural embedding spaces, we also investigate whether sparse autoencoders (SAEs) provide cleaner concept directions by learning CAVs in a sparse latent space and mapping them back to activation space. Our analysis shows that concept recoverability depends strongly on the representation and architecture being probed, rather than on the concept alone. Sensitivity to con-cepts is also architecture-dependent. SAEs make concepts more linearly recoverable, but attenuate the original activation-space sensitivity, especially in low-dimensional layers. These findings highlight the need to distinguish concept recoverability from concept influence when auditing bias in speaking assessment systems. 
+
+Index Terms —Speaking Assessment, Fairness and Bias, Con-cept Activation Vector, Sparse Autoencoder, Interpretability. 
+
+I. I NTRODUCTION 
+
+Second language (L2) automatic speaking assessment sys-tems estimate a candidate’s proficiency level from their spoken responses to one or more questions. The goal of these systems is to match the scores a human examiner would award to the candidate. Transformer foundation model based versions of these systems have achieved state-of-the-art performance which meet the scoring accuracy requirements e.g. [1]–[7]. These systems take audio and/or text (ASR transcripts) as in-put, convert the input into an embedding representation which is then passed to a regression head that predicts the candidate’s test score. Models such as BERT [8], wav2vec2.0 [9] and Whisper [10] have been used to encode the input from the candidate. As these foundation model based automatic speaking assess-ment systems are increasingly deployed in high-stakes settings such as immigration and employment certification, it becomes critical that their scores reflect speaking ability rather than irrelevant attributes of the speaker. A fair grader should rely on evidence of ability such as fluency, grammatical control, and content, and remain insensitive to attributes such as first language (L1) or age. These attributes are nonetheless richly present in the data and can enter a grader either from the large, under-documented corpora used to pre-train its foundation model, or from imbalance in the task-specific fine-tuning data, where an over-represented group at a given proficiency can become a shortcut for predicting the score. Such biases have been documented across a wide range of machine learning applications, including demographic accu-racy disparities in commercial gender classification and face analysis systems [11] and gender stereotypes encoded in word embeddings [12]. However, detecting bias in modern neural models is more challenging, because aggregate performance metrics do not reveal which internal representations drive a model’s predictions, and these representations are often highly distributed and entangled. A line of interpretability work has shown, however, that human-interpretable information can be recovered from a network’s internal activations: linear clas-sifier probes can decode properties from intermediate layers [13], and individual representational directions can be aligned with semantic concepts [14]. Building on these ideas, the TCAV framework [15] introduces Concept Activation Vectors (CAVs), which represent a human-interpretable concept as a direction in the activation space learned by a linear classifier to separate activations of examples that exhibit the concept from those that do not. The influence of a concept is then quantified by measuring the sensitivity of the model’s pre-diction to that direction using gradients. Applied to image classification, TCAV has been used both to explain model predictions and to uncover biases, for example by associating the concept ‘female’ with the class ‘apron’. Crucially, CAVs distinguish between whether a concept is encoded in a model’s representations and whether it actually influences the model’s prediction. Wei et al. [16] adapted CAVs from classification to the regression setting of automatic speaking assessment and used them to detect bias in a feature-based grader, i.e. one based on ‘hand-crafted’ and human interpretable features. They arXiv:2608.06300v1 [cs.AI] 6 Aug 2026 validated the method by recovering a deliberately injected L1 bias and showing that concepts flagged on training data cor-responded to bias on expert-scored evaluation data. This work extend their analysis to Transformer-based graders, showing that the linear recoverability of a concept is not a reliable indicator of its influence on the predicted score. Building on this observation, we investigate how concept recoverability and influence vary across the layers of modern Transformer foundation models, and whether learning CAVs in a sparse latent representation improves concept-based bias analysis. This question is motivated by a key assumption of CAVs that a concept can be represented by a single linear direc-tion, an assumption that becomes increasingly restrictive as Transformer representations become higher-dimensional and more entangled. Sparse autoencoders (SAEs), which learn a sparse, higher-dimensional latent space in which features may be more disentangled, have recently been shown to recover more interpretable features from Transformer activations than the raw neurons [17], [18]. This raises a natural question: does learning CAVs in an SAE latent space improve concept-based bias analysis? This work aims to address these challenges with the fol-lowing contributions: i) we extend CAV-based bias analysis to Transformer-based automatic speaking assessment systems; ii) we compare representation-level bias across text-only (BERT) [8] and speech-text (Whisper) graders [19], iii) we investigate sparse autoencoders as a complimentary representation for concept-based bias analysis. In the rest of this paper, Sections II and III describe the CAV and SAE methods used to assess and probe a grader’s sensitivity to a concept. Section IV describes the datasets, graders, and concepts, and Section V presents the experiments, comparing concept recoverability and concept influence across both architectures and both probing methods. II. C ONCEPT ACTIVATION VECTORS 
+
+Concept Activation Vectors (CAVs) [15] provide arepresentation-level method for analysing whether a neural network encodes human-interpretable concepts and whether those concepts influence its predictions. In the context of spoken language assessment, this enables us to distinguish whether attributes such as L1, gender, or proficiency are merely represented by the model or contribute to the predicted score. A trained grader with parameters θ maps an input response x(i) for speaker i to a predicted score 
+
+ˆy(i) = F (x(i); θ). (1) For CAV analysis the model can be split at a chosen internal layer, mapping the input to the activation vector h(i) ∈ Rd at that layer, and then that activation to the output, 
+
+h(i) = Fh(x(i); θ); ˆy(i) = Fy (h(i); θ). (2) The key idea is that the hidden activations form a space in which properties of the input may be represented geomet-rically: if examples corresponding to a concept c, occupy a different region from examples not corresponding to it, then a direction in activation space captures the difference between the two groups, and this direction is the CAV. To construct it, each example is given a binary concept label 
+
+t(i) = +1 if it belongs to concept c and t(i) = −1 otherwise. Then a linear classifier is trained to separate the positive and negative activation vectors by minimising the hinge loss 
+
+L(d(c), b ) = 
+
+> N
+
+X
+
+> i=1
+
+max 
+
+n
+
+0, 1 − t(i)
+
+(d(c))⊤h(i) + b
+
+o 
+
+, (3) with an L2 penalty on d(c) and balanced class weighting to account for concept imbalance. The vector d(c) ∈ Rd, normal to the decision boundary, is the CAV for concept c, and its direction points towards increasing presence of the concept. If the classifier cannot separate the classes better than chance, the concept is not linearly recoverable at that layer and the CAV is uninformative. Conversely, high classification accuracy indicates only that the concept is encoded in the representation, not that it influences the predicted score; influence is assessed using the sensitivity metric described below. The original TCAV [15] method was developed for classi-fication. In spoken language assessment the output is a scalar proficiency score, so the question becomes whether movement in the concept direction changes the predicted score. Following Wei et al [16], which adapted CAVs to regression, we analyse the alignment between the concept direction and the gradient of the predicted score with respect to the activation, 
+
+∇hFy (h(i); θ) = ∂F y (h; θ)
+
+∂h h=h(i)
+
+. (4) In order for CAV magnitudes to be comparable across layers and models, the direction is scaled by the mean activation norm, 
+
+∆h(c) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+∥h(i)∥2
+
+!
+
+d(c)
+
+∥d(c)∥2
+
+. (5) Comparing directions with the cosine distance cos( a, b) = 1−a⊤b/(∥a∥2∥b∥2), which is 0 for aligned, 1 for orthogonal, and 2 for opposite directions, the main sensitivity metric is the mean per-speaker gradient cosine distance, 
+
+B(c)gr = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+cos 
+
+
+
+∆h(c), ∇hFy (h(i); θ)
+
+
+
+. (6) A value of B(c)gr near 1 indicates that the concept direction is close to orthogonal to the score-increasing direction, so the score is insensitive to the concept; a value below 1 indicates that increasing the concept tends to increase the predicted score, while a value above 1 indicates that it tends to decrease it. Potential bias is therefore indicated only when a concept that should be irrelevant to scoring is both recoverable, by classifier accuracy, and also aligned with the scoring direction, by B(c)gr .III. S PARSE AUTOENCODERS 
+
+A CAV assumes a concept can be captured by a single linear direction. While this is often reasonable for smaller models, it weakens as models scale, since large speech and language models tend to represent many factors in overlapping, non-orthogonal directions, known as superposition. This creates two problems: a concept may be encoded but not linearly separable; and even when a linear classifier does separate the examples, the resulting direction may mix the intended concept with other correlated factors. Sparse autoencoders (SAEs) learn sparse, higher-dimensional representations that have been shown to recover more interpretable features from Transformer activations [17], [18]. We therefore investigate whether learning CAVs in the SAE latent space yields cleaner concept directions for bias analysis. We adopt the TopK SAE [18], which enforces sparsity explicitly by retaining only the K largest latent activations for each input. An SAE has two parts: an encoder that maps an activation to a higher-dimensional latent vector, and a linear decoder that reconstructs the activation from it. Given an activation vector h ∈ Rd at the layer under analysis, the encoder produces a latent vector z ∈ Rm (with m > d ) by keeping only its K largest entries, and the decoder reconstructs 
+
+ˆh,
+
+z = TopK(ReLU( WE h + bE )) , ˆh = WD z+bD , (7) where WE ∈ Rm×d and bE are the encoder weights and bias, WD ∈ Rd×m and bD the decoder weights and bias, d
+
+is the activation dimension, and m is the latent dimension. The 
+
+TopK operation zeroes all but the K largest entries, so each latent vector has at most K active units. The SAE is trained on activations extracted from the frozen grader by minimising the reconstruction error ∥hˆh∥22; the grader is not trained jointly. Once trained, the SAE provides an alternative representa-tion for learning concept directions. Rather than training the concept classifier directly on the dense activations h, each activation is first encoded as a sparse latent vector z, and the CAV is learned in the latent space, producing a latent-space CAV d(c) 
+
+> z
+
+.The linear decoder gives the SAE a useful geometric inter-pretation. Writing the reconstruction as ˆh = Pmj=1 zj wj +bD
+
+each decoder column wj ∈ Rd is a direction in the original activation space, so a linear direction in the latent space corresponds to a weighted combination of decoder directions in the activation space. This makes it possible to learn a CAV in the sparse latent space and map it back into activation space, where it can be evaluated with the same gradient metric as the baseline CAV. Specifically, each activation is first encoded, and a linear classifier is trained to separate the concept classes in the latent space, giving a latent space CAV d(c) 
+
+> z
+
+∈ Rm.Since the decoder is linear, the corresponding activation-space CAV is obtained by 
+
+d(c) 
+
+> h, SAE
+
+= WD d(c)
+
+> z
+
+∥WD d(c) 
+
+> z
+
+∥2
+
+, (8) The mapped CAV is evaluated using the same gradient-based sensitivity metric B(c)gr as the standard CAV. The standard CAV and SAE-CAV approaches therefore differ only in whether the concept direction is learned from the dense activations h or from the sparse vectors z. The mapped direction lies in the span of the decoder columns, and so is constrained by what the SAE has learned to reconstruct - if the SAE does not reconstruct the part of activation space relevant to a concept well, the mapped CAV may be unreliable. The latent space intercept also does not transfer cleanly, since the encoder is non-linear, so the mapped quantity is interpreted as a direction only. The hyperparameters for the SAE are chosen based on four complementary criteria: reconstruction error, sparsity, dead-feature fraction, and decoder coherence. Reconstruction error, measured by the mean squared error between h and 
+
+ˆh, indicates how well the sparse code preserves the original activations. Sparsity, the fraction of latent units inactive (zero) on average, controls whether individual latent units can be interpreted as distinct features. For a TopK SAE, this is fixed at 
+
+1 − K/m . The dead-feature fraction is the proportion of latent units that never activate on the data, and measures wasted capacity. Finally, decoder coherence, the mean absolute cosine similarity between decoder columns, captures redundancy: a value near zero indicates the feature directions are close to orthogonal rather than overlapping. These trade off against one another, and so are considered jointly. IV. E XPERIMENTAL SETUP 
+
+A. Datasets 
+
+The primary dataset is the Speaking component of the Busi-ness Language Testing Service (BULATS) examination [20], a multi-level monologic computer assisted test of business-focused L2 English [16]. Responses are scored by trained human examiners on a scale from 0 to 6 and mapped to CEFR [21] levels pre-A1 to C2. Our analysis focuses on Part 1, in which the candidate answers six short questions about them-selves and their background, work, or future plans, producing short, semi-spontaneous personal responses well suited to per-response representation analysis. The data comprises 1657 
+
+training, 188 development, and 465 evaluation speakers. Im-portantly, this dataset includes rich speaker metadata, including gender, age, and L1, enabling analysis of multiple potential sources of bias. As a secondary corpus we use the Speak & Improve (S&I) 2025 Corpus [22], [23], a publicly available dataset of L2 learner English with a closely related computer-delivered, monologic Part 1 format, comprising 3068 training, 438 devel-opment, and 300 evaluation speakers. is used to assess whether findings on BULATS generalise to an independently collected corpus, while its public availability supports reproducibility. Its main limitation for the purposes of this work is the absence of demographic metadata. To enable demographic analysis, we infer speaker gender using an ECAPA-TDNN [24] voice gender classifier [25]. Other demographic concepts are not considered, as they cannot be reliably inferred using existing external models. 
+
+B. Grader Models 
+
+We analyse two graders that differ in input modality and model architecture. The BERT grader takes the response transcript as input and outputs a holistic proficiency score [26], [27]. The transcriptions are obtained from an automatic speech recognition (ASR) system, here, the out-of-the-box Whisper small model [10] is used. The BERT grader produces to-ken embeddings, which are pooled into a fixed-dimensional response representation by four parallel self-attention heads and passed through a feed-forward regression head with two hidden layers and a linear output. Analysis is performed at two points in this head: the post-ReLU output of the first hidden layer ( d = 600 ), denoted Layer 1, and the post-ReLU output of the second ( d = 20 ), denoted Layer 2. The grader is fine-tuned end-to-end with an MSE objective. The Whisper grader is a ‘Whisper-Fuse’ model built on a pre-trained encoder-decoder [10], which additionally accepts the audio signal. Each Part 1 question response is a segment: its audio is converted to a log-mel spectrogram and encoded into latent audio embeddings, and the decoder cross-attends to these while running over the segment’s transcript tokens, fusing acoustic and lexical information. Attention pooling collapses each segment to a fixed vector, a second stage of attention pooling combines the segments, and the result is passed to a head of two linear layers with a ReLU between them. Analysis is performed at the 2048 -dimensional concate-nated input to the head, dense.in , and the 64 -dimensional post-ReLU representation, act.out . This grader was not trained as part of this work, instead a provided checkpoint is analysed [19]. 
+
+C. Concepts 
+
+A concept is defined by a binary labelling of speakers. 
+
+Proficiency concepts are derived by thresholding the CEFR scale, e.g. ≥ A2 (≥ 2.0) or ≥ B2 (≥ 4.0). These are expected to align with the score and so verify that the pipeline detects influence when it should be present. Demographic and L1 
+
+concepts are the concepts of primary interest, since the grader should be insensitive to them. BULATS provides gender (the positive class is female), age, and several first languages, while S&I provides only the inferred gender concept described above. Table I summarises the mean score of each BULATS concept’s positive and negative groups. A non-zero gap ∆
+
+means the concept correlates in some way with proficiency in the data, against which any measured sensitivity must be read. For each concept and layer, activations and per-speaker score gradients are captured at the four analysis points above, and a CAV is extracted with the regularised hinge classifier of Section II, using balanced class weighting given the imbalance of the L1 and proficiency concepts. For each layer, a TopK SAE is swept over the latent size m and sparsity k and the configuration is selected to balance reconstruction error, TABLE I: Mean BULATS score by concept. n+/n− are the positive/negative class sizes, ¯s+/¯s− their mean scores, and 
+
+∆ = ¯ s+ − ¯s−. The positive class for Gender is female.                                                                  
+
+> Concept n+¯s+n−¯s−∆
+> Proficiency (CEFR threshold)
+> ≥A21579 3.82 78 1.31 2.51
+> ≥B11344 4.09 313 2.06 2.03
+> ≥B2862 4.56 795 2.79 1.77
+> Demographic
+> Gender 643 3.69 613 3.69 −0.00
+> Age ≤30 907 3.63 743 3.80 −0.17
+> First language (L1)
+> Dutch 135 4.46 1522 3.64 0.82
+> Italian 111 4.03 1546 3.68 0.35
+> Polish 167 4.00 1490 3.67 0.32
+> Japanese 97 3.41 1560 3.72 −0.31
+> Thai 105 3.38 1552 3.73 −0.35
+> Gujarati 207 3.31 1450 3.76 −0.45
+
+TABLE II: Grader performance on the BULATS and S&I evaluation sets. ≤ 0.5 and ≤ 1.0 are the percentage of responses scored within 0.5 and 1.0 of the human score. All metrics are after calibration.                          
+
+> Corpus Grader RMSE PCC ≤0.5≤1.0
+> BULATS BERT 0.817 0.756 45.0 78.2 Whisper 0.781 0.786 44.7 80.4 S&I BERT 0.557 0.684 62.3 93.3 Whisper 0.546 0.749 59.0 95.7
+
+sparsity, dead-feature fraction, and decoder coherence on the development split. V. E XPERIMENTS 
+
+A. Grader Performance 
+
+Bias analysis is meaningful only if the underlying speaking assessment model provides a reliable estimate of proficiency. We therefore first evaluate the grading performance of the BERT and Whisper graders (Section IV-B). Table II reports both graders on the BULATS and S&I evaluation sets. Pearson Correlation Coefficient (PCC) values lie between 0.68 and 
+
+0.79 , and a large majority of responses are placed within a full grade band of the human score, implying that all four (model, dataset) pairs are suitable for subsequent analysis. The Whisper grader’s lower Root Mean Square Error (RMSE) on S&I is expected, since the grader was fine-tuned on S&I. 
+
+B. Concept Recoverability 
+
+Before measuring influence, it is first necessary to determine whether each concept is linearly recoverable. Table III reports the balanced accuracy, the mean of the positive and negative concept class accuracies, of the CAV classifier on BULATS. This has a chance baseline of 50% regardless of class preva-lence. A cell is marked degenerate (orange) when the smaller of the two per-class accuracies falls below 10% , meaning that the CAV has collapsed to predicting one class for every TABLE III: BULATS CAV quality: balanced accuracy (%) of the linear classifier on the training set. Blue = usable, yellow = weakly usable, orange = degenerate. ‘Pos %’ is the positive-class prevalence. 
+
+BERT Whisper Concept Pos % Layer 1 Layer 2 dense.in act.out 
+
+Proficiency 
+
+≥ A2 95.3 88.1 87.4 91.8 88.8 
+
+≥ B1 81.1 83.7 84.0 85.5 82.0 
+
+≥ B2 52.0 79.7 79.6 82.4 78.5 
+
+Demographic 
+
+Gender 51.2 57.4 51.8 85.0 61.8 Age ≤ 30 55.0 60.1 54.3 75.3 59.2 
+
+First language (L1) 
+
+Arabic 10.0 50.8 50.0 80.7 50.0 Dutch 8.1 66.2 65.6 88.5 70.5 French 7.3 57.6 57.6 72.0 54.5 Gujarati 12.5 59.2 66.4 88.9 70.7 Italian 6.7 54.0 53.2 64.9 50.0 Japanese 5.9 50.0 50.0 73.6 50.0 Polish 10.1 51.7 50.0 81.8 50.4 Thai 6.3 50.0 50.0 81.5 50.0 
+
+speaker and identifies the class-prior direction rather than a concept direction. A cell is marked weakly usable (yellow) when both classes are predicted but balanced accuracy is below 60% , and finally usable (blue) otherwise. We exclude degenerate cells from the bias analysis. Whisper dense.in is the only layer where every con-cept is linearly recoverable. The two BERT layers and the Whisper post-ReLU output have more than half L1 concepts degenerate. The proficiency concepts are usable everywhere, as expected as they are what the graders are trained to capture. All four layers share the same class imbalance, yet recover-ability differs substantially, i.e. only dense.in separates the demographic and L1 concepts. The failure of the other layers is therefore a property of the representations they learn, not of the imbalance. Subsequent analyses focus on Dutch and Gujarati, the only L1 concepts recoverable across both BERT layers, enabling consistent comparison across models. 
+
+C. Bias Detection in Activation Space 
+
+Here we examine whether recoverable concepts influence the predicted scores. Specifically, the gradient-based sensitivity metric Bgr is applied to each (model, layer, concept) whose CAV is usable, with the activation-space columns of Table IV reporting the results. Since sensitivity does not imply unfair-ness when a concept correlates with true proficiency, each value is read against the score gaps in Table I. 
+
+Bgr < 1 consistently for proficiency concepts. For BERT this moves further from 1 with depth: ≥ A2 drops from 0.81 
+
+at Layer 1 to 0.46 at Layer 2, with the same trend for ≥ B1
+
+and ≥ B2. The BERT grader thus becomes more sensitive to proficiency closer to its output. The L1 directions reflect the dataset’s score imbalance, with Dutch speakers scoring 
+
+0.82 above non-Dutch on average and their Bgr dropping 1.5 2.0 2.5 3.0 3.5 4.0 4.5           
+
+> Predicted score
+> 0.0 0.5 1.0 1.5 2.0
+> Bgr
+> BERT Layer 1: Bgr vs Predicted Score
+> A2
+> Gender L1 Dutch 1.5 2.0 2.5 3.0 3.5 4.0 4.5
+> Predicted score
+> 0.0 0.5 1.0 1.5 2.0
+> Bgr
+> BERT Layer 2: Bgr vs Predicted Score
+> A2
+> Gender L1 Dutch
+
+Fig. 1: Per-speaker Bgr for the BERT grader at Layer 1 (left) and Layer 2 (right), for the ≥ A2, Gender (female), and L1 Dutch concepts. The ≥ A2 and Dutch concepts move further below the no-sensitivity baseline of 1 from Layer 1 to Layer 2, while Gender stays close to 1.1.5 2.0 2.5 3.0 3.5 4.0 4.5  
+
+> Predicted score
+> 0.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75 2.00
+> Bgr
+> BERT Layer 2: CAV-Only vs SAE-CAV Bgr
+> SAE-CAV CAV-only
+
+Fig. 2: Per-speaker Bgr for the L1 Dutch concept at BERT Layer 2, comparing the activation-space CAV with the SAE-CAV. The SAE-CAV is attenuated towards the no-sensitivity baseline of 1.from 0.91 to 0.52 across the two BERT layers, while Gujarati speakers score 0.45 below and its Bgr rises from 1.03 to 
+
+1.10 , in the score-decreasing direction. The Whisper grader, by contrast, stays close to Bgr = 1 for all demographic and L1 concepts and shows no clean depth trend. Also, its proficiency sensitivity is weaker than BERT’s, reaching at most 0.83 
+
+against BERT’s 0.46 . Fig. 1 shows the per-speaker Bgr for BERT at both layers, making the deepening sensitivity to the 
+
+≥ A2 and Dutch concepts visible, while the Gender concept stays close to the baseline at both layers. These differences can be related to the input modality. BERT scores transcripts and can access speaker attributes only as far as they surface in lexical and grammatical choices, whereas Whisper has direct access to acoustic information such as pitch and accent that correlates with gender and L1. This is consistent with the recoverability results, where these concepts were linearly separable only at dense.in . The one within-model effect not explained by a score gap is a very slight sensitivity against the female gender concept at BERT Layer 2 ( Bgr = 1 .11 ), despite the almost-zero gender score gap. These profiency and architecture trends are also found in S&I, with BERT again becoming more sensitive with depth (≥ B1 reaching 0.23 at Layer 2) and Whisper remaining near baseline. 
+
+D. Bias Detection with Sparse Autoencoders 
+
+We repeat the analysis in the SAE latent space, using the configurations in Table V, selected per layer to balance re-TABLE IV: Activation-space ( Bgr ) and SAE-CAV ( Bgr ,SAE ) sensitivity on BULATS, mean ± standard deviation over five seeds. A star ( ∗) marks a weakly usable underlying CAV.                                                                          
+
+> Activation-space CAV SAE-CAV BERT Whisper BERT Whisper Concept Layer 1 Layer 2 dense.in act.out Layer 1 Layer 2 dense.in act.out
+> Proficiency
+> ≥A20.81 ±.01 0.46 ±.03 0.83 ±.02 0.89 ±.00 0.82 ±.02 0.67 ±.05 0.95 ±.01 0.94 ±.03
+> ≥B10.83 ±.01 0.63 ±.05 0.92 ±.01 0.88 ±.00 0.95 ±.02 0.71 ±.12 0.96 ±.01 1.01 ±.04
+> ≥B20.89 ±.00 0.76 ±.05 0.93 ±.01 0.89 ±.00 0.94 ±.01 0.68 ±.07 0.95 ±.01 0.98 ±.03
+> Demographic
+> Gender 0.99 ∗±.00 1.11 ∗±.02 1.02 ±.00 1.04 ±.00 0.99 ∗±.02 1.09 ∗±.12 1.00 ±.01 1.01 ±.08
+> Age ≤30 1.02 ±.00 1.06 ∗±.01 1.01 ±.00 1.02 ∗±.00 1.00 ±.02 1.06 ∗±.06 1.00 ±.01 0.99 ∗±.03
+> First language (L1)
+> Dutch 0.91 ±.01 0.52 ±.04 0.96 ±.00 0.89 ±.00 0.98 ±.03 0.92 ±.04 0.96 ±.01 0.97 ±.07
+> Gujarati 1.03 ∗±.01 1.10 ±.01 1.00 ±.00 1.04 ±.00 1.02 ∗±.02 1.15 ±.10 1.01 ±.01 1.01 ±.03
+
+TABLE V: Selected TopK SAE configurations for BULATS: latent width m, active units k, resulting sparsity, and dead-feature fraction. 
+
+Model Layer d m k Sparsity BERT Layer 1 600 2400 320 0.867 BERT Layer 2 20 80 16 0.800 Whisper dense.in 2048 6144 480 0.922 Whisper act.out 64 256 24 0.906 
+
+construction, sparsity, dead-feature fraction, and coherence. In latent space the concepts become noticeably more recoverable. No concept remains degenerate, and several weakly usable directions become usable, confirming that the sparse space makes the concepts more linearly separable. The SAE-CAV columns of Table IV show the influence results. The dominant pattern is that Bgr shifts towards the unbiased baseline of 1, implying that a latent space probe that only partially recovers the concept direction measures weaker alignment with the score gradient. This attenuation is strongest in the lowest-dimensional representation (BERT Layer 2, 20 -dimensional) and weakest in the highest (Whisper dense.in ,
+
+2048 -dimensional). The L1 Dutch concept spans both ex-tremes, preserved almost exactly at dense.in (0.96 → 0.96 )yet shifting by +0 .40 at BERT Layer 2 ( 0.52 → 0.92 ), shown per speaker in Fig. 2. The loss is therefore governed by the representation, not the concept. Because the SAE attenuates exactly the sensitivity signal that bias analysis depends on, and most severely in the small layers where bias was clearest, the sparse representation does not improve bias measurement over probing the activations directly. 
+
+E. Results on S&I 
+
+Table VI reports the activation space Bgr on S&I, which reproduces the proficiency and architecture trends seen on BULATS. The BERT grader again becomes more sensitive with depth, with ≥ B1 dropping from 0.77 to 0.23 from Layer 1 to 2. Whisper shows no depth trend and stays close to the baseline of 1. The CAV for the inferred gender concept is TABLE VI: Activation-space Bgr on S&I, mean ± standard deviation over five seeds. Conventions as in Table IV. A dash denotes a degenerate CAV, excluded from analysis. 
+
+BERT Whisper Concept Layer 1 Layer 2 dense.in act.out 
+
+≥ B1 0.77 ±.01 0.23 ±.01 0.77 ±.01 0.92 ±.00 
+
+≥ B2 0.79 ±.00 0.73 ±.06 0.86 ±.01 0.92 ±.00 
+
+Gender — — 1.02 ±.00 0.99 ∗±.00 
+
+degenerate in both BERT layers for this dataset, and so its Bgr 
+
+is omitted. It is recoverable at the Whisper head input, with 
+
+Bgr = 1 .02 , consistent with the absence of gender sensitivity on BULATS. VI. C ONCLUSIONS 
+
+We extended representation-level CAV bias analysis to two modern speaking graders, a text-based BERT grader and a text-and-speech Whisper grader, and added a sparse autoencoder variant of the method. The central finding is that linear recoverability of a concept is governed by the representation it is measured in, not the concept itself, and that recoverability does not imply influence. This was seen in the Whisper grader, which encoded far more demographic information than BERT yet stayed close to the baseline of no sensitivity, while BERT grew more sensitive to proficiency with depth and reflected the dataset’s score imbalance through its L1 directions. For fairness analysis, this separation of encoding from influence is the key point, since an attribute being encoded is not in itself evidence of bias. Applying the analysis in the sparse latent space did not improve it. The SAE made concepts more recoverable but attenuated the measured sensitivity towards the baseline, most severely in low-dimensional layers. The two metrics ask dif-ferent things. Recoverability only needs a classifier to separate the concept, whereas the gradient metric requires the decoder-mapped direction to still align with the score gradient in activation space, which the reconstruction objective has no reason to preserve. This motivates a score-aware SAE, trained to reconstruct the grader’s output or to weight reconstruction error by the score gradient, so that the sparse space retains the directions the bias metric needs. ACKNOWLEDGMENTS 
+
+Generative AI tool, namely ChatGPT and Claude, was used only to review grammar and improve the fluency of the text. REFERENCES [1] V. Raina, M. J. Gales, and K. M. Knill, “Universal Adversarial Attacks on Spoken Language Assessment Systems,” in Interspeech 2020 , 2020, pp. 3855–3859. [2] S. Bann` o and M. Matassoni, “Proficiency Assessment of L2 Spoken En-glish Using Wav2Vec 2.0,” in 2022 IEEE Spoken Language Technology Workshop (SLT) , 2023, pp. 1088–1095. [3] S. Bann` o, K. Knill, M. Matassoni, V. Raina, and M. Gales, “Assessment of L2 Oral Proficiency Using Self-Supervised Speech Representation Learning,” in Proceedings of 9th Workshop on Speech and Language Technology in Education (SLaTE) , 2023, pp. 126–130. [4] S. W. McKnight, A. Civelekoglu, M. Gales, S. Bann` o, A. Liusie, and K. M. Knill, “Automatic Assessment of Conversational Speaking Tests,” in 9th Workshop on Speech and Language Technology in Education (SLaTE) , 2023, pp. 99–103. [5] R. Ma, M. Qian, S. Tang, S. Bann` o, K. M. Knill, and M. J. Gales, “Assessment of L2 Oral Proficiency using Speech Large Language Models,” in Interspeech 2025 , 2025, pp. 5078–5082. [6] H.-Y. Lin, T. H. Lo, Y. H. Fang, J. K. Lin, C. C. Wang, H. C. Lu, and B. Chen, “The NTNU System at the S&I Challenge 2025 SLA Open Track,” in 10th Workshop on Speech and Language Technology in Education (SLaTE) , 2025, pp. 148–152. [7] N. Phan, A. Porwal, Y. Getman, E. Voskoboinik, T. Gr´ osz, and M. Ku-rimo, “One Whisper to Grade Them All,” in 10th Workshop on Speech and Language Technology in Education (SLaTE) , 2025, pp. 56–60. [8] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, “BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding,” in 
+
+Proceedings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers) , 2019, pp. 4171–4186. [9] A. Baevski, Y. Zhou, A. Mohamed, and M. Auli, “wav2vec 2.0: A framework for self-supervised learning of speech representations,” vol. 33, 2020, pp. 12 449–12 460. [10] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust Speech Recognition via Large-Scale Weak Super-vision,” in Proceedings of the 40th International Conference on Machine Learning (ICML) . PMLR, 2023, pp. 28 492–28 518. [11] J. Buolamwini and T. Gebru, “Gender Shades: Intersectional Accuracy Disparities in Commercial Gender Classification,” in Proceedings of the 1st Conference on Fairness, Accountability and Transparency (FAccT) .PMLR, 2018, pp. 77–91. [12] T. Bolukbasi, K.-W. Chang, J. Zou, V. Saligrama, and A. Kalai, “Man is to Computer Programmer as Woman is to Homemaker? Debiasing Word Embeddings,” in Advances in Neural Information Processing Systems 29 (NeurIPS) , 2016. [13] G. Alain and Y. Bengio, “Understanding Intermediate Layers Using Linear Classifier Probes,” in International Conference on Learning Representations (ICLR) Workshop , 2017. [14] D. Bau, B. Zhou, A. Khosla, A. Oliva, and A. Torralba, “Network Dis-section: Quantifying Interpretability of Deep Visual Representations,” in Proceedings of the IEEE conference on computer vision and pattern recognition (CVPR) , 2017, pp. 6541–6549. [15] B. Kim, M. Wattenberg, J. Gilmer, C. Cai, J. Wexler, F. Vi´ egas, and R. Sayres, “Interpretability Beyond Feature Attribution: Quantitative Testing with Concept Activation Vectors (TCAV),” in Proceedings of the 35th International Conference on Machine Learning . PMLR, 2018, pp. 2668–2677. [16] X. Wei, M. J. F. Gales, and K. M. Knill, “Analysing Bias in Spoken Language Assessment Using Concept Activation Vectors,” in IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2021, pp. 7753–7757. [17] T. Bricken, A. Templeton, J. Batson, B. Chen, A. Jermyn, T. Conerly, N. L. Turner, C. Anil, C. Denison, A. Askell, R. Lasenby, Y. Wu, S. Kravec, N. Schiefer, T. Maxwell, N. Joseph, Z. Hatfield-Dodds, A. Tamkin, K. Nguyen, B. McLean, J. E. Burke, T. Hume, S. Carter, T. Henighan, and C. Olah, “Towards Monosemanticity: Decomposing Language Models With Dictionary Learning,” Transformer Circuits Thread , 2023. [Online]. Available: https://transformer-circuits.pub/2023/monosemantic-features/index.html [18] L. Gao, T. Dupr´ e la Tour, H. Tillman, G. Goh, R. Troll, A. Radford, I. Sutskever, J. Leike, and J. Wu, “Scaling and Evaluating Sparse Au-toencoders,” in International Conference on Learning Representations ,vol. 2025, 2025, pp. 26 721–26 754. [19] B. Davies, “Automatic Assessment of English as a Second Language,” Department of Engineering, University of Cambridge, Fourth-Year Project Report, 2024. [20] L. Chambers and K. Ingham, “The BULATS Online Speaking Test,” Research Notes , 2011. [Online]. Available: https://www. cambridgeenglish.org/Images/23161-research-notes-43.pdf [21] Council of Europe, Common European Framework of Reference for Languages: Learning, Teaching, Assessment . Cambridge: Cambridge University Press, 2001. [Online]. Available: https: //rm.coe.int/1680459f97 [22] K. Knill, D. Nicholls, M. J. Gales, M. Qian, and P. Stroinski, “The Speak & Improve Corpus 2025: an L2 English Speech Corpus for Language Assessment and Feedback,” 2025. [Online]. Available: https://doi.org/10.17863/CAM.114333 [23] K. M. Knill, D. Nicholls, M. J. F. Gales, M. Qian, and P. Stroinski, “Introducing the Speak & Improve Corpus 2025: an L2 English Speech Corpus for Language Assessment and Feedback,” in Proceedings of the 10th Workshop on Speech and Language Technology in Education (SLaTE) , 2025, pp. 167–171. [24] B. Desplanques, J. Thienpondt, and K. Demuynck, “ECAPA-TDNN: Emphasized Channel Attention, Propagation and Aggregation in TDNN Based Speaker Verification,” in Interspeech 2020 , 2020, pp. 3830–3834. [25] J. Huh, “Voice Gender Classifier,” https://github.com/JaesungHuh/ voice-gender-classifier, gitHub repository. Accessed November 2025. [26] M. Qian, K. Knill, S. Banno, S. Tang, P. Karanasou, M. J. Gales, and D. Nicholls, “Speak & improve challenge 2025: Tasks and baseline systems,” arXiv preprint arXiv:2412.11985 , 2024. [27] M. Qian, K. M. Knill, S. Bann` o, S. Tang, P. Karanasou, M. J. Gales, and D. Nicholls, “Speak & Improve Challenge 2025,” in 10th Workshop on Speech and Language Technology in Education (SLaTE) , 2025, pp. 41–45.
