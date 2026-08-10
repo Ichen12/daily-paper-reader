@@ -1,0 +1,478 @@
+Title: Multi Codec Discrete Diffusion Model for Text Guided Speech Inpainting and Editing
+
+URL Source: https://arxiv.org/pdf/2608.06424v1
+
+Published Time: Mon, 10 Aug 2026 00:06:07 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# Multi Codec Discrete Diffusion Model for Text Guided Speech Inpainting and Editing 
+
+Iftach Shoham *,1 Tali Dror *,1 
+
+Oren Gal 2 Haim Permuter 1 Gilad Katz 1
+
+Eliya Nachmani 1
+
+> 1
+
+Ben-Gurion University of the Negev 2University of Haifa 
+
+> *
+
+Equal contribution 
+
+## Abstract 
+
+Speech recordings often contain missing, corrupted, or incorrect regions that must be reconstructed or modified without re-synthesizing the entire utterance. Speech inpainting restores missing segments, whereas speech editing replaces spoken content according to an edited transcript. Both tasks require the generated speech to express the intended words while remaining consistent with the surrounding speaker identity, prosody, timing, and recording conditions. Discrete diffusion is particularly well suited to these tasks because it can iteratively refine masked tokens while jointly conditioning on both left and right acoustic context. We introduce SIEDD, a discrete diffusion framework for text-guided speech inpainting and editing over hierarchical codec tokens. Its core architecture, HiCoDD, follows the RVQ generation order by representing previously generated codebooks as clean, committed acoustic context and applying diffusion only to the current refinement codebook. This separation enables leakage-free joint training while matching sequential coarse-to-fine inference. The model further combines phoneme-level conditioning, span-localized classifier-free guidance, and duration prediction to support both fixed-duration inpainting and variable-duration text edits. On the RealEdit benchmark, SIEDD achieves the best overall speech-editing performance among the evaluated methods. It also outperforms the evaluated autoregressive baselines across all speech-inpainting settings, on both single and multiple gaps. These results demonstrate that explicitly modeling the codec hierarchy substantially improves context-preserving speech reconstruction and editing. See our full code 1.
+
+## 1 Introduction 
+
+The reconstruction of missing or corrupted regions in an audio signal is commonly referred to as audio inpainting Le Roux et al. [2008, 2011]. Speech inpainting is a particularly challenging instance of this problem because the reconstructed segment must be both acoustically plausible and linguistically meaningful. It must also remain consistent with the surrounding speaker identity, prosody, rhythm, coarticulation, and recording environment. These requirements arise in applications such as repairing damaged recordings, removing localized noise or artifacts, recovering packet losses, and restoring omitted speech. Text-guided speech editing extends this problem from restoration to intentional modification. Given an existing utterance and an edited transcript, the goal is to insert, delete, or 
+
+> 1https://github.com/iftachShoham/SIEDD
+> Preprint. arXiv:2608.06424v1 [cs.SD] 5 Aug 2026
+
+replace spoken content without re-synthesizing the entire recording. The generated segment must express the requested text while blending naturally with the unmodified speech at its boundaries. Traditional inpainting methods relied on signal-processing assumptions such as local stationarity, autoregressive (AR) prediction Adler et al. [2011], sparse representations Marafioti et al. [2020], or linear predictive coding Adler et al. [2011]. These methods can be effective for very short gaps, but they often fail when the missing region spans phonemes, syllables, or words, where reconstruction requires longer-range linguistic and acoustic context. Recent work has therefore shifted toward speech-aware generative modeling. Text-informed and text-conditioned speech inpainting methods use the transcript to guide recon-struction of the missing region Prablanc et al. [2016], Borsos et al. [2022]. Closely related speech editing systems extend this setting to intentional replacement of spoken content according to an edited transcript Tan et al. [2021], Wang et al. [2022]. More recent approaches use stronger generative backbones, including diffusion, flow matching, and neural codec language models, enabling higher-quality infilling and zero-shot speech editing Le et al. [2023], Wang et al. [2025], Peng et al. [2024], Huang et al. [2024]. However, speech editing is not naturally a left-to-right generation problem. The missing span is jointly constrained by the requested text and by the acoustic context on both sides. AR codec models can condition on both boundaries, but still advance through the acoustic sequence in a fixed causal order. Earlier temporal positions must be generated and committed before later ones and cannot subsequently be revised. Errors in linguistic content, duration, or prosody may therefore propagate through the edited span. Discrete diffusion offers a natural alternative by formulating editing as reverse-time masked re-construction. It can jointly generate and repeatedly refine temporal positions under both left and right acoustic context, without imposing a fixed left-to-right order inside the missing span. This formulation also naturally supports the simultaneous reconstruction of multiple disjoint gaps. Applying discrete diffusion to neural codec tokens, however, introduces a separate challenge. Residual vector quantization (RVQ) codebooks (CBs) are not interchangeable: lower CBs establish coarse linguistic and acoustic structure, while higher CBs encode residual refinements conditioned on the levels below them. A naive diffusion model that flattens or jointly denoises all CBs treats these levels symmetrically and neglects the hierarchy under which the codec representation was constructed. We address both limitations with Speech Inpainting and Editing via Discrete Diffusion (SIEDD), a text-conditioned framework that retains diffusion’s joint refinement across time while explicitly preserving the coarse-to-fine dependencies across RVQ CBs. Our contributions are threefold: • Hierarchy-aware codec diffusion. We introduce HiCoDD, which jointly denoises temporal positions within each CB while generating CBs in their inherent coarse-to-fine order. A clean-CB encoder conditions the noised-CB decoder on previously committed RVQ levels, preserving cross-CB dependencies without imposing AR generation across time. • Contrastive guidance for text-conditioned inpainting and editing. We adapt classifier-free guidance (CFG) for categorical score prediction, combining conditional and negative concrete scores in log-ratio space. The negative branch localizes the contrast to the edited span, so it suppresses the target phonetic content while preserving the surrounding transcript. • Strong speech-inpainting and editing performance. On the RealEdit benchmark, SIEDD achieves the best overall speech-editing performance among the evaluated methods, includ-ing the lowest WER and MCD and the highest speaker similarity. It also outperforms the evaluated AR baselines across all speech-inpainting settings. Together, these contributions establish a hierarchy-aware discrete-diffusion framework for speech inpainting and editing. SIEDD preserves the coarse-to-fine structure of RVQ codecs, conditioning generation on both the requested linguistic content and the surrounding acoustic context. 22 Related Work 
+
+2.1 Discrete Diffusion for Language, Speech, and Audio 
+
+Discrete diffusion models (DDM) provide an alternative to AR generation for categorical sequences. Following D3PM Austin et al. [2021], subsequent work introduced diffusion-based language models such as DiffusionBERT He et al. [2023], score-entropy discrete diffusion (SEDD) Lou et al. [2024], masked diffusion language models Sahoo et al. [2024], and large-scale diffusion language models such as LLaDA Nie et al. [2026]. Related advances include discrete flow matching Gat et al. [2024] and remasking strategies for iterative token correction Wang et al. [2026]. By replacing fixed left-to-right decoding with iterative denoising, these methods enable parallel prediction and flexible quality-speed trade-offs. Discrete diffusion has also been extended to speech and audio, including text-to-sound generation Yang et al. [2023], speech recognition Baas et al. [2022], audio inpainting Dror et al. [2026], and generative modeling of text-aligned speech tokens Ku et al. [2026]. 
+
+2.2 Speech Inpainting and Editing 
+
+Audio inpainting restores missing or corrupted regions Le Roux et al. [2008] and encompasses related formulations such as interpolation Marafioti et al. [2020], extrapolation and imputation Lieb and Stark [2018], and waveform substitution Adler et al. [2011]. Classical approaches, generally limited to short gaps, rely on AR prediction Adler et al. [2011], sparse STFT or Gabor representations Lieb and Stark [2018], Adler et al. [2011], adaptive dictionaries Tauböck et al. [2020], NMF Mokr` yet al. [2023], sinusoidal models Adler et al. [2011], or graph regularization Perraudin et al. [2018]. Speech inpainting additionally requires preserving linguistic content, speaker identity, prosody, and recording conditions, motivating text-informed synthesis and voice conversion Prablanc et al. [2016], text-conditioned generation Borsos et al. [2022], audio-visual conditioning Montesinos et al. [2023], and diffusion models incorporating text, phonemes, or self-supervised speech representations Yang et al. [2024], Moradi and Gannot [2025]. Text-guided speech editing extends inpainting to intentional deletion, insertion, or replacement while maintaining consistency with the surrounding audio. Early systems combined synthesis, voice conversion, and waveform stitching Jin et al. [2017], followed by bidirectional partial inference Tan et al. [2021], context-aware mask prediction Wang et al. [2022], and explicit acoustic and prosodic consistency modeling Liu et al. [2023]. Recent methods operate primarily on neural codec tokens or large generative speech models, including codec language models Wang et al. [2024], zero-shot codec-token infilling and the RealEdit benchmark Peng et al. [2024], robust zero-shot editing Wang et al. [2025], flow-matching-based infilling Le et al. [2023], masked speech modeling with acoustic diffusion Cámbara et al. [2024], and natural-language-instructed editing Huang et al. [2024]. 
+
+## 3 Preliminaries 
+
+3.1 Discrete Diffusion Models 
+
+Continuous diffusion models (CDMs) Ho et al. [2020], Song et al. [2020] have become a powerful framework for generative modeling, with especially strong results in image generation Dhariwal and Nichol [2021]. However, applying diffusion directly to raw audio is challenging due to the high dimensionality and temporal resolution of waveform signals. A common way to reduce this complexity is to represent audio using compact discrete tokens obtained from a learned quantized CB Défossez et al. [2022]. DDMs, which define the diffusion process over such token spaces, have recently shown strong results in natural language generation Lou et al. [2024], Nie et al. [2025], Sahoo et al. [2024]. As in continuous diffusion, DDMs consist of a forward process that gradually corrupts a clean sample x0 into xT , and a learned reverse process that progressively reconstructs the original data. In absorbing-state DDMs, this corruption specifically replaces tokens with a mask state, such that xT is fully masked. 
+
+Forward process. Let x0 ∼ pdata denote tokenized audio over a finite alphabet X = {1, . . . , N }.The forward noising process is specified through a time-dependent transition rate matrix Qt, which determines the probability of moving between token states. In continuous time, this transition 3behavior is written as 
+
+P(xt+∆ t = y | xt = x) = δxy + Qt(y, x )∆ t + O(∆ t2), (1) where Qt(y, x ) is the instantaneous rate of transitioning from state x to state y at time t.Following prior work Lou et al. [2024], the discrete forward diffusion process can be defined using a token-level transition rate matrix Qtok ∈ Rn×n, where n is the vocabulary size. For a single initial token x0, the marginal transition distribution at time t is given by 
+
+ptok 
+
+> t|0
+
+(· | x0) = exp  ¯σ(t)Qtok 
+
+, (2) where ¯σ(t) = R t 
+
+> 0
+
+σ(s) ds is the accumulated noise level. In the absorbing-mask formulation, Qtok is chosen such that tokens eventually transition into a terminal [MASK] state. Under this design, the corruption process has a simple interpretation: each token either remains unchanged with probability 
+
+e−¯σ(t), or is replaced by the [MASK] token with probability 1 − e−¯σ(t).
+
+Reverse process. The reverse dynamics are also governed by a transition rate matrix. Following the time-reversal formulation of Markov processes Sun et al. [2022], Kelly [1981], the reverse transition rates are 
+
+¯Qt(y, x ) = pt(y)
+
+pt(x) Qt(x, y ), ¯Qt(x, x ) = − X 
+
+> y̸=x
+
+¯Qt(y, x ). (3) Thus, simulating the reverse process requires estimating the probability ratio pt(y) 
+
+> pt(x)
+
+. This ratio is commonly referred to as the concrete score Lou et al. [2024], Meng et al. [2022], and can be parameterized by a neural network: 
+
+sθ (x, t ) ≈
+
+ pt(y)
+
+pt(x)
+
+  
+
+> y∈X , y ̸=x
+
+. (4) 
+
+Training. The neural score function is trained using the Diffusion Weighted Denoising Score Entropy (DWDSE) objective Lou et al. [2024]. The loss is defined as 
+
+LDWDSE =
+
+Z T
+
+> 0
+
+Ext∼pt|0(·| x0)
+
+" X 
+
+> y̸=xt
+
+Qt(xt, y ) sθ (xt, t )y
+
+− pt|0(y | x0)
+
+pt|0(xt | x0) log sθ (xt, t )y + C
+
+!# 
+
+dt. 
+
+(5) 
+
+where 
+
+C = K
+
+ pt|0(y | x0)
+
+pt|0(xt | x0)
+
+
+
+, K(a) := a log a − a. 
+
+After training, reverse sampling is performed token by token. Given the current sample xt, each token xit−∆t is sampled according to 
+
+p(xit−∆t | xit) = δxit
+
+ xit−∆t
+
+
+
++ ∆ t Q tok 
+
+> t
+
+ xit, x it−∆t
+
+ sθ (xt, t )i,x it−∆t . (6) Repeating this reverse update from the fully corrupted state xT to x0 yields samples from the learned generative model. 
+
+3.2 Residual Vector Quantization 
+
+Neural audio codecs such as EnCodec Défossez et al. [2022] represent speech using RVQ. The encoder maps a waveform to L latent frames, which are quantized sequentially by K CBs. The first CB captures coarse acoustic information, while each subsequent CB quantizes the residual left by the preceding levels, progressively refining the representation. 4Figure 1: Overview of the proposed architecture and inference procedure. (1) Architecture: 
+
+for each target CB k, the noised tokens are denoised by the diffusion decoder while the clean lower CBs < k are encoded as committed acoustic context; each block combines temporal self-attention with cross-attention to the lower-CB and phoneme representations. (2) Inference: CBs are generated coarse to fine; at each stage only the edited region is denoised and then committed to the context of the next stage. The final tokens are decoded into the edited waveform. (3) Attention mask: the block-triangular pattern enforces the coarse-to-fine RVQ dependency and blocks access to the clean target CB, avoiding leakage. We organize the resulting discrete representation as a K × L token grid, where the k-th row        
+
+> x(k)0= x(k),10, . . . , x (k),L
+> 0
+> ∈ X(k)L(7)
+
+is the length-L token sequence produced by CB k, and x(k),i  
+
+> 0
+
+denotes the token selected from CB k at frame i. Thus, X0 contains L temporal frames and K × L discrete tokens, with its rows following the inherent coarse-to-fine RVQ hierarchy. 
+
+## 4 Speech Inpainting and Editing via Discrete Diffusion 
+
+We introduce SIEDD (see Figure 1), a DDM framework for text-guided speech inpainting and editing. Given an input utterance that is either partially masked for inpainting or retained as fixed context for editing, together with a target text sequence, the model generates the codec tokens of the edited region while preserving the surrounding speech. The preliminaries describe absorbing-state discrete diffusion for a single token sequence over a single alphabet X . However, neural audio codecs such as EnCodec represent speech using a hierarchy of RVQ CBs with an inherent coarse-to-fine dependency. The central challenge is therefore to extend the single-sequence diffusion process including its score parameterization, training objective, and reverse sampler to this hierarchical setting without discarding the structure of RVQ. To address this challenge, we introduce HiCoDD . We further incorporate text conditioning into the score network, adapt guidance to focus on the edited span, and employ duration prediction to determine the length of the generated region. 
+
+4.1 Hierarchical Multi-Codebook Discrete Diffusion 
+
+Building on the RVQ representation introduced in the preliminaries, we augment each CB alphabet 
+
+X (k) with a dedicated [MASK] state and apply the absorbing corruption process at the level of an individual CB. Because each higher CB encodes a residual refinement of the lower CBs, the representation is inherently hierarchical: x(1) 0 captures the coarse acoustic structure, while each x(k)0 ,
+
+k > 1, is meaningful only in relation to the preceding levels. 
+
+Per-CB forward process. We apply the absorbing corruption of the preliminaries independently to each CB. Reusing the token-level rate matrix Qtok and accumulated noise schedule ¯σ(t), the marginal 5corruption of CB k is 
+
+p(k)
+
+> t|0
+
+ · | x(k)0
+
+ = exp  ¯σ(t) Qtok 
+
+. (8) The diffusion time is sampled independently for each CB, t(k) ∼ U (0 , 1] , rather than shared across levels, so each utterance is seen at K decorrelated noise levels. 
+
+Hierarchical reverse process. AR-based speech-editing methods exploit the RVQ ordering directly by predicting tokens in CB order. A naive application of discrete diffusion, in contrast, would flatten all CBs into a single length-K × L sequence over the union alphabet S 
+
+> k
+
+X (k) and denoise them jointly with one transition matrix Qtok , thereby recovering precisely the single-sequence process of the preliminaries. Such a process, however, is symmetric : it treats all CBs identically and ignores the coarse-to-fine dependency introduced by RVQ. We therefore keep the per-CB corruption defined above, but replace the single generative distribution induced by the reverse process with a hierarchical factorization inspired by Arriola et al. [2025]: 
+
+pθ (X | P) = pθ
+
+ x(1) | P KY
+
+> k=2
+
+pθ
+
+
+
+x(k) | x(<k ), P
+
+
+
+, (9) where x(<k ) denotes the already generated lower CBs, P is the phoneme-level text representation, and each pθ factor is induced by a reverse-diffusion chain parameterized by the concrete score 
+
+sθ. Equation (9) is therefore the multi-CB analogue of Eq. (6), with the product enforcing that each CB refines an already established acoustic representation rather than reconstructing all levels independently. 
+
+Conditional concrete score. The single-sequence score of Eq. (4) approximates the unconditional 
+
+probability ratio pt(y)/p t(x). In the hierarchical setting each CB is generated conditionally on its committed lower CBs and on the target phoneme sequence, so we parameterize a conditional concrete score. For CB k at position i, y ̸ = x(k),i t :                 
+
+> sθ
+>  x(k)
+> t, t |x(<k )0,P
+> i,y ≈pt
+>  y|x(<k )0,P
+> pt
+>  x(k),i t|x(<k )0,P.(10)
+
+Setting K = 1 and dropping the conditioning recovers Eq. (4) exactly; the hierarchy therefore enters the model only through the conditioning arguments of a single, shared score network. 
+
+Hierarchical score-entropy training. Because every factor in Eq. (9) is an absorbing diffusion process with the marginal (8), each level is trained with the DWDSE objective of Eq. (5), substituting the conditional score of Eq. (10) and summing over the positions of the CB; denote this per-CB loss 
+
+L(k). The total objective averages over the valid RVQ levels, L = 1
+
+> K
+
+PKk=1 L(k).A key aspect of this scheme is that the model always conditions on the ground-truth lower CBs x(<k )0 ,while the decoder for CB k sees only the noised x(k) 
+
+> t
+
+. This gives each refinement level the exact clean context it will have after commitment at inference, rather than an approximation formed from partially noised lower CBs. The cross-CB attention is restricted to the strictly lower CBs (the block-triangular mask in Figure 1 (3)), preventing the clean target CB from reaching its own prediction. 
+
+4.2 Hierarchical Diffusion Transformer 
+
+The score network realizing Eq. (10) is a Diffusion Transformer (DiT) Peebles and Xie [2023], Vaswani et al. [2017] adapted to the absorbing-state process of SEDD, organized around the separation between the committed context and the CB currently being denoised. 
+
+Committed-context encoder. At stage k, the clean lower CBs x(<k )0 are treated as fixed context. A lightweight CB-causal encoder contextualizes these tokens across time and CB levels, producing a time-aware representation of their joint committed acoustic state. Compared with attending directly to raw lower-CB embeddings, this relieves the decoder from repeatedly inferring their temporal alignment and residual composition at every denoising step. The resulting representations supply 6the lower-CB conditioning of Eq. (10), with the block-triangular visibility pattern illustrated in Figure 1 (3). 
+
+Denoising decoder. The noised tokens of the current CB form the main input sequence, and the diffusion time t modulates the network through adaptive layer normalization, exactly mirroring how t enters the score in Eq. (4). To supply the phoneme conditioning P, we encode the target phoneme sequence with a pretrained XPhoneBERT encoder Nguyen et al. [2023], project the resulting representations to the DiT hidden dimension, and inject them through cross-attention. The committed lower CBs enter through a second cross-attention stream over the context encoder’s output, so that a single network jointly consumes both conditioning arguments of Eq. (10) (see Figure 1 (1)). 
+
+4.3 Ordered Coarse-to-Fine Inference 
+
+Sampling follows the factorization of Eq. (9): CBs are generated one stage at a time, from coarse to fine. Within stage k we run the single-CB reverse process, which is the conditional counterpart of the token update in Eq. (6). Given the current noised sequence x(k) 
+
+> t
+
+and the committed context, each token is updated by               
+
+> p
+> 
+> x(k),i t−∆t|x(k)
+> t,x(<k )0,P
+> 
+> =δx(k),i t
+> 
+> x(k),i t−∆t
+> 
+> + ∆ t Q tok
+> t
+> 
+> x(k),i t, x (k),i t−∆t
+> 
+> sθ
+> 
+> x(k)
+> t, t |x(<k )0,P
+> 
+> i,x (k),i t−∆t
+> .(11)
+
+Iterating Eq. (11) from the fully masked state to t = 0 yields x(k)0 ; the CB is then committed and appended to the clean context for stage k+1 .
+
+4.4 Localized Classifier-Free Guidance 
+
+CFG Ho and Salimans [2022] improves conditional generation by combining conditional and uncon-ditional predictions. In speech editing, accurate generation requires both adherence to the requested phoneme sequence and preservation of the acoustic and linguistic context surrounding the edited region. Since the network predicts categorical log-scores rather than continuous noise, we apply guidance directly in log-score space on the conditional score of Eq. (10): 
+
+log scfg = α log scond + (1 − α) log sneg , (12) where α is the guidance strength and sneg is a negatively-conditioned concrete score. For the negative branch, we build on the random-phoneme conditioning strategy of Wang et al. [2025], which provides a stronger content-specific contrast than an empty prompt. We extend this idea into a localized CFG formulation tailored to HiCoDD. Rather than contrasting AR token logits, our guidance operates directly on the concrete scores in log-ratio space, the quantities that parameterize the reverse denoising process in Eq. (10). Moreover, we construct the negative branch by randomizing only the phonemes within the edited span, while keeping the surrounding phonemes and committed lower-CB representations identical to those of the conditional branch. This design isolates the guidance signal to the requested linguistic modification: it strengthens adherence to the target phonemes without suppressing the boundary cues required for coarticulation and seamless integration with the unedited speech. In inpainting the transcript is unchanged and the gap is specified in time rather than as a span of words, so no distinguished subsequence of phonemes exists to contrast against; we therefore randomize the full phoneme sequence for the negative branch. 
+
+4.5 Localized Generation: Inpainting and Editing 
+
+Both tasks reduce to the same localized instance of Eq. (11): the tokens outside the target span are held fixed as clean context, and only the tokens inside the span are initialized to [MASK] and denoised. The two tasks differ solely in how the length of that span is determined. In inpainting , the duration of the missing segment is known and maps directly, through the tokenizer frame rate, to the number of acoustic tokens to mask and regenerate. In text-based editing particularly for insertion and substitution the duration of the edited segment is not known in advance, since speaking rates vary across speakers and the mapping from phonemes to acoustic-token durations is not fixed. To resolve 7Figure 2: Speech inpainting results across masked-span configurations, ordered by total masked speech. Lines show the mean. Higher is better for SIM, lower for all other metrics.                                      
+
+> Method WER ↓SIM ↑MCD ↓F0Dist. ↓Energy Dist. ↓UTMOS ↑
+> TTS Baseline (MMS) 0.147 ±0.13 ----4.11 ±0.19
+> VoiceCraft 0.124 ±0.11 0.97 ±0.02 392.25 ±134.9 9.94 ±6.9 0.005 ±0.004 3.47 ±0.63 SSR-Speech 0.146 ±0.12 0.97 ±0.02 308.3 ±156.1 8.17 ±7.79 0.005 ±0.004 3.45 ±0.67
+> SIEDD (Ours) 0.121 ±0.11 0.98 ±0.03 270.0 ±95.1 8.57 ±6.9 0.005 ±0.003 3.44 ±0.59
+
+Table 1: Speech editing results on RealEdit. Results are reported as mean ± standard deviation. Higher is better for SIM and UTMOS, while lower is better for all other metrics. In bold marked the best result. this, we adopt a duration predictor inspired by FastSpeech Ren et al. [2020]. Further architectural and training details are provided in the supplementary material. 
+
+## 5 Experiments 
+
+5.1 Metrics 
+
+We evaluate intelligibility using WER from Whisper medium-en Radford et al. [2022]; speaker preservation using cosine similarity between WavLM Chen et al. [2022] embeddings; spectral fidelity using 13-dimensional MFCC-based MCD; pitch and energy consistency using the mean absolute differences between F0 and RMS-energy contours, respectively; and predicted perceptual quality using the UTMOS22 strong learner Saeki et al. [2022]. All frame-level acoustic metrics are computed after DTW alignment and normalized by the alignment-path length. For F0, we use pYIN over 80–600 Hz and assign zero to unvoiced frames. 
+
+5.2 Datasets. 
+
+For both speech-editing and speech-inpainting evaluation, we use RealEdit Peng et al. [2024], a manually curated benchmark of realistic examples drawn from LibriTTS Zen et al. [2019] and GigaSpeech Chen et al. [2021] YouTube recordings 2. The benchmark covers insertion, deletion, substitution , and multi-span edits across diverse speakers, accents, recording conditions, background sounds, audio qualities, and sampling rates. 
+
+5.3 Evaluation. 
+
+We evaluate SIEDD on the RealEdit benchmark following the evaluation protocol of Peng et al. [2024], using its audio utterances and corresponding editing instructions, which cover diverse recording conditions and edit types. For speech inpainting, we use the same RealEdit utterance list. We construct uniformly spaced masked regions of varying lengths, with up to three masked spans per utterance. We generate each utterance five times with different fixed seeds and report the average for each utterance. 
+
+> 2Spotify podcasts are not publicly available anymore, so it is excluded from our evaluations.
+
+85.4 Baselines 
+
+We evaluate our method on both text-based speech editing and speech inpainting, comparing it with several recent approaches. VoiceCraft Peng et al. [2024] is a neural codec language model that performs speech editing through token infilling, while SSR-Speech Wang et al. [2025] is a zero-shot framework for text-based speech editing and synthesis based on discrete speech tokens. We additionally include MMS Pratap et al. [2023] as a zero-shot TTS baseline that synthesizes the target text directly. VoiceCraft, SSR-Speech, and SIEDD all use a 16-kHz EnCodec tokenizer trained on GigaSpeech XL, and the models themselves are also trained on the same dataset, yielding a controlled comparison that primarily isolates the generative formulation: AR modeling versus our discrete diffusion approach. 
+
+5.5 Training. 
+
+Following the baselines, we train SIEDD for 550,000 steps on two NVIDIA RTX A6000 GPUs, re-quiring approximately one week on GigaSpeech XL. Learning rate of 10 −4 and AdamW as optimizer. The duration predictor was trained on LibriTTS train-clean. Full training and hyperparameter details are provided in the supplementary material. 
+
+## 6 Results 
+
+Speech Inpainting. Figure 2 shows that SIEDD consistently outperforms the baselines across the evaluated settings, with particularly large gains for short and medium gaps. For a single 250 ms gap, it reduces MCD to 21 .1, compared with 91 .3 for SSR-Speech and 191 .5 for VoiceCraft, while also achieving the best WER, SIM, F0-distance, and energy-distance scores. Although performance degrades as the number and duration of the gaps increase, SIEDD remains the strongest method in nearly all configurations, demonstrating effective reconstruction of both linguistic content and local acoustic characteristics. Notably, the AR baselines exhibit sharp WER increases in the multi-gap settings, whereas SIEDD remains substantially more stable. We hypothesize that sequential AR generation is more susceptible to error accumulation: inaccuracies introduced while reconstructing one region may affect the context used to generate subsequent regions, particularly when several disjoint gaps must be completed. In contrast, the diffusion-based formulation repeatedly refines the masked regions while conditioning on the available context, reducing irreversible propagation of early decoding errors. Full numerical results are provided in the supplementary material. 
+
+Speech Editing. As shown in Table 1, SIEDD achieves the best overall speech-editing performance. It obtains the lowest WER ( 0.121 ), the highest speaker similarity ( 0.98 ), the lowest MCD ( 270 .0), and the lowest energy distance. Although the TTS baseline obtains the highest UTMOS score, this is unsurprising, as it synthesizes the target speech independently rather than adapting it to the speaker, acoustic conditions, and background of the original recording. In comparison, the original unedited audio receives a UTMOS score of 3.56 , and all three speech-editing methods obtain similar scores, ranging from 3.44 to 3.47 . This suggests that their outputs remain close to the perceptual quality of the original recordings. Overall, SIEDD provides the strongest balance between content accuracy, speaker preservation, acoustic consistency, and perceptual quality. 
+
+## 7 Ablation Study 
+
+Table 2 ablates the four main design choices of SIEDD on RealEdit: the tokenizer representation, the CB factorization, the duration predictor (DP), and CFG. All variants use 512 denoising steps, under the same evaluation setup. Each experiment is isolating a different aspect of our architectural choices, and are identical unless stated otherwise. 
+
+Single- vs. multi-CB tokenization. The single-CB baseline replaces EnCodec with WavTok-enizer Ji et al. [2024] and HiCoDD with a vanilla DiT backbone augmented with target-phoneme conditioning through cross-attention. Because it has no CB axis, it does not include cross-CB model-ing. Moving to the multi-CB representation improves WER ( 0.186 → 0.139 ) and SIM ( 0.95 → 0.97 ), indicating that the coarse-to-fine residual structure of RVQ better preserves linguistic content and speaker identity than a single heavily compressed stream in our discrete diffusion framework. 9Tokenizer Codec CFG WER ↓ SIM ↑                     
+
+> WavTokenizer (24 kHz) Single ✓0.186 ±0.16 0.95 ±0.3 EnCodec (16 kHz) Multi ×0.139 ±0.12 0.97 ±0.02 EnCodec (16 kHz) Multi (joint) ✓0.152 ±0.12 0.97 ±0.03 EnCodec (16 kHz) Multi (without DP) ✓0.136 ±0.12 0.97 ±0.02 EnCodec (16 kHz) Multi (SIEDD) ✓0.121 ±0.11 0.98 ±0.03
+
+Table 2: Ablation study on RealEdit speech editing. A ✓ indicates that CFG is used. DP stands for duration predictor. All the results are on SIEDD with 512 denoising steps. Unless stated otherwise DP was used. 
+
+Joint vs. hierarchical CB modeling. Multi (joint) is the non-hierarchical counterpart of Eq. (9): all 
+
+K CBs are corrupted and denoised simultaneously , so the model estimates a single joint score over the full K×L grid instead of the ordered factorization. It retains the per-CB embedding tables and per-CB output heads, but replaces HiCoDD’s clean-context encoder and lower-CB cross-attention with 
+
+symmetric cross-CB attention: each block alternates within-CB temporal self-attention with attention across the CB axis, so every CB attends to every other at the same frame, with no coarse-to-fine ordering and no separation between clean context and the CB being denoised. Phoneme cross-attention, tokenizer, and training data are unchanged. Consequently a fine CB may be committed before the coarse CB it refines has been resolved. At the same CFG strength, hierarchical factorization improves WER ( 0.152 → 0.121 ). 
+
+Duration predictor and CFG. no DP variant uses a phoneme-rate heuristic, |ph new |/r ×f , with the speaker rate r calibrated from the MFA alignment of the original utterance and f the tokenizer frame rate; it is linear in phoneme count and blind to phoneme identity and edit position, rather than using the learned predictor. Removing the DP degrades WER ( 0.121 → 0.136 ) and SIM ( 0.98 → 0.97 ). Similarly, by removing localized CFG degrades WER ( 0.121 → 0.139 ) and SIM ( 0.98 → 0.97 ), confirming that the log-score contrast of Eq. 12 strengthens adherence to the requested phonemes. 
+
+## 8 Conclusion 
+
+We introduced SIEDD, a discrete diffusion framework for speech text-guided inpainting and editing over multi-CB neural codec representations. Its core architecture, HiCoDD, follows the coarse-to-fine structure of RVQ tokenizers by treating previously generated CBs as clean, committed acoustic context while applying diffusion only to the current refinement CB. This enables leakage-free joint training while remaining consistent with sequential inference. SIEDD further combines phoneme-level conditioning, duration prediction, and span-localized CFG adapted to categorical diffusion. These components strengthen adherence to the target content while preserving the surrounding linguistic and acoustic context, supporting both fixed-duration inpainting and variable-duration editing. Experiments on RealEdit show that SIEDD achieves a strong balance of intelligibility, speaker preservation, and acoustic consistency, outperforming the evaluated AR baselines across nearly all inpainting settings and achieving the best overall editing results. Ablations confirm that these gains arise from both hierarchy-aware multi-CB modeling and CFG. Overall, the results establish SIEDD as a promising alternative to AR generation for context-preserving speech modification, with future directions including faster sampling, improved duration modeling, multilingual speech, and longer or more general edits. 
+
+## References 
+
+Amir Adler, Valentin Emiya, Maria G Jafari, Michael Elad, Rémi Gribonval, and Mark D Plumbley. Audio inpainting. IEEE Transactions on Audio, Speech, and Language Processing , 20(3):922–932, 2011. Marianne Arriola, Aaron Gokaslan, Justin Chiu, Zhihan Yang, Zhixuan Qi, Jiaqi Han, Subham Sahoo, and Volodymyr Kuleshov. Block diffusion: Interpolating between autoregressive and diffusion language models. In International Conference on Learning Representations , volume 2025, pages 50726–50753, 2025. 10 Jacob Austin, Daniel D Johnson, Jonathan Ho, Daniel Tarlow, and Rianne Van Den Berg. Structured denoising diffusion models in discrete state-spaces. Advances in neural information processing systems , 34:17981–17993, 2021. Matthew Baas, Kevin Eloff, and Herman Kamper. Transfusion: Transcribing speech with multinomial diffusion. In Southern African Conference for Artificial Intelligence Research , pages 231–245. Springer, 2022. Zalán Borsos, Matt Sharifi, and Marco Tagliasacchi. Speechpainter: Text-conditioned speech inpainting. arXiv preprint arXiv:2202.07273 , 2022. Guillermo Cámbara, Patrick Lumban Tobing, Mikolaj Babianski, Ravichander Vipperla, Duo Wang, Ron Shmelkin, Giuseppe Coccia, Orazio Angelini, Arnaud Joly, Mateusz Lajszczak, et al. Mapache: Masked parallel transformer for advanced speech editing and synthesis. In ICASSP 2024-2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 10691–10695. IEEE, 2024. Guoguo Chen, Shuzhou Chai, Guanbo Wang, Jiayu Du, Wei-Qiang Zhang, Chao Weng, Dan Su, Daniel Povey, Jan Trmal, Junbo Zhang, et al. Gigaspeech: An evolving, multi-domain asr corpus with 10,000 hours of transcribed audio. arXiv preprint arXiv:2106.06909 , 2021. Sanyuan Chen, Chengyi Wang, Zhengyang Chen, Yu Wu, Shujie Liu, Zhuo Chen, Jinyu Li, Naoyuki Kanda, Takuya Yoshioka, Xiong Xiao, et al. Wavlm: Large-scale self-supervised pre-training for full stack speech processing. IEEE Journal of Selected Topics in Signal Processing , 16(6): 1505–1518, 2022. Alexandre Défossez, Jade Copet, Gabriel Synnaeve, and Yossi Adi. High fidelity neural audio compression. arXiv preprint arXiv:2210.13438 , 2022. Prafulla Dhariwal and Alexander Nichol. Diffusion models beat gans on image synthesis. Advances in neural information processing systems , 34:8780–8794, 2021. Tali Dror, Iftach Shoham, Moshe Buchris, Oren Gal, Haim Permuter, Gilad Katz, and Eliya Nachmani. Token-based audio inpainting via discrete diffusion. In International Conference on Learning Representations , volume 2026, pages 19136–19151, 2026. Itai Gat, Tal Remez, Neta Shaul, Felix Kreuk, Ricky TQ Chen, Gabriel Synnaeve, Yossi Adi, and Yaron Lipman. Discrete flow matching. Advances in Neural Information Processing Systems , 37: 133345–133385, 2024. Zhengfu He, Tianxiang Sun, Qiong Tang, Kuanning Wang, Xuan-Jing Huang, and Xipeng Qiu. Diffu-sionbert: Improving generative masked language models with diffusion models. In Proceedings of the 61st annual meeting of the association for computational linguistics (volume 1: Long papers) ,pages 4521–4534, 2023. Jonathan Ho and Tim Salimans. Classifier-free diffusion guidance. arXiv preprint arXiv:2207.12598 ,2022. Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. Advances in neural information processing systems , 33:6840–6851, 2020. Rongjie Huang, Ruofan Hu, Yongqi Wang, Zehan Wang, Xize Cheng, Ziyue Jiang, Zhenhui Ye, Dongchao Yang, Luping Liu, Peng Gao, et al. Instructspeech: Following speech editing instructions via large language models. In Forty-first International Conference on Machine Learning , 2024. Shengpeng Ji, Ziyue Jiang, Wen Wang, Yifu Chen, Minghui Fang, Jialong Zuo, Qian Yang, Xize Cheng, Zehan Wang, Ruiqi Li, et al. Wavtokenizer: an efficient acoustic discrete codec tokenizer for audio language modeling. arXiv preprint arXiv:2408.16532 , 2024. Zeyu Jin, Gautham J Mysore, Stephen Diverdi, Jingwan Lu, and Adam Finkelstein. Voco: Text-based insertion and replacement in audio narration. ACM Transactions on Graphics (TOG) , 36(4):1–13, 2017. Frank P Kelly. Reversibility and stochastic networks. PF Kelly—New York: Willy , 1981. 11 Pin-Jui Ku, He Huang, Jean-Marie Lemercier, Subham Sekhar Sahoo, Zhehuai Chen, and Ante Juki´ c. Discrete diffusion for generative modeling of text-aligned speech tokens. In ICASSP 2026-2026 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 17022–17026. IEEE, 2026. Matthew Le, Apoorv Vyas, Bowen Shi, Brian Karrer, Leda Sari, Rashel Moritz, Mary Williamson, Vimal Manohar, Yossi Adi, Jay Mahadeokar, et al. Voicebox: Text-guided multilingual universal speech generation at scale. Advances in neural information processing systems , 36:14005–14034, 2023. Jonathan Le Roux, Hirokazu Kameoka, Nobutaka Ono, Alain de Cheveigné, Shigeki Sagayama, et al. Computational auditory induction by missing-data non-negative matrix factorization. In SAPA@ INTERSPEECH , pages 1–6, 2008. Jonathan Le Roux, Hirokazu Kameoka, Nobutaka Ono, Alain De Cheveigne, and Shigeki Sagayama. Computational auditory induction as a missing-data model-fitting problem with bregman diver-gence. Speech Communication , 53(5):658–676, 2011. Florian Lieb and Hans-Georg Stark. Audio inpainting: Evaluation of time-frequency representations and structured sparsity approaches. Signal Processing , 153:291–299, 2018. Rui Liu, Jiatian Xi, Ziyue Jiang, and Haizhou Li. Fluenteditor: Text-based speech editing by considering acoustic and prosody consistency. arXiv preprint arXiv:2309.11725 , 2023. Aaron Lou, Chenlin Meng, and Stefano Ermon. Discrete diffusion modeling by estimating the ratios of the data distribution, 2024. URL https://arxiv. org/abs/2310.16834 , 2024. Andres Marafioti, Piotr Majdak, Nicki Holighaus, and Nathanaël Perraudin. Gacela: A generative adversarial context encoder for long audio inpainting of music. IEEE Journal of Selected Topics in Signal Processing , 15(1):120–131, 2020. Chenlin Meng, Kristy Choi, Jiaming Song, and Stefano Ermon. Concrete score matching: Generalized score matching for discrete data. Advances in Neural Information Processing Systems , 35:34532– 34545, 2022. Ondˇ rej Mokr` y, Paul Magron, Thomas Oberlin, and Cédric Févotte. Algorithms for audio inpainting based on probabilistic nonnegative matrix factorization. Signal Processing , 206:108905, 2023. Juan F Montesinos, Daniel Michelsanti, Gloria Haro, Zheng-Hua Tan, and Jesper Jensen. Speech inpainting: Context-based speech synthesis guided by video. arXiv preprint arXiv:2306.00489 ,2023. Mordehay Moradi and Sharon Gannot. Transient noise removal via diffusion-based speech inpainting. 
+
+arXiv preprint arXiv:2508.08890 , 2025. Linh The Nguyen, Thinh Pham, and Dat Quoc Nguyen. Xphonebert: A pre-trained multilingual model for phoneme representations for text-to-speech. arXiv preprint arXiv:2305.19709 , 2023. Shen Nie, Fengqi Zhu, Zebin You, Xiaolu Zhang, Jingyang Ou, Jun Hu, Jun Zhou, Yankai Lin, Ji-Rong Wen, and Chongxuan Li. Large language diffusion models. arXiv preprint arXiv:2502.09992 ,2025. Shen Nie, Fengqi Zhu, Zebin You, Xiaolu Zhang, Jingyang Ou, Jun Hu, Jun Zhou, Yankai Lin, Ji-Rong Wen, and Chongxuan Li. Large language diffusion models. Advances in Neural Information Processing Systems , 38:50608–50646, 2026. William Peebles and Saining Xie. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF international conference on computer vision , pages 4195–4205, 2023. Puyuan Peng, Po-Yao Huang, Shang-Wen Li, Abdelrahman Mohamed, and David Harwath. Voice-craft: Zero-shot speech editing and text-to-speech in the wild. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 12442– 12462, 2024. 12 Nathanael Perraudin, Nicki Holighaus, Piotr Majdak, and Peter Balazs. Inpainting of long audio segments with similarity graphs. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 26(6):1083–1094, 2018. Pierre Prablanc, Alexey Ozerov, Ngoc QK Duong, and Patrick Pérez. Text-informed speech inpainting via voice conversion. In 2016 24th European Signal Processing Conference (EUSIPCO) , pages 878–882. IEEE, 2016. Vineel Pratap, Andros Tjandra, Bowen Shi, Paden Tomasello, Arun Babu, Sayani Kundu, Ali Elkahky, Zhaoheng Ni, Apoorv Vyas, Maryam Fazel-Zarandi, Alexei Baevski, Yossi Adi, Xiaohui Zhang, Wei-Ning Hsu, Alexis Conneau, and Michael Auli. Scaling speech technology to 1,000+ languages. 
+
+arXiv , 2023. Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision, 2022. URL https://arxiv.org/ abs/2212.04356 .Yi Ren, Chenxu Hu, Xu Tan, Tao Qin, Sheng Zhao, Zhou Zhao, and Tie-Yan Liu. Fastspeech 2: Fast and high-quality end-to-end text to speech. arXiv preprint arXiv:2006.04558 , 2020. Takaaki Saeki, Detai Xin, Wataru Nakata, Tomoki Koriyama, Shinnosuke Takamichi, and Hi-roshi Saruwatari. Utmos: Utokyo-sarulab system for voicemos challenge 2022. arXiv preprint arXiv:2204.02152 , 2022. Subham S Sahoo, Marianne Arriola, Yair Schiff, Aaron Gokaslan, Edgar Marroquin, Justin T Chiu, Alexander Rush, and Volodymyr Kuleshov. Simple and effective masked diffusion language models. Advances in Neural Information Processing Systems , 37:130136–130184, 2024. Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. Score-based generative modeling through stochastic differential equations. arXiv preprint arXiv:2011.13456 , 2020. Haoran Sun, Lijun Yu, Bo Dai, Dale Schuurmans, and Hanjun Dai. Score-based continuous-time discrete diffusion models. arXiv preprint arXiv:2211.16750 , 2022. Daxin Tan, Liqun Deng, Yu Ting Yeung, Xin Jiang, Xiao Chen, and Tan Lee. Editspeech: A text based speech editing system using partial inference and bidirectional fusion. In 2021 IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) , pages 626–633. IEEE, 2021. Georg Tauböck, Shristi Rajbamshi, and Peter Balazs. Dictionary learning for sparse audio inpainting. 
+
+IEEE Journal of Selected Topics in Signal Processing , 15(1):104–119, 2020. Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural information processing systems , 30, 2017. Guanghan Wang, Yair Schiff, Subham Sahoo, and Volodymyr Kuleshov. Remasking discrete diffusion models with inference-time scaling. Advances in Neural Information Processing Systems , 38: 147282–147339, 2026. Helin Wang, Meng Yu, Jiarui Hai, Chen Chen, Yuchen Hu, Rilin Chen, Najim Dehak, and Dong Yu. Ssr-speech: Towards stable, safe and robust zero-shot text-based speech editing and synthesis. In 
+
+ICASSP 2025-2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 1–5. IEEE, 2025. Tao Wang, Jiangyan Yi, Ruibo Fu, Jianhua Tao, and Zhengqi Wen. Campnet: Context-aware mask prediction for end-to-end text-based speech editing. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 30:2241–2254, 2022. Xiaofei Wang, Manthan Thakker, Zhuo Chen, Naoyuki Kanda, Sefik Emre Eskimez, Sanyuan Chen, Min Tang, Shujie Liu, Jinyu Li, and Takuya Yoshioka. Speechx: Neural codec language model as a versatile speech transformer. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 32:3355–3364, 2024. 13 Dongchao Yang, Jianwei Yu, Helin Wang, Wen Wang, Chao Weng, Yuexian Zou, and Dong Yu. Diffsound: Discrete diffusion model for text-to-sound generation. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 31:1720–1733, 2023. Muqiao Yang, Chunlei Zhang, Yong Xu, Zhongweiyang Xu, Heming Wang, Bhiksha Raj, and Dong Yu. usee: Unified speech enhancement and editing with conditional diffusion models. In ICASSP 2024-2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) ,pages 7125–7129. IEEE, 2024. Heiga Zen, Viet Dang, Rob Clark, Yu Zhang, Ron J Weiss, Ye Jia, Zhifeng Chen, and Yonghui Wu. Libritts: A corpus derived from librispeech for text-to-speech. arXiv preprint arXiv:1904.02882 ,2019. 14 9 Reproducibility 
+
+Full code and configuration files are released with the paper. This section summarizes the hyperpa-rameters used for our main method, HiCoDD ( configs/config_encodec_hier.yaml ). 
+
+9.1 Model Architecture 
+
+The main architectural configuration of HiCoDD is summarized in Table 3. 
+
+9.2 Diffusion Process 
+
+The forward-process graph and noise-schedule configuration are reported in Table 4. 
+
+9.3 Training Hyperparameters 
+
+The settings used to train HiCoDD are provided in Table 5. 
+
+9.4 Inference and Sampling Hyperparameters 
+
+HiCoDD samples codebooks in an ordered, coarse-to-fine manner: each codebook is fully denoised before conditioning the generation of the next codebook through the clean encoder. The sampling hyperparameters are summarized in Table 6. 
+
+## 10 Token-Count Duration Prediction 
+
+SIEDD performs speech editing directly in the discrete token space of an EnCodec codec. For substitution and insertion operations, the system must determine the number of codec frames allocated to the edited span before generation. A simple approach is to estimate this duration from the number of phonemes in the target text and the speaking rate of the source speaker: 
+
+ˆNrate 
+
+|ϕnew |
+
+rspk 
+
+· fcodec , (13) where |ϕnew | denotes the number of phonemes in the edited span, rspk is the estimated speaker phoneme rate, and fcodec = 50 is the EnCodec frame rate. Although inexpensive, this heuristic assumes that all phonemes contribute equally to duration and does not account for phoneme identity, span position, coarticulation, or local prosodic variation. It is particularly unreliable for insertions, for which no original acoustic span is available to provide a direct duration reference. To obtain a more accurate estimate, we introduce a lightweight neural token-count predictor inspired by the convolutional duration predictor of FastSpeech 2 [Ren et al., 2020]. The predictor receives the IPA phoneme sequence of the target span and outputs the expected number of EnCodec frames required to realize it. 
+
+Architecture. Each input phoneme is mapped to a d-dimensional embedding, with d = 128 , and augmented with a fixed sinusoidal positional encoding [Vaswani et al., 2017]. The resulting sequence is processed by two convolutional blocks. Each block consists of a one-dimensional convolution with kernel size 3, followed by a residual connection, layer normalization, ReLU activation, and dropout with probability 0.1.The encoded phoneme sequence is aggregated using masked mean pooling, such that padding positions do not contribute to the span representation. To account for duration variation that cannot be inferred from phoneme identity alone, the pooled representation is concatenated with three scalar conditioning variables: 
+
+c [log rspk , ; ρpos , ; log |ϕnew |] , (14) where ρpos ∈ [0 , 1] denotes the normalized location of the span center within the utterance. The combined representation is passed through a two-layer multilayer perceptron, 
+
+Rd+3 → Rd/ 2 → R, (15) 15 Parameter Value Backbone DiT Tokenizer EnCodec Hidden size 1024 Conditioning dim 128 Transformer blocks 24 Attention heads 16 Dropout 0.1           
+
+> σ-scaling of final layer True Codebooks ( K)4Clean-encoder depth 1 block Encoder fusion mode causal (codebook-causal) Per-codebook positional embedding True Cross-attention conditioning True adaLN global conditioning False Phoneme conditioning (XPhoneBERT) True Text positional embedding True Vocabulary size per codebook 2048 (+1 absorbing/mask state)
+
+Table 3: HiCoDD architecture.          
+
+> Parameter Value Graph type absorbing Noise schedule log-linear
+> σmin 1×10 −4
+> σmax 20 Masking mode iid, independent per codebook Per-codebook noise coupling independent (no staircase)
+
+Table 4: Forward process: graph and noise schedule. which predicts the log token count. The final integer-valued estimate is obtained as 
+
+ˆN round (exp ( gθ (ϕnew , c))) . (16) The predictor contains approximately 10 5 parameters and therefore introduces negligible computa-tional overhead relative to the diffusion backbone. 
+
+Training data. We construct span-level duration supervision from the LibriTTS corpus. Word-level timestamps are obtained using the Montreal Forced Aligner. For a contiguous span covering words i
+
+through j, the target number of codec frames is defined as 
+
+N ∗ (tend ,j tstart ,i ) fcodec , (17) where tstart ,i and tend ,j are the aligned start and end times of the span. We enumerate contiguous spans of up to eight words from each utterance, producing approximately 180 –200 k training examples. The resulting dataset is divided into training and validation subsets using a 90 /10 split. 
+
+Training objective. Rather than directly minimizing absolute token-count error, we optimize a Huber loss over the predicted-to-reference duration ratio: 
+
+Ldur Huber δ=0 .3
+
+ˆNN ∗ , 1
+
+!
+
+. (18) Operating in relative-duration space prevents long spans from dominating the objective and assigns comparable importance to proportional errors across short and long edits. The Huber formulation additionally reduces sensitivity to noisy alignments and unusually long or short realizations. The model is trained with AdamW using a learning rate of 10 −3 and weight decay of 10 −4. We apply cosine learning-rate annealing down to 10 −5, gradient clipping with a maximum norm of 1.0, and a batch size of 256 . Training proceeds for at most 50 epochs, with early stopping after 10 epochs without validation improvement. The checkpoint with the lowest validation mean absolute error in codec tokens is retained. We compare the learned predictor against the phoneme-rate heuristic in Eq. (13) to quantify the benefit of modeling phonetic and contextual duration variation. 16 Parameter Value Optimizer AdamW Learning rate 1 × 10 −4      
+
+> LR warmup 2,500 steps Gradient clipping 1.0 GPUs 2Per-GPU batch size 8Gradient accumulation 2 steps EMA decay 0.9999
+
+Table 5: Training and optimization hyperparameters. 
+
+Parameter Value Mode ordered (coarse → fine) Steps 512 Temperature 1.0 Top-k 2CFG coefficient 1.5 Seed 1
+
+Table 6: Sampling hyperparameters. 
+
+## 11 Full Inpainting Evaluations 
+
+In Table 7 showed the numerical results of the graphs in the main paper. 17 Gap Duration # Gaps Method WER ↓ SIM ↑ MCD ↓ F0 Dist. ↓ Energy Dist. ↓
+
+250 ms 
+
+1VoiceCraft 0.126 ±0.11 0.979 ±0.02 191.5 ±35.0 5.90 ±4.2 0.003 ±0.001 SSR-Speech 0.126 ±0.11 0.995 ±0.01 91.3 ±45.6 3.05 ±3.18 0.001 ±0.001 
+
+SIEDD (Ours) 0.118 ±0.10 0.997 ±0.004 21.1 ±14.7 0.92 ±1.27 0.0004 ±0.001 
+
+2VoiceCraft 0.137 ±0.12 0.977 ±0.02 217.2 ±54.7 6.91 ±4.54 0.003 ±0.002 SSR-Speech 0.152 ±0.13 0.990 ±0.02 143.5 ±71.3 5.79 ±6.30 0.002 ±0.0020 
+
+SIEDD (Ours) 0.122 ±0.11 0.995 ±0.01 46.07 ±31.7 1.91 ±2.27 0.001 ±0.001 
+
+3VoiceCraft 0.140 ±0.12 0.972 ±0.03 323.89 ±47.6 8.31 ±7.53 0.003 ±0.002 SSR-Speech 0.243 ±0.77 0.982 ±0.02 207.7 ±79.5 8.19 ±6.62 0.003 ±0.002 
+
+SIEDD (Ours) 0.122 ±0.11 0.991 ±0.01 65.5 ±30.2 3.44 ±5.46 0.001 ±0.001 500 ms 
+
+1VoiceCraft 0.126 ±0.11 0.978 ±0.02 204.0 ±38.6 6.50 ±5.3 0.003 ±0.002 SSR-Speech 0.137 ±0.11 0.992 ±0.02 121.3 ±79.3 4.87 ±8.01 0.003 ±0.001 
+
+SIEDD (Ours) 0.120 ±0.11 0.995 ±0.01 44.9 ±29.0 1.87 ±3.20 0.001 ±0.001 
+
+2VoiceCraft 0.132 ±0.12 0.972 ±0.026 243.9 ±60.6 8.09 ±5.45 0.003 ±0.002 SSR-Speech 0.157 ±0.125 0.983 ±0.02 180.5 ±77.6 6.84 ±5.14 0.003 ±0.002 
+
+SIEDD (Ours) 0.121 ±0.11 0.989 ±0.01 85.3 ±44.1 3.81 ±4.20 0.001 ±0.001 
+
+3VoiceCraft 0.137 ±0.12 0.966 ±0.03 279.4 ±72.0 9.37 ±7.74 0.004 ±0.002 SSR-Speech 0.265 ±0.165 0.969 ±0.04 271.7 ±98.32 9.35 ±6.20 0.005 ±0.003 
+
+SIEDD (Ours) 0.126 ±0.11 0.980 ±0.03 129.98 ±59.7 5.25 ±5.36 0.002 ±0.002 1000 ms 
+
+1VoiceCraft 0.135 ±0.12 0.975 ±0.02 238.2 ±60.1 7.66 ±5.5 0.004 ±0.002 SSR-Speech 0.152 ±0.12 0.987 ±0.02 167.0 ±79.3 6.27 ±6.35 0.003 ±0.002 
+
+SIEDD (Ours) 0.123 ±0.11 0.991 ±0.01 90.68 ±48.3 3.25 ±3.24 0.002 ±0.001 
+
+2VoiceCraft 0.138 ±0.12 0.965 ±0.03 283.6 ±72.3 9.92 ±6.88 0.004 ±0.002 SSR-Speech 0.206 ±0.15 0.964 ±0.05 268.8 ±109.8 9.93 ±8.39 0.004 ±0.003 
+
+SIEDD (Ours) 0.132 ±0.12 0.970 ±0.04 172.9 ±82.7 6.60 ±6.16 0.003 ±0.002 
+
+3VoiceCraft 0.146 ±0.12 0.959 ±0.04 326.6 ±71.10 11.11 ±6.75 0.005 ±0.003 SSR-Speech 0.298 ±0.167 0.930 ±0.09 382.1 ±125.5 12.42 ±7.81 0.006 ±0.004 
+
+SIEDD (Ours) 0.140 ±0.12 0.967 ±0.08 270.4 ±122.80 8.79 ±7.11 0.004 ±0.003 1500 ms 1VoiceCraft 0.131 ±0.12 0.968 ±0.04 262.5 ±65.5 8.60 ±5.7 0.004 ±0.002 SSR-Speech 0.165 ±0.13 0.980 ±0.02 203.3 ±95.6 7.76 ±6.80 0.003 ±0.003 
+
+SIEDD (Ours) 0.122 ±0.10 0.982 ±0.02 138.2 ±62.8 4.84 ±3.73 0.003 ±0.002 
+
+Table 7: Speech inpainting results for different masked-span durations and numbers of gaps. Results are reported as mean ± standard deviation. Each gap has the duration indicated in the first column. Higher is better for SIM, while lower is better for all other metrics. In bold marked the best result. Evaluation with gaps that were longer than the utterance itself were skipped. 18

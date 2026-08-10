@@ -1,0 +1,550 @@
+Title: SemBridge: Semantic Token Anchoring for Continuous-Latent Autoregressive Speech Generation
+
+URL Source: https://arxiv.org/pdf/2608.07462v1
+
+Published Time: Mon, 10 Aug 2026 01:12:53 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# SemBridge: Semantic Token Anchoring for Continuous-Latent Autoregressive Speech Generation 
+
+# Hanke Xie 1,2 ∗† , Haopeng Lin 2†, Jiale Qian 2, Dake Guo 1, Yuepeng Jiang 1, Zhichao Wang 2, Wenxiao Cao 2, Jingbin Hu 1, Guobin Ma 1, Wenhao Li 1, Huakang Chen 1, Chengyou Wang 1, Ming Tao 2,Zhonghua Fu 1, Lei Xie 1‡, Xinsheng Wang 2‡
+
+> 1
+
+Audio, Speech and Language Processing Group (ASLP@NPU), School of Software Northwestern Polytechnical University, Xi’an, China 
+
+> 2
+
+Soul AI Lab, China hkxie@mail.nwpu.edu.cn, lxie@nwpu.edu.cn, wangxinsheng@soulapp.cn 
+
+Abstract 
+
+Continuous-latent autoregressive speech generation has emerged as a promising alternative to discrete-token modeling by avoiding quantization loss and preserving richer acoustic information. However, continuous acoustic targets do not ex-pose linguistic structure as explicit token-level prediction tar-gets. Consequently, the autoregressive language model (LM) must acquire linguistic structure indirectly through acous-tic prediction, which can compromise the content fidelity of generated speech. We propose SemBridge , a training-only semantic-token anchoring framework for continuous-latent autoregressive speech generation. SemBridge uses discrete se-mantic tokens to directly supervise autoregressive LM states and employs a Semantic-Aligned Acoustic VAE to organize the continuous target space under the same semantic refer-ence. The semantic supervision is used only during train-ing, while inference remains entirely continuous. We evalu-ate SemBridge on zero-shot text-to-speech (TTS) and score-conditioned singing voice synthesis (SVS). Across multi-ple benchmarks, SemBridge improves content accuracy, as measured by word and character error rates (WER/CER), while maintaining competitive speaker similarity and percep-tual quality. Experimental results demonstrate that explicit semantic-token supervision for autoregressive state learning is an effective and general direction for continuous speech generation. Speech samples are available. 1 The model code and checkpoints will be available at https://github.com/ASLP-lab/SemBridge. 
+
+# Introduction 
+
+Autoregressive (AR) models have emerged as a dominant paradigm for speech synthesis. (Wang et al. 2023; Anas-tassiou et al. 2024). Most AR speech generation systems adopt a language-modeling formulation, representing speech as discrete token sequences and formulating generation as standard next-token prediction. Recent AR systems fur-ther advance discrete speech representations by introducing 
+
+> 1
+
+https://tiamojames.github.io/SemBridge_Demo/ 
+
+> ∗
+
+Work done during an internship at Soul AI Lab. 
+
+> †
+
+These authors contributed equally. 
+
+> ‡
+
+Corresponding author. 
+
+low-rate and semantically structured speech tokens through pretrained speech representations or hierarchical semantic– acoustic modeling (Du et al. 2024b, 2025; Hu et al. 2026; Zhang et al. 2024a). These designs provide compact and lin-guistically meaningful prediction targets, reducing the text– speech semantic gap and improving autoregressive model-ing. However, discrete representations inevitably introduce quantization constraints, limiting their capacity to preserve fine-grained acoustic details required for high-fidelity speech generation. Continuous representations avoid quantization loss while providing a richer and more expressive acoustic target space. Consequently, continuous-latent autoregressive generation has emerged as a promising direction for high-fidelity speech synthesis (Meng et al. 2025; Jia et al. 2025; Xia et al. 2026). Continuous-latent autoregressive models generate speech by predicting continuous acoustic representations, such as mel-spectrograms or learned acoustic latents, often using diffusion- or flow-based next-patch generation to model com-plex acoustic distributions (Jia et al. 2025; Peng et al. 2026; Zhou et al. 2025b). These continuous targets preserve rich acoustic information while implicitly encoding linguis-tic content. Unlike discrete semantic tokens, however, they do not provide explicit semantic targets at each generation step. Consequently, the autoregressive LM is required to infer linguistic structure indirectly from the continuous generation objective, without explicit token-level semantic supervision. Recent studies have explored various strategies for in-corporating semantic information into continuous speech generation. Existing approaches mainly leverage continuous semantic representations extracted from pretrained speech models to enhance either target representations or autore-gressive hidden states (Wang et al. 2026; An et al. 2026). While these methods demonstrate the importance of seman-tic modeling for continuous generation, they formulate se-mantic supervision as continuous feature alignment. In con-trast, discrete semantic tokens organize linguistic content into discrete semantic units and provide explicit prediction tar-gets for autoregressive language modeling. Such discretiza-tion makes clusterable linguistic structure explicit while sup-pressing linguistically irrelevant variation retained in con-arXiv:2608.07462v1 [eess.AS] 7 Aug 2026 tinuous speech features (Hsu et al. 2021; Nguyen, Sagot, and Dupoux 2022). However, leveraging discrete semantic tokens to explicitly supervise continuous-latent autoregres-sive states remains underexplored. Other approaches intro-duce hierarchical or semi-discrete architectures to combine semantic and acoustic modeling (Zhou et al. 2025b; Yu et al. 2025); however, they modify the original continuous genera-tion interface by introducing additional semantic generation components. To address this gap, we introduce SemBridge, a training-only semantic-token anchoring framework for continuous-latent autoregressive speech generation. At its core, Sem-Bridge uses discrete semantic-token labels to provide direct semantic supervision for autoregressive LM states, while continuous latent patches remain the sole generated and recurrent variables. A complementary Semantic-Aligned Acoustic VAE (SA-VAE) further aligns continuous acoustic latents with token-level embeddings from the same semantic tokenizer, establishing a shared semantic reference for latent representation learning and state supervision. We evaluate SemBridge primarily on zero-shot text-to-speech (TTS) and further assess its transferability to score-conditioned singing voice synthesis (SVS) (Liu et al. 2022; Zhang et al. 2022; Qian et al. 2026). Across multiple TTS and SVS benchmarks, SemBridge consistently reduces WER/CER while maintaining competitive speaker similar-ity and perceptual quality. Controlled ablations show that semantic-token anchoring provides complementary gains be-yond target-space alignment alone, while layer-wise analyses reveal a trade-off between content accuracy and synthesis quality. Our main contributions are summarized as follows: 
+
+• We propose SemBridge, a training-only semantic-token anchoring framework that directly supervises autoregres-sive LM states with discrete semantic-token labels while preserving continuous-only generation during inference. 
+
+• We introduce a unified semantic supervision scheme based on a shared frozen semantic tokenizer: token-level embeddings align continuous acoustic latents through SA-VAE, while discrete semantic-token labels explicitly supervise autoregressive LM hidden states. 
+
+• Experiments on zero-shot TTS and score-conditioned SVS show that SemBridge consistently improves WER/CER while maintaining competitive speaker sim-ilarity and perceptual quality. Ablations further confirm the complementary benefits of latent alignment and state anchoring and reveal a trade-off effect of anchoring depth. 
+
+# Related Work 
+
+Discrete-Token Autoregressive Speech Generation. 
+
+Modern LM-based speech systems commonly represent speech as discrete token sequences produced by semantic or neural-codec tokenizers. AudioLM, VALL-E, and Seed-TTS formulate speech generation as autoregressive sequence modeling over discrete speech representations, enabling scal-able generation and zero-shot adaptation (Borsos et al. 2022; Wang et al. 2023; Anastassiou et al. 2024). Recent work increasingly explores low-rate and semantically informed to-kens to shorten speech sequences and strengthen linguistic modeling. SpeechTokenizer distributes semantic and acous-tic information across multiple quantization levels, while WavTokenizer explores a compact single-codebook repre-sentation (Zhang et al. 2024a; Ji et al. 2025). Self-supervised speech studies further show that learned representations ex-hibit clusterable phonetic structure, while discrete-unit analy-ses demonstrate that discretization can suppress linguistically irrelevant variation and provide effective prediction targets for spoken language modeling (Hsu et al. 2021; Nguyen, Sagot, and Dupoux 2022). Nevertheless, quantization intro-duces an information bottleneck that can limit the preserva-tion of fine-grained acoustic details. 
+
+Continuous-Latent Autoregressive Speech Generation. 
+
+Continuous-latent approaches avoid discrete quantization by directly modeling mel-spectrograms, learned acoustic la-tents, or latent distributions. MELLE autoregressively gen-erates continuous mel-spectrogram frames, while KALL-E models the distribution of future continuous latents (Meng et al. 2025; Xia et al. 2026). Recent methods further combine causal sequence modeling with diffusion- or flow-based local generation. DiTAR separates inter-patch dependency model-ing from intra-patch acoustic generation through a causal LM and a local diffusion transformer (Jia et al. 2025), while VibeVoice uses low-rate continuous representations and next-patch diffusion for long-form multi-speaker generation (Peng et al. 2026). These approaches preserve an expressive contin-uous acoustic target space, but their autoregressive states are trained primarily through continuous generation objectives. 
+
+Semantic Guidance for Continuous Autoregressive Gen-eration. Recent methods introduce semantic guidance into continuous generation through pretrained speech representa-tions. SemaVoice aligns continuous VAE latents with high-level features from a frozen speech foundation model, im-proving semantic structure in the acoustic target space be-fore autoregressive training (Wang et al. 2026). MELA-TTS instead regularizes autoregressive states by aligning them with continuous ASR features (An et al. 2026). These meth-ods transfer semantic information through continuous feature alignment at the target and predictor levels, respectively. Vox-CPM adopts a semi-discrete semantic-prosodic bottleneck together with a residual pathway, retaining an explicit seman-tic modeling branch during inference (Zhou et al. 2025b). 
+
+# Method 
+
+Overview 
+
+SemBridge is built on a continuous-latent autoregressive backbone that generates acoustic latent patches conditioned on symbolic inputs and preceding acoustic history. Its core mechanism is semantic-token anchoring, which uses dis-crete semantic-token labels to provide direct supervision for selected autoregressive LM states. A complementary Semantic-Aligned Acoustic VAE (SA-VAE) organizes the continuous acoustic target space under the same semantic reference. Together, the two objectives introduce semantic structure into both the predictive LM states and the contin-Semantic  Anchoring    
+
+> Semantic
+> Encoder
+> Acoustic
+> Encoder
+> Variational
+> Posterior
+> VQ Semantic Token
+> Align Loss
+> Acoustic
+> Reconstruction
+> Loss
+> Acoustic
+> Decoder
+> Semantic
+> Projector
+
+Decoder-Only Transformer         
+
+> Unified Prefix
+> Task Text MiDi
+> Patch Enc Patch Enc
+> (A) Semantic-Aligned Acoustic Latent Tokenizer (B) SemBridge: Next Acoustic-Latent Prediction
+> LocDiT LocDiT LocDiT
+> Semantic Feature
+> Acoustic Feature
+> Semantic Token
+> Acoustic Latent
+> Patch Enc
+> Patch Latent
+> Text Sequence
+> Text Embedding
+> Training only
+> Training & Inference Ce Loss
+> Semantic Head
+> Hidden State
+> Inference only
+
+Figure 1: Overview of the two-stage SemBridge framework. (A) Stage I trains SA-VAE to reconstruct waveforms while aligning continuous acoustic patches with embeddings from a frozen semantic tokenizer; their token IDs are retained as Stage-II targets. (B) Stage II trains a continuous-latent autoregressive generator: a causal LM encodes symbolic conditions and preceding acoustic patches, LocDiT predicts the next patch, and a semantic head supervises a LM hidden layer under the same causal shift. uous targets they model, while retaining continuous latent patches as the sole generated and recurrent variables. We use an open-source pretrained GLM-4 tokenizer(Zeng et al. 2024) operating at 12 .5 Hz. Given a training waveform 
+
+x, the tokenizer produces a sequence of token-level semantic embeddings and their corresponding discrete token IDs: 
+
+(E, S) = SGLM (x), E = {et}Tt=1 , S = {st}Tt=1 , (1) where et denotes the continuous embedding associated with the semantic token st, and st ∈ { 1, . . . , V } with vocabu-lary size V = 16 ,384 . The embeddings and token IDs pro-vide two complementary forms of supervision: et is used for continuous target-space alignment, whereas st serves as the categorical target for LM-state anchoring. The SA-VAE encoder produces frame-level continuous acoustic latents A = {an}2Tn=1 at 25 Hz. We group every two consecutive frames into one autoregressive acoustic patch: 
+
+zt = Concat ( a2t−1, a2t) , t = 1 , . . . , T. (2) The resulting acoustic patch sequence Z = {zt}Tt=1 therefore has the same 12 .5-Hz rate as the semantic tokenizer outputs. This establishes a one-to-one temporal correspondence: 
+
+zt ←→ (et, s t) . (3) Accordingly, each continuous patch is aligned with a token-level embedding during SA-VAE training, and the LM state responsible for predicting that patch is supervised by the corresponding discrete token ID during generator training. Training proceeds in two stages as shown in Figure 1. Stage I trains SA-VAE with acoustic reconstruction and se-mantic target-alignment objectives. Stage II freezes SA-VAE and the GLM-4 semantic tokenizer, and trains the continuous autoregressive generator with its original generation objec-tives together with semantic-token anchoring. Although SA-VAE is trained first, the defining component of SemBridge is the Stage-II token-level supervision applied directly to au-toregressive LM states. 
+
+Continuous-Latent Autoregressive Backbone 
+
+Given the continuous acoustic patch sequence Z =
+
+{z1, . . . , zT } produced by the frozen SA-VAE, SemBridge autoregressively models speech generation conditioned on a symbolic input c and an optional acoustic prompt r:
+
+p(Z | c, r) = 
+
+> T
+
+Y
+
+> t=1
+
+p (zt | c, r, z<t ) . (4) 
+
+Autoregressive Context Modeling. Following recent continuous-latent autoregressive frameworks (Jia et al. 2025), the generator consists of PatchEnc, a causal LM, and a local diffusion transformer, denoted as LocDiT. PatchEnc maps the acoustic prompt and preceding continuous patches into acoustic context representations, which are combined with the symbolic conditions and processed by the causal LM. At the position responsible for predicting zt, the hidden state produced by Transformer layer ℓ is: 
+
+h(ℓ) 
+
+> t
+
+= H(ℓ) 
+
+> θ
+
+(c, r, z<t ) , ℓ = 1 , . . . , L. (5) The causal construction ensures that h(ℓ) 
+
+> t
+
+only depends on the symbolic conditions, prompt context, and preceding acoustic patches. The final-layer state provides the global condition for continuous next-patch generation, while a selected hid-den layer is additionally supervised by the semantic-token anchoring objective described in Section Semantic-Token Anchoring. 
+
+Conditional Continuous Patch Generation. The normal-ized final LM state 
+
+gt = RMSNorm 
+
+
+
+h(L)
+
+> t
+
+
+
+(6) conditions LocDiT together with the preceding acoustic patch zt−1. Rather than directly regressing zt, LocDiT mod-els its conditional distribution using flow matching: 
+
+LFM = E
+
+h
+
+∥vΘ (ezt,τ , τ ; gt, zt−1) − v⋆t ∥22
+
+i
+
+, (7) where τ denotes the flow time, ezt,τ is the corresponding intermediate flow state, and v⋆t is the target velocity field. A lightweight stop predictor attached to the final LM state determines sequence termination. 
+
+Semantic-Token Anchoring 
+
+Causally Aligned Semantic Prediction. Let h(ℓ) 
+
+> t
+
+denote the post-block hidden state produced by Transformer layer ℓ
+
+at the autoregressive position responsible for predicting the next continuous patch zt:
+
+h(ℓ) 
+
+> t
+
+= H(ℓ) 
+
+> θ
+
+(c, r, z<t ) , ℓ = 1 , . . . , L. (8) Because the GLM-4 semantic tokenizer and the autoregres-sive acoustic patches share the same 12 .5-Hz temporal rate, the semantic token st is associated with the same target patch 
+
+zt. Under the causal shift used for next-patch prediction, the state h(ℓ) 
+
+> t
+
+has access only to the symbolic conditions, prompt context, and preceding acoustic patches z<t . It does not ob-serve either the target patch zt or its semantic label st.The same autoregressive state is therefore trained to sup-port two complementary predictions: 
+
+h(L) 
+
+> t
+
+−→ zt, h(ℓ⋆) 
+
+> t
+
+−→ st, (9) where the final-layer state conditions continuous next-patch generation, while a selected intermediate or final layer ℓ⋆
+
+is anchored by the corresponding semantic-token label. Se-mantic tokens are used only as supervision targets and never enter the autoregressive context. 
+
+Depth-Selective Token Classification. We attach alightweight semantic prediction head fϕ to the post-block hidden state at a selected Transformer depth ℓ⋆. The condi-tional semantic-token distribution is: 
+
+qϕ
+
+
+
+st | h(ℓ⋆)
+
+> t
+
+
+
+= softmax 
+
+
+
+fϕ
+
+
+
+h(ℓ⋆)
+
+> t
+
+ 
+
+. (10) Unlike continuous feature alignment, this objective does not require the autoregressive state to reproduce the full geome-try of a teacher representation. Instead, it assigns an explicit semantic classification target to each state responsible for continuous next-patch prediction. The anchoring objective is computed over all valid acous-tic prediction positions: 
+
+Lsem = − 1
+
+|T | 
+
+X
+
+> t∈T
+
+log qϕ
+
+
+
+st | h(ℓ⋆)
+
+> t
+
+
+
+, (11) where T denotes the set of valid autoregressive acoustic positions after excluding padded positions. We allow the at-tachment depth ℓ⋆ to vary and study its effect experimentally. 
+
+Joint Continuous and Semantic Objectives. The semantic-token objective is jointly optimized with the origi-nal continuous-latent generation losses: 
+
+Lgen = LFM + λsem Lsem + λstop Lstop . (12) The flow-matching objective trains continuous next-patch generation, while Lsem updates the semantic head and the autoregressive LM states. The SA-VAE and GLM-4 semantic tokenizer remain frozen throughout Stage II. Consequently, the semantic objective acts as a state-level training constraint without changing the acoustic target or introducing discrete variables into the recurrent generation history. 
+
+Continuous-Only Inference. At inference, neither semantic-token labels nor the semantic prediction head are required. Generation follows the original continuous PatchEnc–LM–LocDiT pathway: 
+
+p(Z | c, r) = 
+
+> T
+
+Y
+
+> t=1
+
+p (zt | c, r, z<t ) . (13) Continuous latent patches remain the only generated vari-ables and recurrent acoustic history. The semantic-token branch therefore changes how the autoregressive states are learned, rather than how speech is generated. 
+
+Target-Space Alignment with SA-VAE 
+
+Complementary to state-level semantic-token anchoring, we introduce a Semantic-Aligned Acoustic VAE (SA-VAE) to improve the semantic correspondence of the continuous acoustic target space. SA-VAE remains a continuous Gaus-sian VAE and uses a frozen semantic tokenizer as its se-mantic reference. Given an input waveform x, the tokenizer extracts token-level semantic embeddings e = Sfeat (x). A lightweight projection maps the continuous acoustic latent representations into the semantic feature space, and seman-tic correspondence is optimized through: 
+
+Lalign = Dsem (Pz (z), sg [ e]) , (14) where Pz denote lightweight alignment mappings, sg( ·) stops gradients through the frozen semantic tokenizer, and Dsem 
+
+combines cosine alignment with a weak L1 constraint. The complete Stage-I objective is: 
+
+LSA -VAE = LVAE + λalign Lalign . (15) This objective encourages patch-level semantic correspon-dence without imposing a discrete bottleneck on the acoustic representation. After Stage I training, SA-VAE is frozen and provides continuous acoustic targets for generator training. Target-space alignment and state-level anchoring use dif-ferent forms of supervision from the same semantic tok-enizer. SA-VAE aligns zt with the continuous embedding 
+
+et, whereas semantic-token anchoring uses the correspond-ing discrete ID st to supervise the LM state responsible for predicting zt. Their shared semantic identity and temporal correspondence make the two objectives complementary. 
+
+Task Conditioning for TTS and SVS 
+
+Semantic-token anchoring is applied to the autoregressive LM states responsible for continuous next-patch prediction and is shared across TTS and SVS. TTS uses text and lan-guage conditions, whereas score-conditioned SVS addition-ally incorporates lyrics and score-derived pitch and duration; both tasks otherwise share the same continuous acoustic rep-resentation, PatchEnc–LM–LocDiT backbone, and anchor-ing objective. SVS therefore provides a more demanding extension for examining whether semantic-token supervi-sion improves lyric intelligibility under explicit musical con-straints without sacrificing the fine-grained acoustic variation and expressiveness of singing. Model Params Data (h) Content Consistency ↓ | Speaker Similarity ↑                                                                                                                                          
+
+> Seed-TTS-Eval CV3-EVAL ZH EN ZH-Hard ZH EN ZH-Hard EN-Hard
+> Reported and open-source systems
+> F5-TTS 0.3B 100k 1.53 | 0.760 2.00 | 0.670 8.67 | 0.713 5.47 | – 8.90 | – – | – – | – CosyVoice2 0.5B 170k 1.38 | 0.757 3.09 | 0.659 6.83 | 0.724 4.08 | – 6.32 | – 12.58 | 0.726 11.96 | 0.667 CosyVoice3-1.5B 1.5B 1.0M 1.12 | 0.781 2.22 | 0.720 5.83 |0.758 3.91 | – 4.99 | – 9.77 | 0.785 10.55 | 0.761
+> IndexTTS2 1.5B –1.03 | 0.765 2.23 | 0.706 7.12 | 0.755 – | – – | – – | – – | – HiggsAudio-v2 3B 10M 1.50 | 0.740 2.44 | 0.677 55.07 | 0.656 3.89 | – 5.24 | – 14.14 | 0.786 9.04 | 0.759
+> Continuous-latent autoregressive systems
+> DiTAR 0.6B –1.02 | 0.753 1.69 | 0.735 – | – – | – – | – – | – – | – MELA-TTS 0.8B 170k 0.95 | 0.720 2.45 | 0.590 7.75 | 0.710 – | – – | – – | – – | – VoxCPM-Emilia 0.6B 100k 1.11 | 0.740 2.34 | 0.681 12.46 | 0.698 4.47 | – 5.23 | – 22.20 | 0.626 10.00 | 0.626 VoxCPM 0.6B 1.8M 0.93 | 0.772 1.85 | 0.729 8.87 | 0.730 3.40 | – 4.04 | – 12.90 | 0.661 7.89 | 0.643 SemaVoice 1.5B 100k 1.32 | 0.728 1.91 | 0.657 9.37 | 0.687 – | – – | – – | – – | – VibeVoice ∗1.5B –2.78 | 0.686 5.28 | 0.588 29.43 | 0.583 5.16 | 0.702 6.96 | 0.560 15.94 | 0.637 7.89 | 0.586 VoxCPM2 2B 2M 0.97 | 0.795 1.84 | 0.753 8.13 | 0.753 3.65 | – 5.00 | – 8.55 | – 8.48 | –
+> SemBridge 0.8B 120k 0.95 | 0.758 1.81 | 0.699 9.79 | 0.717 3.34 |0.757 4.22 | 0.658 10.58 | 0.717 6.35 | 0.619
+
+Table 1: Objective evaluation on Seed-TTS-Eval and CV3-EVAL. Each result is reported as content consistency error | speaker similarity, where Chinese subsets use CER, English subsets use WER, and speaker similarity is measured by SIM. Lower content error and higher SIM indicate better performance. “–” denotes unavailable results. Bold and underlined values indicate the best and second-best results, respectively. Tied second-best results are both underlined. ∗ denotes results obtained through our evaluation. 
+
+# Experiments 
+
+Experimental Setup 
+
+Datasets. We evaluate SemBridge primarily on zero-shot text-to-speech (TTS), with score-conditioned singing voice synthesis (SVS) as a cross-task extension. SA-VAE is trained separately on 25K hours of audio, including 20K hours of speech sampled from public corpora and a 5K-hour subset of our internal singing data. All matched TTS models and component ablations are trained on the 100K-hour bilingual open-source VoxBox corpus (Wang et al. 2025). For joint TTS and SVS training, we augment VoxBox with the full 20K hours of internal singing data, resulting in a 120K-hour multitask corpus. We use the 100K-hour models for con-trolled component attribution and the 120K-hour model for system-level comparison and SVS evaluation. Further details on corpus composition and preprocessing are provided in the supplementary material. 
+
+Model Architecture. SemBridge consists of a continuous-latent autoregressive backbone, a frozen Semantic-Aligned Acoustic VAE (SA-VAE), and training-time semantic super-vision modules. The causal LM contains 32 Transformer blocks with a hidden size of 1,024 and 16 attention heads. PatchEnc and LocDiT each contain 8 blocks with the same hidden size and number of heads. SA-VAE is a causal con-volutional Gaussian VAE that encodes 44.1 kHz waveforms into 64-dimensional continuous latent frames at 25 Hz with-out vector quantization. The frozen semantic tokenizer op-erates at 12.5 Hz with a vocabulary of 16,384 tokens. Dur-ing Stage I, a lightweight projection aligns SA-VAE acous-tic patches with token-level semantic embeddings. During Stage II, the corresponding discrete token labels supervise autoregressive LM states. We denote a semantic head at-tached after Transformer block k as Anchor@ k.Excluding the frozen SA-VAE, the continuous generation backbone contains 800.15M trainable parameters. SA-VAE contains 86.48M parameters, while the alignment projec-tion and semantic anchoring module add 2.43M and 16.79M parameters, respectively. The alignment projection and se-mantic head are used only during training and are removed at inference. 
+
+Training Details. We train SA-VAE independently for 300K updates on 3.0-second audio segments with a batch size of 48 using 8 NVIDIA H20 GPUs. We then train Sem-Bridge for 300K updates using 16 NVIDIA H20 GPUs and a global batch size of 4,096 acoustic-patch frames. We use AdamW (Loshchilov and Hutter 2019) with bfloat16 pre-cision. The learning rate is linearly increased to 1 × 10 −4
+
+over the first 5K updates and then decayed with a cosine schedule. The flow-matching and stop-prediction losses are assigned unit weights, and the semantic anchoring weight is set to λsem = 0 .1. Inference uses 10 function evaluations (NFE = 10 ), a classifier-free guidance scale of 2.0 (Ho and Salimans 2022), and a sampling temperature of 1.0. 
+
+Evaluation Metrics. We evaluate zero-shot TTS on Seed-TTS-Eval (Anastassiou et al. 2024) and CV3-Eval (Du et al. 2025). Content fidelity is measured by character error rate (CER) for Chinese using Paraformer (Gao et al. 2022) and word error rate (WER) for English using Whisper-large-v3 (Radford et al. 2023). Speaker similarity (SIM) is computed as the cosine similarity between WavLM-based speaker em-beddings (Chen et al. 2022), and UTMOS (Saeki et al. 2022) is used as an automatic estimate of perceptual qual-ity. We evaluate SA-VAE reconstruction using PESQ (Rix et al. 2001), STOI (Taal et al. 2011), and UTMOS. For SVS, we follow the GMO-SVS evaluation protocol (Qian et al. 2026) and report CER/WER, SIM, F0 frame error (FFE), SingMOS-Pro (Tang et al. 2025), and Sheet scores. Model ZH EN ZH-Hard                                                                                                               
+
+> CER ↓SIM ↑WER ↓SIM ↑CER ↓SIM ↑UTMOS ↑
+> Continuous-AR Baselines
+> VoxCPM 1.52 0.743 2.46 0.675 14.29 0.704 2.651 +SA-VAE 1.63 0.746 2.22 0.683 13.72 0.704 2.647
+> SemBridge Alignment–Anchoring
+> -Align,-Anchor 1.58 0.745 2.43 0.685 16.87 0.696 2.622 +Align 1.51 0.735 2.30 0.678 15.94 0.697 2.620 +Anchor 1.21 0.742 2.18 0.683 13.97 0.700 2.659 +Align,+Anchor 1.01 0.743 1.87 0.687 11.87 0.697 2.648
+> Anchoring Depth λsem = 0 .1
+> No Anchor 1.51 0.735 2.30 0.678 15.94 0.697 2.620 Anchor@18 1.13 0.747 2.12 0.688 12.68 0.699 2.656 Anchor@24 1.04 0.747 1.93 0.693 12.01 0.704 2.683
+> Anchor@32 1.01 0.743 1.87 0.687 11.87 0.697 2.648
+> Anchoring Strength Anchor@32
+> λsem = 1 .01.64 0.681 5.11 0.591 24.31 0.632 2.588
+> λsem = 0 .51.61 0.705 3.64 0.623 16.25 0.663 2.614
+> λsem = 0 .11.01 0.743 1.87 0.687 11.87 0.697 2.648
+> λsem = 0 .05 1.13 0.746 2.32 0.683 13.86 0.700 2.652
+
+Table 2: Ablation study of target-space semantic alignment and predictor-state semantic anchoring. All variants use the same 0.8B backbone, 100K hours of training data, and 300K updates. The default SemBridge configuration uses SA-VAE with semantic alignment and Anchor@32. UTMOS is re-ported on ZH-Hard for perceptual quality. Bold and under-lined values indicate the globally best and second-best re-sults, respectively. Tied results receive the same formatting. 
+
+Baselines. For zero-shot TTS, we compare SemBridge with representative systems from several speech genera-tion paradigms. Non-autoregressive baselines include F5-TTS (Chen et al. 2024) and MaskGCT (Wang et al. 2024), which use flow-matching and masked-generation formula-tions, respectively. Discrete-token autoregressive systems in-clude the CosyVoice series (Du et al. 2024a,b, 2025), Spark-TTS (Wang et al. 2025), FireRedTTS (Guo et al. 2024), HiggsAudio-v2(Boson AI 2026),and IndexTTS2 (Zhou et al. 2025a). We also compare with continuous-latent or hybrid autoregressive systems, including DiTAR (Jia et al. 2025), VoxCPM (Zhou et al. 2025b), VoxCPM2 (Zhou et al. 2026), VibeVoice (Peng et al. 2026), MELA-TTS (An et al. 2026), and SemaVoice (Wang et al. 2026). For score-conditioned svs, we compare with representative recent systems on GMO-SVS, including StyleSinger (Zhang et al. 2024b), TCSinger (Zhang et al. 2024c), Vevo (Zhang et al. 2025), Ying-Music-Singer (Zheng et al. 2025), and SoulX-Singer (Qian et al. 2026). Baseline results are taken from the original publications or obtained using official checkpoints when available. The supplementary material re-ports the model scale, training data, evaluation source, and implementation details for each comparison. 
+
+Experimental Results 
+
+Main Results on Zero-Shot TTS. Table 1 reports zero-shot TTS results on Seed-TTS-Eval and CV3-EVAL. The system-level SemBridge model, trained on the 120K-hour multitask corpus, achieves consistently low content error across languages and evaluation conditions while maintain-                                                         
+
+> Model Rate PESQ STOI UTMOS
+> Reference Audio –4.64 1.00 4.09
+> Discrete tokenizers
+> Encodec 600 2.77 0.94 3.09 Encodec 150 1.56 0.85 1.58 DAC 400 4.01 0.95 4.00 SAC 37.5 2.21 0.90 4.28
+> Mimi 100 2.26 0.91 3.63 Mimi 200 2.88 0.94 3.87 WavTokenizer 40 1.64 0.85 3.03 X-codec2 50 2.43 0.92 4.13 BiCodec 50 2.51 0.92 4.18
+> Continuous tokenizer
+> VoxCPM-VAE 25 3.23 0.96 3.96 VibeVoice-VAE 7.5 2.98 0.75 4.18
+> SA-VAE 25 2.99 0.96 3.92 w/o Alignment 25 3.00 0.96 3.92
+
+Table 3: Reconstruction quality of representative discrete tokenizers and continuous tokenizer. Rate is measured in frames or tokens per second; higher is better for all metrics. Bold and underlined values indicate the globally best and second-best results among tokenizers, respectively. ing competitive speaker similarity. On Seed-TTS-Eval, it ob-tains a CER of 0.95 on Chinese, a WER of 1.81 on English, and a CER of 9.79 on the Chinese hard subset. On CV3-EVAL, it achieves a CER of 3.34 on Chinese, a WER of 4.22 on English, a CER of 10.58 on the Chinese hard subset, and a WER of 6.35 on the English hard subset. Compared with MELA-TTS, which achieves competitive content accuracy but lower speaker similarity, particularly on English, Sem-Bridge provides a more balanced content–speaker trade-off. This pattern is consistent with token-level classification pro-viding a more focused semantic regularizer than full contin-uous feature matching, though the cross-system comparison does not establish causality. 
+
+Controlled Analysis of Semantic-Token Anchoring Acoustic Representation Control. Table 2 reports con-trolled experiments using the same 0.8B model scale, 100K hours of training data, and 300K updates. For the continuous-AR baseline, replacing the original acoustic representation with SA-VAE reduces English WER from 2.46 to 2.22 and ZH-Hard CER from 14.29 to 13.72, while Chinese CER changes from 1.52 to 1.63. Although gains vary across sub-sets, the results show that acoustic representation affects content modeling and motivate the subsequent component analysis under a fixed SemBridge backbone. 
+
+Alignment and Anchoring Attribution. Within the Sem-Bridge backbone, the model without target alignment or state anchoring obtains errors of 1.58, 2.43, and 16.87 on ZH, EN, and ZH-Hard, respectively. Target-space alignment alone re-duces these errors to 1.51, 2.30, and 15.94, whereas semantic-token anchoring produces larger reductions to 1.21, 2.18, and 13.97. Combining the two objectives gives the lowest errors of 1.01, 1.87, and 11.87. These results indicate that state-level semantic-token anchoring drives most content-fidelity Mandarin English System CER (%) ↓ SIM ↑ FFE (%) ↓ SingMOS ↑ Sheet ↑ WER (%) ↓ SIM ↑ FFE (%) ↓ SingMOS ↑ Sheet ↑                                                                                
+
+> Reference and reconstruction bounds
+> Reference Audio 7.40 ––4.624 4.334 19.70 ––4.441 3.825
+> Existing SVS systems
+> StyleSinger 36.70 0.817 36.30 3.938 3.819 –––––TCSinger 27.00 0.855 31.50 3.977 3.843 41.00 0.879 21.10 3.662 3.482 Vevo 30.80 0.897 11.20 4.355 4.005 48.40 0.924 8.80 4.321 3.699 Ying-Music-Singer 9.90 0.902 13.20 4.145 3.620 –––––SoulX-Singer 6.90 0.905 12.20 4.445 4.107 14.90 0.926 16.40 4.303 3.705
+> Continuous-latent autoregressive system
+> SemBridge (ours) 8.32 0.906 16.70 4.585 4.315 14.77 0.926 25.89 4.444 3.994
+> w/o Anchoring 9.18 0.905 16.74 4.560 4.306 16.29 0.926 25.97 4.432 3.984
+
+Table 4: Results on GMO-SVS. Lower CER/WER/FFE and higher SIM/SingMOS/Sheet are better. Bold and underlined values indicate the best and second-best synthesized results, respectively; tied results receive the same formatting. gains, while target-space alignment provides additional com-plementary gains. 
+
+Anchoring Depth. We vary anchoring depth by attach-ing the semantic prediction head after different Transformer blocks. Anchor@32 yields the lowest content errors, with a CER of 1.01 on ZH, a WER of 1.87 on EN, and a CER of 11.87 on ZH-Hard. Anchor@24 increases these errors only slightly to 1.04, 1.93, and 12.01, while improving SIM from 0.743, 0.687, and 0.697 to 0.747, 0.693, and 0.704, respec-tively. It also raises ZH-Hard UTMOS from 2.648 to 2.683. We therefore use Anchor@24 for the system-level model be-cause it better balances content accuracy, speaker similarity, and perceptual quality. Overall, anchoring depth trades off content and quality metrics. 
+
+Anchoring Strength. We vary λsem to assess semantic supervision strength. Increasing λsem from 0.1 to 0.5 wors-ens English WER from 1.87 to 3.64 and reduces SIM from 0.687 to 0.623. Setting λsem = 1 .0 further degrades content, similarity, and UTMOS metrics. A smaller weight of 0.05 preserves speaker similarity and perceptual quality but gives higher content errors than 0.1. We therefore use λsem = 0 .1,which minimizes content errors while maintaining compa-rable synthesis quality. These results suggest that seman-tic anchoring should regularize autoregressive state learning without dominating the continuous generation objective. 
+
+SA-VAE Reconstruction under Semantic Alignment Ta-ble 3 compares SA-VAE reconstruction with representative discrete and continuous speech representations. At 25 Hz, SA-VAE achieves a PESQ of 2.99, a STOI of 0.96, and a UT-MOS score of 3.92. Its unaligned counterpart obtains nearly identical scores of 3.00, 0.96, and 3.92, respectively, showing that semantic alignment does not noticeably degrade acous-tic reconstruction. Despite different representation rates and architectures, SA-VAE remains competitive with both con-tinuous and discrete tokenizers. These results support its role as a complementary target-space component that introduces semantic alignment without imposing a discrete bottleneck or sacrificing reconstruction quality. 
+
+Cross-Task Transfer to Score-Conditioned SVS. Table 4 evaluates semantic-token anchoring on score-conditioned SVS. Compared with the model without anchoring, Sem-Bridge reduces Mandarin CER from 9.18 to 8.32 and English WER from 16.29 to 14.77, while speaker similarity remains essentially unchanged. SingMOS and Sheet scores also im-prove slightly in both languages, showing that improved lyric intelligibility does not compromise perceived singing qual-ity or expressiveness. SemBridge further achieves the highest synthesized SingMOS and Sheet scores among the compared systems. Consistent gains across Mandarin and English sug-gest that the semantic constraint remains effective when lin-guistic prediction is coupled with score-derived pitch and timing conditions. Its FFE results are not the best, indicating that semantic-token anchoring mainly improves lyric model-ing and perceptual quality rather than pitch accuracy. Over-all, the proposed supervision transfers beyond TTS without requiring a task-specific semantic branch. 
+
+# Conclusion 
+
+In this paper, we introduced SemBridge, a training-only semantic-token anchoring framework for continuous-latent autoregressive speech generation. SemBridge directly super-vises autoregressive LM states with discrete semantic-token labels, while a complementary Semantic-Aligned Acoustic VAE aligns continuous acoustic targets with embeddings from the same frozen semantic tokenizer. This shared se-mantic reference strengthens state-level linguistic modeling and target-space semantic correspondence while preserv-ing continuous-only autoregressive inference. Experiments on zero-shot TTS and score-conditioned SVS demonstrate that SemBridge consistently improves content fidelity while maintaining competitive speaker similarity and perceptual quality. Controlled ablations further confirm the complemen-tary roles of latent alignment and state anchoring and reveal a trade-off effect of anchoring depth. Overall, semantic-token anchoring provides an effective training strategy for improv-ing linguistic modeling in continuous-latent autoregressive speech generation. References 
+
+An, K.; Zhang, Z.; Gao, C.; Li, Y.; Peng, Z.; Wang, H.; Du, Z.; Zhao, H.; Gao, Z.; and Li, X. 2026. MELA-TTS: Joint Transformer-Diffusion Model with Representation Align-ment for Speech Synthesis. In Proceedings of the IEEE International Conference on Acoustics, Speech and Signal Processing .Anastassiou, P.; Chen, J.; Chen, J.; Chen, Y.; Chen, Z.; Chen, Z.; Cong, J.; Deng, L.; Ding, C.; Gao, L.; Gong, M.; Huang, P.; Huang, Q.; Huang, Z.; Huo, Y.; Jia, D.; Li, C.; Li, F.; Li, H.; Li, J.; Li, X.; Li, X.; Liu, L.; Liu, S.; Liu, S.; Liu, X.; Liu, Y.; Liu, Z.; Lu, L.; Pan, J.; Wang, X.; Wang, Y.; Wang, Y.; Wei, Z.; Wu, J.; Yao, C.; Yang, Y.; Yi, Y.; Zhang, J.; Zhang, Q.; Zhang, S.; Zhang, W.; Zhang, Y.; Zhao, Z.; Zhong, D.; and Zhuang, X. 2024. Seed-TTS: A Family of High-Quality Versatile Speech Generation Models. arXiv preprint arXiv:2406.02430 .Borsos, Z.; Marinier, R.; Vincent, D.; Kharitonov, E.; Pietquin, O.; Sharifi, M.; Roblek, D.; Teboul, O.; Grangier, D.; Tagliasacchi, M.; and Zeghidour, N. 2022. AudioLM: A Language Modeling Approach to Audio Generation. arXiv preprint arXiv:2209.03143 .Boson AI. 2026. Higgs Audio v3 TTS: Conversational Speech for Voice AI from Boson AI. Model card. Chen, S.; Wang, C.; Chen, Z.; Wu, Y.; Liu, S.; Chen, Z.; Li, J.; Kanda, N.; Yoshioka, T.; Xiao, X.; Wu, J.; Zhou, L.; Ren, S.; Qian, Y.; Qian, Y.; Wu, J.; Zeng, M.; Yu, X.; and Wei, F. 2022. WavLM: Large-Scale Self-Supervised Pre-Training for Full Stack Speech Processing. IEEE Journal of Selected Topics in Signal Processing , 16(6): 1505–1518. Chen, Y.; Niu, Z.; Ma, Z.; Deng, K.; Wang, C.; Zhao, J.; Yu, K.; and Chen, X. 2024. F5-tts: A fairytaler that fakes fluent and faithful speech with flow matching. arXiv preprint arXiv:2410.06885 .Du, Z.; Chen, Q.; Zhang, S.; Hu, K.; Lu, H.; Yang, Y.; Hu, H.; Zheng, S.; Gu, Y.; Ma, Z.; Gao, Z.; and Yan, Z. 2024a. CosyVoice: A Scalable Multilingual Zero-shot Text-to-speech Synthesizer based on Supervised Semantic Tokens. 
+
+arXiv preprint arXiv:2407.05407 .Du, Z.; Gao, C.; Wang, Y.; Yu, F.; Zhao, T.; Wang, H.; Lv, X.; Wang, H.; Ni, C.; Shi, X.; An, K.; Yang, G.; Li, Y.; Chen, Y.; Gao, Z.; Chen, Q.; Gu, Y.; Chen, M.; Chen, Y.; Zhang, S.; Wang, W.; and Ye, J. 2025. CosyVoice 3: Towards In-the-Wild Speech Generation via Scaling-Up and Post-Training. 
+
+arXiv preprint arXiv:2505.17589 .Du, Z.; Wang, Y.; Chen, Q.; Shi, X.; Lv, X.; Zhao, T.; Gao, Z.; Yang, Y.; Gao, C.; Wang, H.; Yu, F.; Liu, H.; Sheng, Z.; Gu, Y.; Deng, C.; Wang, W.; Zhang, S.; Yan, Z.; and Zhou, J. 2024b. CosyVoice 2: Scalable Streaming Speech Synthesis with Large Language Models. arXiv preprint arXiv:2412.10117 .Gao, Z.; Zhang, S.; McLoughlin, I.; and Yan, Z. 2022. Paraformer: Fast and Accurate Parallel Transformer for Non-Autoregressive End-to-End Speech Recognition. In Proceed-ings of Interspeech , 2063–2067. Guo, H.-H.; Hu, Y.; Liu, K.; Shen, F.-Y.; Tang, X.; Wu, Y.-C.; Xie, F.-L.; Xie, K.; and Xu, K.-T. 2024. Fireredtts: A founda-tion text-to-speech framework for industry-level generative speech applications. arXiv preprint arXiv:2409.03283 .Ho, J.; and Salimans, T. 2022. Classifier-free diffusion guid-ance. arXiv preprint arXiv:2207.12598 .Hsu, W.-N.; Bolte, B.; Tsai, Y.-H. H.; Lakhotia, K.; Salakhut-dinov, R.; and Mohamed, A. 2021. Hubert: Self-supervised speech representation learning by masked prediction of hid-den units. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 29: 3451–3460. Hu, H.; Zhu, X.; He, T.; Guo, D.; Zhang, B.; Wang, X.; Guo, Z.; Jiang, Z.; Hao, H.; Guo, Z.; et al. 2026. Qwen3-TTS Technical Report. arXiv preprint arXiv:2601.15621 .Ji, S.; Jiang, Z.; Wang, W.; Chen, Y.; Fang, M.; Zuo, J.; Yang, Q.; Cheng, X.; Wang, Z.; Li, R.; Zhang, Z.; Yang, X.; Huang, R.; Jiang, Y.; Chen, Q.; Zheng, S.; and Zhao, Z. 2025. WavTokenizer: an Efficient Acoustic Discrete Codec Tokenizer for Audio Language Modeling. In International Conference on Learning Representations .Jia, D.; Chen, Z.; Chen, J.; Du, C.; Wu, J.; Cong, J.; Zhuang, X.; Li, C.; Wei, Z.; Wang, Y.; and Wang, Y. 2025. DiTAR: Diffusion Transformer Autoregressive Modeling for Speech Generation. In Proceedings of the International Conference on Machine Learning , volume 267 of Proceedings of Ma-chine Learning Research , 27255–27270. PMLR. Liu, J.; Li, C.; Ren, Y.; Chen, F.; and Zhao, Z. 2022. DiffSinger: Singing Voice Synthesis via Shallow Diffusion Mechanism. In Proceedings of the AAAI Conference on Ar-tificial Intelligence , volume 36, 11020–11028. Loshchilov, I.; and Hutter, F. 2019. Decoupled Weight Decay Regularization. In International Conference on Learning Representations . OpenReview.net. Meng, L.; Zhou, L.; Liu, S.; Chen, S.; Han, B.; Hu, S.; Liu, Y.; Li, J.; Zhao, S.; Wu, X.; Meng, H. M.; and Wei, F. 2025. Autoregressive speech synthesis without vector quantization. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , 1287–1300. Association for Computational Linguistics. Nguyen, T. A.; Sagot, B.; and Dupoux, E. 2022. Are discrete units necessary for spoken language modeling? IEEE Jour-nal of Selected Topics in Signal Processing , 16(6): 1415– 1423. Peng, Z.; Yu, J.; Wang, W.; Chang, Y.; Sun, Y.; Dong, L.; Zhu, Y.; Xu, W.; Bao, H.; Wang, Z.; Huang, S.; Xia, Y.; and Wei, F. 2026. VibeVoice: Expressive Podcast Generation with Next-Token Diffusion. In International Conference on Learning Representations .Qian, J.; Meng, H.; Zheng, T.; Zhu, P.; Lin, H.; Dai, Y.; Xie, H.; Cao, W.; Shang, R.; Wu, J.; Liu, H.; Wen, H.; Zhao, J.; Jiang, Z.; Chen, Y.; Yin, S.; Tao, M.; Wei, J.; Xie, L.; and Wang, X. 2026. SoulX-Singer: Towards High-Quality Zero-Shot Singing Voice Synthesis. arXiv preprint arXiv:2602.07803 .Radford, A.; Kim, J. W.; Xu, T.; Brockman, G.; McLeavey, C.; and Sutskever, I. 2023. Robust Speech Recognition via Large-Scale Weak Supervision. In Proceedings of the Inter-national Conference on Machine Learning , 28492–28518. Rix, A. W.; Beerends, J. G.; Hollier, M. P.; and Hekstra, A. P. 2001. Perceptual evaluation of speech quality (PESQ)-a new method for speech quality assessment of telephone networks and codecs. In Proceedings of the IEEE International Confer-ence on Acoustics, Speech and Signal Processing , 749–752. IEEE. Saeki, T.; Xin, D.; Nakata, W.; Koriyama, T.; Takamichi, S.; and Saruwatari, H. 2022. UTMOS: UTokyo-SaruLab System for VoiceMOS Challenge 2022. In Proceedings of Interspeech , 4521–4525. Taal, C. H.; Hendriks, R. C.; Heusdens, R.; and Jensen, J. 2011. An Algorithm for Intelligibility Prediction of Time-Frequency Weighted Noisy Speech. IEEE Transactions on Audio, Speech, and Language Processing , 19(7): 2125–2136. Tang, Y.; Liu, L.; Feng, W.; Zhao, Y.; Han, J.; Yu, Y.; Shi, J.; and Jin, Q. 2025. SingMOS-Pro: An Comprehensive Benchmark for Singing Quality Assessment. arXiv preprint arXiv:2510.01812 .Wang, C.; Chen, S.; Wu, Y.; Zhang, Z.; Zhou, L.; Liu, S.; Chen, Z.; Liu, Y.; Wang, H.; Li, J.; He, L.; Zhao, S.; and Wei, F. 2023. Neural Codec Language Models are Zero-Shot Text to Speech Synthesizers. arXiv preprint arXiv:2301.02111 .Wang, H.; Lu, H.; Deng, J.; Xu, H.; Chen, Y.; Chen, X.; Li, Z.; Peng, S.; Kang, S.; and Liu, X. 2026. SemaVoice: Semantic-Aware Continuous Autoregressive Speech Synthesis. arXiv preprint arXiv:2605.16964 .Wang, X.; Jiang, M.; Ma, Z.; Zhang, Z.; Liu, S.; Li, L.; Liang, Z.; Zheng, Q.; Wang, R.; Feng, X.; et al. 2025. Spark-tts: An efficient llm-based text-to-speech model with single-stream decoupled speech tokens. arXiv preprint arXiv:2503.01710 .Wang, Y.; Zhan, H.; Liu, L.; Zeng, R.; Guo, H.; Zheng, J.; Zhang, Q.; Zhang, X.; Zhang, S.; and Wu, Z. 2024. Maskgct: Zero-shot text-to-speech with masked generative codec trans-former. arXiv preprint arXiv:2409.00750 .Xia, K.; Zhu, X.; Yao, J.; Tian, W.; Li, W.; and Xie, L. 2026. KALL-E: Autoregressive Speech Synthesis with Next-Distribution Prediction. In Proceedings of the AAAI Confer-ence on Artificial Intelligence , volume 40, 34016–34024. Yu, F.; Wang, T.; Wu, Y.; Zhu, L.; Deng, W.; Han, W.; Wang, W.; Hu, L.; Liang, X.; He, X.; Huang, Y.; Gu, Y.; Liu, Y.; Wang, Y.; Xiao, Z.; Wang, Z.; Dong, B.; Dang, F.; Chen, J.; Li, J.; Wang, J.; Jin, Y.; Zhang, Y.; Sheng, Z.; and Wang, X. 2025. JoyVoice: Long-Context Conditioning for Anthro-pomorphic Multi-Speaker Conversational Synthesis. arXiv preprint arXiv:2512.19090 .Zeng, A.; Du, Z.; Liu, M.; Wang, K.; Jiang, S.; Zhao, L.; Dong, Y.; and Tang, J. 2024. GLM-4-Voice: Towards Intel-ligent and Human-Like End-to-End Spoken Chatbot. arXiv preprint arXiv:2412.02612 .Zhang, X.; Zhang, D.; Li, S.; Zhou, Y.; and Qiu, X. 2024a. SpeechTokenizer: Unified Speech Tokenizer for Speech Lan-guage Models. In International Conference on Learning Representations .Zhang, X.; Zhang, X.; Peng, K.; Tang, Z.; Manohar, V.; Liu, Y.; Hwang, J.; Li, D.; Wang, Y.; Chan, J.; Huang, Y.; Wu, Z.; and Ma, M. 2025. Vevo: Controllable Zero-Shot Voice Imita-tion with Self-Supervised Disentanglement. In International Conference on Learning Representations . OpenReview.net. Zhang, Y.; Cong, J.; Xue, H.; Xie, L.; Zhu, P.; and Bi, M. 2022. VISinger: Variational Inference with Adversarial Learning for End-to-End Singing Voice Synthesis. In Pro-ceedings of the IEEE International Conference on Acoustics, Speech and Signal Processing , 7237–7241. Zhang, Y.; Huang, R.; Li, R.; He, J.; Xia, Y.; Chen, F.; Duan, X.; Huai, B.; and Zhao, Z. 2024b. StyleSinger: Style Transfer for Out-of-Domain Singing Voice Synthesis. In Proceedings of the AAAI Conference on Artificial Intelligence , volume 38, 19597–19605. AAAI Press. Zhang, Y.; Jiang, Z.; Li, R.; Pan, C.; He, J.; Huang, R.; Wang, C.; and Zhao, Z. 2024c. TCSinger: Zero-Shot Singing Voice Synthesis with Style Transfer and Multi-Level Style Con-trol. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , 1960–1975. As-sociation for Computational Linguistics. Zheng, J.; Hao, C.; Ma, G.; Zhang, X.; Chen, G.; Ding, C.; Chen, Z.; and Xie, L. 2025. YingMusic-Singer: Zero-shot Singing Voice Synthesis and Editing with Annotation-free Melody Guidance. arXiv preprint arXiv:2512.04779 .Zhou, S.; Zhou, Y.; He, Y.; Zhou, X.; Wang, J.; Deng, W.; and Shu, J. 2025a. IndexTTS2: A Breakthrough in Emotionally Expressive and Duration-Controlled Auto-Regressive Zero-Shot Text-to-Speech. arXiv preprint arXiv:2506.21619 .Zhou, Y.; Zeng, G.; Liu, X.; Li, X.; Yu, R.; Gui, J.; Wu, J.; Wang, Z.; Shen, X.; Ye, R.; Zhang, Z.; Zhou, J.; Bai, B.; Sun, W.; Deng, M.; Shi, Q.; Wu, Z.; and Liu, Z. 2026. VoxCPM2 Technical Report. arXiv preprint arXiv:2606.06928 .Zhou, Y.; Zeng, G.; Liu, X.; Li, X.; Yu, R.; Wang, Z.; Ye, R.; Sun, W.; Gui, J.; Li, K.; Wu, Z.; and Liu, Z. 2025b. VoxCPM: Tokenizer-Free TTS for Context-Aware Speech Generation and True-to-Life Voice Cloning. arXiv preprint arXiv:2509.24650 .
+
+# Training Data 
+
+SA-VAE and the SemBridge are trained in separate stages us-ing counted training corpora. SA-VAE is trained on 19,906 hours of Mandarin and English speech together with a 5,000-hour subset of singing data, yielding 24,906 hours of au-dio in total. The matched TTS configurations are trained on 100K hours of bilingual VoxBox speech. The Joint TTS– SVS model additionally uses the complete 20K-hour score-aligned singing collection, resulting in a 120K-hour cor-pus.Table 5 summarizes the data used at each training stage. 
+
+SA-VAE Training Data. Panel (a) of Table 5 lists the composition of the SA-VAE training corpus. The Mandarin speech data consist of Emilia-ZH, WenetSpeech4TTS, and in-house paralinguistic speech. The English speech data con-sist of LibriSpeech, the small and medium LibriHeavy sub-sets, Emilia-EN, MLS-EN, and in-house speech. Together, (a) SA-VAE training data Dataset Group #Utt. Hours Avg. s                                                   
+
+> Emilia-ZH ZH 3.0M 6,712 8.05 WenetSpeech4TTS ZH 2.0M 2,754 4.96 In-house Data ZH 0.2M 525 7.82 LibriSpeech EN 0.3M 961 12.30 LibriHeavy EN 1.2M 5,042 14.85 Emilia-EN EN 1.0M 2,481 8.93 MLS-EN EN 0.3M 1,222 14.66 In-house Data EN 0.1M 209 6.42
+> Speech subtotal ZH/EN 8.2M 19,906 8.78
+> In-house Singing Singing 2.2M 5,000 8.18
+> SA-VAE total All 10.4M 24,906 8.62 (b) SemBridge generator training data Setting Speech pool Singing pool Total (h)
+> Matched TTS VoxBox (100K h) –100K Joint TTS–SVS VoxBox (100K h) In-house (20K h) 120K
+
+Table 5: Training data for SA-VAE and SemBridge. these sources provide 19,906 hours of bilingual speech, in-cluding 19,172 hours from public corpora and 734 hours from in-house data. We further sample 5,000 hours from the internal singing corpus. Stage I uses only the waveforms and does not use the corresponding lyric or score annotations. The complete SA-VAE training set therefore contains 24,906 hours of audio, referred to as approximately 25K hours. 
+
+SemBridge Training Data. All controlled TTS experi-ments, including the component, anchoring-depth, and loss-weight studies, use the same 100K-hour Mandarin–English VoxBox speech corpus. This setting keeps the generator train-ing data fixed across all controlled component comparisons. The Joint TTS–SVS model augments the same speech corpus with the complete 20K-hour internal score-aligned singing collection, resulting in 120K hours of generator train-ing data. The 5K-hour singing subset used for SA-VAE train-ing is drawn from this 20K-hour collection. Because SA-VAE is trained separately and then frozen, its 24,906-hour corpus is not added to the 120K-hour generator data count. Re-sults obtained with the Joint model are therefore treated as system-level comparisons rather than controlled component ablations. 
+
+# Experimental Configuration 
+
+Stage I: Semantic-Aligned Acoustic VAE 
+
+SA-VAE is a causal convolutional Gaussian VAE that op-erates on 44.1-kHz waveforms. The encoder produces 64-dimensional continuous latent frames at 25 Hz without vector quantization. For each training segment, a latent sequence is sampled from the diagonal Gaussian posterior through repa-rameterization. The same sample is passed to both the wave-form decoder and the semantic-alignment projection. Every two adjacent latent frames are concatenated into a 2 × 64 
+
+acoustic patch at 12.5 Hz. The resulting patch is projected into the embedding space of the frozen semantic tokenizer and aligned with the corresponding stop-gradient semantic embedding. The patch construction and semantic-alignment objective are defined in Eqs. (2), (14), and (15) of the main paper. The complete loss objective used in our implementation is 
+
+LSA -VAE = 10 LMR -STFT + 15 LMel + 0 .01 LKL 
+
++ Ladv + 1 .5Lfeat + 100 Lalign . (16) The alignment loss is averaged over valid acoustic-patch positions and combines a dimension-normalized ℓ1 dis-tance with softplus( − cos( ·, ·)) . Gradients are not propa-gated through the semantic embeddings produced by the frozen tokenizer. In the alignment ablation, only Lalign is removed; the encoder–decoder architecture and all acoustic reconstruction losses remain unchanged. The product of the encoder downsampling factors is 2 ×
+
+3 × 6 × 7 × 7 = 1764 , which yields exactly 25 latent frames per second at 44.1 kHz. The 12.5-Hz acoustic-patch and semantic-token sequences use the same valid-position mask. Incomplete final patches and padded positions are excluded from Lalign .The adversarial objective uses a multi-period discrimina-tor and a multi-scale sub-band CQT discriminator following the BigVGAN V2 configuration. The adversarial and feature-matching losses are enabled after a 1,000-update warm-up. SA-VAE is trained for 300K updates on 3-s segments with a global batch size of 48 using eight NVIDIA H20 GPUs. The trained SA-VAE is frozen in all subsequent SemBridge generator experiments. 
+
+Stage II: Continuous-Latent Autoregressive Generator 
+
+The SemBridge generator follows a PatchEnc–LM–LocDiT architecture. PatchEnc maps latent patches from the acoustic prompt and autoregressive history to acoustic-context repre-sentations. A 32-block causal LM jointly models these rep-resentations and a task-specific symbolic prefix. The prefix contains text for TTS and additionally contains lyric, pitch, onset, and duration sequences for score-conditioned SVS. An eight-block LocDiT performs next-patch flow matching con-ditioned on the normalized final LM state and the preceding SA-VAE latent patch. A two-layer 1024 → 1024 → 2 MLP with a SiLU activation predicts whether generation should continue or terminate. Excluding the frozen SA-VAE, the continuous generation backbone contains 800.15M trainable parameters. The se-mantic classifier adds 16.79M parameters during training and is removed at inference. SA-VAE contains 86.48M pa-rameters, and its 2.43M-parameter alignment projection is used only during Stage I. 
+
+Training Configuration 
+
+SA-VAE is optimized independently and frozen before gen-erator training. Unless otherwise stated, all matched Sem-Bridge configurations use the same model architecture, op-Setting Value Setting Value                           
+
+> Waveform rate 44.1 kHz Formulation Causal convolutional Gaussian VAE Encoder downsampling factors [2, 3, 6, 7, 7] Decoder upsampling factors [7, 7, 6, 3, 2] Hop size 1,764 samples Acoustic latent rate 25 Hz Latent dimension 64 Patch shape and rate 2×64 at 12.5 Hz Semantic vocabulary size 16,384 Semantic-token rate 12.5 Hz SA-VAE parameters 86.48M Alignment projection parameters 2.43M Acoustic quantization None Generator modeling unit Continuous acoustic latent patch
+
+Table 6: SA-VAE architecture and semantic-alignment configuration.                                           
+
+> Component Blocks/Layers Width Heads Rate Stage II Role
+> PatchEnc 81,024 16 12.5 Hz Trainable Acoustic prompt and history encoding Causal LM 32 1,024 16 12.5 Hz Trainable Causal next-patch state modeling LocDiT 81,024 16 12.5 Hz Trainable Flow-matching patch generation Stop predictor 2-layer MLP 1,024 –12.5 Hz Trainable Stop/continue classification Semantic head Linear 1,024 –12.5 Hz Trainable 16,384-unit semantic-token classification SA-VAE decoder Causal conv. ––25Hz Frozen Waveform reconstruction
+
+Table 7: Architecture of SemBridge. timization schedule, random seed, and 300K-update training budget. The global seed is fixed to 42 for Python, NumPy, PyTorch, and CUDA in all reported experiments. 
+
+# Evaluation Metrics 
+
+Zero-shot TTS. Seed-TTS-Eval contains 2,020 Mandarin examples from DiDiSpeech and 1,088 English examples from Common Voice, together with a Mandarin hard subset. For both Seed-TTS-Eval and CV3-EVAL, all locally eval-uated systems use the prompt–target pairs, transcripts, and data partitions provided by the official benchmark manifests. When a system returns the acoustic prompt and gener-ated continuation as a single waveform, the prompt region is removed before metric computation. Speaker similarity is computed between the generated target region and the cor-responding prompt. The same output-trimming and failure-handling rules are applied to all locally evaluated systems. No utterance is excluded according to its metric value, and results are aggregated separately for each language and benchmark subset. 
+
+Score-conditioned SVS. We evaluate score-conditioned SVS on GMO-SVS and SoulX-Singer-Eval following the SoulX-Singer evaluation protocol. GMO-SVS contains 802 samples collected from GTSinger, M4Singer, and OpenCpop. The first sentence of each song is used as the acoustic prompt, and the remaining sentences are used as synthesis targets. We evaluate the original-lyric score-conditioned setting rather than the rewritten-lyric editing setting. SoulX-Singer-Eval contains 100 prompt segments from 50 unseen singers, including 25 Mandarin and 25 English singers, with two segments per singer. The Mandarin prompts are collected from professional and amateur singers, and the English prompts are drawn from the Mixing Secrets dataset. Target lyrics and melodies are selected from 15 Mandarin and 15 English tracks in GMO-SVS and paired with manually verified note-level annotations. We use the official same-language Mandarin and English evaluation partitions. 
+
+Metric Implementation. Content, pitch, and perceptual-quality metrics are computed only on the generated target region. The acoustic prompt is used only as the reference for speaker similarity. Mandarin recognition error is reported as CER, although the original SoulX-Singer protocol uses the term WER for both Mandarin and English recognition results. On GMO-SVS, an F0 frame is counted as incorrect when the relative deviation from the reference F0 exceeds 20%. Following the official SoulX-Singer-Eval protocol, FFE is not reported on that benchmark. CER, WER, and FFE are multiplied by 100 and reported as percentages. 
+
+# Additional Experimental Results 
+
+This section distinguishes controlled diagnostic studies from final-checkpoint evaluations. Unless otherwise stated, ab-lations of the SA-VAE configuration and state-supervision objective use the 100K-hour speech-only corpus, a shared 0.8B backbone architecture, and a matched budget of 100K updates. Convergence analyses and final-checkpoint compar-isons follow the full 300K-update schedule and are explicitly identified. Inference settings are fixed across comparisons, except when classifier-free guidance (CFG) is varied. 
+
+SA-VAE Representation Analysis 
+
+Ablations on Alignment Loss and KL Weight. All con-figurations use 25-Hz continuous latents and share the same encoder–decoder architecture, training data, optimization budget, and evaluation protocol. The first two rows isolate the effect of βKL without semantic alignment, whereas the remaining rows compare alignment losses at βKL = 0 .01 
+
+against the matched Vanilla VAE. Reducing the KL weight SA-VAE SemBridge Generator Setting Value Setting Value 
+
+Training budget 300K updates Training budget 300K updates Training input 3s waveforms segments at 44.1 kHz Modeling unit 12.5-Hz continuous acoustic patches Global batch size 48 segments Global batch size 4,096 acoustic-patch frames Hardware 8× NVIDIA H20 Hardware 16 × NVIDIA H20 98 GB Precision fp32 Precision bfloat16 Optimizer AdamW Optimizer AdamW Learning rate 1 × 10 −4 Learning-rate schedule Peak 1 × 10 −4; 5K warm-up; cosine decay Loss weights MR-STFT 10; mel 15; KL 0.01; alignment 100; adversarial 1.0; feature matching 1.5 Loss weights Flow matching 1.0; semantic anchoring 0.1; stop prediction 1.0 Global seed 42 Global seed 42 
+
+Table 8: Training configurations of SA-VAE and the SemBridge generator. 
+
+Model Alignment Loss βKL Frame Rate (Hz) PESQ-WB ↑ PESQ-NB ↑ STOI ↑ UTMOS ↑ SIM ↑ Recon. WER ↓
+
+Vanilla VAE None 5 × 10 −5 25 3.186 3.562 0.963 3.888 0.942 2.312 Vanilla VAE None 0.01 25 2.996 3.421 0.960 3.890 0.926 2.292 SA-VAE LMSE 0.01 25 3.071 3.505 0.959 3.914 0.939 2.317 SA-VAE Lcos 0.01 25 3.063 3.501 0.957 3.884 0.932 2.300 
+
+SA-VAE Lcos + L1 0.01 25 2.988 3.449 0.958 3.923 0.930 2.268 
+
+Table 9: Reconstruction ablation over KL weights and semantic-alignment losses. Best and second-best results are shown in 
+
+bold and underlined, respectively.                                                  
+
+> VAE Configuration ZH EN ZH-Hard
+> CER ↓SIM ↑WER ↓SIM ↑CER ↓SIM ↑
+> Vanilla VAE ( βKL = 5 ×10 −5)1.99 0.701 3.43 0.622 17.27 0.664
+> Vanilla VAE ( βKL = 0 .01 )1.72 0.695 3.05 0.617 15.95 0.654 SA-VAE ( LMSE )1.48 0.7022 3.09 0.6293 18.61 0.655 SA-VAE ( Lcos )1.45 0.709 2.96 0.628 16.16 0.663 SA-VAE ( Lcos +L1; default) 1.47 0.711 2.81 0.631 15.94 0.664
+
+Table 10: Downstream comparison of VAE configura-tions. Best and second-best results are shown in bold and underlined, respectively. yields the strongest PESQ, STOI, and SIM, but the align-ment objectives reveal a trade-off between signal fidelity and semantic reconstruction. Although LMSE better preserves PESQ and SIM, Lcos + L1 achieves the highest UTMOS (3.923) and lowest reconstruction WER (2.268), improving over the matched baseline at 3.890 and 2.292, respectively. We therefore adopt Lcos +L1 for its favorable balance of sig-nal fidelity, perceptual quality, and linguistic intelligibility. 
+
+SA-VAE Provides the Best Downstream Balance. All variants use the same 0.8B backbone, 100K-hour speech-only corpus, 100K-update training budget, GLM-4 semantic-token targets, and Anchor@32 configuration, thereby iso-lating the effect of the pretrained and subsequently frozen VAE. Among the Vanilla VAE configurations, increasing 
+
+βKL from 5 × 10 −5 to 0.01 improves content accuracy on all three evaluation sets, but consistently reduces SIM. At the matched βKL = 0 .01 , the downstream results are sensitive to the alignment objective: LMSE improves ZH CER but de-grades EN WER and ZH-Hard CER relative to the Vanilla VAE, indicating an inconsistent transfer benefit. In contrast, 
+
+Lcos +L1 obtains the best or tied-best result on five of the six metrics. Relative to the matched Vanilla VAE, it reduces ZH CER by 14 .5% and EN WER by 7.9% , leaves ZH-Hard CER effectively unchanged at 15.94 versus 15.95, and increases SIM by 0.016, 0.014, and 0.010 on ZH, EN, and ZH-Hard, re-spectively. Although Lcos achieves a slightly lower ZH CER than the default configuration (1.45 versus 1.47), the com-bined objective performs better on each of the remaining five metrics. Together with its lowest reconstruction WER in Table 9, these results support Lcos + L1 as the default for balancing content accuracy and speaker similarity. 
+
+Representation-Space Analysis of SA-VAE Figure 2compares the latent-space organization of the Vanilla VAE and SA-VAE under the same evaluation protocol. The Vanilla VAE representations exhibit substantial overlap across sound categories, indicating that reconstruction and KL regulariza-tion alone do not explicitly organize the continuous latent space according to category-relevant content. In contrast, SA-VAE produces visibly more compact and better sepa-rated clusters, while preserving a continuous 64-dimensional acoustic representation. This improvement is also reflected by the quantitative measurements: SA-VAE increases the linear-probe accuracy from 61 .50% to 82 .00% , correspond-ing to an absolute gain of 20 .50 percentage points, and im-proves the 5-NN accuracy from 42 .25% to 67 .00% , an ab-solute gain of 24 .75 percentage points. The higher LP ac-curacy shows that category-relevant information becomes more directly accessible through a linear classifier, whereas the higher 5-NN accuracy indicates that samples from the same category form more consistent local neighborhoods. Since the category labels are used only for evaluation and are not provided as training targets, these results suggest that Figure 2: Representation-space comparison between aVanilla VAE ( βKL = 10 −2) and the proposed SA-VAE on ten ESC-50 sound categories. The t-SNE projections are obtained from temporally pooled 64-dimensional sampled latents z. Linear-probe (LP) and 5-nearest-neighbor (5-NN) accuracies are computed in the original standardized latent space rather than in the two-dimensional t-SNE space. Higher values indicate stronger linear class separability and more consistent local neighborhood structure, respectively.                                                 
+
+> Target Loss λsem ZH EN ZH-Hard
+> CER ↓SIM ↑WER ↓SIM ↑CER ↓SIM ↑
+> None ––2.17 0.697 4.63 0.600 20.13 0.656 Token Emb. Lcos 0.1 2.12 0.709 4.62 0.614 19.43 0.665 Token Emb. Lcos 0.5 2.01 0.709 4.13 0.618 19.05 0.667 Token Emb. Lcos 1.0 1.90 0.711 3.68 0.622 18.86 0.669
+> Token ID LCE 0.1 1.47 0.711 2.81 0.631 15.94 0.664
+
+Table 11: Comparison between continuous token-embedding regression with cosine loss and discrete token-ID classifica-tion with cross-entropy loss. The unanchored model serves as the baseline. Best and second-best results are shown in 
+
+bold and underlined. alignment with the frozen semantic tokenizer regularizes the acoustic latent space toward a more structured representation without introducing categorical supervision. The t-SNE pro-jections are used only as qualitative illustrations; the quantita-tive conclusion is supported by LP and 5-NN measurements computed before dimensionality reduction. 
+
+Analysis of Semantic-Token Anchoring 
+
+Embedding Regression versus Token Classification. Ta-ble 11 compares continuous token-embedding regression based on cosine loss with discrete token-ID classification based on cross-entropy loss. Both objectives use targets from the same frozen semantic tokenizer and are applied to the same Transformer block. All other model, data, optimiza-tion, and inference settings are identical. For continuous embedding regression, increasing λsem 
+
+from 0.1 to 1.0 consistently reduces all three content-error metrics without decreasing SIM. Therefore, λsem = 1 .0 is the best continuous-target configuration among those eval-uated. Nevertheless, discrete token-ID classification with 
+
+λsem = 0 .1 further reduces ZH CER, EN WER, and ZH-Hard CER from 1.90 , 3.68 , and 18 .86 to 1.47 , 2.81 , and 
+
+Figure 3: Seed-TTS EN WER across training updates with and without semantic-token anchoring. 
+
+15 .94 , corresponding to relative reductions of 22 .6% , 23 .6% ,and 15 .5% , respectively. Compared with the unanchored baseline, the relative reductions are 32 .3% , 39 .3% , and 
+
+20 .8% , respectively. Token-ID classification also matches the best continuous variant on ZH SIM and improves EN SIM from 0.622 to 0.631 , although ZH-Hard SIM decreases slightly from 0.669 to 0.664 . Under the matched setting, these results indicate that discrete token-ID classification provides a more effective anchoring objective for content modeling than continuous embedding regression. 
+
+Convergence Behavior with Semantic-Token Anchoring. 
+
+We evaluate both configurations every 20K updates using the Seed-TTS EN streaming protocol with a CFG scale of 2.0. At each checkpoint, we perform one inference run on all 1,088 utterances. As shown in Figures 3 and 4, semantic-token anchoring achieves lower WER and higher speaker similarity at every evaluated checkpoint. By 40K updates, the anchored model achieves a WER of 
+
+4.61% and a SIM-o score of 0.5817 , approaching the per-formance of the unanchored model after 100K updates: its WER is already slightly lower ( 4.61% vs. 4.63% ), while its SIM-o remains close ( 0.5817 vs. 0.5941 ). At 100K up-dates, semantic-token anchoring reduces WER from 4.63% 
+
+to 2.70% , corresponding to a relative reduction of 41 .7% ,and increases SIM-o from 0.5941 to 0.6310 . The WER curve is not strictly monotonic because of a small fluctuation between 60K and 80K updates, whereas SIM-o improves monotonically throughout training. These results indicate that semantic-token anchoring accelerates convergence and improves the balance between intelligibility and speaker sim-ilarity. For clarity, the WER axis is limited to 25% . The WER of the unanchored model at 20K updates is 58 .38% .
+
+Linguistic Probing and Representation Visualization. 
+
+Speaker-Disjoint Linguistic Probing. We investigate whether target linguistic content remains linearly accessible independently of prompt-speaker identity with a speaker-disjoint 50-way text-identification probe. For each lan-Figure 4: Seed-TTS EN SIM-o across training updates with and without semantic-token anchoring. 
+
+Figure 5: Speaker-disjoint target-text probing across LM lay-ers and Anchoring depths. guage, the probe uses mean-pooled hidden states over target-generation positions from 10 prompt speakers and 50 shared target texts. Prompt speakers are partitioned by five-fold GroupKFold so no speaker appears in both training and test splits. As shown in Figure 5, models anchored at tested depths achieve consistently high text-identification accuracy, rang-ing from 92 .4% to 97 .8% . In contrast, the unanchored base-line exhibits a strongly non-monotonic layer-wise profile. For Mandarin and English, respectively, accuracy begins at 
+
+28 .4% and 30 .0% at h6, increases to 84 .8% and 94 .0% at h24 ,then decreases to 47 .8% and 56 .4% at h32 . The maximum at 
+
+h24 coincides with the boundary between the 24-layer base LM and the subsequent eight-layer residual LM. This pat-tern suggests that linguistic content is naturally accessible at this interface but becomes less linearly separable after the residual computation. Semantic-token anchoring does not introduce linguistic information absent from the baseline. Instead, it makes this information accessible at earlier depths and preserves high readability at the supervised layer. The anchoring curve connects independently trained models with different supervision depths and should be interpreted as a depth-ablation trend rather than a layer-wise trajectory within a single model. 
+
+Semantic-Token Geometry at the Final Layer. We exam-ine the patch-level organization of semantic information in the final LM layer. For each language, we select 20 frequent 
+
+Figure 6: Semantic-token t-SNE at h32 for No Anchoring and Anchoring@32. 
+
+Figure 7: Layer-wise semantic-token readability under dif-ferent Anchoring depths. next-semantic-token classes and sample 20 valid acoustic-patch states for each class. We use the training-time causal alignment: the hidden state at acoustic patch k is paired with semantic token k + 1 .Figure 6 visualizes the h32 representations after ℓ2 normal-ization, PCA reduction, and a joint t-SNE projection fitted to both configurations. With Anchor@32, balanced accu-racy for semantic-token prediction increases from 50 .1% to 
+
+67 .0% for Mandarin and from 34 .2% to 49 .6% for English. The anchored representations form more compact, class-specific clusters, whereas the unanchored representations re-main broadly intermixed. Overlap remains because each LM state jointly encodes linguistic, speaker, and acoustic context, and nearby semantic tokens may represent phonetically re-lated content. We treat the t-SNE visualization as qualitative evidence of a change in local representation geometry. The speaker-disjoint probe in the original representation space provides the primary quantitative evidence. 
+
+Depth-Localized Semantic Readability. To examine how supervision depth reshapes the LM hierarchy, we probe nor-malized hidden states from every LM layer in independently trained Anchor@k models. Figure 7 reveals a depth-localized pattern: the region of highest semantic-token readability shifts toward the supervised layer rather than increasing uni-formly with network depth. At the supervised layers, bal-anced accuracy ranges from 63 .3% to 67 .0% for Mandarin and from 46 .9% to 52 .1% for English. This layer-following pattern indicates that the auxiliary System Control Mandarin English                                                                              
+
+> CER (%) ↓SIM ↑SingMOS ↑Sheet ↑WER (%) ↓SIM ↑SingMOS ↑Sheet ↑
+> Existing SVS systems
+> StyleSinger Score 38.80 0.808 3.892 3.833 ––––TCSinger Score 22.70 0.822 3.939 4.009 46.00 0.729 3.652 3.685 Ying-Music-Singer Melody 11.70 0.913 4.068 3.599 ––––Vevo Melody 23.30 0.908 4.265 3.814 25.60 0.888 4.184 3.582 SoulX-Singer Score 6.90 0.922 4.394 4.053 12.90 0.914 4.255 3.690
+> Continuous-latent autoregressive system
+> SemBridge Score 10.71 0.925 4.470 4.224 9.50 0.914 4.456 4.088
+> w/o Anchoring Score 11.56 0.922 4.455 4.201 11.42 0.916 4.453 3.981
+
+Table 12: Results on SoulX-Singer-Eval. Control indicates whether each system uses melody or score conditioning. Lower CER/WER is better; higher SIM, SingMOS, and Sheet-SSQA are better. 
+
+Figure 8: CFG-scale trade-off on streaming Seed-TTS EN at 300k steps, averaged over three runs. objective shifts where next-token semantic information is most linearly accessible within the causal LM. However, ac-curacy at the supervised layer is not monotonic with an-choring depth, and the deepest configuration is not con-sistently strongest across languages. These results suggest that semantic-token anchoring localizes semantic accessibil-ity around the selected supervision depth, rather than show-ing that progressively deeper anchoring is always preferable for generation. 
+
+Inference-Time Classifier-Free Guidance 
+
+Figure 8 evaluates the effect of classifier-free guidance (CFG) on streaming Seed-TTS EN generation. Increasing the guid-ance scale from 1.0 to 2.0 substantially reduces Seed WER from 5.98% to 1.84% , while improving speaker similarity from 0.599 to 0.695 . Stronger guidance between 3.0 and 
+
+4.0 provides only modest additional improvements in intel-ligibility, accompanied by a consistent reduction in speaker similarity. At 5.0, WER no longer improves and similarity further decreases. These results reveal a clear intelligibility– speaker-similarity trade-off, with CFG = 2 .0 providing the most balanced operating point. 
+
+Extension to Score-Conditioned SVS 
+
+Results on SoulX-Singer-Eval. Together with the GMO-SVS results, SoulX-Singer-Eval demonstrates that the continuous-latent formulation remains competitive under symbolic musical control. Under the matched SoulX-Singer-Eval setting, semantic-token anchoring reduces Mandarin CER from 11.56 to 10.71 and English WER from 11.42 to 9.50. Singer similarity remains nearly unchanged, while SingMOS and Sheet are maintained or improved in both lan-guages. These results further support the transfer of semantic-token anchoring to lyric modeling without materially com-promising singer identity or perceptual quality. 
+
+# Limitations 
+
+SemBridge currently relies on semantic targets from a sin-gle frozen tokenizer, and its effectiveness may therefore de-pend on the tokenizer’s temporal granularity, vocabulary, and domain coverage, especially for speech styles or languages underrepresented during tokenizer pretraining. Each config-uration is trained once using fixed hyperparameters and a predefined training seed. For evaluation, we perform three in-ference runs with the same decoding settings and predefined sampling seeds, and report the averaged results. This pro-cedure reduces inference-time sampling variation but does not characterize variation across independently trained mod-els. Moreover, automatic metrics do not fully replace human evaluation, thereby limiting direct claims about perceptual quality and listener preference; the scaled 120K-hour setting changes both data scale and task composition, and compar-isons with externally reported systems are not fully matched. Our conclusions should therefore be interpreted within the evaluated settings. As with other high-fidelity voice-generation systems, SemBridge may be misused for impersonation or decep-tive content. Its deployment should comply with applicable data licenses, speaker consent, privacy requirements, and responsible-use practices, including appropriate access con-trol and disclosure of generated content. The internal singing data cannot be fully redistributed because of licensing restric-tions.
