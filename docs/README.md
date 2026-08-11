@@ -6,72 +6,76 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-08-10
-- 运行时间：2026-08-10 20:09:32 UTC
+- 最新运行日期：2026-08-11
+- 运行时间：2026-08-11 21:26:02 UTC
 - 运行状态：成功
-- 本次总论文数：16
-- 精读区：5
+- 本次总论文数：18
+- 精读区：7
 - 速读区：11
 
 ### 今日简报（AI）
-今日精读5篇、速读11篇，共处理16篇论文，聚焦音频生成与语音处理前沿。
-
-最值得关注的是多控制混合音频生成基准MMAG（9.0分）与连续潜空间自回归语音生成的语义锚定方法SemBridge（9.0分），两者均在高质量生成与可控性上给出新思路。
-
-建议优先阅读上述两篇精读论文，并快速浏览基于强化学习的合成器反演、教室环境说话人验证等速读工作，以把握近期热门方向。
-- 详情：[/202608/10/README](/202608/10/README)
+今日精选18篇论文，聚焦语音合成与识别方向，精读7篇、速读11篇。  
+最值得关注：10分的《CtrlSpeech》实现粗到细的语音表达控制，9分的《SraVaani 1.0》扩展印度语系语音识别。  
+建议优先精读这两篇高分工作，并留意速读中音频生成建模与语音分离的新思路。
+- 详情：[/202608/11/README](/202608/11/README)
 
 ### 精读区论文标签
-1. [MMAG: A Multi-Control Mixed Audio Generation Benchmark](/202608/10/2608.06900v1-mmag-a-multi-control-mixed-audio-generation-benchmark)  
+1. [CtrlSpeech: Coarse-to-Fine Control for Expressive Speech Synthesis](/202608/11/2608.08362v1-ctrlspeech-coarse-to-fine-control-for-expressive-speech-synthesis)  
+   标签：评分：10.0/10、query:speech-audio
+   evidence：支持从粗到细韵律控制的表达性文本到语音合成
+2. [SraVaani 1.0: Scaling Inclusive Speech Recognition for Indic Languages](/202608/11/2608.08235v1-sravaani-10-scaling-inclusive-speech-recognition-for-indic-languages)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：多控制混合音频生成基准
-2. [SemBridge: Semantic Token Anchoring for Continuous-Latent Autoregressive Speech Generation](/202608/10/2608.07462v1-sembridge-semantic-token-anchoring-for-continuous-latent-autoregressive-speech-generation)  
+   evidence：覆盖65种印度语言的多语言自动语音识别
+3. [From Speech to Interaction: Analyzing Multimodal Systems in Cocktail-Party Scenarios](/202608/11/2608.08510v1-from-speech-to-interaction-analyzing-multimodal-systems-in-cocktail-party-scenarios)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：直接面向连续隐空间自回归语音生成（TTS方法），通过语义标记锚定提升内容保真度。
-3. [REIMU: Efficient Heterogeneous Hierarchical Reasoning for SSL-Based Speech Deepfake Detection](/202608/10/2608.00857v1-reimu-efficient-heterogeneous-hierarchical-reasoning-for-ssl-based-speech-deepfake-detection)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：面向TTS与语音转换生成语音的深度伪造检测，属于语音与音频安全核心议题
-4. [Vorch-Streamer: Extending Human Audio-Visual Generation to Real-Time Long-Form Streaming](/202608/10/2608.05663v2-vorch-streamer-extending-human-audio-visual-generation-to-real-time-long-form-streaming)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：文本到音视频流式生成；实时语音与音频合成
-5. [Multi Codec Discrete Diffusion Model for Text Guided Speech Inpainting and Editing](/202608/10/2608.06424v1-multi-codec-discrete-diffusion-model-for-text-guided-speech-inpainting-and-editing)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：面向文本引导语音修复与编辑的离散扩散框架，与TTS和语音生成紧密相关。
+   evidence：分析鸡尾酒会场景下用于语音识别的多模态系统
+4. [CuteTTS: Efficient and High-Quality Speech Synthesis via Autoregressive Modeling of Continuous Latents](/202608/11/2608.08638v1-cutetts-efficient-and-high-quality-speech-synthesis-via-autoregressive-modeling-of-continuous-latents)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：面向零样本文本到语音合成，提出连续自回归建模以兼顾保真度与低延迟
+5. [SonicWeave: Chunk-Routed Mixture-of-Experts for Unified Audio Scene Generation](/202608/11/2608.09571v1-sonicweave-chunk-routed-mixture-of-experts-for-unified-audio-scene-generation)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：统一的文本到音频场景生成，包含语音、音乐和音效合成
+6. [MADBench: A Benchmark for Modality-Aware Audio Deepfake Detection](/202608/11/2608.09593v1-madbench-a-benchmark-for-modality-aware-audio-deepfake-detection)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：首个区分语音与背景音频的模态感知音频深度伪造检测基准
+7. [Beyond Naturalness: Probing Automated Text-To-Speech Evaluators on Linguistically Grounded Dimensions](/202608/11/2608.09930v1-beyond-naturalness-probing-automated-text-to-speech-evaluators-on-linguistically-grounded-dimensions)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：直接针对文语合成评估及TTS评估器基准
 
 ### 速读区论文标签
-1. [DDSynth-RL: Audio Synthesizer Inversion via Discrete Diffusion with Reinforcement Learning](/202608/10/2608.03032v1-ddsynth-rl-audio-synthesizer-inversion-via-discrete-diffusion-with-reinforcement-learning)  
+1. [ReLMCodec: Designing Predictable Speech Tokens from Pre-Quantization Phoneme Structure](/202608/11/2608.08286v1-relmcodec-designing-predictable-speech-tokens-from-pre-quantization-phoneme-structure)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：设计易于自回归预测的语音codec token，支持语音合成
+2. [A Unifying Perspective on Audio Generative Modeling: Latent Representations and Modeling Strategies](/202608/11/2608.08667v1-a-unifying-perspective-on-audio-generative-modeling-latent-representations-and-modeling-strategies)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：音频生成建模的统一视角，涵盖表示与分布建模策略
+3. [DAVE: A Decoupled Audio-Visual Enhancement Framework for Real-World Speech Separation](/202608/11/2608.09288v1-dave-a-decoupled-audio-visual-enhancement-framework-for-real-world-speech-separation)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：为真实语音分离构建DAVE-Corpus大规模训练语料库
+4. [Listen, See and Track: Spatio-Temporal Audio-Visual Sound Event Reasoning for Omni-Modal Language Models](/202608/11/2608.09435v1-listen-see-and-track-spatio-temporal-audio-visual-sound-event-reasoning-for-omni-modal-language-models)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：用于声音事件推理的时空音视频问答基准
+5. [From Prompting to Describing: A Cross-Cultural Study of Language for AI-Generated Music](/202608/11/2608.06634v1-from-prompting-to-describing-a-cross-cultural-study-of-language-for-ai-generated-music)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：基于离散扩散与强化学习的音频合成器参数反演
-2. [Speaker Verification Under Real Classroom Conditions for English Speech](/202608/10/2608.03623v2-speaker-verification-under-real-classroom-conditions-for-english-speech)  
+   evidence：对AI生成音乐提示语言的跨文化研究
+6. [Mitigating Over-Suppression in Speech Enhancement via Inference-Time Rethink-and-Refine Correction Module](/202608/11/2608.07781v1-mitigating-over-suppression-in-speech-enhancement-via-inference-time-rethink-and-refine-correction-module)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：将WavLM-TDNN用于噪声课堂条件下的说话人确认，属于语音音频应用。
-3. [HyPASE: Hyperbolic Geometry for Parameter-Efficient Speech Emotion Fine-Tuning Framework for Large Audio-Language Models](/202608/10/2608.04351v1-hypase-hyperbolic-geometry-for-parameter-efficient-speech-emotion-fine-tuning-framework-for-large-audio-language-models)  
+   evidence：语音增强修正方法，依赖ASR，与语音处理和语音识别相关
+7. [DialectS2S: End-to-End Speech Dialogue Modeling for Low-Resource Chinese Dialects](/202608/11/2608.08067v1-dialects2s-end-to-end-speech-dialogue-modeling-for-low-resource-chinese-dialects)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：面向大型音频语言模型的语音情感识别微调方法
-4. [MERaLiON-GR: Speech Gender Recognition Model for English and SEA Languages](/202608/10/2608.04433v1-meralion-gr-speech-gender-recognition-model-for-english-and-sea-languages)  
+   evidence：低资源中文方言的端到端语音对话建模，包含方言语音合成数据管线
+8. [VoxZip: Semantic-Anchored Temporal KV Cache Compression for Long-Context Audio Inference](/202608/11/2608.08569v1-voxzip-semantic-anchored-temporal-kv-cache-compression-for-long-context-audio-inference)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：面向英语和东南亚语言的语音性别识别，属于语音音频分类任务
-5. [Spoken Function Calling: A New Perspective on Spoken Language Understanding for Large Audio Language Models](/202608/10/2608.05126v1-spoken-function-calling-a-new-perspective-on-spoken-language-understanding-for-large-audio-language-models)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：为大型音频语言模型提出语音理解新视角，属于语音与音频研究范畴
-6. [AVCap: Reinforcing Audio-Video Joint Caption with Detail-Aware Reward](/202608/10/2608.06930v1-avcap-reinforcing-audio-video-joint-caption-with-detail-aware-reward)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：音视频字幕数据集与基准
-7. [SAGE: Switch-Aware EEG-Guided Soft Gating for Target Speaker Extraction with In-Trial Switching](/202608/10/2608.01623v1-sage-switch-aware-eeg-guided-soft-gating-for-target-speaker-extraction-with-in-trial-switching)  
+   evidence：面向语音大模型的高效推理，属语音/音频理解核心方向
+9. [Speaker Verification Under Real Classroom Conditions for English Speech](/202608/11/2608.03623v1-speaker-verification-under-real-classroom-conditions-for-english-speech)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：基于EEG的目标说话人提取技术，语音音频处理
-8. [PD-GS: Phoneme-Driven 3DGS for Audio-Driven Talking Heads](/202608/10/2608.05218v1-pd-gs-phoneme-driven-3dgs-for-audio-driven-talking-heads)  
+   evidence：教室噪声环境下的说话人验证，属于语音音频处理任务
+10. [MERaLiON-GR: Speech Gender Recognition Model for English and SEA Languages](/202608/11/2608.04433v1-meralion-gr-speech-gender-recognition-model-for-english-and-sea-languages)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：音频驱动说话头，采用音素引导的3D高斯泼溅
-9. [Vorch-Director: Interactive World Story Model via Noise-Aware Error Rectification](/202608/10/2608.05776v1-vorch-director-interactive-world-story-model-via-noise-aware-error-rectification)  
+   evidence：面向英语与东南亚语言的语音性别识别模型
+11. [Spoken Function Calling: A New Perspective on Spoken Language Understanding for Large Audio Language Models](/202608/11/2608.05126v1-spoken-function-calling-a-new-perspective-on-spoken-language-understanding-for-large-audio-language-models)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：自回归音视频生成与噪声感知错误修正，与文本到音频合成方法相关
-10. [Separating Decision-Rule Misalignment from Readout-Coverage Limitations in Speech Language Models](/202608/10/2608.06409v1-separating-decision-rule-misalignment-from-readout-coverage-limitations-in-speech-language-models)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：诊断语音语言模型在副语言任务上的失败，与语音理解和评测相关
-11. [Do Audio Language Models Use Paralinguistic Evidence? Counterfactual Audits for Response Evaluation](/202608/10/2608.06718v1-do-audio-language-models-use-paralinguistic-evidence-counterfactual-audits-for-response-evaluation)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：面向副语言评估的反事实审计
+   evidence：面向音频大模型口语理解的语音函数调用新视角
 
 
 <div class="dpr-home-promo-card">

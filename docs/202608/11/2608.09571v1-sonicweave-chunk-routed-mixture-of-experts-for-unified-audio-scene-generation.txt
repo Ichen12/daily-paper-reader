@@ -1,0 +1,587 @@
+Title: SonicWeave: Chunk-Routed Mixture-of-Experts for Unified Audio Scene Generation
+
+URL Source: https://arxiv.org/pdf/2608.09571v1
+
+Published Time: Tue, 11 Aug 2026 02:43:02 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# SonicWeave: Chunk-Routed Mixture-of-Experts for Unified Audio Scene Generation 
+
+# Yunrui Cai 1,2,* , Xu Li 1,† , Yucheng Zhou 1, Jinchao Li 1, Dingdong Wang 2, Dongchao Yang 2,Xixin Wu 2, Chen Zhang 1, Zhiyong Wu 3, Pengfei Wan 1, Helen Meng 2,† 
+
+> 1
+
+Kling Team, Kuaishou Technology 
+
+> 2
+
+The Chinese University of Hong Kong 
+
+> 3
+
+Shenzhen International Graduate School, Tsinghua University 
+
+{yrcai, hmmeng}@se.cuhk.edu.hk, lixu15@kuaishou.com 
+
+Abstract 
+
+Text-conditioned general audio generation is moving beyond isolated speech, music, and sound-effect synthesis toward a single model that can compose them into controllable, coherent audio scenes. This unified setting is particularly challenging: heterogeneous components impose conflicting structural requirements on a shared backbone, while a complex mixed scene may contain locally distinct or overlapping content that demands fine-grained adaptation within the same clip. Existing audio mixture-of-experts (MoEs) mainly route at the domain level, while token-wise routing overlooks the local continuity inherent to acoustic signals. We propose SonicWeave, a flow-matching model for unified audio scene generation. At its core is a chunk-routed MoE with a conflict-gated prior–evidence routing mechanism (CPE-MoE). CPE-MoE routes contiguous acoustic chunks by combining a global prior that encodes the structured text condition and diffusion phase with local evidence from the evolving acoustic state. A learned conflict gate favors the prior when local states are unreliable, while allowing local evidence to influence routing when a region departs from the global scene context. SonicWeave supports speech, music, sound effects, singing, and their fine-grained mixtures with a single set of weights. Across TTS, TTA, and TTM benchmarks, SonicWeave consistently improves over controlled Dense and Base-MoE baselines. Complex-scene evaluation further demonstrates improved compositional quality, while routing analyses reveal content-dependent expert specialization across diffusion phases. These results suggest that temporally coherent, prior–evidence routing is an effective conditional-computation strategy for unified audio generation. Project page: https://caiyunrui.github.io/SonicWeave. 
+
+# 1 Introduction 
+
+Recent diffusion and flow-matching models [1] have broadened text-conditioned synthesis across speech, music, and environ-mental sounds [2–4]. The next step is general audio genera-tion : one model should not only cover these domains, but also compose them into coherent scenes and respond to structured specifications of heterogeneous acoustic content—for exam-ple, narration combined with music, ambience, and transient sound events [5–8]. This capability is important for moving from isolated audio generation to controllable modeling of real acoustic environments. This goal exposes a fundamental conditional-computation problem at two granularities: across domains (speech vs. music) and within a scene (locally overlapping components). Across domains, speech requires linguistic precision, music requires harmonic and rhythmic structure, and environmental sound includes both stationary textures and transient events. Within a single complex scene, these components may overlap or alter-nate, so different local regions require different computation and fine-grained control of heterogeneous content. A dense diffusion transformer (DiT) applies the same feed-forward transformation to every acoustic token, while existing audio 
+
+> *Work done during an internship at Kling Team, Kuaishou Technology.
+> †Corresponding authors.
+
+MoEs primarily target domain-level specialization [9]. Token-wise routing may also vary unnecessarily across correlated neighboring frames, and local acoustic states are unreliable at early noisy diffusion phases. A useful unified generator there-fore needs to coordinate global scene intent, local acoustic evidence, and temporal continuity rather than treating routing as an independent decision for every token. Acoustic latents exhibit strong short-range dependence: neighboring frames typically belong to the same phonetic unit, musical texture, or environmental event, even when the broader scene contains heterogeneous components. Chunk-level rout-ing therefore occupies a useful middle ground between clip-level routing, which cannot adapt within a scene, and frame-level routing, which may fragment locally coherent structure. We propose SonicWeave, a unified flow-matching model designed for complex-scene generation with fine-grained lo-cal adaptation. Its core CPE-MoE module—Conflict-gated Prior–Evidence Mixture-of-Experts—routes contiguous acous-tic chunks rather than independent frames. For each chunk, CPE-MoE combines a global prior from structured scene text and diffusion phase with local evidence from the evolving acoustic representation. The learned conflict gate favors the prior when local states are unreliable and shifts toward local evidence when a region contains content not explained by the global scene context. Text and time tokens remain on a shared 1arXiv:2608.09571v1 [cs.SD] 10 Aug 2026 Figure 1: Overview of SonicWeave for unified audio scene generation. Natural-language descriptions are converted into structured captions that separate speech content, vocal attributes, music, sound effects, and ambience. A single model then synthesizes these heterogeneous components jointly, while its CPE-MoE module provides conflict-gated, content-aware routing across acoustic chunks. 
+
+expert, preserving a stable conditioning pathway. SonicWeave is trained over speech, music, sound effects, singing, and mixed scenes under one structured textual interface. Experiments show that SonicWeave performs strongly across TTS, TTA, and TTM while consistently improving over controlled Dense and Base-MoE baselines. On controlled com-plex scenes, it produces more coherent mixtures and better follows structured specifications of foreground, background, and speaker or vocal attributes. Routing analyses further show content-dependent expert specialization and diffusion-phase-adaptive use of the global prior and local evidence. Our contributions are threefold: • We identify conditional computation at two coupled granu-larities—across audio domains and within heterogeneous scenes—and formulate routing requirements that jointly account for global scene intent, local acoustic state, and short-range temporal continuity. • We introduce CPE-MoE, which routes contiguous acous-tic chunks using a diffusion-phase-aware text prior, local acoustic evidence, and a learned conflict gate, while keep-ing text and time tokens on a stable shared path. • Through matched Dense and token-routed MoE controls, public-task benchmarks, a 100-prompt complex-scene suite, human listening tests, and routing analyses, we show that the proposed routing improves compositional fidelity without sacrificing perceptual quality. 
+
+# 2 Related Work 
+
+# 2.1 General and Unified Audio Generation 
+
+Text-conditioned audio generation has progressed from autore-gressive audio language models to diffusion and flow-matching systems for speech, music, and environmental sounds [2–4, 10]. Unified models extend this scope through shared representa-tions or architectures [5–7, 11]. Dasheng AudioGen further tar-gets coherent mixed scenes with structured multi-view captions [8]. In contrast, we focus on conditional computation within a unified continuous generator, where routing must resolve both heterogeneous audio domains and local compositional conflicts among coexisting scene components. 
+
+# 2.2 Structured Text Conditioning 
+
+Structured conditions improve controllability by exposing event, temporal, or semantic factors beyond a single free-form caption [12–14]. Our structured caption normalizes heteroge-neous annotations into one interface for speech content and attributes, music, sound events, and ambience. Unlike explicit timeline planning, it supplies a common scene description; CPE-MoE, the core module of SonicWeave, uses this global information as a routing prior and combines it with evolving local acoustic evidence. 
+
+# 2.3 Mixture-of-Experts for Diffusion and Audio Generation 
+
+MoE enables conditional capacity through sparse expert acti-vation and has been adapted to diffusion transformers [15–18]. In unified audio generation, UniMoE-Audio uses specialist-initialized experts and dynamic allocation to mitigate speech– music task conflict [9]. These approaches establish the value of specialization, but operate at task/modality granularity or route individual tokens. SonicWeave instead uses CPE-MoE to route contiguous acoustic chunks with a conflict gate between a global text-and-phase prior and local evidence, targeting stable, fine-grained specialization in heterogeneous mixed scenes. 2Figure 2: SonicWeave framework. Left : a stereo VAE encodes audio into continuous latents, which are jointly modeled with a structured-caption stream in a flow-matching DiT. Right : the CPE-MoE module groups audio tokens into chunks and fuses a global text-and-phase prior with local acoustic evidence for sparse expert routing. 
+
+# 3 Method 
+
+# 3.1 Overview 
+
+Our dual-stream conditional flow-matching generator, Son-icWeave, jointly models audio and text. In the audio stream, a stereo waveform is encoded by a pretrained stereo VAE into continuous audio latents; the model denoises a noised latent together with an optional masked reference for continuation and inpainting. In the text stream, a frozen language encoder embeds a structured audio caption. A joint audio–text diffusion transformer (DiT) then predicts the flow velocity, with the CPE-MoE module replacing the FFN in its final layers. Figure 2 summarizes the SonicWeave architecture and its CPE-MoE block. 
+
+# 3.2 Structured Text Conditioning 
+
+We convert each natural-language annotation into acompact, audio-only structured caption. An automatic annotation pipeline first removes non-acoustic details and extracts a fixed set of fields: type, language, speech text or lyrics, speaker counts, speaker and vocal attributes, music, sound effect, ambience, and recording texture. The fields are serialized with explicit tags, e.g., Summary sentence. <type>speech</type> <lang>en</lang> <speech>...</speech> <music>...</music> .This factorized format separates otherwise entangled scene attributes, preserves linguistic content verbatim, and supplies a consistent interface across speech, music, sound effects, and mixed audio. The current schema explicitly supports up to two speakers for dialogue-oriented scenes. A frozen language encoder maps the resulting caption into text tokens for the DiT; we use one shared encoder rather than domain-specific conditioning modules. 
+
+# 3.3 Joint Audio–Text DiT Backbone 
+
+Sequence Construction. 
+
+Each transformer layer operates on the concatenation of three modality groups: 
+
+h =  ttime 
+
+|{z} 
+
+> 1
+
+∥ T1: L
+
+|{z} 
+
+> text
+
+∥ A1: T
+
+|{z} 
+
+> audio
+
+ ∈ R(1+L+T )×d . (1) The time token ttime is obtained by summing sinusoidal embed-dings for diffusion time t and segment start s, then projecting the result to d. Text tokens are T = Wcap E, where E denotes the frozen language-encoder outputs. Audio tokens concate-nate the noised stereo-VAE latent xt with the masked reference 
+
+c, followed by linear projection and convolutional positional embedding. 
+
+Modality-Decoupled RoPE. 
+
+Inspired by the modality-specific coordinate design of M-RoPE [19], we assign text and audio independent one-dimensional position axes. The time token uses position 0, while text and audio positions are reset separately: pos (ttime ) = 0, pos (Ti) = i, pos (A j) = j. (2) With this modality-specific coordinate system, positional en-coding preserves the intrinsic order of both text and audio while keeping their coordinates independent of sequence length in the other modality. It also provides a consistent relative-position structure for joint attention to model cross-modal correspon-dences. 
+
+Text-Conditioned AdaLN. 
+
+Joint self-attention provides token-level text–audio interaction, while adaptive normalization offers a complementary path for 3injecting global conditions into diffusion transformers [20]. We additionally use phase-aware attention pooling over the struc-tured caption to provide global AdaLN conditioning; details are given in the appendix. 
+
+Cross-Modal Alignment Loss. 
+
+The shared DiT processes audio and text jointly, but flow match-ing alone does not explicitly require their final hidden states to be aligned. We therefore add a symmetric in-batch contrastive objective, following the paired-representation alignment prin-ciple used in CLIP [21]. Let ab and rb be the ℓ2-normalized, mask-pooled audio and text states of sample b, respectively, and define Sbb ′ = exp (λ ) a⊤ 
+
+> b
+
+rb′ , where λ is learned. We mini-mize 
+
+LCL = 12
+
+h
+
+CE (S, y) + CE (S⊤, y)
+
+i
+
+, yb = b. (3) This aligns paired audio–caption representations and supports the text-derived prior and audio-derived evidence used by CPE-MoE. 
+
+# 3.4 CPE-MoE: Conflict-Gated Prior–Evidence Chunk Routing 
+
+The CPE-MoE module replaces the dense FFN in the final transformer layers with shared and sparsely routed experts, pro-viding conditional capacity for heterogeneous audio. As shown in Figure 2, it learns routing from two complementary sources: structured text and diffusion phase specify global generation intent, while evolving audio states reveal local acoustic con-tent. Routing contiguous chunks preserves short-range audio continuity, allowing expert specialization across broad tasks and locally mixed content under one objective. 
+
+Modality-Decoupled Dispatch. 
+
+Given the layer input h ∈ RB×(1+L+T )×d , we split it into a context group (time and text tokens) and an audio group: 
+
+hctx = h[:, :1 +L], haud = h[:, −T :]. (4) The context group is processed only by the shared expert octx =
+
+MLP shared (hctx ). This isolates the text and time representations from the routing gate. 
+
+Chunk-Level Routing. 
+
+We partition the T audio states into Nc = ⌈T /C⌉ non-overlapping chunks {C j}Nc 
+
+> j=1
+
+of at most C consecutive frames. Let mi ∈ { 0, 1} indicate whether frame i is valid. The pooled state of chunk j is 
+
+e j = ∑i∈C j mihaud ,i
+
+max 
+
+
+
+1, ∑i∈C j mi
+
+ . (5) Padding-only chunks are excluded from routing and auxiliary statistics. The prior–evidence router makes one top-K assign-ment per valid chunk and broadcasts it to all frames in that chunk. The selected experts nevertheless transform the original frame states, not the pooled state e j. Thus, pooling controls only expert selection: frame-level modeling is retained while neighboring frames share a locally consistent computation path. Importantly, the chunk is the routing unit rather than the rep-resentation unit: expert selection is shared within a chunk, but each expert still transforms the original frame-level states. 
+
+Prior and Evidence Signals. 
+
+The router combines two complementary signals with different information scopes for each chunk. 
+
+Prior. A global, chunk-independent signal that summarizes 
+
+what to generate and at which diffusion phase :
+
+p = [ ttime ∥ ¯T] ∈ R2d , ℓ prior = Wprior (p) ∈ RNe , (6) where ¯ T is the mask-pooled text hidden state at the current layer. Because p carries both the text summary and the diffusion-step embedding, ℓprior is a task- and step-aware expert preference that summarizes the global generation intent. 
+
+Evidence. A local signal is computed from the current context-conditioned audio representation e j:
+
+ℓevid  
+
+> j
+
+= Wevid (e j) ∈ RNe . (7) Because e j is pooled after joint self-attention, it reflects the acoustic state currently emerging in chunk j. The evidence logits can thus capture local departures from the scene-level description, such as a transient event within speech or music. Both projections are 2-layer MLPs with SiLU activation and zero-initialized output biases, avoiding an explicit expert preference at initialization. 
+
+Conflict Gate and Fusion. 
+
+The prior gives a global expert preference, but local audio becomes informative at different rates across diffusion phases and acoustic regions. We therefore let each chunk decide how far its routing should move from the prior toward the local evidence. We first project the semantic–phase summary into the d-dimensional hidden space of the joint DiT: ˜p = Walign p ∈ Rd . (8) The gate observes both signals and their explicit pairwise interactions: 
+
+φ j = LN ([ ˜p ∥ e j ∥ ˜p⊙e j ∥ | ˜p − e j| ]) , (9) 
+
+g j = σ
+
+
+
+MLP g(φ j)
+
+
+
+. (10) Following pairwise matching features [31], the product ex-poses coordinate-wise agreement and the absolute difference exposes disagreement, while the original vectors retain source-specific information. The MLP therefore learns how agreement or conflict should affect routing rather than imposing a fixed similarity rule; this is useful because discrepancy may reflect either a meaningful local event or noisy evidence depending on 4Table 1: Comparison with representative specialized and general-purpose audio generators. ✓ indicates explicitly reported support; △ denotes partial support, limited public demonstrations or support under restricted settings; and – denotes no explicit evidence of support found in the public documentation we reviewed. "Background" includes music, sound effects, environmental ambience, or their combinations. 
+
+Category Model General tasks Complex-scene generation TTS TTA TTM Speech+Bg. Sing+Bg. Dialog Dialog+Bg. Specialized CosyVoice 2 [22] ✓ – – – – – –F5-TTS [3] ✓ – – – – – –Step-Audio [23] ✓ – – – – △ –TangoFlux [4] – ✓ – – – – –MusicGen-Large [24] – – ✓ – – – –SegTune [25] – – ✓ – △ – –General / multi-task Qwen2.5-Omni [26] ✓ △ △ – – △ –AudioLDM 2 [5] △ ✓ △ △ △ – –Stable Audio Open [27] – ✓ ✓ – △ – –UniAudio [6] ✓ ✓ ✓ △ – – –AudioX [28] – ✓ ✓ – – – –Higgs Audio V2 [29] ✓ ✓ △ △ – ✓ △
+
+UniMoE-Audio [9] ✓ – ✓ – – – –UniFlow-Audio [30] ✓ ✓ ✓ △ – △ △
+
+Dasheng AudioGen [8] ✓ ✓ ✓ ✓ – △ △
+
+General / compositional SonicWeave (ours) ✓ ✓ ✓ ✓ ✓ ✓ ✓
+
+diffusion phase. The gate is trained by the generation objective as a conflict-conditioned evidence-reliance coefficient, not as a calibrated probability of evidence correctness. The meaning of g j acts directly in the expert-logit space: the prior and evidence routers first produce logits of the same shape, and g j linearly interpolates between them: 
+
+ℓ j = ( 1 − g j)ℓprior + g jℓevid  
+
+> j
+
+, P j = softmax (ℓ j). (11) Thus, g j = 0 exactly recovers the prior logits, whereas g j = 1exactly recovers the evidence logits. The top-K entries of P j
+
+select the experts, and their renormalized probabilities directly weight the expert outputs. 
+
+Sparse Dispatch and Composition. 
+
+Top-K indices and weights are broadcast to frames within each chunk; active expert outputs are weighted and accumulated, with padding masked out. The audio output of the layer is an equal-weight combination of the shared expert and the sparse mixture, 
+
+oaud = 12 MLP shared (haud ) + 12 osparse . (12) The down-projection of each routed expert is zero-initialized, so the sparse contribution starts near zero and is introduced smoothly during optimization. The fixed 12 : 12 composition pre-vents an additional learnable mixture gate from suppressing the routed path; gradients can update the expert down-projections from the first step, after which the experts and router co-adapt. The final layer output is [octx ∥ oaud ].
+
+Load Balancing. 
+
+To prevent expert collapse we adopt a Switch-Transformer-style auxiliary loss [15], computed at chunk granularity and only over valid chunks: 
+
+LMoE = Ne ·
+
+> Ne
+
+# ∑
+
+> i=1
+
+¯pvalid  
+
+> i
+
+· ¯dvalid  
+
+> i
+
+, (13) where ¯ pvalid is the mean router probability over valid chunks and ¯ dvalid is the mean top-K-normalised dispatch fraction. Padded chunks are excluded from both statistics. The layer-wise auxiliary losses are summed across the M CPE-MoE layers and weighted in the composite objective below. 
+
+# 3.5 Conditional Flow-Matching Training 
+
+Given the ground-truth stereo-VAE latent x1, we sample 
+
+x0 ∼N (0, I) and t ∼σ (N (0, 1)) , form xt =( 1−t)x0+tx1, and regress the ground-truth velocity: 
+
+LFM = E vθ (xt , c, ctext ,t) − (x1 − x0) 2. (14) During training, we randomly mask a contiguous span of the audio reference and compute the reconstruction loss on the masked region; the audio reference and caption are indepen-dently dropped for classifier-free guidance [32]. The composite objective is 
+
+L = LFM + αCL LCL + αMoE LMoE . (15) 
+
+# 3.6 Inference 
+
+We integrate the learned velocity field with a fixed-step Euler ODE solver, using 100 uniform steps in t ∈ [0, 1]; an optional 5cosine sway sampling schedule accelerates inference at low step counts. At inference we adopt Adaptive Projected Guidance (APG) [33] and adapt it to the clean-sample estimate induced by the CFM velocity parameterisation. With conditional and un-conditional clean-sample estimates ˆ μ and ˆ μ∅, let ∆μ = ˆμ − ˆμ∅
+
+and decompose it into components parallel and orthogonal to ˆμ, denoted by ∆μ∥ and ∆μ⊥. The guided estimate is ˆμAPG = ˆμ∅ + w  η ∆μ∥ + ∆μ⊥
+
+ , (16) where w is the guidance scale and η damps the parallel com-ponent. It is then converted back to velocity space for ODE integration. Momentum smoothing, the clean-sample conver-sion, and the complete update are given in the appendix. The final clean stereo latent is decoded into waveform audio by the pretrained stereo VAE decoder. 
+
+# 4 Experiments 
+
+# 4.1 Experimental Setup 
+
+Tasks and Benchmarks. 
+
+We evaluate one unified model on three public generation tasks and a controlled complex-scene set. For text-to-speech (TTS), we use SeedTTS-eval [34] and LibriSpeech-PC test-clean [35]; for text-to-audio (TTA), we use AudioCaps [36]; for text-to-music (TTM), we use MusicCaps [37] and Song Describer [38]. The Complex-Scene set is described in the subsequent section. For SonicWeave and controlled baselines, we determinis-tically render benchmark inputs into a fixed schema using constrained field-extraction rules. Where automatic parsing is needed, a zero-temperature language model acts only as a schema-aware extractor and validator; it is prohibited from in-troducing information absent from the original input, apart from fixed template defaults applied uniformly across the benchmark. The converter does not observe reference audio. 
+
+Baselines. 
+
+We compare against representative specialized and general audio generators selected for task coverage, availability, and recency. For Complex-Scene evaluation, we retain Higgs Audio V2, UniFlow-Audio, and Dasheng AudioGen, as they provide the most relevant publicly available coverage of both speech generation and general audio generation for mixed scenes. Two key ablation models, Dense (1B) and Base-MoE (2B, matching SonicWeave), share SonicWeave’s data and back-bone. Dense replaces CPE-MoE with dense FFNs; Base-MoE uses token-level top-K audio routing without conflict-gated prior–evidence fusion. The Dense comparison measures the benefit of conditional capacity, whereas the parameter-matched Base-MoE comparison isolates the effect of the routing design more directly. The complete model capability comparison is given in Ta-ble 1, while task-specific quantitative comparisons are reported in Tables 2–4. 
+
+Metrics. 
+
+For all public benchmarks, we report objective metrics suited to each task: WER/CER for TTS; FAD, KL divergence, and CLAP for TTA; and KL divergence and CLAP for TTM. The TTA and TTM KL/CLAP scores follow the Stable Audio met-rics protocol with task-specific checkpoints, while TTA FAD uses the AVBench FD VGG implementation. For the Complex-Scene evaluation, we use Gemini-based reference-free judging together with human listening tests. The two are used jointly because the reference-free judge provides scalable coverage over all prompts, while human MOS offers an independent per-ceptual assessment on a fixed subset. Gemini assigns 1-5 scores for semantic adherence and technical quality from the same prompt; the concise scoring rubric is given in the appendix. 
+
+Implementation Details. 
+
+The CPE-MoE module replaces the dense FFN in the last 4 layers, with 4 routed experts and top-2 selection at chunk size 
+
+C=4. Inference uses a fixed-step Euler ODE solver with APG guidance. Training uses roughly five million 10–15-second clips sampled from an internal corpus exceeding 20,000 hours, in which speech, music, sound effects, ambience, and mixed recordings coexist in a shared data distribution. Additional model and optimization details, together with targeted studies of gate adaptivity and chunk-size sensitivity, are provided in the appendix. 
+
+# 4.2 Results on Public Benchmarks 
+
+Tables 2-4 summarize the public-benchmark results. On TTS, SonicWeave achieves the best or tied-best result on all three subsets, tying the strongest reported results on SeedTTS-eval and LibriSpeech. Relative to the controlled baselines, it im-proves over Dense by 1.4, 1.0, and 2.5 percentage points on these subsets, and over Base-MoE by 0.4, 0.3, and 0.8 points, respectively.  
+
+> Table 2: TTS results on SeedTTS and LibriSpeech.
+
+Model SeedTTS-en SeedTTS-zh LibriSpeech WER ↓ CER ↓ WER ↓
+
+F5-TTS 1.9% 1.6% 2.4% 
+
+CosyVoice 2 2.0% 1.5% 2.5% UniAudio 7.2% – 18.3% Qwen2.5-Omni 2.1% 1.6% 7.6% UniMoE-Audio 1.3% 0.8% 3.4% Higgs Audio V2 1.0% 0.8% 3.6% Step-Audio 2.2% 1.0% 5.0% Dense (ours) 2.4% 1.8% 4.9% Base-MoE (ours) 1.4% 1.1% 3.2% SonicWeave (ours) 1.0% 0.8% 2.4% 
+
+On TTA, SonicWeave substantially improves over Dense and Base-MoE in all three metrics. Its CLAP score reaches 0.475, close to the strongest reported baseline (0.480), while 6its KL is 1.26 and its FAD is 2.75. SonicWeave does not obtain the best value on every individual AudioCaps metric, but it nar-rows the gap to the strongest CLAP system while substantially improving FAD and KL over the matched controls.  
+
+> Table 3: TTA results on AudioCaps.
+
+Model FAD ↓ KL ↓ CLAP ↑
+
+AudioLDM 2 2.29 1.41 0.419 TangoFlux 2.26 1.15 0.480 
+
+Stable Audio Open 4.13 2.14 0.350 Dasheng AudioGen 3.19 1.86 0.438 UniAudio 6.64 – 0.243 UniFlow-Audio 5.74 1.43 0.476 AudioX 2.45 1.27 0.440 Dense (ours) 3.98 1.62 0.389 Base-MoE (ours) 3.10 1.40 0.422 SonicWeave (ours) 2.75 1.26 0.475 On TTM, SonicWeave achieves the lowest KL and highest CLAP on Song Describer among the listed systems. On Music-Caps, it achieves a competitive KL of 1.06 and CLAP of 0.312, offering a strong quality–alignment trade-off and placing it on the Pareto frontier among the listed baselines. Compared with Dense and Base-MoE, SonicWeave consistently improves both KL and CLAP across the two datasets, showing that CPE-MoE strengthens text–music correspondence without uniformly sur-passing every specialized baseline.  
+
+> Table 4: TTM results on MusicCaps and Song Describer.
+
+Model MusicCaps Song Describer CLAP ↑ KL ↓ CLAP ↑ KL ↓
+
+AudioLDM 2 0.301 1.20 – –MusicGen-Large 0.280 1.31 0.19 0.54 Stable Audio Open 0.300 1.44 0.32 0.62 AudioX 0.240 0.96 – –Dasheng AudioGen 0.334 1.37 – –UniMoE-Audio 0.340 1.25 0.22 –UniFlow-Audio 0.241 1.87 0.15 –Dense (ours) 0.251 1.31 0.29 0.58 Base-MoE (ours) 0.296 1.10 0.32 0.48 SonicWeave (ours) 0.312 1.06 0.36 0.44 
+
+# 4.3 Complex-Scene Evaluation 
+
+Public benchmarks mainly evaluate isolated speech, music, or environmental sounds and therefore underrepresent the het-erogeneous compositions targeted by SonicWeave. We con-struct a controlled suite of 100 manually curated complex-scene prompts, comprising 45 speech-with-background cases, 10 singing-with-background cases, 15 clean dialogues, and 30 dialogues with background. Each case is provided in both natural-language and structured-caption forms. Public systems receive the natural-language prompt in their native input for-mat, whereas SonicWeave, Dense and Base-MoE receive the corresponding structured caption containing the same semantic specifications.  
+
+> Table 5: Reference-free and human listening evaluation on the Complex-Scene suite. AI-Tech and AI-Sem denote technical qual-ity and semantic adherence, respectively; MOS-Q measures perceived audio quality, while MOS-R measures whether the requested prompt events are jointly realized.
+
+Model AI-Tech ↑ AI-Sem ↑ MOS-Q ↑ MOS-R ↑
+
+Higgs Audio V2 4.32 3.54 3.92 ±0.21 2.42 ±0.64 
+
+UniFlow-Audio 2.28 1.77 1.99 ±0.33 1.87 ±0.80 
+
+Dasheng AudioGen 3.10 3.07 2.97 ±0.41 3.25 ±0.73 
+
+Dense (ours) 4.13 4.23 4.29 ±0.24 4.15 ±0.37 
+
+Base-MoE (ours) 4.62 4.58 4.57 ±0.13 4.31 ±0.31 
+
+SonicWeave (ours) 4.79 4.72 4.57 ±0.19 4.49 ±0.38 
+
+Table 5 shows consistent trends between the reference-free AI evaluation and human listening tests. SonicWeave achieves the highest AI semantic-adherence and technical-quality scores and the highest human MOS-R. Higgs Audio V2 retains rela-tively competitive perceived quality but receives a much lower request-realization score, showing that audio quality alone does not imply faithful realization of all requested scene com-ponents. Dasheng AudioGen and UniFlow-Audio additionally show less consistent performance across the heterogeneous prompts. SonicWeave and Base-MoE are effectively tied on MOS-Q, whereas SonicWeave is consistently stronger in se-mantic adherence and request realization. This supports the intended role of CPE-MoE: it preserves the acoustic quality of the underlying generator while improving compositional fidelity and fine-grained control in complex scenes. 
+
+# 4.4 Routing Analysis and Visualization 
+
+To explain the behavior of SonicWeave beyond aggregate gen-eration metrics, we analyze the routing patterns induced by its CPE-MoE module. The main-text visualization focuses on population-level evidence: content-conditioned expert us-age and the evolution of the conflict gate across diffusion phases. Representative mixed-scene traces are reserved for the appendix because they illustrate the mechanism qualitatively rather than providing a statistically aggregated result. For this analysis, we construct a 250-prompt routing bench-mark by sampling examples from several single-task evaluation sets and combining them with complex-scene prompts. We group the resulting prompts into speech, music, singing, SFX, and mixed-scene categories, and aggregate routing statistics over all valid chunks and routed layers. 
+
+Content-conditioned expert specialization. 
+
+Figure 3(a) shows the mean dispatch fraction for each expert across the four CPE-MoE layers and five content groups. The load is clearly non-uniform and content dependent: speech 7(a) (b)     
+
+> Figure 3: Routing analysis on the balanced routing benchmark. (a) Content-conditioned expert dispatch across routed layers, showing non-uniform and content-dependent specialization. (b) Mean conflict gate E[gj|t]across diffusion phases, showing content-dependent and phase-dependent prior–evidence balancing.
+
+and SFX favor different expert combinations from music and singing, while mixed scenes retain a distinct distribution rather than collapsing to one of the single-content patterns. This specialization is also layer dependent. For example, mu-sic and singing place more mass on different experts in the deeper routed layers, whereas speech consistently emphasizes a smaller subset of experts. These observations indicate that the MoE is using conditional capacity to form acoustic spe-cializations, rather than merely distributing tokens uniformly across experts. 
+
+Phase-dependent conflict gating. 
+
+Figure 3(b) reports E[g j|t] for each content group. The curves are content dependent and non-monotonic: the gate changes rapidly during early structure formation, reaches content-specific operating ranges, and gradually returns toward a more balanced regime during late acoustic refinement. Speech and SFX maintain higher evidence reliance than music and singing over much of the trajectory, while mixed scenes lie between these regimes. Thus, the model does not apply a single fixed prior–evidence interpolation to all audio. Instead, it adjusts evidence reliance as a function of both acoustic content and diffusion phase, consistent with the intended role of the conflict gate. 
+
+# 5 Conclusion 
+
+This paper presented SonicWeave, a unified flow-matching model for generating speech, singing, music, sound effects, and their mixtures with a single set of parameters. The central premise of this work is that conditional computation in unified audio must operate at two coupled scales: it must accommodate differences across acoustic domains while adapting to heteroge-neous regions within the same scene. CPE-MoE addresses this requirement by routing temporally contiguous audio chunks through a learned combination of a global text-and-diffusion prior and local acoustic evidence, while preserving a shared conditioning pathway for text and time tokens. Across public TTS, text-to-audio, and text-to-music bench-marks, SonicWeave consistently improves over matched Dense and token-routed MoE controls. On the Complex-Scene suite, the principal gain is compositional: SonicWeave improves se-mantic adherence and joint request realization while maintain-ing perceptual quality comparable to the parameter-matched Base-MoE. Quantitatively, it reduces TTA FAD by 30.9% over Dense and improves Complex-Scene MOS-R by 0.18 over Base-MoE and by more than 1.2 points over the strongest exter-nal baseline. The learned expert assignments and conflict-gate trajectories also vary with content, layer depth, and diffusion phase, providing evidence that the additional capacity is used conditionally rather than uniformly. Targeted studies reported in the appendix further compare the learned gate with fixed prior–evidence averaging and vary the routing chunk size. Fixed fusion degrades all reported task groups, while increasing the chunk size from 4 to 8 weakens most metrics, supporting adaptive fusion and relatively fine-grained chunk routing. These findings support chunk-level prior–evidence routing as a useful intermediate granularity for unified audio generation. At the same time, the current evaluation is limited to short-form generation, a two-speaker structured interface, and non-exhaustive routing ablations. Extending the approach to longer scenes, richer speaker interactions, and explicit temporal plans remains an important direction. 
+
+# References 
+
+[1] Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maxi-milian Nickel, and Matthew Le. Flow matching for gener-ative modeling. In The Eleventh International Conference on Learning Representations , pages 1–28, 2023. [2] Matthew Le, Apoorv Vyas, Bowen Shi, Brian Karrer, Leda Sari, Rashel Moritz, Mary Williamson, Vimal Manohar, Yossi Adi, Jay Mahadeokar, et al. Voicebox: Text-guided multilingual universal speech generation at 8scale. Advances in neural information processing systems ,36:14005–14034, 2023. [3] Yushen Chen, Zhikang Niu, Ziyang Ma, Keqi Deng, Chunhui Wang, Jian Zhao, Kai Yu, and Xie Chen. F5-TTS: A fairytaler that fakes fluent and faithful speech with flow matching. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 6255–6271, 2025. [4] Chia-Yu Hung, Navonil Majumder, Zhifeng Kong, Ambuj Mehrish, Amir Zadeh, Chuan Li, Rafael Valle, Bryan Catanzaro, and Soujanya Poria. Tangoflux: Super fast and faithful text to audio generation with flow matching and clap-ranked preference optimization. In The Fourteenth International Conference on Learning Representations ,pages 1–24, 2026. [5] Haohe Liu, Yi Yuan, Xubo Liu, Xinhao Mei, Qiuqiang Kong, Qiao Tian, Yuping Wang, Wenwu Wang, Yuxuan Wang, and Mark D. Plumbley. AudioLDM 2: Learning holistic audio generation with self-supervised pretrain-ing. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 32:2871–2883, 2024. [6] Dongchao Yang, Jinchuan Tian, Xu Tan, Rongjie Huang, Songxiang Liu, Haohan Guo, Xuankai Chang, Jiatong Shi, Sheng Zhao, Jiang Bian, Zhou Zhao, Xixin Wu, and Helen M. Meng. UniAudio: Towards universal audio generation with large language models. In Proceedings of the 41st International Conference on Machine Learning ,pages 56422–56447, 2024. [7] Apoorv Vyas, Bowen Shi, Matthew Le, Andros Tjandra, Yi-Chiao Wu, Baishan Guo, Jiemin Zhang, Xinyue Zhang, Robert Adkins, William Ngan, Jeff Wang, Ivan Cruz, Bapi Akula, Akinniyi Akinyemi, Brian Ellis, Rashel Moritz, Yael Yungster, Alice Rakotoarison, Liang Tan, Chris Sum-mers, Carleigh Wood, Joshua Lane, Mary Williamson, and Wei-Ning Hsu. Audiobox: Unified audio generation with natural language prompts. CoRR , abs/2312.15821, 2023. doi: 10.48550/arXiv.2312.15821. [8] Jiahao Mei, Heinrich Dinkel, Yadong Niu, Xingwei Sun, Gang Li, Yifan Liao, Jiahao Zhou, Junbo Zhang, Jian Luan, and Mengyue Wu. Dasheng AudioGen: A unified model for generating coherent audio scenes from text. 
+
+CoRR , abs/2605.27838, 2026. doi: 10.48550/arXiv.2605. 27838. [9] Zhenyu Liu, Yunxin Li, Xuanyu Zhang, Qixun Teng, Shenyuan Jiang, Xinyu Chen, Haoyuan Shi, Haolan Chen, Fanbo Meng, Mingjun Zhao, Yu Xu, Yancheng He, Bao-tian Hu, Haizhou Li, and Min Zhang. UniMoE-Audio: Unified speech and music generation with dynamic-capacity mixture-of-experts. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 9107–9119, 2026. [10] Haohe Liu, Zehua Chen, Yi Yuan, Xinhao Mei, Xubo Liu, Danilo P. Mandic, Wenwu Wang, and Mark D. Plumbley. AudioLDM: Text-to-audio generation with latent diffu-sion models. In Proceedings of the 40th International Conference on Machine Learning , pages 21450–21474, 2023. [11] Chunyu Qiang, Xiaopeng Wang, Kang Yin, Yuzhe Liang, Yuxin Guo, Teng Ma, Ziyu Zhang, Tianrui Wang, Cheng Gong, Yushen Chen, Ruibo Fu, Longbiao Wang, and Jianwu Dang. UniSonate: A unified model for speech, music, and sound effect generation with text instructions. In Proceedings of the 64th Annual Meeting of the Associ-ation for Computational Linguistics , pages 28043–28054, 2026. [12] Jiawei Huang, Yi Ren, Rongjie Huang, Dongchao Yang, Zhenhui Ye, Chen Zhang, Jinglin Liu, Xiang Yin, Zejun Ma, and Zhou Zhao. Make-An-Audio 2: Temporal-enhanced text-to-audio generation. CoRR ,abs/2305.18474, 2023. doi: 10.48550/arXiv.2305.18474. [13] Deepanway Ghosal, Navonil Majumder, Ambuj Mehrish, and Soujanya Poria. Text-to-audio generation using in-struction guided latent diffusion model. In Proceedings of the 31st ACM international conference on multimedia ,pages 3590–3598, 2023. [14] Yuxuan Jiang, Zehua Chen, Zeqian Ju, Chang Li, Weibei Dou, and Jun Zhu. Freeaudio: Training-free timing plan-ning for controllable long-form text-to-audio generation. In Proceedings of the 33rd ACM International Confer-ence on Multimedia , pages 9871–9880, 2025. [15] William Fedus, Barret Zoph, and Noam Shazeer. Switch transformers: Scaling to trillion parameter models with simple and efficient sparsity. Journal of Machine Learn-ing Research , 23(120):1–39, 2022. [16] Zhengcong Fei, Mingyuan Fan, Changqian Yu, Debang Li, and Junshi Huang. Scaling diffusion transformers to 16 billion parameters. CoRR , abs/2407.11633, 2024. doi: 10.48550/arXiv.2407.11633. [17] Byeongjun Park, Hyojun Go, Jin-Young Kim, Sangmin Woo, Seokil Ham, and Changick Kim. Switch diffu-sion transformer: Synergizing denoising tasks with sparse mixture-of-experts. In European Conference on Com-puter Vision , pages 461–477. Springer, 2024. [18] Haotian Sun, Tao Lei, Bowen Zhang, Yanghao Li, Haoshuo Huang, Ruoming Pang, Bo Dai, and Nan Du. EC-DIT: Scaling diffusion transformers with adaptive expert-choice routing. In The Thirteenth International Conference on Learning Representations , 2025. [19] Peng Wang, Shuai Bai, Sinan Tan, Shijie Wang, Zhi-hao Fan, Jinze Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Yang Fan, Kai Dang, Mengfei Du, Xuancheng Ren, Rui Men, Dayiheng Liu, Chang Zhou, 9Jingren Zhou, and Junyang Lin. Qwen2-VL: Enhanc-ing vision-language model’s perception of the world at any resolution. CoRR , abs/2409.12191, 2024. doi: 10.48550/arXiv.2409.12191. [20] William Peebles and Saining Xie. Scalable diffusion mod-els with transformers. In Proceedings of the IEEE/CVF In-ternational Conference on Computer Vision , pages 4195– 4205, 2023. [21] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable visual models from natural language supervision. In Proceed-ings of the 38th International Conference on Machine Learning , pages 8748–8763, 2021. [22] Zhihao Du, Yuxuan Wang, Qian Chen, Xian Shi, Xiang Lv, Tianyu Zhao, Zhifu Gao, Yexin Yang, Changfeng Gao, Hui Wang, Fan Yu, Huadai Liu, Zhengyan Sheng, Yue Gu, Chong Deng, Wen Wang, Shiliang Zhang, Zhijie Yan, and Jingren Zhou. CosyVoice 2: Scalable streaming speech synthesis with large language models. CoRR ,abs/2412.10117, 2024. doi: 10.48550/arXiv.2412.10117. [23] Ailin Huang, Boyong Wu, Bruce Wang, Chao Yan, Chen Hu, Chengli Feng, Fei Tian, Feiyu Shen, Jingbei Li, Min-grui Chen, et al. Step-Audio: Unified understanding and generation in intelligent speech interaction. CoRR ,abs/2502.11946, 2025. doi: 10.48550/arXiv.2502.11946. [24] Jade Copet, Felix Kreuk, Itai Gat, Tal Remez, David Kant, Gabriel Synnaeve, Yossi Adi, and Alexandre Défossez. Simple and controllable music generation. Advances in neural information processing systems , 36:47704–47720, 2023. [25] Yuejiao Wang, Zihao Ji, Pengfei Cai, Xu Li, Haorui Zheng, Zewen Song, Zhongliang Liu, Chen Zhang, and Pengfei Wan. SegTune: Structured and fine-grained con-trol for song generation. In Proceedings of the 64th An-nual Meeting of the Association for Computational Lin-guistics (Volume 1: Long Papers) , pages 12883–12897. Association for Computational Linguistics, 2026. doi: 10.18653/v1/2026.acl-long.586. [26] Jin Xu, Zhifang Guo, Jinzheng He, Hangrui Hu, Ting He, Shuai Bai, Keqin Chen, Jialin Wang, Yang Fan, Kai Dang, Bin Zhang, Xiong Wang, Yunfei Chu, and Junyang Lin. Qwen2.5-Omni technical report. CoRR , abs/2503.20215, 2025. doi: 10.48550/arXiv.2503.20215. [27] Zach Evans, Julian D. Parker, CJ Carr, Zack Zukowski, Josiah Taylor, and Jordi Pons. Stable audio open. In 
+
+IEEE International Conference on Acoustics, Speech and Signal Processing , pages 1–5, 2025. [28] Zeyue Tian, Zhaoyang Liu, Yizhu Jin, Ruibin Yuan, Li-umeng Xue, Xu Tan, Qifeng Chen, Wei Xue, and Yike Guo. Audiox: A unified framework for anything-to-audio generation. In The Fourteenth International Conference on Learning Representations , pages 1–27, 2026. [29] Boson AI. Higgs Audio V2: Redefining expressiveness in audio generation. GitHub repository, 2025. Boson AI Higgs Audio project. [30] Xuenan Xu, Jiahao Mei, Zihao Zheng, Ye Tao, Zeyu Xie, Yaoyun Zhang, Haohe Liu, Yuning Wu, Ming Yan, Wen Wu, Chao Zhang, and Mengyue Wu. UniFlow-Audio: Unified flow matching for audio generation from omni-modalities. CoRR , abs/2509.24391, 2025. doi: 10.48550/arXiv.2509.24391. [31] Alexis Conneau, Douwe Kiela, Holger Schwenk, Loïc Barrault, and Antoine Bordes. Supervised learning of universal sentence representations from natural language inference data. In Proceedings of the 2017 Conference on Empirical Methods in Natural Language Processing ,pages 670–680. Association for Computational Linguis-tics, 2017. doi: 10.18653/v1/D17-1070. [32] Jonathan Ho and Tim Salimans. Classifier-free diffusion guidance. arXiv preprint arXiv:2207.12598 , 2022. [33] Seyedmorteza Sadat, Otmar Hilliges, and Romann M Weber. Eliminating oversaturation and artifacts of high guidance scales in diffusion models. In The Thirteenth International Conference on Learning Representations ,2025. [34] Philip Anastassiou, Jiawei Chen, Jitong Chen, Yuanzhe Chen, Zhuo Chen, Ziyi Chen, Jian Cong, Lelai Deng, Chuang Ding, Lu Gao, Mingqing Gong, Peisong Huang, Qingqing Huang, Zhiying Huang, Yuanyuan Huo, Dongya Jia, Chumin Li, Feiya Li, Hui Li, Jiaxin Li, Xi-aoyang Li, Xingxing Li, Lin Liu, Shouda Liu, Sichao Liu, Xudong Liu, Yuchen Liu, Zhengxi Liu, Lu Lu, Jun-jie Pan, Xin Wang, Yuping Wang, Yuxuan Wang, Zhen Wei, Jian Wu, Chao Yao, Yifeng Yang, Yuanhao Yi, Jun-teng Zhang, Qidi Zhang, Shuo Zhang, Wenjie Zhang, Yang Zhang, Zilin Zhao, Dejian Zhong, and Xiaobin Zhuang. Seed-TTS: A family of high-quality versatile speech generation models. CoRR , abs/2406.02430, 2024. doi: 10.48550/arXiv.2406.02430. [35] Aleksandr Meister, Matvei Novikov, Nikolay Karpov, Evelina Bakhturina, Vitaly Lavrukhin, and Boris Gins-burg. Librispeech-pc: Benchmark for evaluation of punc-tuation and capitalization capabilities of end-to-end asr models. In 2023 IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) , pages 1–7, 2023. [36] Chris Dongjoo Kim, Byeongchang Kim, Hyunmin Lee, and Gunhee Kim. AudioCaps: Generating captions for audios in the wild. In Proceedings of the 2019 Confer-ence of the North American Chapter of the Association for Computational Linguistics: Human Language Tech-nologies, Volume 1 , pages 119–132, 2019. 10 [37] Andrea Agostinelli, Timo I. Denk, Zalán Borsos, Jesse H. Engel, Mauro Verzetti, Antoine Caillon, Qingqing Huang, Aren Jansen, Adam Roberts, Marco Tagliasacchi, Matthew Sharifi, Neil Zeghidour, and Christian Havnø Frank. MusicLM: Generating music from text. CoRR ,abs/2301.11325, 2023. doi: 10.48550/arXiv.2301.11325. [38] Ilaria Manco, Benno Weck, Seungheon Doh, Minz Won, Yixiao Zhang, Dmitry Bogdanov, Yusong Wu, Ke Chen, Philip Tovstogan, Emmanouil Benetos, Elio Quinton, György Fazekas, and Juhan Nam. The song describer dataset: A corpus of audio captions for music-and-language evaluation. CoRR , abs/2311.10057, 2023. doi: 10.48550/arXiv.2311.10057. [39] Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao, Chunjiang Ge, et al. Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 , 2025. [40] Alec Radford, Jong Wook Kim, Tao Xu, Greg Brock-man, Christine McLeavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision. In 
+
+Proceedings of the 40th International Conference on Ma-chine Learning , volume 202 of Proceedings of Machine Learning Research , pages 28492–28518, 2023. [41] Zhifu Gao, Shiliang Zhang, Ian McLoughlin, and Zhijie Yan. Paraformer: Fast and accurate parallel transformer for non-autoregressive end-to-end speech recognition. In 
+
+Interspeech 2022 , pages 2063–2067, 2022. doi: 10.21437/ Interspeech.2022-9996. 11 A Architecture and Objective Details 
+
+# A.1 Phase-Aware Text Pooling and AdaLN Con-ditioning 
+
+Let E ∈ RB×L×dE be the frozen text-encoder states, where 
+
+dE = 4096, and let m ∈ { 0, 1}B×L be the caption-validity mask. The diffusion-time and segment-start embeddings are denoted by t and s, respectively. We first construct the phase condition 
+
+u = t + s ∈ RB×dc , dc = 512 . (17) Rather than mean-pooling all text tokens, SonicWeave uses u
+
+as a query that changes with the generation phase: 
+
+q = Wqu, K = WkE,
+
+ai = q⊤Ki
+
+√dE
+
+, αi = exp (ai) mi
+
+∑Lr=1 exp (ar) mr + ε ,
+
+¯e =
+
+> L
+
+# ∑
+
+> i=1
+
+αiEi, c = u +Wg ¯e.
+
+(18) The implementation masks invalid text positions before the softmax, multiplies the resulting weights by m once more, and renormalizes. Consequently, padding contributes neither to ¯ e
+
+nor to its gradients. If all text tokens are absent (the caption-dropped classifier-free guidance branch), ¯ e is set to zero and 
+
+c = u.The global condition c is supplied to the final AdaLN-Zero layer that normalizes the audio-token states before the veloc-ity projection. Token-level text–audio correspondence is still modeled through joint self-attention; Eq. (18) is a complemen-tary global path. Its phase-dependent query lets the model alter which parts of a structured caption are globally emphasized dur-ing generation, while the residual u preserves explicit diffusion and segment-position information. 
+
+# A.2 Backbone and CPE-MoE Configuration 
+
+Table 6 lists the configuration used by the reported SonicWeave model. The model consumes a sequence consisting of one time token, up to 200 text tokens in the reported configuration, and at most 256 audio latent frames. Text and audio positions use independent coordinate ranges under rotary positional embed-ding, so an audio position does not change when the caption length changes. The audio input projection receives the con-catenation of the current noised latent and the masked reference latent; the velocity head predicts 64 channels per latent frame. Each routed block retains one shared FFN. The time token and all text tokens are processed only by this shared FFN. Only audio tokens enter the routed path, which prevents the routing decision from directly modifying the condition-token pathway. For a valid chunk, top-2 posterior probabilities are renormalized to sum to one, broadcast to all frames in the chunk, and used to weight the corresponding expert outputs. Expert outputs are computed on the original frame states, not on pooled chunk states; pooling is used only to make a routing decision.  
+
+> Table 6: Backbone and CPE-MoE configuration. The text encoder is frozen; all listed DiT and routing components are trained jointly.
+
+Component Configuration Text encoder Frozen Qwen3-VL-8B [39] text en-coder; dE = 4096 DiT width / depth d = 2048 / 16 transformer blocks Attention 32 heads; head width 64; SDPA at-tention Dense FFN width 4d = 8192; SiLU activation Text-token limit 200 tokens Max audio length 256 latent frames Latent channels 64 channels AdaLN width 512 Routed blocks Final 4 of 16 blocks Routed experts 4 experts per routed block Sparse selection Top-2 experts per valid chunk Chunk length C = 4 latent frames CL Loss αCL =0.1 Load Balancing αMoE =0.05 The routed experts use zero-initialized output projections. Thus, the routed contribution begins near zero and is intro-duced smoothly as optimization learns both the experts and the router. For audio tokens, the shared and sparse paths are com-bined with equal weights, 12 oshared + 12 osparse . Padding frames and padding-only chunks are masked before dispatch and are excluded from all router statistics. 
+
+# B Structured Prompt Interface 
+
+# B.1 Schema and Field Semantics 
+
+SonicWeave uses one structured text-conditioning interface for all text-to-audio generation modes. A prompt consists of a short natural-language summary followed by a sparse set of XML-like fields (shown in Table 7). Fields with no appli-cable information are omitted rather than filled with generic text. This is important: absence is meaningful for, for exam-ple, instrumental music, which should not receive an invented transcript or vocal attribute. The division between sfx , ambience , and texture is de-liberate. sfx identifies events that must be audibly realized, 
+
+ambience identifies the persistent environment, and texture 
+
+specifies how components should coexist. For instance, “rain” may be an event in sfx , “an urban street in a downpour” be-longs in ambience , and “rain intermittently masks dialogue” belongs in texture . This factorization makes foreground con-tent, background content, and their acoustic relationship sepa-rately addressable by the text encoder and the CPE-MoE prior. 
+
+# B.2 Natural-to-Structured Conversion 
+
+SonicWeave uses a unified structured audio caption interface to represent heterogeneous acoustic content. The goal of this conversion is not to rewrite or enrich natural-language descrip-12 Table 7: Structured prompt fields. The interface describes requested audible attributes only. 
+
+Field Value type Semantics 
+
+type categorical Dominant audio mode: speech, singing, music, sound effects, or mixed. mixed is used only when two or more of speech, singing, music, and sound effects are explicitly requested; it does not itself imply speech. 
+
+lang language code Language of intelligible speech or singing. It is omitted for non-vocal audio. 
+
+speech verbatim text Spoken linguistic content, including ordered dialogue turns sepa-rated by slashes when applicable. 
+
+lyrics text Song lyrics content when provided. 
+
+speaker_count categorical Number of foreground speakers or vocalists when applicable: 1 or 2. Dialogue scenes support at most two speakers. 
+
+relation short phrase Speaker roles, turn-taking relation, or foreground interaction, such as a host and guest or two commuters. 
+
+vocal short phrase Speaker identity descriptors, vocal timbre, delivery, emotion, ac-cent, or recording coloration relevant to the foreground voice. 
+
+music short phrase Instrumentation, genre, tempo, mood, and relative role of music in the scene. 
+
+sfx short phrase Discrete non-musical events, such as a door slam, train brakes, keyboard taps, or rain impacts. 
+
+ambience short phrase Persistent environment and room-scale context, such as an indoor station, kitchen room tone, or open coastline. 
+
+texture short phrase Mix and recording relationships: foreground prominence, masking, reverberation, stereo impression, or dynamic behavior. tions, but to normalize diverse descriptions into a fixed set of fields that can be processed consistently by the text condition-ing module. The structured representation covers acoustic type, language, speech content or lyrics, speaker-related attributes, music, sound events, ambience, and recording texture. Thus, “rule-based templates” refers to the fixed conversion rules and output schema, rather than unconstrained caption rewriting. We formulate the conversion as constrained information ex-traction. Given a natural-language annotation, the converter retains the core summary supplied by the source annotation in the summary field and maps the remaining explicitly stated in-formation into the predefined structured fields. Quoted speech and lyrics are copied verbatim when available, while unsup-ported fields remain empty. The converter is prohibited from introducing new events, speaker identities, emotions, acoustic properties, or stylistic attributes that are not stated in the source description. The conversion follows a fixed schema and deterministic field constraints. When automatic conversion is required, we implement the constrained extractor with a language model (Qwen3.5-35B-A3B with temperature set to 0 .0) as a schema-aware mapper and validator: it applies the predefined rules, formats the output into the required structure, and checks for invalid or unsupported fields. It does not perform free-form cap-tion generation. This design allows both training annotations and inference prompts to share the same structured interface while preserving the semantics of the original natural-language input. The complete conversion instruction used by the extractor is provided below. 
+
+Natural-to-Structured Conversion Prompt 
+
+> You are a structured audio metadata extractor for a text-to-audio model. You receive a natural-language description of an audio clip. Your task is to convert it into a JSON object following the exact schema provided below. STRICT RULES: 1. Output valid JSON only. Do not include markdown, explana-tions, or extra text. 2. Use only the predefined field names in the schema. Do not add new keys. 3. summary: - Copy the source-provided core summary verbatim. - Do not paraphrase, expand, or rewrite it. - If the input contains separate summary and detailed-description fields, use only the designated summary field. - If no explicit core summary is provided, copy the original natural-language description verbatim; do not generate a new summary. 4. speech: - If spoken words are explicitly quoted, copy them exactly. - Otherwise leave it empty. - Do not create speech content for clips without human speech. 5. lyrics: fill only when song lyrics are explicitly provided. Other-wise leave it empty. 6. Select exactly one type: speech: dominant human speech;
+
+13 singing: dominant singing or vocal performance; music: non-vocal instrumental music; sfx: discrete sound events such as impacts, machines, animals, or weather; mixed: two or more foreground acoustic categories among speech, singing, music, and sound effects coexist and are jointly relevant; unknown: insufficient information. 7. language: - Use an ISO language code only when human speech or singing is present. - Otherwise leave it empty. 8. sfx should describe specific discrete events rather than generic labels. 9. ambience describes persistent environmental background. 10. texture describes recording or acoustic characteristics only. 11. vocal describe voice characteristics only. 12. speaker_count must be one of: "1", "2", "unknown", or "". 13. music should describe only explicitly supported musical in-formation, including instruments, rhythm, style, or mood when available. 14. Do not infer missing information from world knowledge or context. All unsupported fields must remain empty. All field val-ues should be concise noun phrases rather than complete sen-tences. JSON Schema (output exactly this structure): { "summary": "", "type": "", "lang": "", "speech": "", "lyrics": "", "speaker_count": "", "relation": "", "vocal": "", "music": "", "sfx": "", "ambience": "", "texture": "" } 
+
+The extracted JSON representation is deterministically seri-alized into the XML-like tagged text format consumed by the text encoder; this serialization changes only the representation format and does not add semantic information. 
+
+# B.3 Public-Benchmark Prompt Rendering 
+
+For public benchmarks, the structured representation is used as an interface normalization step rather than an additional source of information. The original benchmark input remains the only semantic source, and the conversion procedure does not access reference audio or introduce additional acoustic descriptions. For TTS benchmarks, transcripts are preserved exactly in the speech field. The converter only adds schema-level information such as the acoustic type, language identifier, and available speaker metadata. No words, pronunciation details, or speaker characteristics are generated beyond the original input. For caption-based benchmarks, including AudioCaps, Mu-sicCaps, and Song Describer, the original caption is retained as the summary field. The structured converter maps the cap-tion into the predefined fields and performs schema validation. In particular, speech and lyrics are preserved verbatim when explicitly present, while events, instruments, attributes, or emo-tions not supported by the source caption are not introduced. The same structured interface is used for training and in-ference, but the benchmark conversion is applied only to the publicly available text descriptions. Since the conversion does not observe the target audio, the resulting structured caption contains no information unavailable from the original bench-mark input. 
+
+# B.4 Prompt Templates for Unified Audio Scenes 
+
+The following templates illustrate the interface used during training and inference. Bracketed fields are optional and omit-ted when unsupported. A mixed scene explicitly contains at least two of speech, music, singing, and sound effects. 
+
+Speech: summary <type>speech</type> <lang>LANG</lang> <speech>TEXT</speech> <speaker_count>N</speaker_count> <vocal>VOICE</vocal> [<ambience>ROOM</ambience>] [<texture>MIX</texture>] 
+
+Music: summary <type>music</type> <music>INSTRUMENTS, STYLE, TEMPO</music> [<texture>PRODUCTION</texture>] 
+
+Singing: summary <type>singing</type> <lang>LANG</lang> <lyrics>LYRICS</lyrics> <vocal>VOCAL STYLE</vocal> <music>ACCOMPANIMENT</music> [<texture>MIX</texture>] 
+
+SFX: summary <type>sfx</type> <sfx>EVENTS</sfx> <ambience>ENVIRONMENT</ambience> [<texture>RECORDING CHARACTER</texture>] 
+
+Mixed scene: summary <type>mixed</type> <lang>LANG</lang> <speech>TEXT</speech> <speaker_count>N</speaker_count> <vocal>VOICE</vocal> [<music>BED</music>] [<sfx>EVENTS</sfx>] [<ambience>ENVIRONMENT</ambience>] <texture>FOREGROUND–BACKGROUND RELATION</texture> 
+
+# B.5 Representative Structured Prompts 
+
+Table 8 illustrates how the renderer preserves source informa-tion. For TTS, the original speech content is placed directly in 
+
+speech without adding scene content. For TTA and TTM, the original caption is retained verbatim as the first summary sen-tence, with the remaining fields only reorganizing information already present in that caption. The two complex-scene rows show how speech or lyrics, music, sound effects, ambience, and their foreground–background relation are represented together. 
+
+# C Training and Inference Details 
+
+# C.1 Training Setup 
+
+The reported model is trained on approximately five million clips of 10–15 seconds from an internal corpus exceeding 20,000 hours. The corpus combines speech, singing, music, sound effects, and mixed recordings under the unified prompt interface. The approximate content distribution is 20% speech, 5% singing, 10% music, 10% sound effects, and 55% mixed recordings. We use the same data distribution, DiT backbone, text encoder, and training budget for Dense, Base-MoE, and SonicWeave; only the FFN/routing mechanism differs in the controlled comparison. The final training run used AdamW with a peak learning rate of 7 .5 × 10 −5. The learning-rate schedule consists of the configured linear warm-up followed by linear decay. Training used fp16 mixed precision, with a global batch size of 512 and one gradient-accumulation step, for 800,000 optimizer updates. The trainer maintained an exponential moving average with 14 Table 8: Representative prompts. The examples illustrate the field semantics; they do not define a required set of fields for every sample. 
+
+Scenario Structured prompt TTS plain English speech <type>speech</type> <lang>en</lang> <speech>Keep walking along this road, then turn right at the second intersection.</speech> <speaker_count>1</speaker_count> <vocal>adult English voice, neutral tone</vocal> 
+
+TTA A train arrives while people talk on a platform <type>sfx</type> <sfx>train arriving, people talking</sfx> <ambience>train station platform with crowd murmur</ambience> 
+
+TTM Warm instrumental piano with slow chords <type>music</type> <music>instrumental piano, slow warm chords</music> <texture>close studio recording</texture> 
+
+Mixed English race-engineer and driver radio dialogue at high speed <type>mixed</type> <lang>en</lang> <speech>Box this lap; the rear temperatures are climbing. / Copy, but the steering is vibrating under braking. / Understood, stay off the inside curb.</speech> <speaker_count>2</speaker_count> <relation>pit engineer advising a race driver</relation> <vocal>controlled male engineer and strained male driver through clipped team radio</vocal> <sfx>Engine roar, wind, tires, and radio pops collide</sfx> <ambience>race car at speed with strong wind trackside</ambience> <texture>driver transmission is noisier and more distorted than the engineer response</texture> 
+
+decay 0.9999 after a 1,000-step warm-up. We selected the final checkpoint for evaluation and used its EMA parameters when available; no intermediate checkpoint was selected by a validation-score sweep. 
+
+# C.2 Conditioning Dropout and Reference Mask-ing 
+
+For each training sample, a contiguous span whose fractional length is sampled uniformly from [0.7, 1.0] is selected from valid latent frames. This region is zeroed in the reference con-dition but remains visible in the clean target and flow objective. The mechanism trains continuation and inpainting behavior without changing the flow target. Classifier-free guidance conditions are sampled as follows. The audio reference is independently dropped with probability 0.3 and the caption with probability 0.1. Caption drop zeros both text tokens and the pooled global text condition. When audio reference is retained, LFM is restricted to the selected masked span; when it is dropped, the loss is evaluated over all valid frames. This makes the null branch a genuine text-to-audio training condition rather than a masked-reference reconstruction condition. 
+
+# C.3 Adaptive Projected Guidance 
+
+At ODE state xt , let vc and vu denote the conditional and unconditional velocity predictions evaluated at the same state. Under the linear flow path, their clean-sample estimates are 
+
+μc = xt + ( 1 − t)vc, μu = xt + ( 1 − t)vu. (19) We define ∆μ = μc − μu and apply reverse momentum, 
+
+f∆μk = ∆μk + β f∆μk−1, β = −0.1, (20) with f∆μ0 = ∆μ0. We decompose the smoothed guidance direc-tion with respect to the conditional clean estimate: 
+
+∆μ∥ = ⟨ f∆μ, μc⟩∥μc∥22 + ε μc, ∆μ⊥ = f∆μ − ∆μ∥. (21) The guided clean estimate is 
+
+μAPG = μu + w
+
+
+
+∆μ⊥ + η∆μ∥
+
+
+
+, (22) and is converted back to velocity space as 
+
+vAPG = μAPG − xt
+
+max (1 − t, 10 −5) . (23) where w is the guidance scale. We use η = 0.85 for speech-only generation and η = 0.5 when the requested scene contains sound effects or music; the latter setting gave the best results for these mixed conditions. APG is disabled when w < 10 −5.The unconditional pass uses dropped caption and dropped au-dio reference; for masked-reference editing, the noisy-state masking policy is applied consistently to that pass [33]. 
+
+# C.4 Sampling Protocol 
+
+Unless a task-specific protocol states otherwise, SonicWeave uses Euler integration over 100 uniform time points from 0 to 1, 15 fixed random seed 42, no reference audio, and full-span latent generation. The parallel inference entry point uses guidance scale 4.5 for the reported generation path. The model supports a cosine sway schedule at lower sampling budgets, but the public-benchmark and Complex-Scene results should be generated with the fixed protocol above rather than selecting a schedule per example. The audio waveform sample rate is 44.1 kHz, and the stereo VAE has a temporal downsampling factor of 2048 samples per latent frame. We use a pretrained stereo VAE based on the Stable Audio 2.0 VAE architecture [27]. Public-benchmark de-coding uses the duration requested by the corresponding bench-mark protocol: generated latent length is set from the bench-mark item or its task-specific maximum rather than silently truncating all tasks to one common duration. The model de-faults to generate 256 latent frames, corresponding to approx-imately 11.89s at 44.1 kHz. Because the flow-matching DiT operates on a variable-length latent sequence, it is not architec-turally restricted to this default duration. 
+
+# D Evaluation Protocols 
+
+# D.1 Public-Benchmark Protocols 
+
+We evaluate text-to-speech (TTS) on SeedTTS-eval and LibriSpeech-PC test-clean, text-to-audio (TTA) on AudioCaps, and text-to-music (TTM) on MusicCaps and Song Describer. For TTS, we report word error rate (WER) on English bench-marks and character error rate (CER) on Mandarin bench-marks. TTA is evaluated using VGGish-based Fr’echet dis-tance (FD VGG , also referred to as FAD), PaSST-based KL divergence, and CLAP text–audio similarity. TTM is evalu-ated using PaSST-based KL divergence and CLAP similar-ity. Lower WER/CER, FD VGG , and KL indicate better perfor-mance, whereas higher CLAP is better. Each system generates one audio sample per evaluation item under a common fixed-seed policy. WER/CER is computed be-tween the benchmark transcript and an ASR transcription of the generated audio after applying the official evaluation normaliza-tion, including punctuation removal and English lowercasing. CLAP is computed as the mean cosine similarity between the text-prompt and generated-audio embeddings. FD VGG and KL are aggregate metrics and are reported once for each bench-mark set. The number of retained items is obtained from the final evaluation manifest for each benchmark. For TTS transcription, we follow the public SeedTTS/F5-TTS evaluation pipeline, using faster-Whisper large-v3 [40] for English and FunASR Paraformer-zh [41] for Man-darin. For AudioCaps, FD VGG is computed using the de-fault VGGish-based implementation in AVBench. PaSST KL follows the Stable Audio Metrics implementation. CLAP is evaluated with LAION-CLAP, using the general-audio checkpoint 630k-audioset-fusion-best.pt for TTA and  
+
+> music_speech_audioset_epoch_15_esc_89.98.pt
+
+for TTM. 
+
+# D.2 Complex-Scene Suite 
+
+The Complex-Scene suite contains 100 prompts across four categories: 45 speech-with-background cases, 10 singing-with-background cases, 15 clean dialogue cases, and 30 dialogue-with-background cases. It tests not only whether individual components occur, but whether linguistic content, speaker structure, music, sound effects, ambience, and foreground– background relationships are jointly realized. The suite in-cludes Mandarin and English prompts, with clean dialogue serving as a control condition and the remaining categories emphasizing coexistence, masking, and composition. Each case has a natural-language prompt and a paired struc-tured prompt. The natural-language form specifies the complete target scene in ordinary prose. The structured form reorga-nizes the same specification into the fields of Table 7; it does not add new target events. Public systems receive the natural-language form in their native interface. SonicWeave, Dense, and Base-MoE receive the paired structured form. This setup evaluates structured conditioning and CPE-MoE under the same requested semantics while avoiding unsupported claims of identical tokenizer-level inputs across unrelated public sys-tems. Representative cases are listed in Table 8. They include speech–background, singing–background, clean dialogue, and dialogue–background conditions, with both continuous back-ground layers and short high-salience events. The suite there-fore tests whether a system preserves foreground speech or singing while realizing local acoustic departures and their in-tended foreground–background relation. 
+
+# D.3 Reference-Free Judge Rubric 
+
+We use gemini-3.1-pro-preview as a blind audio judge when a reference recording is unavailable. The judge receives one generated audio clip, the natural-language prompt, and the paired structured specification. Its instruction is: “Listen to the audio first; score only audible evidence against the requested scene; do not credit an event solely because it appears in the prompt; return the required JSON fields.” The system/model name is not supplied. Each applicable dimension is scored on a five-point ordinal scale represented internally as 1–5: 1 denotes absent, contra-dictory, or completely wrong; 2 mostly wrong with limited relevant evidence; 3 partially correct with substantial omis-sions or errors; 4 mostly correct with minor omissions; and 5 fully and accurately realized. The seven dimensions are: • Speech content : required words and language; • Vocal attributes : speaker type, emotion, energy, delivery, and style; • Speaker structure : count, identity separation, turns, and assignment; • Background adherence : requested music, events, and ambience; 16 Table 9: Targeted routing ablations on representative benchmarks. All variants share the same backbone, training data, expert configuration, and training budget. Complex-scene results use the same reference-free automatic judging protocol as the main evaluation. 
+
+Variant SeedTTS AudioCaps Song Describer Complex Scene En WER ↓ Zh CER ↓ FAD ↓ KL ↓ CLAP ↑ KL ↓ CLAP ↑ AI-Tech ↑ AI-Sem ↑
+
+Fixed gate ( g j = 0.5, C = 4) 2.1% 1.8% 3.69 1.54 0.448 0.53 0.31 4.60 4.35 CPE-MoE ( C = 8) 1.4% 0.9% 2.91 1.29 0.469 0.44 0.33 4.69 4.64 CPE-MoE ( C = 4) 1.0% 0.8% 2.75 1.26 0.475 0.36 0.44 4.79 4.72 
+
+• Acoustic relation : prominence, masking, timing, overlap, and interaction; • Scene coherence : whether components form a plausible integrated scene; and • Technical quality : clipping, distortion, discontinuity, abrupt cuts, and synthesis artifacts. For clean dialogue, background-adherence and acoustic-relation are marked not applicable rather than treated as zeros. The semantic score is the mean of all applicable first six dimen-sions; technical quality is retained separately. The judge must return a short audible-evidence string for every score, detected languages, detected speaker count, an ordered transcript where applicable, detected background el-ements, and a confidence score. Outputs failing the required JSON schema or score ranges are rejected and retried. Temper-ature is zero to reduce sampling variation. 
+
+# D.4 Human Listening Study 
+
+The listening study presents every system output anonymously. For each case, available clips are assigned anonymous iden-tifiers and their order is randomized with a fixed study seed. The private identifier-to-system mapping is not shared with listeners. Listeners score each clip independently on two 1–5 scales: • MOS-Q (quality): 1 is nearly unusable due to severe noise, clipping, distortion, discontinuity, or unintelligibility; 2 has major persistent artifacts that substantially impair listening; 3 is basically listenable with noticeable artifacts; 4 is clear and stable with only minor artifacts; 5 is clear, natural, stable, and nearly artifact-free. • MOS-R (request realization): 1 means that the requested scene is essentially absent or contradictory; 2 means that only isolated requested elements are recognizable while key content or relations are missing; 3 means major re-quested content is present but with clear omissions or in-correct relationships; 4 means nearly all requested content and relations are realized with minor omissions; 5 means foreground speech, music, events, ambience, timing, and relative prominence are jointly and naturally realized. The listening study used 25 listener responses. Every listener received the same questionnaire containing 25 cases and six anonymously shuffled system outputs per case, for 150 clips and 300 ordinal ratings (MOS-Q and MOS-R) per completed response. The study script randomizes clip order within each case with seed 42, hides the system mapping, and provides written 1–5 scoring instructions. The aggregation excludes ratings with missing mappings or values outside [1, 5]. MOS results are reported as mean ± standard deviation. 
+
+# E Targeted Routing Ablations 
+
+# E.1 Scope and Evaluation Protocol 
+
+The main paper compares SonicWeave with matched Dense and Base-MoE controls. Targeted ablations isolate two specific CPE-MoE design choices rather than exhaustively decompos-ing all architectural factors. Every ablation retains the same data, backbone width/depth, number of routed layers, expert count, top-K, optimizer schedule, training budget, prompt inter-face, and sampling protocol unless the row explicitly changes one variable. All ablation variants are evaluated with objective met-rics across TTS, TTA, TTM, and Complex-Scene reference-free judging. We report English WER and Mandarin CER, AudioCaps FAD/KL/CLAP, Song Describer KL/CLAP, and Complex-Scene AI-Tech/AI-Sem. Human MOS is reserved for the main model comparison and is not used to rank targeted ablations. 
+
+# E.2 Fixed Prior–Evidence Fusion 
+
+The fixed-fusion control replaces the learned chunk gate by 
+
+g j = 0.5 for every valid chunk, layer, prompt, and diffusion phase: 
+
+ℓ j = 0.5ℓprior + 0.5ℓevid  
+
+> j
+
+. (24) It retains C = 4 and all remaining CPE-MoE components. This control tests whether adaptive, content- and phase-dependent fusion improves over a uniform average. It does not separately identify the causal contribution of the prior branch or evidence branch, because both are still present. The reported table shows that this control is consistently worse than the learned gate: English WER and Chinese CER increase, AudioCaps FAD/K-L/CLAP degrade, Song Describer KL/CLAP degrade, and Complex-Scene AI-Tech/AI-Sem decrease. The degradation is especially clear on TTS, which is consistent with a uniform fu-sion rule limiting the adaptive balance between the text-derived prior and evolving acoustic evidence. 17 Figure 4: Phase- and content-conditioned expert usage. Mean dispatch fractions are shown for each content type over the early, middle, and late thirds of the diffusion trajectory. Content-specific preferences persist across phases, while the degree of concentration changes as generation proceeds. 
+
+# E.3 Chunk-Size Sensitivity 
+
+The C = 8 variant is broadly comparable to C = 4 on pub-lic benchmarks, but is consistently worse on every displayed TTS, AudioCaps, and Song Describer metric. The difference is modest for globally coherent content, such as sustained music, because a longer chunk can still share a suitable expert path. However, each C = 8 assignment constrains twice as many neighboring latent frames as C = 4. This reduces the routing frequency available to react to short events, speaker turns, or local changes in foreground–background balance. The effect is clearest on Complex-Scene, where linguistic content and transient acoustic events must be jointly realized. Conversely, smaller chunks would increase routing overhead and can frag-ment a locally coherent acoustic event. We therefore use C = 4as the trade-off between local adaptivity, short-range routing consistency, and sparse-dispatch efficiency. 
+
+# F Additional Routing Analyses 
+
+# F.1 Routing-Analysis Protocol 
+
+We construct a balanced 250-prompt routing benchmark with 50 prompts each for speech, sound effects, music, singing, and mixed scenes. Speech is balanced across SeedTTS English and Chinese examples; sound effects use AudioCaps; music and singing use MusicCaps; mixed examples use prompts from complex-scene test sets. Each item is assigned a fixed prompt identifier and a maximum frame length appropriate to its source, preventing a content type from being overrepresented solely through longer sequences. For every routed layer, generation step, and valid chunk, we record the conflict gate, posterior routing distribution, and top-
+
+K dispatch. All aggregate statistics are first averaged within each prompt and then across prompts, so that long clips or clips containing more valid chunks do not receive disproportionate weight. 
+
+# F.2 Phase- and Content-Conditioned Expert Us-age 
+
+Figure 4 reports mean expert dispatch fractions for each content type during the early, middle, and late thirds of the generation trajectory. The dispatch patterns depend jointly on content and phase. Speech retains a strong preference for E0, while singing consistently uses E3 more heavily. Sound effects, music, and mixed scenes exhibit sharper preferences early in generation and become more balanced as the sample is refined. Thus, the routed experts do not form a single static partition of the train-ing domains: their relative utilization evolves during generation while preserving persistent content-dependent tendencies. 
+
+# F.3 Does the Gate Control the Effective Router? 
+
+The conflict gate is designed to interpolate the prior and evi-dence logits, but this definition alone does not show whether trained gates occupy a useful operating range or materially alter the resulting routing distribution. We therefore bin valid chunks by g j and measure the Jensen–Shannon divergence (JSD) between the fused posterior distribution and each of its two inputs. As shown in Figure 6, low-gate chunks remain close to the global prior and comparatively far from local evi-dence. The relation reverses for high-gate chunks: the posterior approaches the evidence distribution and departs sharply from the prior. Intermediate bins provide a smooth transition be-tween these regimes. This aggregate behavior confirms that the learned gate controls the effective routing distribution accord-ing to its intended prior-to-evidence semantics. 
+
+# F.4 Representative Mixed-Scene Routing Case 
+
+Figure 5 presents a representative case from the demo set (prompt identifier cpe_010: “In a busy gym, a trainer shouts, ‘Three more reps, you’ve got this! Keep your core tight. Two more!’ Weight plates clank, treadmills run, people breathe heavily, and battle ropes strike the floor around him.” ) The scene combines foreground speech with continuous machine and breathing noise, together with transient or quasi-periodic impacts. It therefore provides a natural test of within-clip routing under overlapping heterogeneous content. 18 Figure 5: Conflict-gate dynamics and mixed-scene routing. The gym scene cpe_010 , showing the gate averaged over four CPE layers and Layer 13 top-1 expert assignments. Complex background regions rely more on acoustic evidence, while the main speech segment shows stronger reliance on the text prior.      
+
+> Figure 6: Gate-controlled prior–evidence routing. Valid chunks are grouped by their conflict-gate values. At low gj, the fused posterior is close to the global prior; at high gj, it is close to local evidence. JSD denotes Jensen–Shannon divergence.
+
+The upper trace shows the conflict gate averaged over the four CPE-MoE layers, whereas the colored strip visualizes top-1 dispatch from a single routed layer (Layer 13). We include one layer to keep the visualization readable; the layer is used only as an illustrative dispatch trace and is not intended to summarize routing behavior across all routed layers. The trace shows a coarse but interpretable correspondence between the acoustic composition and the routing behavior. During the earlier portion of the clip, the scene is dominated by dense background activity, including machine noise, breathing, and transient impacts. In this region, the mean gate is mostly above 0.5, indicating stronger reliance on the evolving acoustic evidence. The Layer 13 dispatch trace also switches experts more frequently around local acoustic changes, consistent with chunk-level adaptation to heterogeneous and transient content. Around 7 seconds, the main speech segment becomes promi-nent in both the spectrogram and the corresponding demo audio. This transition coincides with a sustained decrease of the mean gate below 0.5, shifting the routing toward the structured text prior, which provides a stable description of the foreground speech. The expert assignments simultaneously enter longer, more stable runs. Near the end of the clip, as the background activity becomes more prominent again, the gate rises and the expert pattern changes accordingly. Although the correspondence is not frame-exact, the case illustrates the intended behavior of CPE-MoE: local acoustic evidence plays a larger role in complex and rapidly changing regions, whereas the global text prior becomes more influential during semantically well-specified speech segments. 19
