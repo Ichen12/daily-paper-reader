@@ -1,0 +1,482 @@
+Title: Luna-TTS Family Technical Report
+
+URL Source: https://arxiv.org/pdf/2608.11593v1
+
+Published Time: Thu, 13 Aug 2026 00:23:27 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# LUNA -TTS F AMILY TECHNICAL REPORT 
+
+VUI Labs Research 
+
+https://vuilabs-ai.github.io/luna-tts 
+
+# ABSTRACT 
+
+Modern text-to-speech (TTS) is dominated by autoregressive (AR) codec language models, whose left-to-right decoding carries structural costs: latency that grows with utterance length, error accumu-lation along the committed prefix, and an artificial generation order imposed on the Residual Vector Quantization (RVQ) token grid, which possesses none. We propose Luna-TTS Family, a family of diffusion-language-model-based TTS systems pretrained on 1 million hours of speech across Chi-nese, English, Japanese, and Korean. The family is built by progressive adaptation of a pretrained AR text LLM, from causal to bidirectional and finally to block-causal attention, and comprises two variants sharing a single tokenizer, data pipeline, and 0.6B backbone lineage. Luna-TTS is fully non-autoregressive: it generates the entire RVQ token grid of an utterance in a fixed number of par-allel refinement steps, with zero-shot voice cloning and speech editing arising natively as infilling. Luna-TTS Realtime, derived from Luna-TTS by continual training, is autoregressive over blocks of 32 codec frames (1.28s) while denoising each block in parallel; it supports KV-cached blockwise generation and incremental audio delivery after the first block is committed. Under the warmed local serving protocol, Luna-TTS Realtime achieves an end-to-end RTF of 0.0240 and commits its first 1.28s decoded audio block in 41.6 ms, corresponding to more than 40 × real-time generation within the measured engine boundary. An annealed fine-tuning stage adds explicit control over emotion and non-verbal vocalizations, and a reinforcement-learning stage applies GRPO, with policy ratios computed over the realized denoising trajectory. On Seed-TTS-Eval, Luna-TTS achieves the best re-sults on all four metrics among the compared open-source and commercial systems (0.73 CER / 79.7 SIM on test-zh, 1.49 WER / 76.8 SIM on test-en); on the harder in-the-wild CV3-Eval, it likewise posts the lowest Mandarin and English error rates in our comparison. In expressive-control eval-uations against leading commercial systems, it further achieves the best results on most objective, model-based, and human-rated metrics for non-verbal vocalization and emotion control. 
+
+# 1 Introduction 
+
+Text-to-speech (TTS) synthesis has been reshaped by the language-modeling paradigm. By discretizing speech with neural audio codecs [1–3] and training decoder-only Transformers with a next-token-prediction objective, neural codec language models [4, 5] turned speech synthesis into a sequence-modeling problem that inherits the scaling behavior, in-context learning ability, and infrastructure of large language models (LLMs). Scaling this recipe along data, pa-rameters, and post-training has produced a generation of systems that achieve human-parity naturalness and robust zero-shot voice cloning from a few seconds of reference audio, including Seed-TTS [6], the CosyVoice series [7– 9], MiniMax-Speech [10], Llasa [11], GLM-TTS [12], Qwen3-TTS and Qwen-Audio-3.0-TTS [13, 14], Fish Audio S2 [15], MOSS-TTS [16], and others [17–21]. In general, all of these systems share a common computational core: an autoregressive (AR) language model that emits speech tokens strictly from left to right, one step at a time. The autoregressive core, however, carries structural costs that are increasingly at odds with how speech tokens are actually organized. First, decoding is serial : latency and compute grow linearly with the number of generation steps, and the number of steps grows with the audio duration and the token rate. This tension is sharpest for Residual Vector Quantization (RVQ) tokenizers, which represent each frame as a stack of codebook entries: an AR model must impose an artificial generation order on a grid of tokens that has no intrinsic left-to-right structure along the codebook axis. The field has responded with an ecosystem of workarounds: delayed or interleaved codebook streams [16, 20, 22, 23], hierarchical time–depth autoregression, in which a large temporal model is paired with a lightweight within-arXiv:2608.11593v1 [cs.SD] 12 Aug 2026 Luna-TTS Family Technical Report frame decoder [15, 16, 23], and multi-codebook prediction modules that generate residual-codebook tokens from a shared temporal state [13]. Each is an increasingly sophisticated patch over the same underlying constraint. Second, AR generation is vulnerable to exposure bias and error accumulation : a sampling mistake is frozen into the prefix and propagates, manifesting as skipped words and repetitions that TTS systems routinely dedicate training stages to suppressing [13, 24]. Third, the fixed generation order precludes bidirectional refinement : an AR model cannot revisit an early frame in light of later context, and native infilling-style operations such as speech editing require bespoke mechanisms. Non-autoregressive (NAR) alternatives have long existed on the periphery of this ecosystem. Continuous-space models based on flow matching [25–28] decode rapidly, but they require explicit duration handling [10], do not operate in the discrete token space utilizing modern LLM stacks, and consequently forgo the text-knowledge inheritance and serving infrastructure. Masked generative discrete models such as SoundStorm [29], NaturalSpeech 3 [30], and MaskGCT [31] demonstrated years ago that the RVQ token grid can be decoded in parallel by iterative unmasking, yet these systems were built as task-specific architectures at moderate scale, disconnected from the pretraining recipes, initialization strategies, and tooling of general-purpose language models. That disconnect is now closing from the text side. Diffusion language models (dLLMs), built on masked discrete diffusion [32–35], have matured from proof-of-concept to a competitive paradigm: LLaDA [36] and Dream [37] match similarly sized AR models at the ∼8B scale, commercial systems demonstrate order-of-magnitude decoding speedups [38, 39], and the paradigm has been scaled to 100B parameters [40]. In parallel, block diffusion [41] inter-polates between the two extremes: the model is autoregressive over blocks of tokens, retaining KV caching, variable-length generation, and streaming, while denoising all tokens within a block in parallel. Practical recipes for adapting pretrained AR LLMs into (block-)diffusion decoders [42–44] mean that this entire family can inherit the linguistic knowledge of mature text LLMs rather than learning it from scratch. We argue that TTS is a natural, perhaps the natural, application domain for this machinery: the output is strongly grounded in the input text, which collapses the semantic branching factor that makes parallel decoding difficult for free-form text generation [45], and the RVQ token grid is precisely the kind of order-free, locally correlated structure that any-order masked prediction handles natively and AR decoding does not. Early explorations support this view but leave the picture incomplete. On the fully parallel side, LLaDA-TTS [46] converts a compact AR text LLM into a masked-diffusion speech model and DiffuSpeech [47] adapts a text dLLM to speech, both at small data scales, while OmniVoice [48] scales masked-diffusion TTS to 581K hours with an emphasis on massive language coverage. On the block side, DiSTAR [24] interleaves AR drafting with masked-diffusion infilling, and Chatterbox-Flash [49] converts a pretrained AR TTS decoder into a block-diffusion decoder by fine-tuning. What is still missing is (i) a streaming block-diffusion TTS backed by large-scale diffusion pretraining ,rather than by post-hoc conversion of an AR checkpoint; (ii) a controlled comparison between fully parallel and block-autoregressive diffusion decoding under matched tokenizers, data, and model capacity, so that the community can directly evaluate this architectural choice; and (iii) evidence that diffusion-based TTS can meet the quality bar of production AR systems on major languages rather than in breadth-oriented settings. This report presents Luna-TTS Family , a family of diffusion-language-model-based TTS systems pretrained on 1 million hours of speech spanning Chinese, English, Japanese, and Korean. Luna-TTS Family comprises two variants that share a single speech tokenizer, data pipeline, and 0.6B-parameter backbone lineage, and differ in their generation paradigm: • Luna-TTS is a fully non-autoregressive masked-diffusion model, trained with unrestricted random masking over the full RVQ token grid [48] and decoded by confidence-based iterative parallel sampling. It generates the entire grid of an utterance in a fixed number of refinement steps; a dedicated token-level duration predictor built on a separate text LLM (Qwen3-0.6B) supplies the target length for multilingual input. Because the model formulates generation as any-order infilling, it naturally supports both zero-shot voice cloning and speech editing within a unified framework, without requiring task-specific auxiliary mechanisms. • Luna-TTS Realtime is a block-autoregressive model built on the block-diffusion objective [41], obtained from Luna-TTS by continual training for block-causal streaming. It is causal across blocks, supporting KV caching and incremental synthesis in 1.28s audio packets, while decoding all frames and codebooks within a block in parallel. The family is built by progressive adaptation from a pretrained AR text LLM (Qwen3-0.6B), first to Luna-TTS and then to Luna-TTS Realtime (§2.4), so that both variants inherit strong multilingual text competence, which is partic-ularly valuable for handling the morphological complexity and distinctive writing systems of Japanese and Korean. Operating directly on acoustic RVQ tokens, they drive the codec decoder without an intermediate flow-matching stage, and the intra-frame codebook stack is absorbed naturally into parallel denoising. Pretraining concludes with an 2Luna-TTS Family Technical Report annealed fine-tuning stage on high-quality and expressively annotated speech, adding controllable emotions and non-verbal vocalizations; RL post-training [50] then optimizes utterance-level rewards for content correctness and speaker similarity directly over the denoising trajectory (§4). Our main contributions are as follows: • A diffusion-LLM TTS family at the production scale. To our knowledge, Luna-TTS Family is the largest pretraining effort for diffusion-based TTS to date (1M hours of speech) and the first to target Chinese, English, Japanese, and Korean. On Seed-TTS-Eval, Luna-TTS achieves the best results on all four metrics among the compared open-source and commercial systems (0.73 CER / 79.7 SIM on test-zh, 1.49 WER / 76.8 SIM on test-en), and it likewise posts the lowest Mandarin and English error rates in our comparison on the in-the-wild CV3-Eval benchmark (§6). • A progressive adaptation recipe yielding two deployment-matched variants. Luna-TTS Family is built en-tirely by continual training (causal → bidirectional → block-causal), with each transition inheriting the text competence and speech knowledge already acquired; the same recipe applies to any existing codec language model. To our knowledge, Luna-TTS Realtime is the first streaming block-diffusion TTS backed by large-scale diffusion pretraining rather than by conversion of an AR checkpoint [49], and because it is derived from Luna-TTS under an identical tokenizer, data pipeline, and backbone, the two variants form a controlled realization of the AR–diffusion interpolation [41]: fully parallel decoding for offline throughput, and block-autoregressive decoding for incremental delivery. Choosing between them is a deployment decision, not a system migration; under the warmed local serving protocol, Luna-TTS Realtime reaches an end-to-end RTF of 0.0240 and 41.6 ms local first-block latency for a 1.28s block (§5.2). • Controllable expressive speech generation. We extend Luna-TTS with explicit control over utterance-level emotion and inline non-verbal vocalizations (NVVs), shaping an utterance as a coherent vocal performance: the intended emotion guides overall delivery, while context-appropriate NVVs are realized at designated positions. Against leading commercial systems, Luna-TTS achieves the best results on most objective, model-based, and human-rated metrics for both NVV and emotion control (§6.2). • RL post-training for masked speech-token diffusion. We show that GRPO-style RL post-training [50], pre-viously applied to AR TTS [12, 15], transfers to the masked-diffusion setting by defining policy ratios over the token decisions actually realized along the iterative denoising trajectory, with rollout and replay evaluated under the same effective sampling policy, rather than over a left-to-right factorization (§4). The ratios are optimized against a group-relative, lexicographically ranked reward that prioritizes content correctness and breaks ties by speaker similarity. The remainder of this report is organized as follows. §2 describes the architecture: the Luna-Codec tokenizer, the shared masked-diffusion formulation over the token grid, and the two decoding regimes built on it. §3 details the data and the multi-stage pretraining schedule, the diffusion to block-diffusion adaptation, and the token-level duration predictor. §4 presents RL post-training over realized denoising trajectories. §5 defines the execution paths, streaming contract, and measurement protocol of the two variants. §6 evaluates zero-shot synthesis, expressive control, and dedicated-voice quality, and §7 concludes. 
+
+# 2 Architecture 
+
+2.1 Overview 
+
+Luna-TTS Family follows a two-component design: a Residual Vector Quantization (RVQ) speech tokenizer, Luna-Codec, that maps waveforms to a compact discrete token grid and back (§2.2); and a 0.6B-parameter diffusion lan-guage model that generates this grid conditioned on text and an optional reference prompt (§2.3–§2.6). Figure 1 illustrates the overall pipeline. Three principles drive the design: 
+
+Information-complete acoustic modeling in a single generative stage. Mainstream LLM-based TTS pipelines predict low-bitrate semantic tokens and delegate acoustic rendering to a separate flow-matching or diffusion detok-enizer [6, 7, 12, 14]. This split stabilizes AR decoding but creates a semantic–acoustic divide: the language model never sees, and can never optimize for, the acoustic detail that determines speaker fidelity and expressiveness [51]. Luna-TTS Family instead models the full multi-codebook token grid directly, so that a single generative stage owns all information and the codec decoder is a deterministic, lightweight map back to audio. 3Luna-TTS Family Technical Report    
+
+> waveform (24 kHz)
+> Causal Encoder RVQ ( Q= 8 )
+> 25 Hz ×8 CB (2.2 kbps) CB 1: WavLM-distilled
+> Causal Decoder
+> streaming, frame-synchronous
+
+(a) Luna-Codec                   
+
+> text y+ tags prompt Ptarget Xt
+> Σcodebook embeddings per frame
+> Diffusion LM Backbone (init. Qwen3)
+> attn: bidirectional (Luna-TTS) /block-causal (Luna-TTS Realtime)
+> h1h2h3· · · hQQparallel heads predicted X0(all masked positions, in parallel)
+
+(b) unified masked-diffusion backbone                
+
+> Luna-TTS
+> duration predictor (Qwen3-0.6B) →TS=32
+> bidirectional ·confidence-based unmasking ·CFG
+> offline ·batch ·editing
+> Luna-TTS Realtime
+> Sb=8 steps KV cache stream 1.28s/block block-causal ·stop token at block boundary
+> streaming ·blockwise parallel
+
+(c) decoding regimes           
+
+> Qwen3 LLM
+> AR ·causal ·text Luna-TTS
+> masked diffusion ·bidirectional Luna-TTS Realtime
+> block diffusion ·block-causal direct conversion continual pretraining, 1M hours (zh/en/ja/ko) block-causal adaptation continual training, block-causal objective
+
+Figure 1: Overview of Luna-TTS Family. (a) Luna-Codec, a causal RVQ codec (25 Hz, Q = 8 codebooks) whose first codebook is semantically anchored by WavLM distillation. (b) The shared diffusion LM backbone: text, prompt token grid, and partially masked target token grid form one sequence; per-frame codebook embeddings are summed at the input, and Q parallel heads predict all masked positions in parallel. (c) The two decoding regimes: Luna-TTS generates the full token grid in S parallel refinement steps with an external duration predictor; Luna-TTS Realtime decodes block by block with KV caching and per-block denoising, streaming audio as each block commits. Bottom: 
+
+the progressive adaptation lineage from a pretrained Qwen3 LLM through Luna-TTS to Luna-TTS Realtime. 
+
+Any-order generation matches the geometry of the token grid. An RVQ-coded utterance is a two-dimensional grid, with time along one axis and codebook depth along the other, whose entries are strongly correlated locally but admit no natural total order along the depth axis. AR systems must nonetheless impose one, via delay patterns [22], per-frame depth Transformers [23], or multi-token-prediction heads [13]. Masked diffusion dissolves the problem: all grid positions are modeled symmetrically under a single any-order denoising objective, and cross-codebook dependencies are resolved over refinement iterations rather than by architectural decree. 
+
+One formulation, two operating points. The masked-diffusion objective admits a spectrum of decoding regimes indexed by block size [41], from fully parallel generation of an entire utterance to token-by-token AR decoding. Luna-TTS Family instantiates two deployment-oriented operating points: Luna-TTS for full-grid offline synthesis and native editing, and Luna-TTS Realtime for block-causal incremental delivery. Luna-TTS Realtime is obtained from Luna-TTS by continual training under a block-causal attention pattern (§2.6), so the two variants share every other design decision, and choosing between them is a matter of matching the operating point to the workload. 
+
+2.2 Speech Tokenizer: Luna-Codec 
+
+Luna-Codec is a causal neural codec that encodes 24 kHz speech into a token grid at 25 Hz with Q = 8 residual codebooks of 2048 entries each, i.e., 200 tokens per second at an effective bitrate of 2.2 kbps. The encoder is a strided causal convolutional network followed by a lightweight causal Transformer bottleneck; the decoder mirrors this structure and reconstructs the waveform frame-synchronously, so that synthesized audio can be emitted with per-frame granularity during streaming. 
+
+Semantically anchored first codebook. Purely acoustic RVQ tokens front-load fine spectral detail into early code-books, which makes the token sequence unnecessarily hard to predict from text [52]. Following the semantic-distillation line of work [23, 53], we regularize the first codebook toward linguistic content by distilling frame-level representations from a pretrained WavLM encoder [54], while leaving the residual codebooks free to capture timbre, 4Luna-TTS Family Technical Report prosodic nuance, and channel characteristics. The result is a grid whose depth axis is roughly ordered from linguistic to acoustic information, which keeps the grid predictable from text while retaining the full acoustic detail of the signal. 
+
+Training. Luna-Codec is trained on 400K hours of Chinese, English, Japanese, and Korean speech with the standard codec recipe: reconstruction losses in the time and multi-scale mel domains, VQ commitment losses, and adversarial training with multi-period and multi-resolution STFT discriminators [55, 56], plus the first-codebook distillation loss. Quantizer dropout provides bitrate scalability. In both design and reconstruction quality, the resulting tokenizer is in line with those of recent LLM-TTS systems such as Higgs Audio [57] and Qwen3-TTS [13]. 
+
+2.3 Unified Formulation: Masked Diffusion over the Token Grid Notation. Let X0 ∈ V T ×Q denote the token grid (i.e., the T × Q acoustic code matrix) of a target utterance with T
+
+frames and Q codebooks, and let c = ( y, P ) denote the conditioning information: the input text y (tokenized by the inherited Qwen3-0.6B BPE vocabulary) and an optional acoustic prompt P , itself a clean token grid, which specifies the target voice. All conditioning tokens and the T target frames are arranged into a single sequence and processed by a shared Transformer backbone. Each target frame occupies one sequence position, where its Q codebook embeddings are retrieved from separate tables and summed into a single frame-level representation. 
+
+Forward process. We adopt the absorbing-state masked diffusion process in its simplified form [34–36]. Given a noise level t ∈ (0 , 1] , each target position (i, q ) is independently replaced by a special MASK token with probability t:
+
+qt(Xt | X0) = 
+
+> T
+
+Y
+
+> i=1
+> Q
+
+Y
+
+> q=1
+
+h
+
+t · δM
+
+
+
+X i,q t
+
+
+
++ (1 − t) · δX i,q 
+
+> 0
+
+
+
+X i,q t
+
+ i 
+
+, (1) where δ denotes a point mass and M the mask token. Conditioning tokens are never masked. The model pθ is trained to recover all masked positions in parallel, yielding the weighted denoising cross-entropy that upper-bounds the negative log-likelihood [34]: 
+
+LMD (θ) = − Et∼U (0 ,1] EXt∼qt
+
+ 1
+
+t
+
+X   
+
+> (i,q ) : Xi,q t=M
+
+log pθ
+
+
+
+X i,q  
+
+> 0
+
+Xt, c
+
+ . (2) 
+
+Frame-wise multi-codebook modeling. The backbone consumes one embedding per frame : the Q codebook em-beddings of a frame are looked up in separate tables and summed, following the standard practice for multi-stream audio LMs [16, 23], which keeps the Transformer sequence length at T rather than T Q and the LM-side rate at 25 Hz. Symmetrically, the output hidden state of each frame feeds Q parallel classification heads, one per codebook. Masked positions participate in the sum via a learned per-codebook MASK embedding, so a frame may be partially masked along the depth axis. Text embeddings, positional encoding, and the text head are inherited from Qwen3-0.6B un-changed; the audio embedding tables and heads are new parameters. The training loss accumulates the per-position cross-entropy over all Q = 8 codebook heads. 
+
+Text-based expressive control. Expressive control uses the text-side conditioning pathway. An utterance-level emo-tion token in the instruction context specifies the overall emotional expression, while inline non-verbal vocalization (NVV) tokens in the synthesis text indicate local vocal events, such as laughter and coughing. These special control tokens require no dedicated style encoder or control head [14, 15, 45] and are not verbalized as lexical content. Inline NVV tokens specify text-relative event placement rather than exact acoustic timestamps. Speaker identity is specified separately by the acoustic prompt P . Expressive annotation and continual pretraining are described in §3.1 and §3.2, respectively. 
+
+2.4 From AR Text LLM to Speech Diffusion LM 
+
+Rather than being pretrained from scratch, Luna-TTS Family is developed through progressive adaptation across three attention regimes: causal attention in the AR text model, fully bidirectional attention in Luna-TTS, and block-causal attention in Luna-TTS Realtime. Each stage is initialized from the preceding one, preserving previously acquired representations and capabilities. The starting point is Qwen3-0.6B, a pretrained autoregressive text LLM. The motivation is twofold: text competence (grapheme-to-phoneme regularities, named entities, code-switching, and the orthographic complexity of Japanese and Korean) is expensive to acquire from speech-paired data alone; and prior work shows AR-initialized diffusion models train substantially faster than from-scratch counterparts [37, 42, 43]. 5Luna-TTS Family Technical Report The first transition is a direct conversion from Qwen3-0.6B to Luna-TTS. We initialize the backbone with the Qwen3-0.6B weights, replace the causal attention mask with full bidirectional attention over the entire sequence, including the text, acoustic prompt, and target token grid, and continue training on speech–text data using the masked-diffusion objective in Eq. (2). The AR-pretrained representations transfer effectively to any-order denoising, consistent with prior findings that AR checkpoints provide strong initializations for masked-diffusion decoders [37, 42, 46]. The resulting model is trained to convergence on the full 1M hours corpus, yielding Luna-TTS (§2.5). The subsequent transition from Luna-TTS to Luna-TTS Realtime is described in §2.6. 
+
+2.5 Luna-TTS: Fully Parallel Masked-Diffusion Generation 
+
+Luna-TTS applies Eq. (2) over the entire utterance, with full bidirectional attention across the whole sequence— conditioning and target grid. Training applies unrestricted random masking over the full T × Q grid, following Zhu et al. [48]: the noise level t is sampled per utterance, and every grid position is masked independently, with no structural constraint along either the time or the codebook axis—the model must learn to complete arbitrary partial grids, which is precisely the capability that iterative parallel decoding, prompt-conditioned cloning, and editing all instantiate as special cases. Generation starts from an all-MASK grid of T frames and produces the complete utterance in S = 32 
+
+refinement steps. 
+
+Voice cloning and speech editing through infilling. The input sequence is [y; P ; Xt]: text, clean prompt grid, and partially masked target grid. Because the prompt is simply an unmasked region of the same grid, zero-shot voice cloning is not a special mechanism but the native infilling behavior of the model: the target region is completed so as to be maximally coherent with the visible acoustic context. The same property naturally extends to speech editing: masking an arbitrary span of an existing utterance and denoising it under the original or modified text regenerates the masked region while maintaining coherence with both the past and future audio—a capability that AR models do not natively support without bespoke mechanisms [31, 46]. 
+
+Token-level duration prediction. Fully parallel generation requires the frame count T up front. Rule-based length heuristics (character or phone counts scaled by per-language speaking rates) are brittle exactly where Luna-TTS op-erates: the four supported languages differ markedly both in writing system—Chinese uses characters that represent meaningful syllables, Japanese combines kanji with syllabic kana, Korean uses the Hangul alphabet, and English uses the Latin alphabet—and in how text length maps to speech duration. We therefore train a dedicated token-level dura-tion predictor : a separate text LLM (Qwen3-0.6B) fine-tuned to predict a duration for every token of the input text, conditioned on the full sentence context (§3.2). The per-token predictions are summed to obtain T , and the token-level formulation exposes durations at sub-utterance granularity, which supports fine-grained rate manipulation and local-ized editing. At inference, T may also be set or rescaled by the user, yielding continuous speech-rate control as a free byproduct [31]. 
+
+Iterative parallel decoding. Decoding follows the confidence-based unmasking scheme of the MaskGIT fam-ily [29, 36, 58]: at each step, the model predicts all masked positions in parallel; a fraction of positions given by a cosine schedule is committed—selected by predicted confidence with annealed Gumbel noise—and the remainder is re-masked for the next iteration. Because training used unrestricted random masking, the decoder is free to commit positions in whatever order confidence dictates—across time and codebook depth—rather than in an order fixed by the architecture. We additionally apply classifier-free guidance on the text condition (dropped with probability 0.1 during training) to sharpen text adherence at low step counts [48]. This guided, truncated sampling family (top-k truncation, temperature, CFG) is also the effective policy family under which RL post-training computes its importance ratios (§4). The step count S thus acts as an inference-time quality–speed dial, adjustable per request without any retraining. 
+
+Strengths and limitations. The advantage is a fixed sequential refinement budget with fully parallel execution over the grid, making Luna-TTS the preferred engine for offline dubbing, short-form narration, and data synthesis. Each forward pass still scales with the target grid, while the full-sequence formulation precludes streaming and requires a global duration before synthesis begins. These are the constraints that motivate Luna-TTS Realtime. 
+
+2.6 Luna-TTS Realtime: Block-Causal Streaming Generation 
+
+Luna-TTS Realtime extends masked-diffusion speech generation to streaming synthesis by introducing causality only at block boundaries. Rather than returning to token-level autoregressive decoding, it generates a sequence of short acoustic blocks while retaining parallel refinement within each block. Once finalized, a block becomes immutable and can be decoded and delivered immediately. This design preserves much of the parallelism of Luna-TTS while providing the incremental availability required by streaming applications. 6Luna-TTS Family Technical Report 
+
+2.6.1 Block-Causal Design 
+
+Let the target acoustic-token grid be partitioned along time into N = ⌈T /B ⌉ blocks, X = ( X(1) , . . . , X(N )). We model the sequence as 
+
+pθ (X | c) = 
+
+> N
+
+Y
+
+> b=1
+
+pθ
+
+
+
+X(b) | X(<b ), c
+
+
+
+, (3) where c denotes the linguistic and acoustic conditioning context. The factorization imposes an ordering over blocks but not over individual frames or codebooks within a block. Consequently, the active block is refined as a joint acoustic structure rather than emitted as a token sequence. We initialize Luna-TTS Realtime from Luna-TTS and adapt it using the block-diffusion formulation of Arriola et al. [41]. During training, the model predicts a corrupted current block conditioned on the information that would already be available in a streaming execution. This aligns the learned conditional distribution with the block-causal generation process while retaining the masked acoustic-token objective of the non-autoregressive model. Block causality is therefore part of the learned generation behavior, rather than an inference-time masking modification alone. 
+
+2.6.2 Streaming Execution 
+
+Streaming generation maintains a simple state invariant: previously completed blocks form immutable context, whereas only the current block remains subject to refinement. The conditioning context is established once, after which the model repeatedly initializes, refines, and commits one acoustic block. Each committed block is passed to the causal codec for waveform reconstruction and can be emitted while generation proceeds to the next block. This separation between committed and mutable state has two consequences. First, the initial audio becomes available after processing only one block, rather than after constructing the full utterance. Second, subsequent blocks can exploit the accumulated acoustic history without revising content that has already been delivered. The method thus combines causal progression at the streaming interface with parallel prediction inside each generation unit. Generation terminates through a learned end-of-speech decision, with an explicit maximum duration retained as a serving constraint. The primary operating parameters are the temporal extent of a block and the computation allocated to its refinement. Smaller blocks improve delivery granularity, whereas greater refinement can improve the quality of a block before it is committed. We characterize these latency–quality operating points using the serving protocol in §5.2. 
+
+2.7 Design Trade-offs at a Glance 
+
+Table 1 summarizes the three-way comparison that Luna-TTS Family makes explicit. We regard neither variant as dominant: they are two operating points of one model family, exposed because production workloads genuinely bifur-cate into throughput-bound offline synthesis and latency-bound interactive synthesis. Table 1: Generation-paradigm comparison for a T -frame, Q-codebook utterance. NFE = number of function evalua-tions (sequential forward passes). AR figures assume a flattened or delay-pattern decoder over the same grid.                                
+
+> AR codec LM Luna-TTS Luna-TTS Realtime Generation order fixed, left-to-right any-order, global any-order within block, left-to-right between blocks Sequential NFE O(T)–O(T Q )S(const.) Sb⌈T /B ⌉
+> KV cache ✓—✓
+> Streaming ✓—✓(1.28s blocks) Length handling stop token duration predictor stop token Intra-frame codebooks delay / depth-AR / MTP native parallel native parallel Infilling & editing bespoke mechanisms native prefix-constrained Error propagation unbounded prefix iterative refinement within-block refinement; irrevocable after commit Preferred workload —offline / batch streaming / interactive
+
+# 3 Data and Pretraining 
+
+This section describes the construction of the multilingual training corpus—including its expressively annotated subset—and the progressive training schedule that produces Luna-TTS and Luna-TTS Realtime. 7Luna-TTS Family Technical Report 
+
+3.1 Data Construction 
+
+We construct the training corpus in two parts: a broad multilingual pretraining mixture, and an expressively annotated subset that carries utterance-level emotion labels and inline non-verbal vocalization (NVV) tags. 
+
+Pretraining Data Construction 
+
+We organize data production into four conceptual stages (Figure 2):       
+
+> raw recordings zh ·en ·ja ·ko
+> Standardize & Segment
+> format & loudness norm. language identification VAD + speaker turns
+> 1
+> Transcribe & Align
+> primary ASR transcripts forced alignment of text units to audio
+> 2
+> Filter & Verify
+> acoustic-quality filters second independent ASR cross-ASR WER/CER check
+> 3
+> rejected: low quality or cross-ASR disagreement
+> Assemble & Tokenize
+> speech–text examples Luna-Codec acoustic tokenization
+> 4
+> discrete acoustic tokens
+
+Figure 2: Four-stage multilingual data-processing pipeline. Raw recordings are converted into speaker-consistent, transcript-verified cuts before acoustic tokenization by Luna-Codec; cuts that fail the quality or cross-ASR consistency checks are discarded. Source recordings are first standardized, language identified, and segmented using speech activity and speaker boundaries. A primary ASR system supplies transcripts, while forced alignment maps textual units to the wave-form. Acoustic-quality filtering and a second, independently trained ASR system then verify each bounded, speaker-consistent cut; cross-ASR agreement is measured at the word level for English and the character level for Chinese, Japanese, and Korean. Accepted speaker-consistent cuts are encoded by Luna-Codec into the T × Q RVQ token grid. This pipeline yields approximately 1 million hours of curated speech across Chinese, English, Japanese, and Korean. The corpus fills three roles across the training pipeline (§3.2): the broad multilingual mixture used for foundation pretraining, a high-quality subset used for annealing, and the expressive subset described below. These subsets may overlap at the source-recording level but serve different purposes: broad coverage establishes linguistic and speaker diversity, while high-quality and expressive data improve fidelity and controllability. Table 2 gives the language composition: an evenly balanced Mandarin–English core, complemented by a combined 13.6% share of Japanese and Korean. Table 2: Language composition of the training corpus. Shares are independently rounded. 
+
+Language Share Mandarin Chinese 43.4% English 43.1% Japanese 6.7% Korean 6.9% 
+
+Expressive Data Construction 
+
+Data sources. The expressive subset is assembled from internal recordings and publicly available expressive corpora, and spans a broad range of expressive styles: character and role-play performance, scripted narration and storytelling, emotional dialogue, and spontaneous natural speech. All recordings undergo the standard normalization, segmentation, transcription, alignment, and quality-control pipeline described above before expressive annotation. 
+
+Emotion and NVV annotations. We consolidate source-specific labels into a shared control inventory, retaining cate-gories that are perceptually distinguishable, sufficiently represented, consistently annotatable, and useful for synthesis control. The inventory comprises utterance-level emotion labels and inline NVV event labels. Table 3 provides non-exhaustive examples to illustrate the annotation format. Synonymous or closely related source labels are mapped to canonical categories, while ambiguous, inconsistently annotated, or underrepresented categories are excluded. 
+
+Annotation with multiple models. We combine available source labels, recording metadata, and generation conditions with an annotation pipeline involving Gemini 3.1 Pro Preview and other large audio-language models. Given the audio and transcript, the models propose and cross-check utterance-level emotion labels and inline NVV events. Samples with model disagreement, low-confidence predictions, or complex event boundaries are routed to human review. We 8Luna-TTS Family Technical Report Table 3: Illustrative emotion and NVV control annotations.               
+
+> Annotation type Scope Labels
+> Emotion Utterance-level e.g., [happy] ,[sad] ,[angry] ,[fearful]
+> NVV Event-level e.g., [laughs] ,[sighs] ,[gasps] ,[coughs]
+
+then filter the annotated data for audio and transcript quality, label reliability, and duplication, using human spot checks to calibrate and audit the process. 
+
+Final annotation format. Annotations are stored in a common schema comprising an utterance-level emotion field and a text-aligned sequence of NVV events. The resulting corpus contains emotion-only, NVV-only, jointly annotated, and neutral speech examples. How these annotations are incorporated into model training is described in §2.3. 
+
+3.2 Training Stages 
+
+Training follows a progressive schedule in which each stage inherits the previous checkpoint while changing the data distribution or the attention pattern. Table 4 separates the data, training amount, and purpose of each stage. Table 4: Progressive training schedule.          
+
+> Stage Data Training amount Purpose Foundation pretraining Full multilingual mixture ∼1 million hours; ∼1.1
+> weighted epochs; ∼100 Bpacked speech–text tokens Learn multilingual speech generation from Qwen3-0.6B High-quality annealing Curated high-quality speech ∼100 K-hour pool; approximately one epoch Improve fidelity, robustness, and natural prosody Expressive continual pretraining Emotion- and NVV-annotated speech with neutral mixing Compact finely annotated pool Add independent and joint expressive control Block adaptation Multilingual mixture Approximately 20K optimization steps Learn block-causal streaming and termination
+
+Foundation pretraining and high-quality annealing. Foundation pretraining starts from the direct conversion of Qwen3-0.6B described in §2.4 and uses the masked-diffusion loss of Eq. (2). Its learning rate follows a cosine schedule from a peak of 2.1×10 −4 to 0.1× the peak. A late-stage foundation checkpoint is then further trained on approximately 100K hours of high-quality speech selected from the full training corpus. At the start of this stage, we retain the learning rate specified by the existing schedule rather than restarting it, ensuring a smooth transition when switching datasets. The learning rate is then annealed to 0.1× its peak value over approximately one epoch. Under identical inference settings, this stage consistently improves the four-language average WER on CV3-Eval over the branch-point checkpoint. 
+
+Expressive continual pretraining. Starting from the checkpoint obtained after high-quality annealing, training con-tinues on the expressive mixture described above. A small amount of neutral speech remains in the mixture to help preserve content accuracy, speaker identity, and natural prosody. The backbone and masked-diffusion objective remain unchanged. The resulting checkpoint supports emotion control, inline NVV generation, and their combination, and provides the initialization for subsequent model adaptation and RL post-training (§4). 
+
+Token-level duration predictor. The duration predictor used by Luna-TTS is fine-tuned from Qwen3-0.6B with full bidirectional attention. It reads the complete input text and predicts a distribution over quantized durations for every text token in parallel. Forced alignment supplies the supervision; at inference, the expectation of each predicted distribution is decoded and the per-token durations are summed to obtain the target frame count T .
+
+Block adaptation. The converged Luna-TTS checkpoint initializes Luna-TTS Realtime. Global target bidirection-ality is replaced by the two-stream block-causal mask, and sequence-level corruption by independently sampled per-block noise levels. The tokenizer, acoustic embedding space, Transformer weights, and prediction heads are retained. 9Luna-TTS Family Technical Report Training and inference use the same conditional and unconditional block geometry, and the terminal target is present even when valid speech ends at a block boundary. 
+
+# 4 Reinforcement Learning for Masked Speech-Token TTS 
+
+We apply reinforcement learning (RL) post-training to Luna-TTS to optimize utterance-level attributes that are not directly captured by token-level supervision, with a particular emphasis on linguistic fidelity and speaker consistency. Unlike autoregressive models, masked diffusion models refine multiple speech-token positions in parallel rather than imposing a strict left-to-right factorization [34]. Their sampling process must therefore be represented as an iterative denoising trajectory rather than as a sequence of conventional next-token decisions. Prior work on RL for masked discrete diffusion language models (dLLMs) approximates the intractable output likeli-hood with a one-step mean-field surrogate [59]. In our system, policy updates are instead organized around the token decisions realized along the denoising trajectory, following the trajectory-level perspective of diffusion policy opti-mization [60]. This construction preserves the native masked-generation procedure while enabling optimization with non-differentiable speech-level feedback. We describe below the system-level formulation used for RL post-training. 
+
+4.1 Trajectory-Aware Policy Optimization 
+
+Following the notation of §2.3, let c = ( y, P ) denote the conditioning information: the text input y, comprising the reference transcript and the target text, and the reference acoustic prompt P ; additional language or style conditions are omitted for brevity. Given a target length T , the model generates 
+
+X ∈ V T ×Q,
+
+where Q is the number of codebooks and V is the valid audio-token vocabulary. Generation induces a sequence of partially completed states. At denoising step k, the native inference procedure identifies a set of masked positions Mk
+
+and samples the corresponding token values ak, yielding the trajectory 
+
+τ = {(sk, M k, a k)}S−1 
+
+> k=0
+
+,
+
+where S is the number of refinement steps of the native decoder (§2.5). The RL update is applied to token decisions conditional on the realized position sequence. This separation maintains compatibility with the model’s native un-masking procedure without introducing an additional learned position policy. Joint optimization of the unmasking order would instead require an explicit stochastic position policy [61]. Let πθ (a | c, s, p ) denote the effective token distribution under parameters θ, after applying the same validity con-straints and sampling transformations used by the decoder, including classifier-free guidance when enabled [62]. Con-ditioned on the realized set Mk, the token distribution factorizes as 
+
+πθ (ak | c, s k, M k) = Y
+
+> p∈Mk
+
+πθ (ak,p | c, s k, p ).
+
+Both rollout and replay evaluate token probabilities within this effective policy family. This consistency is impor-tant because ratios computed from the untransformed model distribution need not correspond to the distribution that generated the speech tokens. Index prompt groups by g, candidate trajectories by i, and committed token actions by j. On the common valid action domain of the rollout and replay distributions, the per-action log-ratio and importance ratio are 
+
+∆g,i,j (θ) = log πθ (ag,i,j | zg,i,j ) − log πold (ag,i,j | zg,i,j ), rg,i,j (θ) = exp(∆ g,i,j (θ)) ,
+
+where zg,i,j collects the corresponding conditioning, denoising state, and position. The policy update is thus defined over decisions that were actually realized during masked generation rather than over an independently reconstructed terminal sequence. For each prompt g, the behavior policy samples G ≥ 2 candidate utterances and assigns each candidate a scalar utterance-level reward Rg,i . Following group-relative policy optimization (GRPO) [50], we compute 
+
+Ag,i = Rg,i − μg
+
+max( σg , σ min ) + ϵ ,
+
+where μg and σg are the mean and sample standard deviation of the rewards within the prompt group. All token decisions in a trajectory share the resulting utterance-level advantage. 10 Luna-TTS Family Technical Report For a mini-batch B, the token-level surrogate objective takes the form 
+
+LRL = 1
+
+|B| 
+
+X
+
+> (g,i )∈B
+
+1
+
+ng,i ng,i 
+
+X
+
+> j=1
+
+ℓclip (rg,i,j , A g,i ) ,
+
+where ℓclip is a PPO-style clipped surrogate [63] and ng,i is the number of replayed token decisions. Applying the surrogate at the token level avoids forming a trajectory-wide product of ratios across parallel decisions. Per-utterance normalization further prevents long utterances from receiving disproportionate weight. Because the objective is additive over recorded actions, replay can be decomposed over denoising states to control memory consumption without changing this normalization. 
+
+4.2 Utterance-Level Multi-Objective Feedback 
+
+Each generated waveform is evaluated by frozen models for automatic speech recognition and speaker verification. Let WER g,i denote the word error rate with respect to the target text and SIM g,i the speaker similarity to the reference audio. Lower values of WER g,i indicate higher linguistic fidelity, whereas higher values of SIM g,i indicate stronger speaker consistency. The two signals are converted into a prompt-local ordinal reward, 
+
+Rg,i = Ψ g (−WER g,i , SIM g,i ) ,
+
+where Ψg prioritizes content fidelity and uses speaker similarity to refine preferences among candidates of comparable linguistic quality. The policy update is restricted to groups that provide a meaningful relative preference signal. This group-local construction avoids two limitations of directly aggregating raw reward values. First, the scales and reliability of speech metrics can vary with language, transcript length, prompt difficulty, and reference conditions; within-prompt comparisons reduce sensitivity to these sources of heterogeneity. Second, an ordinal composition does not require the numerical calibration of heterogeneous reward models through a global weighted sum. The resulting reward therefore expresses the desired task priority while remaining robust to cross-prompt variation in absolute metric values. The reward is observed only after the generated token sequence has been decoded into a waveform. Consequently, the shared trajectory advantage provides coarse rather than token-specific credit assignment. This design trades fine-grained credit assignment for stable integration with black-box speech metrics and the native masked-decoding pro-cess. 
+
+# 5 Inference and Serving 
+
+Luna-TTS Family provides two serving profiles from the same 0.6B backbone. Luna-TTS targets high-throughput offline synthesis, while Luna-TTS Realtime targets low-latency streaming synthesis. Both profiles use the same speech representation and codec interface and are deployed through our vLLM-Omni serving stack [64]. 
+
+5.1 Serving Profiles Luna-TTS: full-utterance generation. Luna-TTS predicts the target duration, initializes the complete acoustic token canvas, and resolves it through full-grid refinement. The generated waveform becomes available after all refinement steps and codec decoding complete. This profile is optimized for offline and batched synthesis. 
+
+Luna-TTS Realtime: streaming generation. Luna-TTS Realtime prefills text, inline controls, and reference condi-tions once, then generates 32-frame acoustic blocks autoregressively. Each completed block is decoded immediately and committed to the KV cache. The engine therefore returns audio while the remaining utterance is still being generated. Classifier-free guidance can be executed sequentially on one GPU or split across two GPUs, with the conditional and unconditional branches evaluated in parallel. The parallel implementation preserves identical acoustic tokens and waveform bytes. The engine terminates generation using the learned EOS decision. A configurable maximum-length bound acts as a serving safeguard. 11 Luna-TTS Family Technical Report 
+
+5.2 H20 Serving Performance 
+
+We benchmark both profiles in BF16 with batch size 1 on the same Seed-TTS-Eval Chinese request. Local first-block latency is measured from engine invocation until the first 32-frame (1.28s) acoustic block is completed and decoded. Full-response latency includes acoustic generation, codec decoding, and WAV serialization. All values are medians over 12 warmed runs; network transport is excluded. Table 5: Luna-TTS Family 0.6B inference performance on NVIDIA H20 GPUs.                                         
+
+> Profile Steps Execution Local first block (ms) Full response (ms) End-to-end RTF ↓
+> Luna-TTS 32 1×H20, full-grid 419.6 419.6 0.0410 Luna-TTS 16 1×H20, full-grid 216.0 216.0 0.0211
+> Luna-TTS Realtime 16 1×H20, sequential CFG 98.9 837.7 0.0790 Luna-TTS Realtime 16 2×H20, parallel CFG 63.8 451.4 0.0426 Luna-TTS Realtime 81×H20, sequential CFG 59.6 457.6 0.0432 Luna-TTS Realtime 82×H20, parallel CFG 41.6 254.0 0.0240
+
+The two serving profiles optimize different latency targets. At 16 steps, Luna-TTS synthesizes the complete waveform in 216.0 ms with an end-to-end RTF of 0.0211. For streaming workloads, Luna-TTS Realtime returns the first decoded 1.28s audio block in 41.6 ms and completes a 10.6-second waveform in 254.0 ms. Parallel CFG substantially accelerates both operating points. It reduces full-response latency by 46.1% at 16 steps and 44.5% at 8 steps. Local first-block latency decreases from 98.9 to 63.8 ms at 16 steps and from 59.6 to 41.6 ms at 8 steps. We use the 8-step dual-H20 configuration as the default latency-optimized deployment. 
+
+5.3 Published Latency Context 
+
+Table 6 places our measured serving results alongside published inference results from representative open-source TTS systems. The configuration and hardware columns retain the operating point reported by each source. Table 6: Inference speed comparison with open-source TTS systems. Lower is better.                                     
+
+> System Configuration Hardware RTF ↓
+> Luna-TTS 16-step, full-grid 1×H20 0.0211 Luna-TTS Realtime 8-step, parallel CFG 2×H20 0.0240
+> Fast F5-TTS [65] 7-step EPSS RTX 3090 0.0300 OmniVoice [48] 16-step, batch 1 H20 0.0319 ZipVoice [66] 16 NFE H20 0.0557 VoxCPM2 [67] accelerated serving RTX 4090 ∼0.13 Spark-TTS [68] 0.5B, concurrency 1 L20 0.1362 F5-TTS [28] original model —0.15 Fish Audio S2 [15] SGLang-Omni [69] H200 0.195 Qwen3-TTS-25Hz [13] 0.6B, concurrency 1 —0.234
+
+Among the operating points in Table 6, Luna-TTS achieves the lowest RTF at 0.0211. The streaming Luna-TTS Realtime profile ranks second at 0.0240, reducing RTF by 20.0% relative to Fast F5-TTS and by 24.8% relative to OmniVoice while delivering audio block by block. Table 7 compares published first-output latency from leading commercial and open-source TTS systems. Table 7: Published first-output latency.                    
+
+> System Setup Latency
+> Luna-TTS Realtime 2×H20, excluding network 41.6 ms
+> Cartesia Sonic 3.5 [70] H100, concurrency 1 50 ms ElevenLabs Flash v2.5 [71] Excluding application/network ∼75 ms Hume Octave 2 [72] Excluding network ∼100 ms PlayHT Play 3.0 Mini [73] —190 ms Deepgram Aura-2 [74] —<200 ms VibeVoice-Realtime [75] —∼300 ms
+
+Among the measurements collected in Table 7, Luna-TTS Realtime records the lowest first-output latency at 41.6 ms. 12 Luna-TTS Family Technical Report Table 8: Zero-shot WER/CER (%) and speaker similarity on Seed-TTS-Eval. ⋄ quoted directly from the original papers or technical reports of the respective models; † official checkpoint re-evaluated by us using the official evaluation toolkit. SIM is reported on a 100-point scale. Best result per column in bold.                                                                                  
+
+> System Params zh CER ↓zh SIM ↑en WER ↓en SIM ↑
+> Seed-TTS ⋄[6] —1.12 79.6 2.25 76.2 MaskGCT ⋄[31] 1B 2.27 77.4 2.62 71.7 F5-TTS ⋄[28] 0.3B 1.56 76.0 1.83 67.0 CosyVoice 3 ⋄[9] 1.5B 1.12 78.1 2.21 72.0 MiniMax-Speech ⋄[10] —0.83 78.3 1.65 69.2 GLM-TTS ⋄[12] 1.5B 1.03 76.1 2.23 67.2 Qwen3-TTS-12Hz-1.7B-Base †[13] 1.7B 0.98 76.9 1.68 71.7 Qwen-Audio-3.0-TTS ⋄[14] —0.84 79.2 1.54 76.2 MOSS-TTS-Local-Transformer ⋄[16] 1.7B 1.33 77.2 1.87 71.7 VoxCPM2 ⋄[76] 2B 0.97 79.5 1.84 75.3 OmniVoice ⋄[48] 0.6B 0.84 77.7 1.60 74.1 Luna-TTS 0.6B 0.73 79.7 1.49 76.8
+> Luna-TTS Realtime 0.6B 1.08 76.9 1.81 73.4
+
+Table 9: Zero-shot WER/CER (%) on the six subsets of CV3-Eval, scored with the official toolkit (CER for zh/ja/ko/hard-zh, WER for en/hard-en). Avg. is the mean over the four language subsets (500 utterances each); the hard subsets are reported separately as diagnostics. ⋄ and † have the same meaning as in Table 8; “—” indicates values not reported by the source. Best result per column in bold.                                                                      
+
+> System zh en ja ko Avg. hard-zh hard-en CosyVoice 3 ⋄[9] 3.91 4.99 7.57 5.69 5.54 9.77 10.55 VoxCPM2 ⋄[76] 3.55 6.21 5.88 9.95 6.40 8.10 7.48 MOSS-TTS-Local-Transformer ⋄[16] 3.95 4.35 10.10 5.95 6.09 ——Qwen-Audio-3.0-TTS ⋄[14] 3.35 4.25 4.78 4.30 4.17 7.44 6.71 Qwen3-TTS-12Hz-1.7B-Base †[13] 3.19 3.92 5.00 4.63 4.18 9.36 7.47 OmniVoice †[48] 3.89 4.57 7.24 11.80 6.88 11.98 19.69 Luna-TTS 3.17 3.18 5.00 5.93 4.32 6.90 6.18
+> Luna-TTS Realtime 3.62 4.06 6.36 5.76 4.95 12.56 13.98
+
+# 6 Evaluation 
+
+Our evaluation covers three aspects of the system: zero-shot TTS quality against public benchmarks and strong base-lines (§6.1), the effectiveness of expressive and paralinguistic control (§6.2), and the quality of dedicated voices benchmarked against the preset voice libraries of commercial systems (§6.3). 
+
+6.1 Zero-Shot TTS Protocol. We evaluate on two public zero-shot benchmarks with full coverage: Seed-TTS-Eval [6] (2,020 Mandarin / 1,088 English utterances; CER via Paraformer-zh for Mandarin, WER via Whisper-large-v3 for English; SIM as cosine similarity of WavLM-large speaker-verification embeddings), and CV3-Eval [9] scored with the official toolkit (Whisper-large-v3 / Paraformer-zh; SIM via ERes2Net on a 0–100 scale, not comparable to Seed-TTS-Eval SIM). All WER/CER numbers follow the official toolkits’ aggregation: the unweighted mean of per-utterance error rates. As strong baselines, we re-evaluate the open-source Qwen3-TTS-12Hz-1.7B-Base [13] and OmniVoice [48] (with its official duration estimator) on CV3-Eval, under the same protocol and official scoring toolkits as the Luna-TTS Family rows (marked †); numbers for all other systems are quoted from their respective reports or from published comparison tables (marked ⋄) and may differ in evaluation details. The Luna-TTS Family rows report the results after RL post-training of §4. For Luna-TTS, the target length is supplied by the token-level duration predictor of §3.2 with no reference-duration information, and decoding uses S = 32 refinement steps with classifier-free guidance; Luna-TTS Realtime is evaluated in its streaming execution mode and instead terminates through its learned end-of-speech decision. 13 Luna-TTS Family Technical Report 
+
+Results on Seed-TTS-Eval. Table 8 places Luna-TTS first on all four columns. On Mandarin, CER (0.73) leads ahead of MiniMax-Speech (0.83), Qwen-Audio-3.0-TTS and OmniVoice (both 0.84), and the same-protocol Qwen3-TTS baseline (0.98); English WER (1.49) is likewise the lowest, ahead of Qwen-Audio-3.0-TTS (1.54), OmniVoice (1.60), and the same-protocol baseline (1.68). Speaker similarity is the highest on both languages: on English, 76.8 leads the next-best entries (76.2 for Seed-TTS and Qwen-Audio-3.0-TTS) by 0.6, while on Mandarin 79.7 sits marginally above Seed-TTS (79.6). 
+
+Results on CV3-Eval. CV3-Eval stresses in-the-wild zero-shot synthesis with substantially harder text—long, ir-regular, and stylistically diverse—and, unlike Seed-TTS-Eval, covers all four supported languages. Luna-TTS posts the lowest English WER in the table (3.18, with the same-protocol Qwen3-TTS baseline at 3.92), is on par with that baseline on Mandarin (3.17 vs. 3.19), and records the lowest error rates on the in-the-wild hard subsets as well (6.90 hard-zh and 6.18 hard-en, ahead of Qwen-Audio-3.0-TTS at 7.44 and 6.71); Korean is its hardest subset (5.93). Qwen-Audio-3.0-TTS retains the best Japanese, Korean, and four-language-average results (4.78, 4.30, and 4.17, vs. 5.00, 5.93, and 4.32), with Luna-TTS within 0.2 of the best average. Speaker similarity (ERes2Net) averages 73.5 over the six evaluation subsets. 
+
+Results for the streaming variant. Luna-TTS Realtime shows that streaming synthesis preserves most of the zero-shot quality: it reaches 1.08 CER / 76.9 SIM on Seed-TTS-Eval test-zh and 1.81 WER / 73.4 SIM on test-en, trading roughly 0.3 CER/WER and 3 SIM points against Luna-TTS, and stays close on the CV3-Eval language subsets (aver-age 4.95 vs. 4.32). Notably, while operating under streaming constraints, Luna-TTS Realtime still surpasses several offline-evaluated systems: its CV3-Eval four-language average is better than those of CosyVoice 3 (5.54), MOSS-TTS-Local-Transformer (6.09), and VoxCPM2 (6.40), and its Seed-TTS-Eval Mandarin CER (1.08) is lower than those of Seed-TTS and CosyVoice 3 (both 1.12). The clearest gap is on the CV3-Eval hard subsets (12.56 vs. 6.90 on hard-zh, 13.98 vs. 6.18 on hard-en), which are demanding on two fronts: the text is long and irregular, and the prompt audio is itself of noticeably lower quality than in the regular subsets. Two properties of block-causal decoding plausibly turn this difficulty into a wider gap. The first is error recovery: difficult text and degraded prompts both raise the chance of flawed early acoustic decisions, which Luna-TTS can revise during its global refinement passes, whereas Luna-TTS Realtime commits each block irrevocably, so an early mistake persists and conditions every subsequent block. The second is length control: Luna-TTS receives its frame count from the text-aware duration predictor, whereas Luna-TTS Realtime must decide when to stop through its learned end-of-speech mechanism, which irregular text and noisy acoustic context can mislead into truncation or run-on errors. Taken together with the serving results of §5, this quan-tifies the streaming trade-off: a modest quality cost on regular content and a larger one on hard in-the-wild content, in exchange for blockwise delivery with 41.6 ms first-block latency. 
+
+6.2 Expressive Speech Control 
+
+Our evaluation focuses on two complementary aspects of expressive speech generation: emotion control and NVV generation. For both aspects, we assess control accuracy and perceptual quality by benchmarking Luna-TTS against three commercial systems: MiniMax Speech 2.8 HD [77], ElevenLabs Eleven v3 [78], and Fish Audio S2.1 Pro [79]. 
+
+6.2.1 Non-Verbal Vocalization Control 
+
+We evaluate NVV control using the Multilingual-NVASR protocol from NV-Bench [80] and the LALM-based percep-tual evaluation protocol from NVV-SuperBench [81]. The objective evaluation uses samples from both benchmarks, restricted to four categories recognized by Multilingual-NVASR and supported by all systems—breath, cough, laugh-ter, and sigh. The perceptual evaluation covers all NVV-SuperBench categories supported by each system. 
+
+Objective controllability. We compute PCER (CER calculated on extracted NV symbols) and report micro-averaged event precision, recall, and F1 to characterize prediction correctness and target-event coverage. All metrics are per-centages. Table 10: NVASR-based objective evaluation of NVV controllability.                         
+
+> Model PCER ↓Precision ↑Recall ↑F1 ↑
+> MiniMax Speech 2.8 HD 41.29% 78.00% 60.50% 68.14% ElevenLabs Eleven v3 41.73% 87.45% 59.79% 71.02% Fish Audio S2.1 Pro 47.36% 77.36% 55.59% 64.69% Luna-TTS 39.95% 79.38% 66.76% 72.52%
+
+14 Luna-TTS Family Technical Report 
+
+LALM-based perceptual evaluation. Gemini 3.1 Pro Preview [82] rates NVV Accuracy, NVV Perceptual Effect (NVV PE), and overall naturalness, quality, and expression. NVV Accuracy measures event realization and position-ing, whereas NVV PE captures the perceptual effectiveness of the generated NVV. Overall metrics use a 1–5 scale, while NVV-specific metrics use a 0–5 scale (0 = absent or nearly inaudible). Table 11: Average LALM-based NVV-control ratings over each system’s supported categories.                          
+
+> Model NVV Accuracy ↑
+> NVV PE ↑
+> Overall Naturalness ↑
+> Overall Quality ↑
+> Overall Expression ↑
+> MiniMax Speech 2.8 HD 3.95 3.62 3.50 4.12 3.54 ElevenLabs Eleven v3 3.65 3.75 3.40 4.15 3.30 Fish Audio S2.1 Pro 3.56 2.66 2.83 3.73 3.00 Luna-TTS 3.60 3.63 3.65 4.18 3.75
+
+6.2.2 Emotion Control 
+
+We evaluate emotion control using E-Sim, LALM-based ratings, and human MOS. E-Sim uses the ESD test set [83], which provides test texts and corresponding human reference recordings. For the LALM and human evaluations, we construct a held-out bilingual emotion test set using LLM-assisted generation. The resulting natural conversational utterances cover diverse scenarios and undergo quality checks and human review. E-Sim is evaluated on five shared emotions—Angry, Happy, Sad, Surprise, and Neutral. In contrast, the LALM and human evaluations cover all emotion categories explicitly supported by each system. 
+
+Emotion similarity. Using emotion2vec_plus_large [84], we compute E-Sim as the cosine similarity between utterance-level embeddings of generated speech and paired human recordings. Because E-Sim may also capture non-emotional acoustic factors, we interpret it as a complementary metric. Table 12: E-Sim ( ↑) across five shared target emotions.                               
+
+> Model Angry Happy Sad Surprise Neutral Overall
+> MiniMax Speech 2.8 HD 0.530 0.603 0.460 0.357 0.715 0.533 ElevenLabs Eleven v3 0.544 0.513 0.481 0.406 0.814 0.552 Fish Audio S2.1 Pro 0.473 0.416 0.402 0.279 0.867 0.487 Luna-TTS 0.608 0.497 0.543 0.403 0.741 0.558
+
+LALM-based evaluation. Following the model-as-a-judge paradigm of EmergentTTS-Eval [85] and the distinction between instruction following and perceptual quality in MINT-Bench [86], Gemini 3.1 Pro Preview [82] rates Emotion Match and Expression Quality on a 1–5 scale. These metrics measure target-emotion alignment and the quality of emotional delivery, respectively. 
+
+Human listening test. In a randomized, blinded listening test, listeners independently rate each sample on a 1–5 scale for naturalness and human-likeness (N-MOS) and for how accurately and convincingly the target emotion is conveyed (E-MOS). Table 13: Average emotion-control ratings over each system’s supported emotions.                         
+
+> LALM-based Evaluation Human Listening Test Model Emotion Match ↑
+> Expression Quality ↑N-MOS ↑E-MOS ↑
+> MiniMax Speech 2.8 HD 2.70 4.40 4.10 3.70 ElevenLabs Eleven v3 2.67 4.49 4.18 3.82 Fish Audio S2.1 Pro 1.93 3.94 3.95 3.55 Luna-TTS 2.63 4.54 4.14 3.90
+
+15 Luna-TTS Family Technical Report 
+
+6.2.3 Overall Expressive Control Performance 
+
+Across the NVV and emotion evaluations, Luna-TTS delivers the strongest overall balance of controllability, percep-tual quality, and expressive coverage among the evaluated systems. For NVV control, it achieves the lowest PCER and the highest recall and F1 score, together with the best LALM-rated overall naturalness, quality, and expression. For emotion control, it achieves the highest overall E-Sim, the best LALM-rated Expression Quality, and the highest human-rated E-MOS, while maintaining competitive Emotion Match and near-best N-MOS across its full supported emotion inventory. Together, these results show that Luna-TTS provides broad and effective expressive control without sacrificing perceptual quality or speech naturalness. 
+
+6.3 Dedicated-Voice Evaluation in Our Internal TTS Arena 
+
+Beyond zero-shot voice cloning, production TTS systems are often deployed with a fixed roster of dedicated voices. We evaluate this setting using our internal English TTS Arena, comparing Luna-TTS with Gemini 3.1 Flash TTS, MiniMax Speech 2.8 HD, ElevenLabs Eleven v3, StepAudio 2.5 TTS, and Inworld TTS 2. To control for differences in voice-library size, three voices are included for each system: our entry uses three dedicated voices obtained by further fine-tuning Luna-TTS on internal recordings, while each commercial system uses three voices sampled at random from the preset voices officially recommended on its website. The analysis covers 1,319 pairwise comparisons on 100 English prompts spanning customer service, assistants, knowledge sharing, and entertainment. In every trial, two anonymized samples are presented in randomized left–right order and evaluated for overall speech quality, including naturalness, expressiveness, prosody, and delivery. The system identity, model name, and voice identity are hidden during evaluation. The Arena ranking is estimated using a Bradley–Terry model fitted to the pairwise outcomes, with strengths reported on an Elo-like scale whose mean is anchored at 1500. To assess sampling uncertainty, we performed 300 bootstrap resamples, recomputed the ranking for each resample, and reported the median Elo estimate together with the 5th–95th percentile interval. As shown in Table 14, Luna-TTS achieves the highest Elo estimate among the six evaluated systems, with a bootstrap-median Elo of 1548.47. It records 495 wins and 368 losses, corresponding to an overall win rate of 57.36%. Gemini is a close second, and its bootstrap interval overlaps with that of Luna-TTS. Therefore, Luna-TTS has the highest nominal ranking in this Arena evaluation, although the available evidence does not establish a statistically significant difference between Luna-TTS and Gemini 3.1 Flash TTS. Table 14: Results from our internal English TTS Arena. Elo values are medians from 300 bootstrap resamples, and uncertainty intervals span the 5th–95th bootstrap percentiles.                                           
+
+> Rank System Elo 90% bootstrap interval Wins Losses Win rate 1Luna-TTS 1548.47 1531.98–1566.59 495 368 57.36%
+> 2Gemini 3.1 Flash TTS 1546.13 1517.81–1572.46 221 196 53.00% 3Inworld TTS 2 1495.67 1474.79–1519.24 283 317 47.17% 4ElevenLabs Eleven v3 1484.37 1436.10–1529.14 50 69 42.02% 5StepAudio 2.5 TTS 1480.39 1458.27–1506.09 229 298 43.45% 6MiniMax Speech 2.8 HD 1445.53 1391.82–1495.23 41 71 36.61%
+
+Table 15 reports Luna-TTS’s direct results against each competing system. Luna-TTS achieves a positive win rate in all five head-to-head comparisons. Its largest margin is observed against Inworld TTS 2, while its comparison with Gemini is nearly balanced. Table 15: Luna-TTS head-to-head results in our internal English TTS Arena.               
+
+> Opponent Luna-TTS wins–losses Win rate Inworld TTS 2 92–52 63.89% MiniMax Speech 2.8 HD 54–34 61.36% ElevenLabs Eleven v3 56–38 59.57% StepAudio 2.5 TTS 176–131 57.33% Gemini 3.1 Flash TTS 117–113 50.87% Overall 495–368 57.36%
+
+16 Luna-TTS Family Technical Report 
+
+# 7 Conclusion 
+
+This report introduced Luna-TTS Family, a family of diffusion-LLM-based TTS systems developed through progres-sive adaptation. A pretrained AR text LLM is first converted into the fully parallel Luna-TTS and subsequently adapted into the block-causal Luna-TTS Realtime. The resulting variants share one model lineage while targeting complementary deployment scenarios: high-throughput offline synthesis and low-latency streaming. Across quality and controllability, Luna-TTS ranks first on all four Seed-TTS-Eval metrics, records the lowest Man-darin and English error rates in our CV3-Eval comparison, and achieves the strongest overall expressive-control results among the evaluated systems. On the systems side, Luna-TTS reaches an end-to-end RTF of 0.0211, while Luna-TTS Realtime combines an RTF of 0.0240 with 41.6 ms local first-block latency for a 1.28s block under the warmed serving protocol. Taken together, these results advance the state of the art in both speech-generation performance and serving efficiency. They demonstrate that masked acoustic-token diffusion can support high-quality offline and real-time syn-thesis within a unified model family, rather than serving only as an alternative to conventional left-to-right acoustic decoding. 
+
+Limitations. Among the four supported languages, Korean shows the weakest performance on CV3-Eval, with a CER of 5.93. This gap may partly reflect the relatively small proportion of Korean data (6.9%) in the training mixture. Language coverage is also limited to four languages, substantially narrower than that of massively multilingual TTS systems. In addition, Luna-TTS relies on an external duration predictor to determine the target frame count before synthesis, while Luna-TTS Realtime uses a fixed block size of 1.28s, selected for streaming efficiency rather than dynamically adapted to the input content, and trails Luna-TTS most visibly on the hard CV3-Eval subsets. 
+
+Future work. Promising directions for future work include expanding language and dialect coverage, dynamically adapting block sizes to the input content, jointly optimizing the unmasking-position and token policies through rein-forcement learning, and integrating duration prediction into the backbone. 
+
+# 8 Authors 
+
+Core Contributors 
+
+Feng Yin * Shuai Shi * Junjie Zheng * Kechenying Zhou * Yiqiu Wang Chenyang He Qiuhua Jiang Mengxiao Bi Yanmin Qian †
+
+Contributors ‡
+
+Mingxin Chen Xun Gong Tianteng Gu Bing Han Peng Jiang Chenda Li Haiyang Sun Han Wang Wei Wang Yi Wang Leying Zhang Wangyou Zhang Chushu Zhou 
+
+# References 
+
+[1] Neil Zeghidour, Alejandro Luebs, Ahmed Omran, Jan Skoglund, and Marco Tagliasacchi. SoundStream: An end-to-end neural audio codec. IEEE/ACM Transactions on Audio, Speech, and Language Processing , 30:495–507, 2022. [2] Alexandre Défossez, Jade Copet, Gabriel Synnaeve, and Yossi Adi. High fidelity neural audio compression. 
+
+arXiv preprint arXiv:2210.13438 , 2022. [3] Rithesh Kumar, Prem Seetharaman, Alejandro Luebs, Ishaan Kumar, and Kundan Kumar. High-fidelity audio compression with improved RVQGAN. In Advances in Neural Information Processing Systems , 2023. [4] James Betker. Better speech synthesis through scaling. arXiv preprint arXiv:2305.07243 , 2023. [5] Chengyi Wang, Sanyuan Chen, Yu Wu, Ziqiang Zhang, Long Zhou, Shujie Liu, Zhuo Chen, Yanqing Liu, Huam-ing Wang, Jinyu Li, Lei He, Sheng Zhao, and Furu Wei. Neural codec language models are zero-shot text to speech synthesizers. arXiv preprint arXiv:2301.02111 , 2023. [6] Philip Anastassiou, Jiawei Chen, Jitong Chen, Yuanzhe Chen, Zhuo Chen, Ziyi Chen, et al. Seed-TTS: A family of high-quality versatile speech generation models. arXiv preprint arXiv:2406.02430 , 2024.      
+
+> *Equal contribution. †Corresponding author. ‡Listed alphabetically by family name.
+
+17 Luna-TTS Family Technical Report [7] Zhihao Du, Qian Chen, Shiliang Zhang, Kai Hu, Heng Lu, Yexin Yang, Hangrui Hu, Siqi Zheng, Yue Gu, Ziyang Ma, Zhifu Gao, and Zhijie Yan. CosyVoice: A scalable multilingual zero-shot text-to-speech synthesizer based on supervised semantic tokens. arXiv preprint arXiv:2407.05407 , 2024. [8] Zhihao Du, Yuxuan Wang, Qian Chen, Xian Shi, Xiang Lv, Tianyu Zhao, Zhifu Gao, Yexin Yang, et al. CosyVoice 2: Scalable streaming speech synthesis with large language models. arXiv preprint arXiv:2412.10117 ,2024. [9] Zhihao Du, Changfeng Gao, Yuxuan Wang, Fan Yu, Tianyu Zhao, Hao Wang, Xiang Lv, Hui Wang, et al. CosyVoice 3: Towards in-the-wild speech generation via scaling-up and post-training. arXiv preprint arXiv:2505.17589 , 2025. [10] Bowen Zhang, Congchao Guo, Geng Yang, Hang Yu, Haozhe Zhang, et al. MiniMax-Speech: Intrinsic zero-shot text-to-speech with a learnable speaker encoder. arXiv preprint arXiv:2505.07916 , 2025. [11] Zhen Ye, Xinfa Zhu, Chi-Min Chan, Xinsheng Wang, Xu Tan, Jiahe Lei, Yi Peng, et al. Llasa: Scaling train-time and inference-time compute for Llama-based speech synthesis. arXiv preprint arXiv:2502.04128 , 2025. [12] Jiayan Cui, Zhihan Yang, Naihan Li, Jiankun Tian, Xingyu Ma, Yi Zhang, Guangyu Chen, Runxuan Yang, Zijian Huang, Yuqing Cheng, Yizhi Zhou, Guochen Yu, Xiaotao Gu, and Jie Tang. GLM-TTS technical report. arXiv preprint arXiv:2512.14291 , 2025. [13] Hangrui Hu, Xinfa Zhu, Ting He, Dake Guo, Bin Zhang, et al. Qwen3-TTS technical report. arXiv preprint arXiv:2601.15621 , 2026. [14] Bajian Xiang, Cheng Wen, Han Zhao, Hao Wang, Haoxu Wang, et al. Qwen-Audio-3.0-TTS: Freely controllable and highly robust speech synthesis with multi-stage training paradigm. arXiv preprint arXiv:2607.23938 , 2026. [15] Shijia Liao, Yuxuan Wang, Songting Liu, Yifan Cheng, et al. Fish audio S2 technical report. arXiv preprint arXiv:2603.08823 , 2026. [16] SII-OpenMOSS Team. MOSS-TTS technical report. arXiv preprint arXiv:2603.18090 , 2026. [17] Xinsheng Wang, Mingqi Jiang, Ziyang Ma, Ziyu Zhang, Songxiang Liu, Linqin Li, et al. Spark-TTS: An efficient LLM-based text-to-speech model with single-stream decoupled speech tokens. arXiv preprint arXiv:2503.01710 ,2025. [18] Siyi Zhou, Yiquan Zhou, Yi He, Xun Zhou, Jinchao Wang, Wei Deng, and Jingchen Shu. IndexTTS2: Abreakthrough in emotionally expressive and duration-controlled auto-regressive zero-shot text-to-speech. arXiv preprint arXiv:2506.21619 , 2025. [19] Hao-Han Guo, Kun Liu, Fei-Yu Shen, Yi-Chen Wu, Feng-Long Xie, Kun Xie, and Kai-Tuo Xu. FireRedTTS: A foundation text-to-speech framework for industry-level generative speech applications. arXiv preprint arXiv:2409.03283 , 2024. [20] LLM-Core Xiaomi. MiMo-Audio: Audio language models are few-shot learners. arXiv preprint arXiv:2512.23808 , 2025. [21] StepFun Audio Team. Step-Audio 2 technical report. arXiv preprint arXiv:2507.16632 , 2025. [22] Jade Copet, Felix Kreuk, Itai Gat, Tal Remez, David Kant, Gabriel Synnaeve, Yossi Adi, and Alexandre Défossez. Simple and controllable music generation. In Advances in Neural Information Processing Systems , 2023. [23] Alexandre Défossez, Laurent Mazaré, Manu Orsini, Amélie Royer, Patrick Pérez, Hervé Jégou, Edouard Grave, and Neil Zeghidour. Moshi: A speech-text foundation model for real-time dialogue. arXiv preprint arXiv:2410.00037 , 2024. [24] Yakun Song, Xiaobin Zhuang, Jiawei Chen, et al. DiSTAR: Diffusion over a scalable token autoregressive representation for speech generation. arXiv preprint arXiv:2510.12210 , 2025. [25] Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for genera-tive modeling. In International Conference on Learning Representations , 2023. [26] Matthew Le, Apoorv Vyas, Bowen Shi, Brian Karrer, Leda Sari, Rashel Moritz, Mary Williamson, Vimal Manohar, Yossi Adi, Jay Mahadeokar, and Wei-Ning Hsu. Voicebox: Text-guided multilingual universal speech generation at scale. In Advances in Neural Information Processing Systems , 2023. [27] Sefik Emre Eskimez, Xiaofei Wang, Manthan Thakker, Canrun Li, Chung-Hsien Tsai, Zhen Xiao, Hemin Yang, Zirun Zhu, Min Tang, Xu Tan, Yanqing Liu, Sheng Zhao, and Naoyuki Kanda. E2 TTS: Embarrassingly easy fully non-autoregressive zero-shot TTS. In IEEE Spoken Language Technology Workshop (SLT) , 2024. [28] Yushen Chen, Zhikang Niu, Ziyang Ma, Keqi Deng, Chunhui Wang, Jian Zhao, Kai Yu, and Xie Chen. F5-TTS: A fairytaler that fakes fluent and faithful speech with flow matching. arXiv preprint arXiv:2410.06885 , 2024. 18 Luna-TTS Family Technical Report [29] Zalán Borsos, Matt Sharifi, Damien Vincent, Eugene Kharitonov, Neil Zeghidour, and Marco Tagliasacchi. SoundStorm: Efficient parallel audio generation. arXiv preprint arXiv:2305.09636 , 2023. [30] Zeqian Ju, Yuancheng Wang, Kai Shen, Xu Tan, Detai Xin, Dongchao Yang, Yanqing Liu, et al. NaturalSpeech 3: Zero-shot speech synthesis with factorized codec and diffusion models. In International Conference on Machine Learning , 2024. [31] Yuancheng Wang, Haoyue Zhan, Liwei Liu, Ruihong Zeng, Haotian Guo, Jiachen Zheng, Qiang Zhang, Xueyao Zhang, Shunsi Zhang, and Zhizheng Wu. MaskGCT: Zero-shot text-to-speech with masked generative codec transformer. In International Conference on Learning Representations , 2025. [32] Jacob Austin, Daniel D. Johnson, Jonathan Ho, Daniel Tarlow, and Rianne van den Berg. Structured denoising diffusion models in discrete state-spaces. In Advances in Neural Information Processing Systems , 2021. [33] Aaron Lou, Chenlin Meng, and Stefano Ermon. Discrete diffusion modeling by estimating the ratios of the data distribution. In International Conference on Machine Learning , 2024. [34] Subham Sekhar Sahoo, Marianne Arriola, Yair Schiff, Aaron Gokaslan, Edgar Marroquin, Justin T. Chiu, Alexan-der Rush, and Volodymyr Kuleshov. Simple and effective masked diffusion language models. In Advances in Neural Information Processing Systems , volume 37, pages 130136–130184, 2024. [35] Jiaxin Shi, Kehang Han, Zhe Wang, Arnaud Doucet, and Michalis K. Titsias. Simplified and generalized masked diffusion for discrete data. In Advances in Neural Information Processing Systems , 2024. [36] Shen Nie, Fengqi Zhu, Zebin You, Xiaolu Zhang, Jingyang Ou, Jun Hu, Jun Zhou, Yankai Lin, Ji-Rong Wen, and Chongxuan Li. Large language diffusion models. arXiv preprint arXiv:2502.09992 , 2025. [37] Jiacheng Ye, Zhihui Xie, Lin Zheng, Jiahui Gao, Zirui Wu, Xin Jiang, Zhenguo Li, and Lingpeng Kong. Dream 7B: Diffusion large language models. arXiv preprint arXiv:2508.15487 , 2025. [38] Inception Labs, Samar Khanna, Siddhant Kharbanda, Shufan Li, et al. Mercury: Ultra-fast language models based on diffusion. arXiv preprint arXiv:2506.17298 , 2025. [39] Yuxuan Song, Zheng Zhang, Cheng Luo, Pengyang Gao, Fan Xia, et al. Seed diffusion: A large-scale diffusion language model with high-speed inference. arXiv preprint arXiv:2508.02193 , 2025. [40] Tiwei Bie, Maosong Cao, Kun Chen, Lun Du, et al. LLaDA2.0: Scaling up diffusion language models to 100B. 
+
+arXiv preprint arXiv:2512.15745 , 2025. [41] Marianne Arriola, Aaron Gokaslan, Justin T. Chiu, Zhihan Yang, Zhixuan Qi, Jiaqi Han, Subham Sekhar Sahoo, and Volodymyr Kuleshov. Block diffusion: Interpolating between autoregressive and diffusion language models. In International Conference on Learning Representations , 2025. [42] Shansan Gong, Shivam Agarwal, Yizhe Zhang, Jiacheng Ye, Lin Zheng, Mukai Li, Chenxin An, et al. Scaling diffusion language models via adaptation from autoregressive models. In International Conference on Learning Representations , 2025. [43] Chengyue Wu, Hao Zhang, Shuchen Xue, Shizhe Diao, et al. Fast-dLLM v2: Efficient block-diffusion LLM. 
+
+arXiv preprint arXiv:2509.26328 , 2025. [44] Yangzhou Liu, Yue Cao, Hao Li, Gen Luo, Zhe Chen, et al. Sequential diffusion language models. arXiv preprint arXiv:2509.24007 , 2025. [45] StepFun-Audio Team. StepAudio 2.5 technical report. arXiv preprint arXiv:2605.23463 , 2026. [46] Xiaoyu Fan, Huizhi Xie, Wei Zou, and Yunzhang Chen. LLaDA-TTS: Unifying speech synthesis and zero-shot editing via masked diffusion modeling. arXiv preprint arXiv:2603.26364 , 2026. [47] Yuxuan Lou, Ziming Wu, Yaochen Wang, et al. DiffuSpeech: Silent thought, spoken answer via unified speech-text diffusion. arXiv preprint arXiv:2601.22889 , 2026. [48] Han Zhu, Lingxuan Ye, Wei Kang, et al. OmniVoice: Towards omnilingual zero-shot text-to-speech with diffu-sion language models. arXiv preprint arXiv:2604.00688 , 2026. [49] Deokjin Seo, Gangin Park, and Kihyun Nam. Chatterbox-flash: Prior-calibrated block diffusion for streaming zero-shot TTS. arXiv preprint arXiv:2605.30748 , 2026. [50] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, Y. K. Li, Y. Wu, and Daya Guo. DeepSeekMath: Pushing the limits of mathematical reasoning in open language models, 2024. URL https://arxiv.org/abs/2402.03300 . arXiv preprint arXiv:2402.03300. [51] Yixuan Zhou, Guoyang Zeng, Xin Liu, Xiang Li, Renjie Yu, Ziyang Wang, Runchuan Ye, Weiyue Sun, Jiancheng Gui, Kehan Li, Zhiyong Wu, and Zhiyuan Liu. VoxCPM: Tokenizer-free TTS for context-aware speech genera-tion and true-to-life voice cloning. arXiv preprint arXiv:2509.24650 , 2025. 19 Luna-TTS Family Technical Report [52] Zhen Ye, Peiwen Sun, Jiahe Lei, Hongzhan Lin, Xu Tan, Zheqi Dai, Qiuqiang Kong, Jianyi Chen, Jiahao Pan, Qifeng Liu, Yike Guo, and Wei Xue. Codec does matter: Exploring the semantic shortcoming of codec for audio language model. arXiv preprint arXiv:2408.17175 , 2024. [53] Xin Zhang, Dong Zhang, Shimin Li, Yaqian Zhou, and Xipeng Qiu. SpeechTokenizer: Unified speech tokenizer for speech large language models. In International Conference on Learning Representations , 2024. [54] Sanyuan Chen, Chengyi Wang, Zhengyang Chen, Yu Wu, Shujie Liu, Zhuo Chen, Jinyu Li, Naoyuki Kanda, Takuya Yoshioka, Xiong Xiao, Jian Wu, Long Zhou, Shuo Ren, Yanmin Qian, Yao Qian, Jian Wu, Michael Zeng, Xiangzhan Yu, and Furu Wei. WavLM: Large-scale self-supervised pre-training for full stack speech processing. 
+
+IEEE Journal of Selected Topics in Signal Processing , 16(6):1505–1518, 2022. [55] Jungil Kong, Jaehyeon Kim, and Jaekyoung Bae. HiFi-GAN: Generative adversarial networks for efficient and high fidelity speech synthesis. In Advances in Neural Information Processing Systems , 2020. [56] Sang-gil Lee, Wei Ping, Boris Ginsburg, Bryan Catanzaro, and Sungroh Yoon. BigVGAN: A universal neural vocoder with large-scale training. In International Conference on Learning Representations , 2023. [57] Boson AI. Higgs audio v2: Text-audio foundation model. https://github.com/boson-ai/higgs-audio ,2025. Open release with a unified semantic–acoustic audio tokenizer; no accompanying arXiv report. [58] Huiwen Chang, Han Zhang, Lu Jiang, Ce Liu, and William T. Freeman. MaskGIT: Masked generative image transformer. In IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2022. [59] Siyan Zhao, Devaansh Gupta, Qinqing Zheng, and Aditya Grover. d1: Scaling reasoning in diffusion large language models via reinforcement learning. In Advances in Neural Information Processing Systems , volume 38, pages 56729–56762, 2025. URL https://proceedings.neurips.cc/paper_files/paper/2025/file/ 52190a0362148d179f1cbd9080956872-Paper-Conference.pdf .[60] Kevin Black, Michael Janner, Yilun Du, Ilya Kostrikov, and Sergey Levine. Training dif-fusion models with reinforcement learning. In International Conference on Learning Repre-sentations , 2024. URL https://proceedings.iclr.cc/paper_files/paper/2024/file/ 14f75513f0f1ca01de1e826b52e6b840-Paper-Conference.pdf .[61] Haran Raajesh, Kulin Shah, Adam Klivans, and Philipp Krähenbühl. Mask-aware policy gradients for diffusion language models. arXiv preprint arXiv:2607.15200 , 2026. doi: 10.48550/arXiv.2607.15200. Accepted at COLM 2026. [62] Jonathan Ho and Tim Salimans. Classifier-free diffusion guidance. arXiv preprint arXiv:2207.12598 , 2022. doi: 10.48550/arXiv.2207.12598. [63] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 , 2017. doi: 10.48550/arXiv.1707.06347. [64] Peiqi Yin, Jiangyun Zhu, Han Gao, Chenguang Zheng, Yongxiang Huang, Taichang Zhou, Ruirui Yang, Weizhi Liu, Weiqing Chen, Canlin Guo, Didan Deng, Zifeng Mo, Cong Wang, James Cheng, Roger Wang, and Hong-sheng Liu. vLLM-Omni: Fully disaggregated serving for any-to-any multimodal models. arXiv preprint arXiv:2602.02204 , 2026. doi: 10.48550/arXiv.2602.02204. [65] Qixi Zheng, Yushen Chen, Zhikang Niu, Ziyang Ma, Xiaofei Wang, Kai Yu, and Xie Chen. Accelerating flow-matching-based text-to-speech via empirically pruned step sampling. arXiv preprint arXiv:2505.19931 , 2025. doi: 10.48550/arXiv.2505.19931. [66] Han Zhu, Wei Kang, Zengwei Yao, Liyong Guo, Fangjun Kuang, Zhaoqing Li, Weiji Zhuang, Long Lin, and Daniel Povey. Zipvoice: Fast and high-quality zero-shot text-to-speech with flow matching. arXiv preprint arXiv:2506.13053 , 2025. doi: 10.48550/arXiv.2506.13053. [67] OpenBMB. VoxCPM2: Production deployment and inference performance. https://github.com/OpenBMB/ VoxCPM , 2026. Accessed: 2026-08-10. [68] SparkAudio. Spark-TTS: Nvidia triton inference serving. https://github.com/SparkAudio/Spark-TTS ,2025. Accessed: 2026-08-10. [69] SGLang Team. SGLang-Omni: High-performance multi-stage pipeline framework for omni models. https: //github.com/sgl-project/sglang-omni , 2026. Accessed: 2026-08-10. [70] Cartesia. Sonic 3.5 self-hosted hardware selection and latency. https://docs.cartesia.ai/self-hosted/ hardware-selection , 2026. Accessed: 2026-08-10. [71] ElevenLabs. Models: Eleven flash v2.5. https://elevenlabs.io/docs/overview/models , 2026. Ac-cessed: 2026-08-10. 20 Luna-TTS Family Technical Report [72] Hume AI. Text-to-speech: Octave 2. https://dev.hume.ai/docs/text-to-speech-tts/overview , 2026. Accessed: 2026-08-10. [73] PlayHT. Text-to-speech models: Play 3.0 mini. https://docs.play.ht/reference/models , 2026. Ac-cessed: 2026-08-10. [74] Deepgram. Aura-2 text-to-speech performance. https://developers.deepgram.com/changelog/2025/5/ 14 , 2025. Accessed: 2026-08-10. [75] Microsoft. Vibevoice-realtime: Real-time streaming text-to-speech. https://github.com/microsoft/ VibeVoice , 2025. Accessed: 2026-08-10. [76] Yixuan Zhou, Guoyang Zeng, Xin Liu, Xiang Li, Renjie Yu, Jiancheng Gui, Jiaheng Wu, Ziyang Wang, Xudong Shen, Runchuan Ye, Zhisheng Zhang, Jiuyang Zhou, Bingsong Bai, Weiyue Sun, Mengyuan Deng, Qundong Shi, Zhiyong Wu, and Zhiyuan Liu. VoxCPM2 technical report. arXiv preprint arXiv:2606.06928 , 2026. [77] MiniMax. MiniMax Speech-2.8. https://www.minimax-speech.com/ , 2026. Accessed: 2026-07-30. [78] ElevenLabs. Eleven v3. https://elevenlabs.io/v3 , 2026. Accessed: 2026-07-30. [79] Fish Audio. Introducing S2.1 Pro: Our most expressive TTS model yet. https://fish.audio/blog/ s2-1-pro-free-api/ , 2026. Accessed: 2026-07-30. [80] Qinke Ni, Huan Liao, Dekun Chen, Yuxiang Wang, and Zhizheng Wu. NV-Bench: Benchmark of nonverbal vocalization synthesis for expressive text-to-speech generation. arXiv preprint arXiv:2603.15352 , 2026. doi: 10.48550/arXiv.2603.15352. [81] Liumeng Xue, Weizhen Bian, Jiahao Pan, Wenxuan Wu, Yilin Ren, Boyi Kang, Jingbin Hu, Ziyang Ma, Shuai Wang, Xinyuan Qian, et al. NVV-SuperBench: Beyond words, beyond quality—benchmarking nonverbal vocal-izations in speech generation. arXiv preprint arXiv:2604.16211 , 2026. doi: 10.48550/arXiv.2604.16211. [82] Google DeepMind. Gemini 3.1 Pro model card. https://deepmind.google/models/model-cards/ gemini-3-1-pro/ , 2026. Accessed: 2026-07-30. [83] Kun Zhou, Berrak Sisman, Rui Liu, and Haizhou Li. Emotional voice conversion: Theory, databases and ESD. 
+
+Speech Communication , 137:1–18, 2022. doi: 10.1016/j.specom.2021.11.006. [84] Ziyang Ma, Zhisheng Zheng, Jiaxin Ye, Jinchao Li, Zhifu Gao, Shiliang Zhang, and Xie Chen. emotion2vec: Self-supervised pre-training for speech emotion representation. In Findings of the Association for Computational Linguistics: ACL 2024 , pages 15747–15760, 2024. doi: 10.18653/v1/2024.findings-acl.931. [85] Ruskin Raj Manku, Yuzhi Tang, Xingjian Shi, Mu Li, and Alexander J. Smola. Emergenttts-eval: Evaluating tts models on complex prosodic, expressiveness, and linguistic challenges using model-as-a-judge. In Advances in Neural Information Processing Systems , volume 38, 2025. [86] Huakang Chen, Jingbin Hu, Liumeng Xue, Qirui Zhan, Wenhao Li, Guobin Ma, Hanke Xie, Dake Guo, Linhan Ma, Yuepeng Jiang, Bengu Wu, Pengyuan Xie, Chuan Xie, Qiang Zhang, and Lei Xie. Mint-bench: A com-prehensive multilingual benchmark for instruction-following text-to-speech. arXiv preprint arXiv:2604.17958 ,2026. 21

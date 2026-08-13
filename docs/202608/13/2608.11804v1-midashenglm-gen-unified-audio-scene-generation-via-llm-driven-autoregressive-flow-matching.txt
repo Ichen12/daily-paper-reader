@@ -1,0 +1,260 @@
+Title: MiDashengLM-Gen: Unified Audio Scene Generation via LLM-Driven Autoregressive Flow Matching
+
+URL Source: https://arxiv.org/pdf/2608.11804v1
+
+Published Time: Thu, 13 Aug 2026 01:00:40 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# MiDashengLM-Gen: Unified Audio Scene Generation via LLM-Driven Autoregressive Flow Matching 
+
+Xingwei Sun 1 Heinrich Dinkel 1 Gang Li 1 Jiahao Mei 1,2 Yadong Niu 1
+
+Zerui Han 1 Yuepeng Jiang 1 Jiahao Zhou 1 Lichun Fan 1 Jian Luan 11MiLM Plus, Xiaomi Inc., Beijing, China 
+
+> 2
+
+X-LANCE Lab, Shanghai Jiao Tong University, Shanghai, China 
+
+# Abstract 
+
+Generating coherent audio scenes that simultaneously blend speech, music, and sound effects remains a significant challenge. Current approaches typically rely on a disjointed pipeline where a frozen, decoupled text encoder feeds a separate audio de-coder, limiting cross-modal optimization and leading to poor speech intelligibility. To overcome these limitations, we introduce MiDashengLM-Gen, an end-to-end framework that couples a pre-trained Large Language Model (LLM) with per-token conditional flow matching for autoregressive, variable-length mixed-audio scene gen-eration. MiDashengLM-Gen represents a first approach for general text-to-audio generation with one end-to-end trained model. Empirical evaluations demonstrate that MiDashengLM-Gen drastically improves speech intelligibility over existing uni-fied models. On the Seed-TTS benchmark, English Word Error Rate (WER) drops from 12.15% to 2.79%, approaching the performance of dedicated Text-to-Speech (TTS) systems (1.24%). Furthermore, the framework extends effectively to multilin-gual settings, yielding highly competitive multilingual WERs compared to existing baselines. Lastly, the model maintains competitive mixed-audio generation quality on the MECAT benchmark. Code and checkpoints are available at 1 and 2, and the demo page is available at 3.
+
+# 1 Introduction 
+
+Generating coherent audio scenes that naturally blend intelligible speech, music, and environmental sounds is essential for applications such as film production, game design, and immersive media. While single-type generation models have made remarkable progress in Text-to-Speech (TTS) [1, 2], Text-to-Music (TTM) [3, 4], and Text-to-Audio (TTA) [5, 6], they operate within isolated domains and cannot produce realistic mixed-audio scenes where multiple sound sources coexist and interact. In contrast, task-unified models [7, 8] consolidate multiple generation tasks under a single architecture, but produce each audio type independently without modeling the temporal coordination, energy balance, and acoustic consistency required for coherent scenes where speech, music, and sound effects overlap. Dasheng AudioGen [9] made a first step toward this goal by introducing structured multi-view cap-tions for fine-grained scene generation, decomposing complex acoustic scenes into textual descriptions and demonstrating that high-dimensional semantic-acoustic latent representations enable effective uni-fied generation. However, because Dasheng AudioGen’s architecture relies on a frozen text encoder 
+
+> 1https://github.com/xiaomi-research/midashenglm-gen
+> 2https://huggingface.co/mispeech/midashenglm-gen
+> 3https://xingws.github.io/midashenglm-gen-demo/
+> Technical report. Early work. arXiv:2608.11804v1 [eess.AS] 12 Aug 2026
+
+Table 1: Generation capabilities of representative audio generation models. Var.-Len. indicates whether the model supports variable-length generation.                                           
+
+> Model Var.-Len. SFX Music Speech Scene Multiling. TangoFlux [6] ×✓✓××-MusicGen [3] ✓×✓××-Qwen3-TTS [1] ✓××✓×✓
+> UniFlow-Audio [8] ×✓✓✓××
+> Dasheng AudioGen [9] ×✓✓✓✓×
+> MiDashengLM-Gen ✓✓✓✓✓✓
+
+and a non-autoregressive diffusion transformer, the model is fundamentally limited to fixed-length, monolingual outputs with suboptimal speech intelligibility. These limitations stem from fundamental architectural choices rather than the structured caption or latent space design, motivating an end-to-end generation backbone that jointly optimizes text understanding and audio synthesis. To address these limitations, we propose MiDashengLM-Gen, which retains the structured multi-view captions and the DashengTokenizer latent space from Dasheng AudioGen but replaces the generation backbone with a pre-trained large language model (LLM) combined with per-token conditional flow matching (Figure 1). The LLM jointly encodes text and audio, eliminating the separate frozen text encoder and thereby enabling multilingual generation and improved data utilization. This architecture brings speech intelligibility close to dedicated TTS systems while maintaining mixed-audio scene gen-eration capability. MiDashengLM-Gen combines LLM sequence modeling with per-token flow match-ing to enable autoregressive, variable-length, coherent mixed-audio scene generation within a unified framework. Table 1 compares the capabilities and architectural features of previous approaches. Our contributions are: 1. Autoregressive generation with per-token flow matching. We introduce MiDashengLM-Gen, a framework that integrates a pre-trained LLM backbone with per-token conditional flow matching for unified audio scene generation, supporting variable-length output via a learned stop head. 2. LLM-conditioned flow matching with high-dimensional audio latents. We demonstrate the viability of utilizing high-dimensional semantic-acoustic latents for LLM-conditioned per-token flow matching. Furthermore, we identify a critical convergence prerequisite: the DiT decoder width must strictly exceed the audio latent dimensionality —a structural property that generalizes across LLM scales and latent dimensions. 3. Audio-text alignment pre-training for cross-modal generation. We integrate an audio-text alignment stage that maps audio latents into the LLM’s token space prior to generation training. Ablation studies confirm that this alignment phase is strictly required for viable cross-modal synthesis. 4. Strong speech intelligibility with competitive mixed-audio performance. 
+
+MiDashengLM-Gen achieves speech intelligibility approaching dedicated TTS systems, maintains competitive mixed-audio scene generation across multiple benchmarks, and supports multilingual generation. 
+
+# 2 Related Work 
+
+2.1 Single-Type Audio Generation Text-to-Audio (TTA). Generating sound effects from text descriptions has been primarily addressed through diffusion [10] and flow-matching [11] frameworks. AudioLDM [5] introduced CLAP-conditioned latent diffusion over compressed audio representations, and Make-An-Audio [12] ex-tended this paradigm with temporal structure modeling and prompt augmentation strategies. Tan-goFlux [6] replaced iterative diffusion with single-step flow matching combined with preference-based training, significantly reducing inference cost while maintaining audio fidelity. All these approaches target isolated environmental sounds and do not address speech or music generation. 2Text-to-Music (TTM). Music generation presents unique challenges in long-term structural har-mony, typically addressed via discrete-token or continuous-latent architectures. MusicLM [4] pio-neered a hierarchical approach that first generates semantic tokens and then refines them into acoustic tokens. MusicGen [3] simplified this pipeline by directly predicting EnCodec tokens with a single text-conditioned transformer. On the continuous side, AudioLDM2 [13] extends latent diffusion to a shared audio-language embedding space, and JEN-1 [14] applies flow matching for controllable music creation. Despite strong musical output, none of these systems can produce intelligible speech or model interactions between music and other concurrent sounds. 
+
+Text-to-Speech (TTS). The TTS field has shifted from pipeline-based synthesis such as Tacotron [15] and FastSpeech [16] to fully end-to-end architectures like VITS [17] that jointly model linguistic and acoustic features. Discrete-token language models including VALL-E [18] and Sound-Storm [19] then demonstrated that speech can be effectively cast as a sequence prediction task over audio codecs, opening the path for LLM-based TTS. Building on this paradigm, large-scale systems such as Seed-TTS [2], Qwen3-TTS [1], and MiniMax-Speech [20] achieve near-human quality with zero-shot voice cloning and multilingual support. Most recently, flow-matching approaches includ-ing F5-TTS [21] and CosyVoice 3 [22] offer efficient non-autoregressive synthesis with fine-grained prosody and emotion control. However, all TTS systems produce speech in isolation, without account-ing for background music, environmental acoustics, or other simultaneously occurring audio events. 
+
+2.2 Mixed-Type Audio Generation Task-Specific Multi-Type Generation. Several architectures support generating different audio types but treat each as a separate task. UniAudio [7] first unified multiple audio tasks by encoding all types as flat token sequences processed by a shared language model. AudioX [23] broadened the input space by conditioning a diffusion transformer on heterogeneous modalities beyond text. UniFlow-Audio [8] further adopted a common flow-matching backbone with modality-specific adapters for flexi-ble generation. Although these models consolidate multiple capabilities, they generate each audio type independently and cannot produce scenes where speech, music, and environmental sounds overlap and interact coherently. 
+
+Unified Audio Scene Generation. BagPiper [24] demonstrates mixed audio generation via an au-toregressive framework, but relies on very long unstructured captions that make fine-grained control dif-ficult. Further, Dasheng AudioGen [9] proposed structured multi-view captions to decompose scenes into distinct textual descriptions (global caption, transcript, music, sound events, and environment), and showed that generating in a high-dimensional semantic-acoustic latent space is more effective than using compressed VAE features. However, its non-autoregressive architecture restricts output to a fixed duration and relies on a separate frozen text encoder, decoupling text semantics from audio synthesis. In summary, existing models either generate audio types independently (UniAudio, UniFlow-Audio) or are constrained by frozen text encoders and fixed output durations (Dasheng AudioGen). To ad-dress these constraints, we integrate an LLM backbone that jointly optimizes text understanding and audio generation with per-token flow matching, allowing for flexible output lengths and coherent scene generation. 
+
+# 3 Method 
+
+Our goal is to generate coherent audio scenes from text descriptions, where the scene may simulta-neously contain speech, music, sound effects, and environmental acoustics. We formulate this as au-toregressive conditional generation: the model produces audio tokens sequentially, with each token conditioned on the text description and all previously generated audio latents. Our framework com-bines autoregressive LLM sequence modeling with per-token continuous flow matching. A DiT-based flow matching decoder generates continuous audio tokens, conditioned on the LLM hidden state at each autoregressive step. We adopt the encoder of a custom MiDashengLM-0.6B model 4 as our uni-fied semantic-acoustic audio tokenizer, following the DashengTokenizer [25] architecture. Structured multi-view captions provide fine-grained supervision across six textual views. Figures 1a and 1b shows the overall model architecture. 
+
+> 4https://huggingface.co/mispeech/midashenglm-0.6b-fp32
+
+3(a) Training pipeline with flow matching loss. (b) Inference pipeline with autoregressive generation. 
+
+Figure 1: Training and inference pipelines. 
+
+3.1 Autoregressive LLM Backbone 
+
+We employ a pre-trained causal language model (Qwen3 [26]) as the sequential backbone for audio scene generation. Unlike prior unified models that require separate text encoders (e.g., T5) and cross-attention mechanisms, our approach uses the LLM’s pre-trained representations to jointly encode text and audio within a single unified model. This eliminates architectural complexity while leveraging the LLM’s strong language understanding for text-to-audio alignment. 
+
+Structured Multi-View Audio Scene Captioning To provide fine-grained supervision for complex audio scenes, we decompose each scene into six complementary textual views: global scene description, speech transcript, speaker identity and style, sound effects, music content, and recording environment. Each view is associated with a dedicated special token (e.g., <|caption|> , <|asr|> , <|speech|> ,
+
+<|sfx|> , <|music|> , <|env|> ). The general description must be included, while remaining fields are used only when applicable, otherwise filled with <|unknown|> . For example, pure speech samples fill 
+
+<|music|> and <|sfx|> with <|unknown|> . This structured conditioning exposes different semantic views to the LLM via explicit special tokens, reducing semantic entanglement among control factors. 
+
+Audio-Text Alignment Before training the generation model, we first align audio token latents with the LLM’s text embedding space. As we show, without explicit alignment, the LLM cannot effectively process the complex audio scenes necessary for generation. Figure 2 illustrates this alignment process. Following MiDashengLM [27], we perform audio-text alignment via general audio captions. We use the encoder of a custom MiDashengLM-0.6B model as our unified semantic-acoustic latent space, which produces continuous representations at 25 Hz. Unlike low-dimensional acoustic VAE latents [13, 8], DashengTokenizer preserves both semantic information and acoustic detail, shortening the cross-modal mapping from text to audio. During alignment training, an audio adapter maps the DashengTokenizer’s latents into the LLM’s token space. To boost efficiency, we downsample the audio sequence to 5 Hz by grouping k = 5 consecutive encoder frames and projecting them via an MLP: 
+
+ai = MLP (concat (z(i−1) k+1 , . . . , zik )) ∈ Rdllm , (1) where z is the audio latent from the encoder of DashengTokenizer and ai ∈ Rdllm is the projected audio token latent at 5 Hz (200 ms per token) for LLM input. 
+
+Autoregressive LLM Input Formulation Given a structured multi-view caption, we construct an input sequence by concatenating the caption text and a sequence of audio token latents: 
+
+h = LLM ([ ecaption , <|audio_bos|> , a1, a2, . . . , aN ]) , (2) where ecaption is the text embedding of the structured caption, <|audio_bos|> marks the start of audio generation, ai represents the audio latents. The hidden state hi ∈ Rdllm at each audio position 4Figure 2: Audio-text alignment in the DashengTokenizer latent space via general caption supervision. 
+
+i encodes the full context (text semantics, prior audio history, and positional information) and serves as the condition for generating the i-th audio token via per-token flow matching (Section 3.2). During training, ground-truth audio latents are fed at each position. 
+
+3.2 Per-Token Conditional Flow Matching 
+
+Unlike full-sequence flow matching that generates the entire audio latent sequence in one pass we per-form conditional flow matching independently for each audio token, conditioned on the LLM hidden state hi. This per-token design preserves the autoregressive structure’s adaptive length control while retaining the expressiveness of continuous flow-based generation. Compared to discrete-token autore-gressive approaches (e.g., VALL-E [18]), operating over continuous high-dimensional latents avoids quantization artifacts and supports richer acoustic modeling. 
+
+Token-Level Generation. For each audio token position i, the flow-matching DiT generates a group of k = 5 encoder frames ˆz(i−1) k+1: ik ∈ Rk×da , by processing the concatenation of latent history frames ˆz(i−2) k+1:( i−1) k, and noised target frames, z(i)0 ∼ N (0 , I ), conditioned on the timestep em-bedding and LLM hidden state hi ∈ Rdllm . Each DiT block applies self-attention with rotary position embeddings (RoPE) followed by a feed-forward network. 
+
+Training Objective. Let z(i)1 ∈ Rk×da denote the ground-truth frames for token i, produced by the DashengTokenizer encoder at 25 Hz without audio adapter projection. For a random timestep 
+
+t ∼ U (0 , 1) , we construct the interpolated sample z(i) 
+
+> t
+
+= (1 − t)z(i)0 + t z(i)1 , where z(i)0 ∼ N (0 , I ) is Gaussian noise. The DiT learns to predict the conditional vector field: 
+
+LFM = Ei, z(i)0 ,z(i)1 ,t 
+
+[∥∥∥vθ (z(i) 
+
+> t
+
+, t, hi, z(i)
+
+> hist
+
+) − (z(i)1 − z(i)0 )
+
+∥∥∥22
+
+]
+
+, (3) where hi is the LLM hidden state at position i, z(i) 
+
+> hist
+
+contains the latent history frames, and the loss is masked to only include valid (non-padded) audio positions. 
+
+Inference. At inference, we solve the ODE from noise to signal using a 10-step Euler solver. To improve conditioning strength, we apply classifier-free guidance (CFG) by interpolating between un-conditional and conditional predictions: 
+
+ˆv = vθ (zt, t, ∅, zhist ) + w · (vθ (zt, t, hi, zhist ) − vθ (zt, t, ∅, zhist )) , (4) where ∅ is a learnable null embedding and w is the guidance scale. During training, we randomly replace the LLM condition with the null embedding to enable CFG at inference. Generation length is determined by a learned stop head that predicts a binary continue/stop distribu-tion over LLM hidden states, trained with balanced cross-entropy (hard negatives mined from lowest-confidence non-stop tokens) and combined with LFM via weight λ. At inference, generation halts when the stop probability exceeds threshold τ after a minimum of imin steps. Audio is decoded from the generated latent sequence by the DashengTokenizer decoder: a 5 × convolutional upsampler followed by a Vocos [28] vocoder at 16 kHz. 5Table 2: Language distribution of training data. The ACAVCaps column reports the speech-only (S00) subset; TTS data is predominantly English and Chinese.                                                          
+
+> ACAVCaps (S00) TTS Overall Language Duration (h) Proportion (%) Duration (h) Proportion (%) Proportion (%) English 15,368 58.86 11,074 51.90 53.82 Chinese 70 0.27 11,949 48.10 24.46 Spanish 2,741 10.50 ––5.58 Portuguese 1,916 7.34 ––3.90 Russian 1,217 4.66 ––2.48 French 934 3.58 ––1.90 Japanese 875 3.35 ––1.78 Korean 848 3.25 ––1.73 German 842 3.23 ––1.71 Other 1,299 4.98 ––2.64
+
+3.3 Implementation Details Model Configuration. We use Qwen3-1.7B [26] as the LLM backbone with full fine-tuning. We extract the encoder from a custom MiDashengLM-0.6B model, producing 768-dimensional latents at 25 Hz. The audio projector downsamples to 5 Hz tokens projected to the LLM’s 2048-dimensional space. The DashengTokenizer encoder, audio projector, upsampler, and decoder are frozen during the main training phase and the LLM, DiT, and stop head are trained. The DiT in flow matching has 16 layers, hidden dimension 2048, 8 attention heads, and MLP ratio of 4.0. 
+
+Training and Inference. We train with AdamW (8-bit) [29] with the following hyperparameters: batch size 16, learning rate 5 × 10 −5 with cosine decay to 1 × 10 −6, and gradient clipping at 1.0. Training runs for 800 epochs of 2000 iterations each. Audio inputs range from 1 to 20 seconds at 16 kHz. The stop loss weight is λ = 0 .01 , stop threshold τ = 0 .5, and minimum steps imin = 5 (1 second) at inference. CFG scale is 2.0 with 10 ODE steps. 
+
+# 4 Experiments 
+
+4.1 Experimental Setup Training Data. Our training data comprises two sources. The first is a private superset of ACAVCaps [30] with 77k hours of audio covering speech, music, and sound effects, derived from ACAV100M [31]. ACAVCaps uses a multi-expert annotation pipeline that analyzes each audio clip from six domain-specific perspectives; we convert these annotations into our structured multi-view caption format. Audio samples are categorized into single-type (S00 = speech-only, 0M0 = music-only, 00A = sound effects) and mixed categories (0MA, S0A, SM0, SMA), where S, M, and A denote the presence of speech, music, and sound effects, respectively, and 0 denotes absence. The second source consists of dedicated TTS corpora to strengthen speech synthesis: Emilia [32] (Chinese and English subsets), LibriTTS [33], LJSpeech [34], AISHELL-3 [35], and WenetSpeech4TTS [36]. For TTS data, we prepend a general caption (“natural human speech”) to align with the multi-view caption format. Table 2 details the language distribution of training data. 
+
+Evaluation Benchmarks. For single-type audio and music generation, we report on AudioCaps [37] and MusicCaps [4]. For speech generation, we evaluate on the Seed-TTS benchmark [2] for English and Chinese intelligibility, and adopt the multilingual test set from MiniMax-Speech [20] covering 9 languages. We report CERs (Character Error Rate) for Chinese, Japanese, and Korean, and WERs (Word Error Rate) for all other languages. Chinese speech is transcribed using Paraformer-zh [38], while all other languages are transcribed using Whisper-large-v3 [39]. For emotion expressiveness, we use the CV3-Eval Emotional Voice Cloning subset [22], which retains samples labeled as happy, sad, or angry (100 per language), split into text-related and text-unrelated settings depending on whether the target text is semantically consistent with the target emotion. Emotion classification accuracy is measured using the emotion2vec model [40]. Our primary benchmark for mixed audio scene genera-tion is MECAT [41], a held-out test set of ACAVCaps that contains both single-type and mixed-type 6Table 3: Results on AudioCaps and MusicCaps.                                                          
+
+> AudioCaps MusicCaps Method FAD VGG ↓FD PANNS ↓KL ↓CLAP ↑FAD VGG ↓FD PANNS ↓KL ↓CLAP ↑
+> TangoFlux 2.26 19.13 1.19 0.58 ----MusicGen ----3.80 -1.31 0.28 UniFlow-Audio 5.74 17.18 1.43 0.48 4.05 27.12 1.87 0.24 Dasheng AudioGen 3.19 26.06 1.86 0.44 1.37 18.45 1.37 0.33
+> MiDashengLM-Gen 5.01 26.13 1.91 0.36 2.28 14.58 1.24 0.33
+
+Table 4: Speech intelligibility on the Seed-TTS benchmark.             
+
+> Method EN WER(%) ↓ZH CER(%) ↓
+> Seed-TTS 2.25 1.12 Qwen3-TTS 1.24 0.77
+> Dasheng AudioGen 12.15 >100 MiDashengLM-Gen 2.79 3.87
+
+audio samples with rich multi-view annotations. Since MECAT is a multilingual benchmark whose speech categories contain utterances in multiple languages, we report objective results on the English subset 5 of MECAT for speech-related categories to ensure fair comparison with baseline methods. Across all benchmarks, we report audio distribution metrics: Fréchet Audio Distance (FAD) [42], Fréchet Distance (FD), and Kullback –Leibler divergence (KL) [5], text similarity metrics: Contrastive Language-Audio Pretraining (CLAP) [43], and speech-related metrics: WER/CER. In all tables, bold 
+
+and underlined denote the best and second-best results, respectively. 
+
+4.2 Sound Effect and Music Generation 
+
+To validate our approach’s capabilities on single-type audio generation, we report results on AudioCaps and MusicCaps in Table 3. We compare against TangoFlux [6], MusicGen [3], UniFlow-Audio [8], and Dasheng AudioGen [9]. On AudioCaps, our model trails the task-optimized TangoFlux (FAD 2.26 vs. 5.01). This gap is expected: DashengLM-Gen is trained on mixed-audio scenes and TTS corpora, not on pure sound-effect data, and its architecture prioritizes cross-modal alignment and multi-source coordination over single-source acoustic fidelity. TangoFlux, by contrast, is a dedicated text-to-audio model trained specifically on sound-effect corpora and uses a non-autoregressive flow-matching architecture that can optimize acoustic quality globally in a single pass. On MusicCaps, our approach achieves notably better FD (14.58 vs. 18.45) and KL (1.24 vs. 1.37) compared to Dasheng AudioGen, demonstrating that the LLM backbone provides stronger cross-modal alignment for music generation through causal attention over longer contexts. 
+
+4.3 Speech Generation Speech Generation on Seed-TTS. Table 4 reports WER on the Seed-TTS benchmark [2], which evaluates speech intelligibility on English and Chinese test sets. Our approach achieves 2.79% on Seed-EN and 3.87% on Seed-ZH, substantially improving over Dasheng AudioGen (12.15% and >100%, respectively). This demonstrates that the LLM backbone leverages its pre-trained language under-standing to produce intelligible speech. A 2.2 × gap remains against specialized TTS systems such as Qwen3-TTS (1.24%/0.77%) and Seed-TTS (2.25%/1.12%), primarily because our model is trained on mixed-audio scenes rather than optimized specifically for speech intelligibility. 
+
+Multilingual Speech Generation. To evaluate multilingual capability, Table 5 reports WER/CER across 9 languages. Our model achieves competitive WER in high-resource languages (2.42% English, 3.51% Chinese), where training data is abundant. For under-represented languages such as Japanese (16.45%) and Russian (13.19%), the higher WER is consistent with the training data distribution shown  
+
+> 5The MECAT English subset list is available at https://github.com/xiaomi-research/dasheng-audiogen/tree/ main/evaluation .
+
+7Table 5: Multilingual TTS evaluation (WER/CER% ↓).                                         
+
+> Language MiniMax ElevenLabs Dasheng AudioGen MiDashengLM-Gen English 2.16 2.34 8.60 2.42 Chinese 2.25 16.03 99.62 3.51 Spanish 1.03 1.08 9.31 3.11 Portuguese 1.88 1.33 8.98 8.04 Russian 4.28 3.88 36.34 13.19 French 4.10 5.22 17.96 12.53 Japanese 3.52 10.65 109.21 16.45 Korean 1.75 1.87 100.25 5.49 German 1.91 0.57 24.15 4.38
+
+Table 6: Emotion expressiveness on CV3-Eval (accuracy ↑).                                
+
+> Text-Related Text-Unrelated Method Happy Sad Angry Happy Sad Angry F5-TTS 0.92 0.52 0.72 0.80 0.28 0.64 CosyVoice3-1.5B 0.86 0.64 0.72 0.64 0.44 0.48 CosyVoice3 DiffRO-EMO 0.98 0.68 0.84 0.98 0.50 0.68
+> MiDashengLM-Gen 0.98 0.96 0.92 0.78 0.52 0.62
+
+in Table 2, where these languages have limited representation in the TTS corpus. Compared to Dasheng AudioGen, which suffers from extremely high error rates on most languages (e.g., 99.62% Chinese, 109.21% Japanese), our LLM-based approach demonstrates dramatically better multilingual speech intelligibility. 
+
+Emotion Expressiveness. To evaluate emotion control capability, we conduct experiments on CV3-Eval, which measures emotion classification accuracy under two settings: text-related (emotion cue present in the text prompt) and text-unrelated (emotion conveyed purely through prosody without textual cues). Table 6 reports results for three emotions (happy, sad, angry). Our approach achieves the highest text-related emotion accuracy across all three emotions (0.98/0.96/0.92), demonstrating that the LLM backbone effectively conditions on emotional cues in the text prompt to generate appropriately expressive speech. In text-unrelated scenarios, where emotion must be conveyed solely through prosody, CosyVoice3 DiffRO-EMO achieves the strongest performance (0.98/0.50/0.68), suggesting that its specialized emotion control mechanism better preserves prosodic emotion without textual cues. Our model achieves the best sad accuracy (0.52) in this setting, indicating competitive emotion expressiveness even without explicit textual guidance. 
+
+4.4 MECAT Benchmark 
+
+To comprehensively evaluate model performance in complex mixed-audio scenes, we conduct experi-ments on the MECAT benchmark. We compare against TangoFlux [6], MusicGen [3], Qwen3-TTS [1], and Dasheng AudioGen [9]. 
+
+Single-Type Categories. Table 7 compares models on MECAT single-type categories. On the sound effects category (00A), Dasheng AudioGen achieves better FAD (4.25 vs. 6.05), while our approach achieves better FD (18.74 vs. 19.37) and KL (1.32 vs. 1.36). On the music category (0M0), our approach demonstrates a significant advantage in FD (6.82 vs. 14.90), reducing the distance by more than 2 ×, while maintaining competitive FAD (1.97 vs. 1.66) and KL (0.57 vs. 0.61). On the speech category (S00), our approach achieves substantially better FAD (0.87 vs. 1.76) and CLAP (0.35 vs. 0.34), indicating stronger alignment between generated speech and its acoustic context. The LLM backbone enables better modeling of speech together with environmental details, whereas Dasheng AudioGen generates speech more detached from the scene. 
+
+Mixed Categories. Table 8 reports results on the mixed-audio categories. Across all speech-containing mixed categories (S0A, SM0, SMA), our approach consistently achieves lower FAD than Dasheng AudioGen: 1.54 vs. 1.75 on S0A, 0.98 vs. 1.70 on SM0, and 1.88 vs. 2.17 on SMA. However, Dasheng 8Table 7: Results on MECAT single-type categories. 
+
+Category Method FAD VGG ↓ FD PANNS ↓ KL ↓ CLAP ↑
+
+00A TangoFlux 15.68 48.81 2.30 0.30 MusicGen 43.68 87.41 5.99 -0.03 Qwen3-TTS 51.42 153.55 5.90 -0.04 Dasheng AudioGen 4.25 19.37 1.36 0.37 
+
+MiDashengLM-Gen 6.05 18.74 1.32 0.35 0M0 TangoFlux 5.04 24.97 0.82 0.32 
+
+MusicGen 4.53 19.75 0.88 0.26 Qwen3-TTS 21.68 137.10 4.99 -0.03 Dasheng AudioGen 1.66 14.90 0.61 0.27 MiDashengLM-Gen 1.97 6.82 0.57 0.28 S00 TangoFlux 10.54 53.15 1.63 0.29 MusicGen 26.74 89.71 5.38 0.04 Qwen3-TTS 8.75 27.55 0.84 0.31 Dasheng AudioGen 1.76 3.93 0.40 0.34 MiDashengLM-Gen 0.87 4.15 0.44 0.35 
+
+Table 8: Results on MECAT mixed-audio categories. 
+
+Category Method FAD VGG ↓ FD PANNS ↓ KL ↓ CLAP ↑
+
+0MA TangoFlux 9.71 58.44 2.45 0.32 
+
+MusicGen 13.06 60.98 2.86 0.19 Qwen3-TTS 23.17 149.24 5.28 -0.03 Dasheng AudioGen 3.86 31.13 1.36 0.31 MiDashengLM-Gen 4.23 28.32 1.25 0.32 
+
+S0A TangoFlux 10.92 43.94 2.23 0.36 
+
+MusicGen 30.38 89.09 5.60 0.00 Qwen3-TTS 19.62 62.84 2.42 0.15 Dasheng AudioGen 1.75 8.56 0.69 0.36 
+
+MiDashengLM-Gen 1.54 8.84 0.72 0.36 
+
+SM0 TangoFlux 11.57 40.77 1.11 0.34 
+
+MusicGen 19.83 57.28 2.38 0.14 Qwen3-TTS 10.20 63.15 2.16 0.19 Dasheng AudioGen 1.70 6.69 0.34 0.33 MiDashengLM-Gen 0.98 6.78 0.40 0.34 
+
+SMA TangoFlux 11.40 50.58 2.05 0.29 MusicGen 20.18 69.19 3.41 0.11 Qwen3-TTS 16.53 83.01 2.45 0.10 Dasheng AudioGen 2.17 17.75 0.63 0.38 
+
+MiDashengLM-Gen 1.88 20.60 0.85 0.35 
+
+AudioGen retains advantages on feature-level distribution metrics (FD and KL) across these categories, suggesting its non-autoregressive architecture better captures fine-grained acoustic details. The overall tradeoff indicates that the LLM backbone improves multi-source coordination and spectral quality, while the non-autoregressive DiT has an edge in distributional fidelity for isolated aspects of the audio. On the non-speech mixed category (0MA), Dasheng AudioGen achieves better FAD (3.86 vs. 4.23), while our approach achieves better FD (28.32 vs. 31.13) and KL (1.25 vs. 1.36). 
+
+4.5 Ablation Experiments 
+
+We ablate two core designs of MiDashengLM-Gen: the audio-text alignment stage and the DiT archi-tecture for the flow matching decoder. 
+
+Importance of Audio-Text Alignment. To validate the necessity of the audio-text alignment stage (Section 3.1), we compare our full model against a variant that skips alignment entirely: the audio adapter (projection layer) is randomly initialized and the LLM retains its original Qwen3 pre-trained 9Table 9: Ablation on audio-text alignment. “w/o Align” uses randomly initialized audio adapter and original Qwen3 LLM weights without alignment pre-training. MECAT Single/Mixed report weighted averages across their respective categories; Multilingual reports the mean across 9 languages.                                           
+
+> Benchmark Metric w/o Align MiDashengLM-Gen AudioCaps FAD ↓9.39 5.01
+> CLAP ↑0.28 0.36
+> MusicCaps FAD ↓4.06 2.28
+> CLAP ↑0.30 0.33
+> MECAT Single FAD ↓3.18 1.86
+> CLAP ↑0.32 0.33
+> MECAT Mixed FAD ↓2.46 1.35
+> CLAP ↑0.32 0.35
+> Seed-TTS EN WER(%) ↓12.17 2.79
+> ZH CER(%) ↓14.17 3.87
+> Multilingual Mean WER(%) ↓31.73 7.68
+
+Figure 3: Training loss and STFT L2 distance curves for different DiT width/depth configurations. Topline denotes DashengTokenizer encode-to-decode reconstruction. weights without alignment training, while the DashengTokenizer encoder keeps its pre-trained weights. The generation training procedure remains identical in both settings. Table 9 shows that removing audio-text alignment degrades performance across all benchmarks. FAD increases by 47–88% on audio generation tasks (e.g., 5.01 →9.39 on AudioCaps), indicating weakened audio quality and text relevance. The impact on speech generation is particularly severe: Seed-TTS English WER rises from 2.79% to 12.17% (4.4 ×), Chinese CER from 3.87% to 14.17% (3.7 ×), and mean multilingual WER from 7.68% to 31.73% (4.1 ×). This disproportionate degradation in speech intelligibility suggests that audio-text alignment is especially critical for speech generation, where the LLM must map text semantics precisely to phonetic content. Without a pre-aligned embedding space, the generation stage cannot effectively leverage the LLM’s language understanding for intelligible speech synthesis. 
+
+Scaling DiT Width to Match Audio Latent Dimensionality. Recent work on diffusion transformers has shown that the model width must match the token dimensionality of the latent space, because noise injection in diffusion training expands the data manifold to a full-rank distribution [44]. We investigate whether this principle extends to audio generation with MiDashengLM-Gen. To this end, we conduct single-sample overfit experiments with varying DiT width and depth configurations under a fixed parameter budget. Figure 3 shows the training loss and STFT L2 distance curves for our final model configuration (768-dim audio latent + Qwen3-1.7B), with the DashengTokenizer encode-to-decode reconstruction as the topline. Table 10 further validates the convergence pattern across three additional model scales, with the DiT total parameters fixed across all configurations by trading off width and depth. Figure 3 reveals that the DiT width must strictly exceed the audio latent dimensionality for successful convergence. When width falls below or equals this threshold (768 for 768-dim audio), the model fails 10 Table 10: Convergence analysis of DiT width across different model scales. ✓denotes successful con-vergence.                             
+
+> Setting DiT Width Train Loss ↓Convergence 768-dim + Qwen3 0.6B 752 0.0422 ×
+> 768 0.0343 ×
+> 784 0.0171 ✓
+> 1024 0.0110 ✓
+> 1280-dim + Qwen3 0.6B 1248 0.0354 ×
+> 1280 0.0144 ✓
+> 1312 0.0084 ✓
+> 1536 0.0064 ✓
+> 1280-dim + Qwen3 4B 1248 0.0365 ×
+> 1280 0.0126 ✓
+> 1312 0.0081 ✓
+> 1536 0.0063 ✓
+
+to converge ( ×) with an STFT L2 distance of 3.89, well above the topline of 1.30. Only once width exceeds the latent dimensionality does training converge successfully ( ✓). Table 10 confirms that this pattern generalizes across different LLM scales (0.6B and 4B) and audio latent dimensionalities (768 and 1280), mirroring the theoretical finding by Zheng et al. [44] in image diffusion. 
+
+# 5 Discussion and Conclusion 
+
+We presented MiDashengLM-Gen, an autoregressive approach that combines a pre-trained LLM back-bone with per-token flow matching for variable-length mixed-audio scene generation. The key insight is that high-dimensional semantic-acoustic latents are viable for LLM-conditioned generation when the decoder architecture is properly scaled —specifically, the DiT width must exceed the audio latent dimensionality for convergence. Comprehensive evaluations demonstrate that MiDashengLM-Gen substantially improves speech intelli-gibility over prior unified models (2.79% vs. 12.15% [9] on Seed-TTS English), approaching dedicated TTS systems (1.24%), while maintaining competitive mixed-audio scene generation and supporting multilingual output. Ablation studies reveal two critical design requirements: audio-text alignment pre-training is essential for bridging the modality gap (removing it degrades speech WER by 4×), and the DiT decoder width must strictly exceed the audio latent dimensionality, consistent with theoretical findings in image diffusion [44]. MiDashengLM-Gen has several limitations. Variable-length generation is bounded by the training data distribution (1–20 seconds); generating coherent audio beyond this range remains open. Speech intelligibility still trails dedicated TTS systems by a factor of 2.2 × on English, with larger gaps for low-resource languages where TTS training data is scarce. The model supports only coarse speaker-style control, without voice cloning or explicit speaker identity conditioning. Future work will explore scaling to longer durations, improved low-resource language performance, voice cloning, and finer-grained controllability such as audio editing and explicit temporal control. 
+
+# 6 Acknowledgement 
+
+This work makes use of the ACAVCaps [30], Emilia [32], LibriTTS [33], LJSpeech [34], AISHELL-3 [35], and WenetSpeech4TTS [36] datasets for training. For evaluation, we use the AudioCaps [37], MusicCaps [4], Seed-TTS [2], MiniMax-Speech [20], CV3-Eval [22], and MECAT [41] benchmarks. The authors confirm that the use of the ACAVCaps, Emilia, AISHELL-3, and WenetSpeech4TTS datasets is strictly limited to academic research purposes and does not involve any commercial activities. All datasets are used in compliance with their respective licensing agreements and original citations. 11 References 
+
+[1] Hangrui Hu, Xinfa Zhu, Ting He, Dake Guo, Bin Zhang, Xiong Wang, Zhifang Guo, Ziyue Jiang, Hongkun Hao, Zishan Guo, Xinyu Zhang, Pei Zhang, Baosong Yang, Jin Xu, Jingren Zhou, and Junyang Lin. Qwen3-tts technical report. 2026. arXiv preprint arXiv:2601.15621. [2] Philip Anastassiou, Jui Chung, Aaditya Deepak, Sefik Emre Florez, Yunyang He, Shun Jiang, Tom Kaftan, Jia Li, Fangxun Lin, Yanxi Luo, et al. Seed-tts: A family of high-quality versatile speech generation models. arXiv preprint arXiv:2406.02430 , 2024. [3] Jade Copet, Felix Kreuk, Itai Gat, Tal Remez, David Kant, Gabriel Synnaeve, Yossi Adi, and Alexandre Défossez. Simple and controllable music generation. In Advances in Neural Informa-tion Processing Systems (NeurIPS) , 2023. [4] Andrea Agostinelli, Timo I. Denk, Zalán Borsos, Jesse Engel, Mauro Verzetti, Antoine Caillon, Qingqing Huang, Aren Jansen, Adam Roberts, Marco Tagliasacchi, Matt Sharifi, Neil Zeghidour, and Christian Frank. MusicLM: Generating music from text. In International Conference on Machine Learning (ICML Workshop) , 2023. [5] Haohe Liu, Zehua Chen, Yi Yuan, Xinhao Mei, Xubo Liu, Danilo Mandic, Wenwu Wang, and Mark D. Plumbley. Audioldm: Text-to-audio generation with latent diffusion models. In Inter-national Conference on Machine Learning (ICML) , 2023. [6] Chia-Yu Hung, Navonil Majumder, Zhifeng Kong, Ambuj Mehrish, Amir Ali Bagherzadeh, Chuan Li, Rafael Valle, Bryan Catanzaro, and Soujanya Poria. Tangoflux: Super fast and faith-ful text to audio generation with flow matching and clap-ranked preference optimization. 2024. arXiv preprint arXiv:2412.21037. [7] Dongchao Yang, Jinchuan Tian, Xu Tan, Rongjie Huang, Songxiang Liu, Xuankai Chang, Ji-atong Shi, Sheng Zhao, Jiang Bian, Zhou Zhao, Xixin Wu, and Helen Meng. Uniaudio: An audio foundation model toward universal audio generation. In IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2024. [8] Xuenan Xu, Jiahao Mei, Zihao Zheng, Ye Tao, Zeyu Xie, Yaoyun Zhang, Haohe Liu, Yuning Wu, Ming Yan, Wen Wu, Chao Zhang, and Mengyue Wu. Uniflow-audio: Unified flow matching for audio generation from omni-modalities. 2025. arXiv preprint arXiv:2509.24391. [9] Jiahao Mei, Heinrich Dinkel, Yadong Niu, Xingwei Sun, Gang Li, Yifan Liao, Jiahao Zhou, Junbo Zhang, Jian Luan, and Mengyue Wu. Dasheng audiogen: A unified model for generating coherent audio scenes from text. arXiv preprint arXiv:2605.27838 , 2026. [10] Jonathan Ho and Pieter Jain, Ajay Abbeel. Denoising diffusion probabilistic models. In Advances in Neural Information Processing Systems (NeurIPS) , volume 33, pages 6840–6851, 2020. [11] Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maximilian Nicklas, Matt Le, Moham-mad Esmaeilpour, and Aditya Grover. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. [12] Rongjie Huang, Jiawei Huang, Dongchao Yang, Yi Ren, Luping Liu, Mingze Li, Zhenhui Ye, Jinglin Liu, Xiang Yin, and Zhou Zhao. Make-an-audio: Text-to-audio generation with prompt-enhanced diffusion models. In International Conference on Machine Learning (ICML) , 2023. [13] Haohe Liu, Yi Yuan, Xubo Liu, Xinhao Mei, Qiuqiang Kong, Qiao Tian, Yuping Wang, Wenwu Wang, Yuxuan Wang, and Mark D. Plumbley. Audioldm 2: Learning holistic audio generation with self-supervised pretraining. IEEE/ACM Transactions on Audio, Speech and Language Pro-cessing , 2023. [14] Peike Li, Boyu Chen, Yuying Li, and Yaolong Li. Jen-1: Text-guided universal music generation with omnidirectional diffusion models. arXiv preprint arXiv:2308.04729 , 2023. [15] Jonathan Shen, Ruoming Pang, Ron J. Weiss, Mike Schuster, Navdeep Jaitly, Zongheng Yang, Zhifeng Chen, Yu Zhang, Yuxuan Wang, Rj Skerrv-Ryan, Rif A. Saurous, Yannis Agiomvrgian-nakis, and Yonghui Wu. Natural tts synthesis by conditioning wavenet on mel spectrogram pre-dictions. In IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) ,2018. 12 [16] Yi Ren, Yangjun Ruan, Xu Tan, Tao Qin, Sheng Zhao, Zhou Zhao, and Tie-Yan Liu. Fastspeech: Fast, robust and controllable text to speech. In Advances in Neural Information Processing Systems (NeurIPS) , 2019. [17] Jaehyeon Kim, Jungil Kong, and Juhee Son. Conditional variational autoencoder with adversarial learning for end-to-end text-to-speech. In International Conference on Machine Learning (ICML) ,2021. [18] Chengyi Wang, Sanyuan Chen, Yu Wu, Ziqiang Zhang, Long Zhou, Shujie Liu, Zhuo Chen, Yanqing Liu, Huaming Wang, Jinyu Li, et al. Neural codec language models are zero-shot text to speech synthesizers. arXiv preprint arXiv:2301.02111 , 2023. [19] Zalán Borsos, Matt Sharifi, Damien Vincent, Eugene Kharitonov, Neil Zeghidour, and Marco Tagliasacchi. Soundstorm: Efficient parallel audio generation. In Advances in Neural Information Processing Systems (NeurIPS) , 2023. [20] Bowen Zhang, Yichong Gu, Xin Jiang, Jian Li, Jiang Bian, and Deng Cai. Minimax-speech: Intrinsic zero-shot text-to-speech with a learnable speaker encoder. arXiv preprint arXiv:2505.07916 , 2025. [21] Yushen Chen, Zhikang Niu, Ziyang Ma, Keqi Deng, Chunhui Wang, Jian Zhao, Kai Yu, and Xie Chen. F5-tts: A fairytaler that fakes fluent and faithful speech with flow matching. arXiv preprint arXiv:2410.06885 , 2024. [22] Zhihao Du, Qian Chen, Siqi Zheng, Zhifu Wen, Yanmin Li, Shiliang Wu, and Jian Lu. Cosyvoice 3: Multi-lingual multi-timbre multi-style speech generation with controllable emotion. arXiv preprint arXiv:2505.17589 , 2025. [23] Zeyue Tian, Yizhu Jin, Zhaoyang Liu, Ruibin Yuan, Xu Tan, Qifeng Chen, Wei Xue, and Yike Guo. Audiox: Diffusion transformer for anything-to-audio generation. arXiv preprint arXiv:2503.10522 , 2025. [24] Jinchuan Tian, Haoran Wang, Bo-Hao Su, Chien-yu Huang, Qingzheng Wang, Jiatong Shi, William Chen, Xun Gong, Siddhant Arora, Chin-Jou Li, et al. Bagpiper: Solving open-ended audio tasks via rich captions. arXiv preprint arXiv:2602.05220 , 2026. [25] Heinrich Dinkel, Xingwei Sun, Gang Li, Jiahao Mei, Yadong Niu, Jizhong Liu, Xiyang Li, Yifan Liao, Jiahao Zhou, Junbo Zhang, and Jian Luan. Dashengtokenizer: One layer is enough for unified audio understanding and generation. 2026. arXiv preprint arXiv:2602.23765. [26] An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Wang, et al. Qwen3 technical report. 
+
+arXiv preprint arXiv:2505.09388 , 2025. [27] Heinrich Dinkel, Gang Li, Jizhong Liu, Jian Luan, Yadong Niu, Xingwei Sun, Tianzi Wang, Qiyang Xiao, Junbo Zhang, and Jiahao Zhou. Midashenglm: Efficient audio understanding with general audio captions. arXiv preprint arXiv:2508.03983 , 2025. [28] Hubert Siuzdak. Vocos: Closing the gap between time-domain and fourier-based neural vocoders for high-quality audio synthesis. In ICLR , 2024. [29] Tim Dettmers, Mike Lewis, Younes Belkada, and Luke Zettlemoyer. Llm.int8(): 8-bit matrix multiplication for transformers at scale. Advances in Neural Information Processing Systems , 35, 2022. [30] Yadong Niu, Tianzi Wang, Heinrich Dinkel, Xingwei Sun, Jiahao Zhou, Gang Li, Jizhong Liu, Junbo Zhang, and Jian Luan. Acavcaps: Enabling large-scale training for fine-grained and diverse audio understanding. In ICASSP 2026-2026 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , pages 15347–15351. IEEE, 2026. [31] Sangho Lee, Jiwan Chung, Youngjae Yu, Gunhee Kim, Thomas Breuel, Gal Chechik, and Yale Song. Acav100m: Automatic curation of large-scale datasets for audio-visual video represen-tation learning. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 10274–10284, 2021. 13 [32] Haorui He, Zengqiang Shang, Chaoren Wang, Xuyuan Li, Yicheng Gu, Hua Hua, Liwei Liu, Chen Yang, Jiaqi Li, Peiyang Shi, et al. Emilia: An extensive, multilingual, and diverse speech dataset for large-scale speech generation. In IEEE Spoken Language Technology Workshop (SLT) ,2024. [33] Heiga Zen, Rob Clark, Ron J. Weiss, Viet Dang, Ye Jia, Yonghui Wu, Yu Zhang, and Zhifeng Chen. Libritts: A corpus derived from librispeech for text-to-speech. In Interspeech , 2019. [34] Keith Ito and Linda Johnson. The LJ speech dataset. https://keithito.com/ LJ-Speech-Dataset/ , 2017. [35] Yao Shi, Hui Bu, Xin Xu, Shaoji Zhang, and Ming Li. AISHELL-3: A multi-speaker mandarin TTS corpus and the baselines. In Interspeech , 2021. [36] Linhan Ma, Yue Du, Ziyang Wang, Qijie Ye, Haoyue Bai, Ziyue Zhang, Xuenan Xu, Dong Yu, Zhuo Wang, and Benyou Fan. WenetSpeech4TTS: A 12,800-hour mandarin TTS corpus for large-scale speech generation. In Interspeech , 2024. [37] Chris Dongjoo Kim, Byeongchang Kim, Hyunmin Lee, and Gunhee Kim. Audiocaps: Gener-ating captions for audios in the wild. In Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics (NAACL) , 2019. [38] Zhifu Gao, Shiliang Zhang, Ian McLoughlin, and Zhijie Yan. Funasr: A fundamental end-to-end speech recognition toolkit. In Interspeech , 2023. [39] Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision. International Confer-ence on Machine Learning , 2023. [40] Ziyang Ma, Zhisheng Zheng, Jiaxin Ye, Jinchao Li, Zhifu Gao, Shiliang Zhang, and Xie Chen. emotion2vec: Self-supervised pre-training for speech emotion representation. arXiv preprint arXiv:2312.15185 , 2024. [41] Yadong Niu, Tianzi Wang, Heinrich Dinkel, Xingwei Sun, Jiahao Zhou, Gang Li, Jizhong Liu, Xunying Liu, Junbo Zhang, and Jian Luan. Mecat: A multi-experts constructed benchmark for fine-grained audio understanding tasks. 2025. arXiv preprint arXiv:2507.23511. [42] Kevin Kilgour, Mauricio Zuberı, Dominik Roblek, and Matt Sharifi. Fréchet audio distance: A reference-free metric for evaluating music enhancement algorithms. In Interspeech , 2019. [43] Benjamin Elizalde, Soham Deshmukh, Mahmoud Al Ismail, and Huaming Wang. CLAP: Learn-ing audio concepts from natural language supervision. In IEEE International Conference on Acous-tics, Speech and Signal Processing (ICASSP) , 2023. [44] Boyang Zheng, Nanye Ma, Shengbang Tong, and Saining Xie. Diffusion transformers with rep-resentation autoencoders. arXiv preprint arXiv:2510.11690 , 2025. 14

@@ -6,68 +6,71 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-08-12
-- 运行时间：2026-08-12 21:27:43 UTC
+- 最新运行日期：2026-08-13
+- 运行时间：2026-08-13 21:02:13 UTC
 - 运行状态：成功
 - 本次总论文数：16
 - 精读区：6
 - 速读区：10
 
 ### 今日简报（AI）
-今日精读聚焦儿童语音音素识别与多语种长语音新闻语料，共处理16篇论文。最值得关注：年龄感知训练可提升儿童语音识别鲁棒性，VoxSumm语料支撑语音摘要与翻译联合建模。下一步可结合速读中的语音增强与音频生成方向，探索多模态语音应用。
-- 详情：[/202608/12/README](/202608/12/README)
+- 今日共生成 16 篇推荐（精读 6 篇，速读 10 篇）
+- 精读：《CookVoice: Unified Framework for Style Controllable Multi-Modal Human Voice Generation》（9.0/10）, 《Luna-TTS Family Technical Report》（9.0/10）
+- 速读：《DonorRank: Donor Language Selection for Low-Resource Cross-Lingual Speech Recognition》（8.0/10）, 《Easper: An Accessible ASR Pipeline for Language Documentation》（8.0/10）, 《Spoken Function Calling: A New Perspective on Spoken Language Understanding for Large Audio Language Models》（7.0/10）
+- 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
+- 详情：[/202608/13/README](/202608/13/README)
 
 ### 精读区论文标签
-1. [Edge Phoneme Recognition for Children's Speech through Age-Aware Training](/202608/12/2608.10206v1-edge-phoneme-recognition-for-childrens-speech-through-age-aware-training)  
+1. [CookVoice: Unified Framework for Style Controllable Multi-Modal Human Voice Generation](/202608/13/2608.11590v1-cookvoice-unified-framework-for-style-controllable-multi-modal-human-voice-generation)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：面向儿童语音的音素识别与语音识别
-2. [VoxSumm: A Multilingual Corpus of Long-Form Spoken News for Joint Summarization and Translation](/202608/12/2608.10359v1-voxsumm-a-multilingual-corpus-of-long-form-spoken-news-for-joint-summarization-and-translation)  
+   evidence：统一框架实现语音和歌声生成及风格控制，覆盖文本到语音与音色克隆，直接与TTS合成相关
+2. [Luna-TTS Family Technical Report](/202608/13/2608.11593v1-luna-tts-family-technical-report)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：多语言联合语音摘要与翻译语料库与基准
-3. [Whisper-Aware LLM: Self-Supervised Uncertainty Learning for Robust Whispered Speech Recognition](/202608/12/2608.10836v1-whisper-aware-llm-self-supervised-uncertainty-learning-for-robust-whispered-speech-recognition)  
+   evidence：文本到语音合成模型
+3. [Confucius4-TTS: Transcript-Free Cross-Lingual Zero-Shot TTS with a Learnable Speaker Encoder](/202608/13/2608.11650v1-confucius4-tts-transcript-free-cross-lingual-zero-shot-tts-with-a-learnable-speaker-encoder)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：面向低语语音识别的鲁棒性方法
-4. [X2-Turn: Frame-Synchronous Dual-Head Modeling for Joint Streaming ASR and Turn State Prediction](/202608/12/2608.10878v1-x2-turn-frame-synchronous-dual-head-modeling-for-joint-streaming-asr-and-turn-state-prediction)  
+   evidence：无需音频提示转录的跨语言零样本语音合成
+4. [Phoenix TTS: High-Fidelity Synthesis and Voice Conversion via Flow-Matching-Driven Speech Tokenization](/202608/13/2608.11737v1-phoenix-tts-high-fidelity-synthesis-and-voice-conversion-via-flow-matching-driven-speech-tokenization)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：流式ASR与轮次预测，直接属于语音识别研究
-5. [myMediWhisper: Construction of Burmese Medical Speech Corpus and Whisper Fine-Tuning for Clinical Dialogue ASR](/202608/12/2608.11036v1-mymediwhisper-construction-of-burmese-medical-speech-corpus-and-whisper-fine-tuning-for-clinical-dialogue-asr)  
+   evidence：通过流匹配驱动的语音令牌化实现零样本语音合成与声音转换
+5. [MiDashengLM-Gen: Unified Audio Scene Generation via LLM-Driven Autoregressive Flow Matching](/202608/13/2608.11804v1-midashenglm-gen-unified-audio-scene-generation-via-llm-driven-autoregressive-flow-matching)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：构建语音语料库和ASR系统，直接对应数据集与基准
-6. [CLASVS: Continuous-Latent Autoregression for Melody-Preserving Lyric Editing in Singing Voice Synthesis](/202608/12/2608.03253v2-clasvs-continuous-latent-autoregression-for-melody-preserving-lyric-editing-in-singing-voice-synthesis)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：歌唱语音合成与歌词编辑
+   evidence：端到端文本到音频场景生成，直接对应文本到音频合成方法。
+6. [The SLT 2026 SmartGlasses Challenge: Benchmarking Egocentric Multi-Talker Speech Recognition and Understanding with Audio-Language Models](/202608/13/2608.12034v1-the-slt-2026-smartglasses-challenge-benchmarking-egocentric-multi-talker-speech-recognition-and-understanding-with-audio-language-models)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：自我中心多说话人语音识别基准
 
 ### 速读区论文标签
-1. [Ex-Omni-2D: Expressive Omni-Modal Dialogue Models with Native Visual Presence](/202608/12/2608.10720v1-ex-omni-2d-expressive-omni-modal-dialogue-models-with-native-visual-presence)  
+1. [DonorRank: Donor Language Selection for Low-Resource Cross-Lingual Speech Recognition](/202608/13/2608.11441v1-donorrank-donor-language-selection-for-low-resource-cross-lingual-speech-recognition)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：能合成语音回复，直接涉及文语合成
-2. [Mitigating Over-Suppression in Speech Enhancement via Inference-Time Rethink-and-Refine Correction Module](/202608/12/2608.07781v1-mitigating-over-suppression-in-speech-enhancement-via-inference-time-rethink-and-refine-correction-module)  
+   evidence：低资源跨语言语音识别
+2. [Easper: An Accessible ASR Pipeline for Language Documentation](/202608/13/2608.11629v1-easper-an-accessible-asr-pipeline-for-language-documentation)  
+   标签：评分：8.0/10、query:speech-audio
+   evidence：用于语言文档记录的ASR流水线，含转写优先级策略
+3. [Spoken Function Calling: A New Perspective on Spoken Language Understanding for Large Audio Language Models](/202608/13/2608.05126v1-spoken-function-calling-a-new-perspective-on-spoken-language-understanding-for-large-audio-language-models)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：基于ASR对齐的语音增强修正，属于语音信号处理
-3. [Towards Expressive and Faithful Audio-to-Image Generation: A Unified Multimodal Dataset and Synthesis Framework](/202608/12/2608.09529v1-towards-expressive-and-faithful-audio-to-image-generation-a-unified-multimodal-dataset-and-synthesis-framework)  
+   evidence：面向大型音频语言模型的口语理解结构化函数调用方法
+4. [Mitigating Over-Suppression in Speech Enhancement via Inference-Time Rethink-and-Refine Correction Module](/202608/13/2608.07781v1-mitigating-over-suppression-in-speech-enhancement-via-inference-time-rethink-and-refine-correction-module)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：面向音频到图像生成的新统一数据集与合成框架
-4. [MazzikaAI: A knowledge-based performance-to-prompt compiler for real-time Arabic maqam accompaniment with a streaming text-to-music model](/202608/12/2608.10360v1-mazzikaai-a-knowledge-based-performance-to-prompt-compiler-for-real-time-arabic-maqam-accompaniment-with-a-streaming-text-to-music-model)  
+   evidence：语音增强后处理校正
+5. [AeroReformer2: Spoken-Query Referring Segmentation for Aerial Images](/202608/13/2608.08874v1-aeroreformer2-spoken-query-referring-segmentation-for-aerial-images)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：实时文本到音乐伴奏
-5. [Speaker Verification Under Real Classroom Conditions for English Speech](/202608/12/2608.03623v1-speaker-verification-under-real-classroom-conditions-for-english-speech)  
+   evidence：引入了带有多样口音和嗓音的语音查询基准
+6. [MERaLiON-GR: Speech Gender Recognition Model for English and SEA Languages](/202608/13/2608.04433v1-meralion-gr-speech-gender-recognition-model-for-english-and-sea-languages)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：真实课堂语音的说话人验证，属于语音/音频处理主题
-6. [MERaLiON-GR: Speech Gender Recognition Model for English and SEA Languages](/202608/12/2608.04433v1-meralion-gr-speech-gender-recognition-model-for-english-and-sea-languages)  
+   evidence：语音性别识别，语音音频处理
+7. [BiTSE: Binaural Target Speaker Extraction in Noisy Multi-Talker Environments for AR Glass Arrays](/202608/13/2608.10106v1-bitse-binaural-target-speaker-extraction-in-noisy-multi-talker-environments-for-ar-glass-arrays)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：多语言语音性别识别
-7. [VoxZip: Semantic-Anchored Temporal KV Cache Compression for Long-Context Audio Inference](/202608/12/2608.08569v1-voxzip-semantic-anchored-temporal-kv-cache-compression-for-long-context-audio-inference)  
+   evidence：面向可穿戴麦克风阵列的双耳目标说话人提取，用于嘈杂多说话人环境
+8. [Deep Learning Based Relative Transfer Matrix Estimation for Multiple Sources and Multiple Microphones](/202608/13/2608.11627v1-deep-learning-based-relative-transfer-matrix-estimation-for-multiple-sources-and-multiple-microphones)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：面向长上下文语音大语言模型的KV缓存压缩
-8. [Speaker Role and Language Diarization for Analyzing Multilingual Interviews for Language Proficiency of Older Adults](/202608/12/2608.09032v1-speaker-role-and-language-diarization-for-analyzing-multilingual-interviews-for-language-proficiency-of-older-adults)  
+   evidence：基于深度学习的多通道相对传递矩阵估计用于语音增强，属于语音音频处理技术而非直接针对TTS/ASR
+9. [Do Text-to-Music Models Really Follow Instructions? A Counterfactual Evaluation of Key and Beat Grouping](/202608/13/2608.11899v1-do-text-to-music-models-really-follow-instructions-a-counterfactual-evaluation-of-key-and-beat-grouping)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：基于Whisper的说话人角色和语言分割，属于语音处理
-9. [Structured Phonological Representations for Audio-Articulatory rtMRI Speech Classification](/202608/12/2608.09767v1-structured-phonological-representations-for-audio-articulatory-rtmri-speech-classification)  
+   evidence：针对文本到音乐生成控制的反事实评估方法
+10. [Rethinking Language Model-Based Generative Speech Enhancement in the Latent Space of a Neural Audio Codec](/202608/13/2608.12082v1-rethinking-language-model-based-generative-speech-enhancement-in-the-latent-space-of-a-neural-audio-codec)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：结合音频与发音的语音建模
-10. [DINO-A: Adapting Self-Distillation Vision Transformers to General Audio Representation Learning](/202608/12/2608.10659v1-dino-a-adapting-self-distillation-vision-transformers-to-general-audio-representation-learning)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：自监督音频表示学习，可服务于语音任务
+   evidence：在神经音频编解码器潜空间统一框架下比较六种基于语言模型的生成式语音增强范式，属于语音音频方法论
 
 
 <div class="dpr-home-promo-card">
