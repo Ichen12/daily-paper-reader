@@ -1,0 +1,499 @@
+Title: AeroReformer2: Spoken-Query Referring Segmentation for Aerial Images
+
+URL Source: https://arxiv.org/pdf/2608.08874v2
+
+Published Time: Fri, 14 Aug 2026 00:54:35 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# AeroReformer2: Spoken-Query Referring Segmentation for Aerial Images 
+
+Rui Li 1, Chenxi Duan 1, Haoyang Yang 1, ∗
+
+Abstract 
+
+Spoken language o ff ers a natural, hands-free interface for specifying an arbitrary target in dense remote-sensing imagery, yet existing referring remote-sensing image segmentation benchmarks accept only written expressions. To bridge this gap, we introduce VoiceAeroRef, a spoken-query benchmark derived from RISBench that adds accent- and voice-diverse speech while preserving the original image, mask, and data splits. Its hard evaluation set combines rotor, wind, and mixed interference with three signal-to-noise levels. We also propose AeroReformer2, an e ffi cient bilateral network that combines a boundary-preserving visual path with token-preserving speech encoding, kernel linear cross-modal attention, and a resolution refinement head. The design conditions visual features at two scales without materializing a dense speech–visual a ffi nity matrix, then restores fine boundaries using high-resolution visual features. On the clean test split, AeroReformer2 with Swin-Base achieves 62.09% mean intersection over union (mIoU) and 68.22% overall intersection over union (oIoU), outperforming the strongest audio-adapted remote-sensing baseline by 5.38 and 2.08 percentage points, respectively. It retains the best hard-set mIoU at 54.09%. To the best of our knowledge, this is the first benchmark and model study of full-sentence spoken-query referring segmentation for remote-sensing imagery. 
+
+Keywords: Multimodal, Transformer, Spoken-Query Referring Segmentation, Deep Learning, Remote Sensing 
+
+1. Introduction 
+
+High-resolution aerial and satellite remote sensing supports in-frastructure mapping, emergency response, precision agriculture, tra ffi c analysis, environmental monitoring, and large-area Earth observation [1, 2, 3]. Across these applications, pixel-level per-ception is indispensable: an image-analysis system must not only recognize that roads, buildings, vehicles, vessels, vegetation, or damaged regions exist, but also delineate their precise spatial extent. Modern semantic segmentation has made this form of scene understanding increasingly reliable [2, 4, 5, 6, 7]. Yet semantic segmentation presumes a fixed class vocabulary and produces every supported category regardless of the analyst’s immediate intent. This is poorly matched to an interactive work-flow in which a person may care about one particular object—for example, “the small vehicle immediately below the bridge,” “the vessel at the right-most pier,” or “the irregular pool nearest the lower boundary.” The desired target is defined jointly by its cat-egory, appearance, position, and relation to surrounding objects, not by a class label alone. At the same time, the interface used to express that intent mat-ters. A point or box prompt is concise, but it requires continuous visual attention and precise cursor placement; its meaning can also remain ambiguous in dense overhead imagery containing many small, adjacent instances. A fixed command menu avoids ambiguity only by restricting what the user can request. In con-trast, direct spoken language is a natural interaction modality for an analyst interpreting remote-sensing imagery : people already describe targets through category words, attributes, landmarks, and spatial relations, and an utterance can express all of these 
+
+> ∗Corresponding author
+
+cues in one command while leaving the display available for image inspection. Speech therefore provides a direct bridge between human intent and pixel-level remote-sensing analysis rather than merely replacing one graphical pointing device with another. Referring image segmentation (RIS) provides the dense-prediction formulation needed for that bridge. Given an im-age and a free-form expression, RIS predicts exactly the pix-els belonging to the described referent [17, 18, 19]. Unlike semantic segmentation, the task can distinguish multiple ob-jects of the same class and accommodate previously unenu-merated combinations of attributes and relations. Recent cross-modal attention, vision-language pretraining, and query-based methods have substantially improved grounding in natural im-ages [20, 21, 22, 23, 24, 25]. Referring remote-sensing image segmentation (RRSIS) transfers this paradigm to overhead im-agery, where targets can be only a few pixels wide, appear at arbitrary orientations, span extreme scales, and require long-range geospatial context [2, 8, 9, 10]. RISBench is a particularly valuable resource: it contains 52,472 image–expression–mask triplets assembled from the Dataset for Object Detection in Aerial Images version 2 (DOTA-v2) and Dataset for Object de-Tection in Optical Remote sensing images (DIOR) [10, 26, 27]. However, existing RRSIS benchmarks provide written text rather than a spoken instruction. Treating a transcript as equiv-alent to speech removes precisely the variability encountered by a deployable voice interface. The same sentence changes acoustically with accent, gender presentation, pitch, rate, micro-phone response, and duration. Recognition-relevant evidence is distributed across a sequence of waveform frames rather than delivered as symbolic tokens. In practical image-analysis envi-ronments, the speech channel may additionally be a ff ected by arXiv:2608.08874v2 [cs.CV] 13 Aug 2026 Table 1. Positioning of VoiceAeroRef relative to adjacent datasets. “Speech” means that the conditioning signal is a user utterance rather than sound emitted by the target. RRSIS denotes referring remote-sensing image segmentation, AVS denotes audio-visual segmentation, AVOS denotes audio-guided video object segmentation, and IS denotes image segmentation. Counts use annotated frames /targets or triplets as reported by the corresponding work and are therefore not directly comparable across tasks. Dataset Domain Unit Scale Pixel mask Speech Query form RefSegRS [8] Remote sensing image 4,420 Yes No full expression RRSIS-D [9] Remote sensing image 17,402 Yes No full expression RISBench [10] Remote sensing image 52,472 Yes No full expression NWPU-Refer [11] Remote sensing image 49,745 Yes No full expression AVSBench [12] Natural scene video – Yes No target sound Ref-AVS [13] Natural scene video – Yes No multimodal cues Wnet /AVOS [14] Natural scene video – Yes Yes full expression Audio-guided IS [15] Natural scene image 66,202 Yes Yes single word OmniAVS [16] Natural scene video 2,104 Yes Yes multimodal prompt       
+
+> VoiceAeroRef (ours) Remote sensing image 52,466 Yes Yes full expression
+
+machinery, ventilation, wind, microphone response, and chang-ing signal-to-noise ratio. A text-only benchmark cannot measure sensitivity to these acoustic variables or determine whether they introduce failures beyond the visual and linguistic errors already present in text-based grounding. Full-sentence speech does not itself solve relational reasoning; rather, it tests whether cues such as “left-most,” “between,” and “next to” remain usable after acoustic encoding. Prior speech-conditioned segmentation establishes the feasi-bility of grounding verbal instructions, but it does not address aerial images. Wnet introduced audio-guided video object seg-mentation from spoken referring expressions [14], and STBridge studied noise-tolerant speech-referring video object segmenta-tion [28]. More recently, direct audio-guided image segmenta-tion has been evaluated with single-word spoken queries [15], while OmniAVS combines speech, sound, text, and visual cues in videos [16]. These studies concern natural-image or video scenes rather than full-sentence references to small, repeated, and arbitrarily oriented aerial targets. The remaining gap is a benchmark that jointly provides aerial imagery, complete spo-ken referring expressions, pixel masks, and controlled speaker diversity. Operational use also makes e ffi ciency a first-class research constraint. Dense cross-modal attention over N visual positions and T speech tokens materializes an N × T affi nity matrix. For high-resolution remote-sensing inputs and multi-second utter-ances, that matrix competes with the visual backbone for limited accelerator memory, while quadratic visual self-attention can further increase cost. E ffi cient bilateral segmenters preserve a high-resolution detail stream while computing semantic con-text at lower resolution [29, 30, 31]. Linear-attention formula-tions rearrange attention products so that the intermediate state depends on channel dimension rather than the product of to-ken counts [32, 33]. This combination is especially attractive for spoken-query remote-sensing segmentation: the boundary path protects tiny objects, while token-preserving linear fusion can ground a variable-length utterance without storing a dense speech–visual a ffi nity map. Motivated by these observations, we introduce VoiceAeroRef and AeroReformer2. VoiceAeroRef converts the expressions of RISBench into a controlled speech benchmark without altering image or mask splits. Training expressions receive eight accent– gender variants; at every epoch, each source sample draws one of these recordings so that voice diversity does not create an arti-ficial eightfold epoch. Validation and test use category-balanced single voices. AeroReformer2 couples a bilateral visual encoder with wav2vec 2.0 speech tokens [34], a learned token memory, and dual-scale kernel linear cross-attention. Rather than pre-senting bilateral segmentation, token gating, or linear attention as isolated inventions, the architecture integrates them around the particular geometry of spoken-query remote-sensing seg-mentation: associative speech–visual fusion preserves the token sequence, reliability weights enter the su ffi cient statistics used by every spatial query, coarse and fine fusion resolve localiza-tion at two scales, and a parallel detail path retains small-object boundaries. To the best of our knowledge, this is the first study to formu-late and benchmark full-sentence spoken-query referring seg-mentation for remote-sensing imagery. This work makes four contributions: 
+
+• We formulate full-sentence spoken-query referring segmenta-tion for remote-sensing imagery and construct VoiceAeroRef from RISBench through systematic, split-preserving quality control. 
+
+• We establish a controlled speech protocol with eight accent– gender recordings for every training expression, balanced single-voice clean evaluation, and a nine-condition hard eval-uation grid; one candidate is sampled per source sample per epoch. 
+
+• We propose AeroReformer2, an e ffi cient speech-conditioned bilateral network with token-preserving speech encoding, confidence-gated token memory (CGTM), and dual-scale speech-visual kernel linear attention (SV-KLA) that avoids a dense visual-token–speech-token a ffi nity matrix. 
+
+• On the 16,159-sample test split, the Swin-Base version reaches 62.09% clean mIoU and 54.09% hard mIoU, exceed-ing the strongest non-ours method by 5.38 and 5.63 percentage points, respectively. 2Fig. 1. VoiceAeroRef dataset construction and evaluation protocol. The pipeline covers source-data quality control, controlled neural speech synthesis, hard-test construction, and split-specific voice sampling. 3 6 9 12 15 18 21 24 27 30 33 36 
+
+0510 15 Words per expression Expressions (%) 
+
+(a) Expression length 
+
+0 20 40 60 80 
+
+> Orientation Quantity Shape Color /tone Relative relation Size /extent Position /direction
+
+Expressions containing cue (%) 
+
+(b) Non-exclusive linguistic cues  
+
+> Fig. 2. Linguistic characteristics of the usable expressions. Panel (a) gives the frequency of each expression length from 3 to 36 words; only five expressions are longer than 36 words. Panel (b) reports the prevalence of lexicon-based linguistic cues. Cue categories are non-exclusive and therefore do not sum to 100%.
+
+2. Related Work 
+
+2.1. Referring image and remote-sensing segmentation 
+
+RIS was introduced as pixel-level grounding of a natural-language expression. Early systems concatenated convolutional image features, spatial coordinates, and recurrent sentence repre-sentations [17]; recurrent refinement then enabled iterative mul-timodal reasoning [18], while the recurrent refinement network (RRN) modeled cross-modal relationships at multiple visual levels [19]. Attention-based methods replaced a single global sentence vector with finer word–region interaction. The cross-modal self-attention network (CMSA) constructed self-attention over multimodal word–pixel features [20]; cross-modal progres-sive comprehension (CMPC) progressively understood entity and attribute cues [21]; and linguistic-structure context model-ing used phrase structure to guide visual reasoning [35]. These works established two recurring requirements: the decoder needs local detail for accurate masks, and the fusion mechanism must preserve enough language structure to distinguish similar in-stances. Transformers and large-scale vision-language pretraining moved fusion earlier and made it more expressive. The language-aware vision transformer (LAVT) injects linguistic information throughout a hierarchical visual transformer [22], whereas CLIP-driven referring image segmentation (CRIS) transfers contrastive language–image pretraining (CLIP) knowledge through a vision-language decoder and text-to-pixel contrastive learning [23]. Dynamic multimodal interaction (DMMI) reconsiders one-expression-to-one-object assumptions and performs dynamic multimodal reasoning [24]. The language-aware query mask transformer (LQMFormer) addresses query collapse through language-aware feature fusion and dynamic query selection [25]. 3Other recent directions include global–local zero-shot ground-ing [36], prompt-driven adaptation of CLIP and the Segment Anything Model (SAM) [37, 38], explicit mask grounding super-vision [39], feature interfaces that bridge SAM and CLIP [40], and training-free hybrid global–local mask representations [41]. These methods improve accuracy, supervision e ffi ciency, or open-vocabulary transfer, but they assume written text and gen-erally do not optimize the speech-token–pixel interaction for edge deployment. RRSIS adds domain-specific di ffi culties that natural-image RIS benchmarks underrepresent. RefSegRS introduced 4,420 remote-sensing image–expression–mask triplets together with language-guided cross-scale enhancement [8]. RRSIS-D and the rotated multi-scale interaction network (RMSIN) emphasize ro-tated targets and multi-scale interaction [9]. RISBench scales the task to 52,472 triplets, and the cross-modal bidirectional interac-tion model (CroBIM) improves cross-modal bidirectional inter-action [10]; the source expressions originate from the broader Versatile Vision-Language Benchmark for Remote Sensing Im-age Understanding (VRSBench) collection [42]. AeroReformer addresses referring segmentation in a separate low-altitude aerial setting through vision–language cross-attention and rotation-aware multi-scale fusion [2]. Recent models refine this inter-action in complementary ways: FIANet performs fine-grained image–text alignment [43]; the scale-wise bidirectional align-ment network (SBANet) adds bidirectional alignment across fea-ture scales [44]; STDNet couples spatial multi-scale correlation with target /background decoding [45]; and long-term semantic-guidance ConvFormer (LSCF) maintains language guidance through its decoder [46]. RSSep investigates joint referring seg-mentation and caption generation [47], while NWPU-Refer ex-pands geographical diversity and high-resolution coverage [11]. Despite rapid progress, all of these resources deliver text. None exposes accent, speaker, or duration as benchmark variables, so none can separate acoustic encoding from visual grounding quality. 
+
+2.2. E ffi cient segmentation and linear attention 
+
+Encoder–decoder networks such as fully convolutional net-works (FCNs), U-Net, and DeepLab established strong dense-prediction baselines [4, 5, 6], but high-resolution remote-sensing inference requires more deliberate accuracy–latency trade-o ff s. MobileNetV3 with Lite Reduced Atrous Spatial Pyramid Pool-ing (LR-ASPP) uses hardware-aware mobile blocks [48]. The bilateral segmentation network (BiSeNet) separates spatial de-tail from semantic context [29]; the Short-Term Dense Con-catenate network (STDC) revisits the cost of a separate spa-tial path and adds detail supervision [31]; the proportional– integral–derivative network (PIDNet) uses three corresponding branches [49]. For fine-resolution remote sensing, the Attentive Bilateral Contextual Network (ABCNet) combines an attentive context path with a shallow spatial branch [30]. AeroReformer2 retains this bilateral principle because tiny overhead objects need early high-resolution evidence, but replaces late text condition-ing with token-level speech fusion. Standard dot-product attention forms pairwise a ffi nities be-fore normalizing values [50]. A visual self-attention layer stores 
+
+O(N2) a ffi nities, and speech–visual cross-attention stores O(NT )affi nities for N pixels and T speech tokens. Effi cient atten-tion shows that separating and reordering key–value products can yield linear complexity under suitable normalization [32]; kernel linear transformers use a positive feature map and com-pute ϕ(Q)( ϕ(K)⊤V) associatively [33]. In high-resolution aerial image super-resolution, the Linear Swin Transformer for Super-Resolution (LSwinSR) further demonstrates that kernelized attention can reduce the computational burden of Swin-style restoration while retaining competitive reconstruction accu-racy [7]. This distinction is architectural rather than merely an optimized implementation: the dense a ffi nity tensor is never in-stantiated. AeroReformer2 specializes the formulation to dense speech grounding at two spatial scales and learns a confidence weight for each speech token because the tokens contribute un-equally to identifying the referent. 
+
+2.3. Audio-visual segmentation and speech representation 
+
+Audio-visual segmentation (AVS) conventionally localizes pixels associated with sounding objects. AVSBench introduced single-source, multi-source, and semantic settings with temporal pixel-wise interaction [12]. AVSegFormer uses dense audio-visual mixing and transformer decoding [51]; annotation-free AVS composes image-mask and audio data and adapts SAM effi ciently [52]; Cooperation of Multi-order Bilateral Relations (COMBO) models bilateral relations at pixel, modality, and temporal levels [53]. Ref-AVS uses multimodal scene cues to select objects in videos [13], and OmniAVS extends this formulation to expressions that can combine text, speech, sound, and visual prompts [16]. Speech-referring segmentation is more directly related to our task. Wnet introduced an audio-guided video segmentation benchmark and an end-to-end model for spoken referring ex-pressions [14]. STBridge aligns speech and text representations to improve noise tolerance in referring video object segmenta-tion [28]. Santos et al. subsequently benchmarked direct audio-guided segmentation of static natural images, but restricted the spoken instruction to a single object keyword [15]. These works show that speech can serve as the semantic query rather than as environmental evidence. They do not, however, study full relational sentences, aerial imagery, or the scale and orientation variation of remote-sensing targets. VoiceAeroRef addresses this intersection while retaining the original RISBench masks and full referring expressions. Self-supervised speech models provide a more appropriate representation for this setting than a global environmental-audio embedding. wav2vec 2.0 learns contextualized representations directly from masked waveform latents [34]; HuBERT uses clustered hidden-unit prediction [54]; and WavLM extends self-supervision toward full-stack speech processing under noisy and overlapping conditions [55]. SpecAugment demonstrates the broader value of time–frequency masking for robust speech recognition [56]. We adopt wav2vec 2.0 because its frame se-quence can be retained for word-level visual grounding. At-tributes and relations may occupy brief intervals and di ff er in task relevance, so the sequence is not collapsed to a single sen-tence vector before fusion. 4Table 2. Dataset splits and audio counts after quality control. Hard audio is derived only for the test split; images, expressions, masks, and clean voice assignments are unchanged.                     
+
+> Split Usable sources Clean voices /source Clean audio Hard audio Train 26,294 8210,352 –Validation 10,013 110,013 –Test 16,159 116,159 16,159 Total 52,466 –236,524 16,159
+
+Table 1 situates VoiceAeroRef among adjacent aerial and audio-guided benchmarks. Existing remote-sensing referring datasets provide complete written expressions but no speech, whereas prior speech-conditioned datasets focus on natural-scene images or videos and often use single words or multimodal prompts. VoiceAeroRef is distinguished by the conjunction of the remote-sensing domain, pixel masks, full spoken expres-sions, and eight controlled accent–gender categories at the scale of RISBench. 
+
+3. VoiceAeroRef Dataset 
+
+3.1. Task definition 
+
+Each sample is a triplet ( I, a, M), where I ∈ RH×W×3 is an aerial or remote-sensing image, a ∈ RL is a spoken referring expression sampled at 16 kHz, and M ∈ { 0, 1}H×W is the binary mask of the referred object. The model predicts 
+
+bM = fθ(I, a), (1) and is evaluated on its overlap with M. Unlike sound-source segmentation, the utterance need not be acoustically related to the object; its linguistic content provides the reference. 
+
+3.2. Source data and quality control 
+
+RISBench is derived from DOTA-v2 and DIOR imagery and contains 512 ×512 images, referring expressions, and human-verified masks [10]. DOTA-v2 combines Google Earth imagery, Gaofen-2 (GF-2) and Jilin-1 (JL-1) satellite imagery, and other aerial imagery, whereas DIOR is a benchmark of optical remote-sensing images collected from Google Earth [26, 27]. RISBench is therefore a mixed-source overhead remote-sensing dataset. Its released splits contain 26,300 training, 10,013 validation, and 16,159 test records, totaling 52,472 triplets. We verify record integrity and linguistic informativeness be-fore speech synthesis. Six training expressions contain only the punctuation mark “.” and therefore provide no referring content; excluding them yields 52,466 usable triplets. As shown in Fig-ure 1, the construction preserves every valid image–expression– mask association while adding controlled speech realizations. The training split stores eight recordings per expression but re-tains 26,294 e ff ective samples per epoch, whereas validation and test contain one clean recording per expression. The hard test set reuses the clean test voice assignments and adds one controlled interference condition to every utterance. The resulting split sizes and audio inventory are summarized in Table 2. 
+
+3.3. Speech generation and split policy 
+
+We synthesize English speech using eight neural text-to-speech (TTS) voices arranged as a 4 × 2 accent–gender factorial design (Table 3). Each output is stored as a mono, 16-bit PCM WAV file sampled at 16 kHz. TTS synthesis changes the acoustic realization but never changes the text, image, mask, or split. For training, every usable description has eight candidate recordings. The dataset is indexed by the 26,294 source descrip-tions, not by the 210,352 audio files. At epoch e, source index i
+
+selects 
+
+ve,i ∼ Uniform {1, . . . , 8}, (2) with the voice resampled at each epoch. Thus every source occurs exactly once in an epoch while its acoustic realization varies over training. This provides speaker augmentation without oversampling identical visual masks by a factor of eight. Validation and test use one voice per description. The eight voice categories are assigned by balanced random allocation, so the count of any two categories di ff ers by at most one. Val-idation contains 1,251–1,252 utterances per category and test contains 2,019–2,020; accent and gender marginals are therefore balanced. 
+
+3.4. Hard evaluation construction 
+
+In plausible field or mobile operating scenarios, an analyst or operator may issue spoken queries outdoors or near active equip-ment, where the microphone is exposed to wind, rotor /machinery noise, and rapidly changing signal-to-noise ratios. We therefore construct a hard evaluation set to test whether spoken referring expressions remain usable under representative acoustic inter-ference, without changing the underlying visual or linguistic task. The hard test set evaluates acoustic interference without changing the visual or linguistic task. Each clean evaluation utterance is mixed with locally synthesized rotor noise, wind noise, or a 0.6 /0.4 mixture of the two. Rotor interference com-bines a four-source harmonic model, amplitude beating, and colored mechanical noise; wind interference combines low-pass colored noise, a time-varying gust envelope, and low-frequency rumble. The construction uses no external noise recordings and does not model the acquisition platform of the source imagery. We cross the three interference types with low, medium, and high severity, defined by nominal signal-to-noise ratios of 15, 7.5, and 0 decibels (dB). A per-utterance perturbation sampled within ±1.5 dB prevents each severity from collapsing to one fixed mixing ratio. The nine conditions are allocated as evenly as possible: each test cell contains 1,795–1,796. Every source 5(a) Top-100 content-word cloud (b) First-mentioned referent families 
+
+> Font size follows corpus frequency; stopwords are excluded.
+
+# vehicle 
+
+# small 
+
+# right 
+
+# towards 
+
+# bottom 
+
+# side 
+
+# edge 
+
+# corner 
+
+# left 
+
+# large top 
+
+# near 
+
+# ship 
+
+# area 
+
+# court 
+
+# plane 
+
+# harbor 
+
+# part 
+
+# center 
+
+# tennis 
+
+# bottom-right 
+
+# bridge 
+
+> visible
+
+# field 
+
+# top-right 
+
+## top-left 
+
+## bottom-left 
+
+## section 
+
+## water 
+
+middle-right 
+
+middle-left 
+
+parked 
+
+middle 
+
+road 
+
+tank 
+
+bottom-middle 
+
+storage 
+
+top-most 
+
+baseball 
+
+bottom-most 
+
+left-most 
+
+top-middle 
+
+white 
+
+extending 
+
+portion surrounded 
+
+> right-most
+> frame
+
+closer 
+
+larger 
+
+> structure
+> airplane
+> tarmac
+> among
+> track
+> shape
+
+other 
+
+> vehicles
+> largest
+> lower
+> closest
+> smaller
+> parking
+> body
+
+pool 
+
+> ground
+> swimming
+
+one 
+
+> across
+> diamond
+> adjacent
+> green
+> partially
+> upper
+> basketball
+> central
+> position
+> overpass
+> seen
+> windmill
+> over
+> quadrant
+> docked
+> spans
+> station
+> two
+> found
+> distinguishable
+> roundabout
+> centrally
+> identified
+> size
+> unique
+> out
+> expressway
+> surface
+> extends
+> along
+> far
+> distinct
+> Ground vehicles
+> 33.0%
+> Transport infrastructure
+> 18.6%
+> Sports facilities
+> 16.0%
+> Aircraft
+> 11.1%
+> Maritime vessels
+> 10.7%
+> Industrial assets
+> 5.9%
+> Pools
+> 2.0%
+> Other
+> 2.6%
+> Equal angles; sector area is proportional to expression share
+
+Fig. 3. Lexical and referent-semantic composition of the 52,466 usable expressions. Panel (a) shows the 100 most frequent non-stopword tokens, with font size proportional to log frequency. Panel (b) is a Nightingale rose of first-mentioned referent families; sector area is proportional to expression share. “Other” combines buildings, natural /water terms, and unmatched expressions. 
+
+Table 3. Controlled neural text-to-speech (TTS) voices used to synthesize the spoken queries. 
+
+Accent Locale Female voice Male voice United States en-US JennyNeural GuyNeural Great Britain en-GB SoniaNeural RyanNeural Australia en-AU NatashaNeural WilliamNeural India en-IN NeerjaNeural PrabhatNeural 
+
+appears exactly once in the hard test split, which therefore re-tains 16,159 samples rather than expanding evaluation ninefold. Training remains clean and the reported hard test results use checkpoints selected on clean validation mIoU. 
+
+3.5. Linguistic statistics 
+
+The 52,466 usable expressions contain 751,126 lowercase regex-tokenized word occurrences. Mean length is 14.316 words (median 13, standard deviation 4.505, 90th percentile 21, range 3–46). The normalized vocabulary contains 3,055 types. The di ff erence from the 4,431-word vocabulary reported for RIS-Bench [10] arises from lowercase regex tokenization and nor-malization. As shown in Figure 2, expression lengths concentrate around 10–18 words, while a substantial tail extends beyond 20 words. Position /direction cues appear in 73.390% of expressions and size /extent cues in 43.809%, confirming that aerial referring expressions depend strongly on relational and scale language. Relative relations occur in 26.425%; color /tone, shape, quantity, and orientation occur in 7.761%, 6.372%, 4.752%, and 0.976%, respectively. These categories are detected with transparent key-word lexicons and may overlap. The most frequent normalized content words include vehicle (17,590), small (12,867), right 
+
+(8,900), towards (8,520), bottom (8,502), side (7,606), edge 
+
+(7,321), and corner (7,298). This distribution motivates token-level grounding: pooling the utterance into a single vector can blur the object noun, attribute, and spatial relation that jointly identify the target. To characterize referent semantics, each expression is as-signed to the family of its earliest matching referent keyword because RISBench does not provide explicit object-category labels. As shown in Figure 3, the word cloud is dominated by object nouns such as vehicle , ship , court , and plane , together with spatial terms such as right , bottom , and corner . Ground vehicles form the largest first-mentioned referent family (33.0%), followed by transport infrastructure (18.6%) and sports facili-ties (16.0%). Aircraft and maritime vessels contribute a further 11.1% and 10.7%, respectively, whereas industrial assets (5.9%), pools (2.0%), and the combined other group (2.6%) are less frequent. This long-tailed semantic composition complements the cue analysis: the model must retain fine-grained noun ev-idence for minority targets while using position and relation words to separate repeated instances in the dominant vehicle and infrastructure scenes. 
+
+4. AeroReformer2 
+
+AeroReformer2 denotes Aerial Referring Transformer 2 . The model inherits the bilateral e ffi ciency principle of ABCNet [30]: a shallow detail path retains boundary evidence at 1 /8 resolu-tion, while a hierarchical context path exposes semantic features at 1 /4, 1 /8, 1 /16, and 1 /32. We instantiate the context path with either ResNet-101 or Swin-Base; the speech fusion and decoder are identical across both versions. Depthwise-separable convolutions are used in the detail paths, top-down refinement, fusion blocks, and mask heads. Kernel linear self-attention at 1/32 provides global visual context without an N × N spatial affi nity matrix. 6Fig. 4. AeroReformer2 architecture for spoken-query aerial referring segmentation. The model combines bilateral visual encoding, confidence-gated speech representations, dual-scale speech–visual kernel linear attention, and high-resolution mask refinement. 
+
+The speech path transforms a waveform into a sequence 
+
+A = [a1, . . . , aT ] ∈ RT ×Da using wav2vec 2.0 [34]. Unlike sentence-level feature-wise linear modulation (FiLM) baselines, AeroReformer2 does not discard the token sequence before fu-sion. CGTM assigns a learned confidence to each token, and the same confidence-weighted sequence conditions context features through SV-KLA at 1 /16 for coarse semantic localization and 1/8 for fine grounding. The conditioned context is fused with the 1/8 detail path and globally refined by visual kernel attention. A subsequent 1 /4 head combines this fused semantic feature with top-down backbone context and a separate high-resolution detail path before producing the binary mask. Figure 4 summarizes the dataflow. The resulting architecture is tailored to spoken referring seg-mentation rather than a simple substitution of one attention oper-ator for another. Associative kernel attention keeps the acoustic token sequence available to every visual query without con-structing a dense token–pixel a ffi nity tensor; the learned token weights enter both the kernel su ffi cient statistics and the global conditioning branch; and the two speech-fusion scales separate coarse referent selection from fine grounding, after which the 1/4 visual refinement stage restores boundaries without expand-ing cross-modal attention to that grid. These choices form one connected routing strategy for the repeated objects, long spatial relations, and fine object boundaries common in aerial imagery. 
+
+4.1. Confidence-Gated Token Memory 
+
+Speech tokens do not contribute equally to referring segmen-tation. Object nouns, attributes, and spatial relations often carry more task-relevant evidence than function words or redundant frames. CGTM therefore predicts a scalar confidence for each speech token using layer normalization (LN) and a sigmoid linear unit (SiLU): 
+
+gt = σ(W2 SiLU( W1 LN( at))) , gt ∈ [0 , 1] . (3) The e ff ective weight is wt = mtgt, where mt ∈ { 0, 1} is the padding mask. We interpret gt as a learned measure of token util-ity for the segmentation objective, not as a calibrated probability or an estimate of acoustic corruption. The weights modulate both the cross-attention statistics and a global audio FiLM branch. The latter uses ¯a =
+
+Pt wtat
+
+Pt wt + ϵ , V′ = V ⊙ (1 + γ(¯ a)) + β(¯ a), (4) with zero-initialized a ffi ne projections γ and β. Segmentation supervision learns the confidence gate jointly with the fusion modules. Neither token-level labels nor speech transcripts are required at inference. 
+
+4.2. Speech-Visual Kernel Linear Attention 
+
+For one head, flatten a visual feature map into N positions vi
+
+and use the exponential linear unit (ELU) to define 
+
+qi = ϕ(Wqvi), kt = ϕ(Wkat), ut = Wvat,ϕ(x) = ELU( x) + 1. (5) 7Table 4. Test-set accuracy on VoiceAeroRef (%). The metrics are mean intersection over union (mIoU), overall intersection over union (oIoU), and precision at the indicated intersection-over-union threshold (Pr@.). All methods use the same spoken-query input and 0.5 mask threshold. The best and second-best values are shown in bold and underlined, respectively. “Adapter” denotes an audio-token adaptation of the cited text-guided RRSIS model; CNN denotes convolutional neural network. Method Backbone mIoU oIoU Pr@.5 Pr@.6 Pr@.7 Pr@.8 Pr@.9 Audio U-Net CNN 27.84 36.10 21.12 15.03 10.32 6.26 2.28 Audio FCN ResNet-101 49.54 60.17 55.13 48.64 40.74 29.45 13.65 Audio DeepLabV3 ResNet-101 51.87 62.17 57.89 51.49 43.55 32.40 15.90 FIANet adapter [43] Swin-B 53.48 63.86 58.99 53.15 46.59 36.52 20.43 SBANet adapter [44] Swin-B 55.28 65.03 61.63 55.37 48.04 37.48 20.76 STDNet adapter [45] Swin-B 50.34 61.22 53.36 46.96 40.17 31.36 17.40 LSCF adapter [46] Swin-B 56.71 66.14 63.33 57.28 49.68 39.67 22.19 AeroReformer2-ResNet101 (ours) ResNet-101 59.26 66.23 66.36 60.76 53.85 43.34 24.49         
+
+> AeroReformer2-Swin-B (ours) Swin-B 62.09 68.22 69.25 63.98 56.71 46.15 27.49
+
+The positive feature map permits associative normalization. SV-KLA first accumulates a fixed-size speech memory 
+
+S =
+
+> T
+
+X
+
+> t=1
+
+wtktu⊤ 
+
+> t
+
+∈ Rd×d, z =
+
+> T
+
+X
+
+> t=1
+
+wtkt ∈ Rd, (6) and then conditions each visual query by 
+
+yi = q⊤ 
+
+> i
+
+Sq⊤ 
+
+> i
+
+z + ϵ . (7) The operation computes ϕ(Q)( ϕ(K)⊤U) and never constructs an N × T attention matrix. Per head, conventional softmax cross-attention needs O(NT d ) operations and O(NT ) a ffi nity memory, whereas SV-KLA needs O(( N + T )d2) operations and 
+
+O(( N + T )d + d2) working storage including projected features. The d×d su ffi cient statistic is especially favorable when N grows with high-resolution feature maps. 
+
+4.3. Dual-scale bilateral routing 
+
+The 1 /16 SV-KLA block identifies semantically compatible regions at modest spatial cost. Its output is upsampled and added to the 1 /8 context feature, where the second SV-KLA block resolves finer spatial relations. Let C16 and C8 be context features, D8 the detail feature, and A an SV-KLA block: 
+
+eC16 = A16 (C16 , A, m), (8) 
+
+eC8 = A8
+
+C8 + Up( eC16 ), A, m , (9) 
+
+F08 = Fuse [D8 ∥ eC8] , (10) 
+
+F8 = VKA F08
+
+ . (11) After a residual visual kernel-attention block, the fused 1 /8feature is upsampled and projected to 1 /4 resolution. Let C4
+
+denote the top-down backbone context at 1 /4, and let D4 be the output of an independent shallow detail path that uses two stride-2 stages. The high-resolution head computes 
+
+S 4 = P4
+
+ Up( F8) , (12) 
+
+R4 = Fuse 4([ C4 ∥ S 4 ∥ D4]) , (13) 
+
+bM = Up 4×(H4(R4)) . (14) Here, P4 is a 1 × 1 semantic projection, while Fuse 4 and H4 use depthwise-separable convolutions. This branch restores spatial detail after speech-conditioned localization without applying cross-modal attention at the much larger 1 /4 grid. We optimize binary cross-entropy (BCE) plus soft Dice loss: 
+
+L = LBCE + 1 − 2 Pp σ(bmp)mp + 1
+
+Pp σ(bmp) + Pp mp + 1 . (15) 
+
+5. Experiments 
+
+5.1. Experimental protocol 
+
+We resize images and masks to 352 ×352, cap audio at 8 s, and use frozen wav2vec 2.0 base with 256-dimensional projected tokens. Visual backbones use ImageNet initialization. Both reported AeroReformer2 variants enable the 1 /4 high-resolution refinement head. All models train for 40 epochs with AdamW, batch size 8, weight decay 10 −4, cosine annealing, automatic mixed precision, and gradient-norm clipping at 1.0. Newly initialized audio-fusion and decoder parameters use a learning rate of 2 × 10 −4. For every Swin-Base model, the pretrained backbone is optimized separately at 2 × 10 −5. Training uses the one-voice-per-source-per-epoch sampler in Equation (2). The primary model is selected by validation mIoU. Test masks are generated at 512 ×512 with a probability threshold of 0.5. The shared metrics are overall intersection over union (oIoU), mean intersection over union (mIoU), and precision at threshold 
+
+τ (Pr@ τ): oIoU =
+
+P j | bM j ∩ M j|
+
+P j | bM j ∪ M j| , (16) mIoU = 1
+
+J
+
+X
+
+> j
+
+| bM j ∩ M j|| bM j ∪ M j| , (17) Pr@ τ = 1
+
+J
+
+X
+
+> j
+
+1[IoU j ≥ τ]. (18) We report Pr@ τ for τ ∈ { 0.5, 0.6, 0.7, 0.8, 0.9}. All methods are evaluated on the same clean and hard spoken-query test splits with no hard-set fine-tuning; no text-only RISBench result is reused. 8Table 5. Overall accuracy on the hard test split (%). Each clean-selected checkpoint is evaluated once per source under its assigned noise-type–severity condition. The best and second-best values are shown in bold and underlined, respectively. Method Backbone mIoU oIoU Pr@.5 Pr@.6 Pr@.7 Pr@.8 Pr@.9 Audio U-Net CNN 22.33 29.06 16.63 11.70 7.99 4.72 1.51 Audio FCN ResNet-101 37.79 48.89 41.30 35.62 29.10 20.81 9.40 Audio DeepLabV3 ResNet-101 42.48 53.32 46.51 41.13 34.59 25.36 12.29 FIANet adapter [43] Swin-B 46.37 57.46 50.55 45.23 39.11 30.68 17.40 SBANet adapter [44] Swin-B 48.03 58.95 52.81 47.17 40.58 31.54 17.56 STDNet adapter [45] Swin-B 44.57 52.70 46.50 40.84 34.64 26.54 15.00 LSCF adapter [46] Swin-B 48.46 58.91 53.20 47.73 41.11 32.37 18.10 AeroReformer2-ResNet101 (ours) ResNet-101 50.86 57.68 56.22 51.10 45.15 36.00 20.59         
+
+> AeroReformer2-Swin-B (ours) Swin-B 54.09 60.81 59.89 54.84 48.25 39.17 23.22
+
+5.2. Baselines 
+
+We compare against three established segmentation archi-tectures and four recent RRSIS models. Audio U-Net ap-plies feature-wise linear modulation (FiLM) at its bottleneck; FCN-ResNet101 and DeepLabV3-ResNet101 apply the same pooled-audio FiLM conditioning to their high-level backbone feature [5, 4, 6]. These controlled baselines share the wave-form encoder and isolate the e ff ect of the visual segmentation architecture. FIANet, SBANet, STDNet, and LSCF were originally pro-posed for text-guided RRSIS with Swin-Base visual features [43, 44, 45, 46, 57]. Their entries here are explicitly audio adapta-tions , not numbers copied from the authors’ text-input papers: the text tokens are replaced with our shared wav2vec 2.0 to-kens while retaining, respectively, fine-grained alignment and multi-scale enhancement, scale-wise bidirectional alignment, spatial multi-scale correlation with target /background decod-ing, and long-term semantic guidance. Finally, AeroReformer2-ResNet101 is a backbone control for the primary Swin-Base model; both use the same detail path, dual-scale SV-KLA, CGTM, and decoder. 
+
+Quantitative comparison. Table 4 shows that AeroReformer2-Swin-B ranks first in every reported metric. Against LSCF, the strongest non-ours method, it improves mIoU from 56.71% to 62.09% and oIoU from 66.14% to 68.22%, absolute gains of 5.38 and 2.08 percentage points (9.49% and 3.15% relative). The gains at Pr@0.5, 0.6, and 0.7 are 5.92, 6.70, and 7.03 points, showing that the improvement is not driven only by a small number of high-IoU examples. Among methods sharing Swin-Base, the mIoU margins over LSCF, SBANet, FIANet, and STDNet are 5.38, 6.81, 8.61, and 11.75 points, respectively. Because the visual backbone and speech encoder are controlled in this comparison, these gains are consistent with the benefit of token-preserving dual-scale fusion, global kernel attention, and high-resolution refinement rather than a stronger encoder alone. The backbone control provides complementary evidence. Re-placing ResNet-101 with Swin-Base while keeping the AeroRe-former2 fusion and decoder fixed raises mIoU by 2.83 points and oIoU by 1.99 points. Hierarchical shifted-window features appear to complement the top-down context path in scenes with repeated objects and long-range spatial phrases. The large gap to U-Net (34.25 mIoU points) and the 10.22-point gain over DeepLabV3 further indicate that bottleneck-level pooled condi-tioning is insu ffi cient for instance-specific spoken grounding. 
+
+High-overlap behavior. The 1 /4 refinement head particularly improves the high-overlap regime. AeroReformer2 reaches 46.15% at Pr@0.8 and 27.49% at Pr@0.9, exceeding LSCF by 6.48 and 5.30 points, respectively. The refinement stage is applied only after token-conditioned localization, so these boundary gains do not require an N × T speech–visual a ffi nity map at 1 /4 resolution. 
+
+5.3. Hard-set robustness 
+
+Table 5 shows that AeroReformer2-Swin-B remains the strongest method under the complete hard-test mixture and now ranks first in every metric. It exceeds LSCF, the highest-mIoU non-ours model, by 5.63 mIoU points and improves oIoU by 1.86 points over SBANet, the strongest non-ours method on that metric. The margins over LSCF are 6.69 points at Pr@0.5 and 5.12 points at Pr@0.9, indicating that the advantage extends from reliable referent selection to high-overlap masks. Relative to clean evaluation, AeroReformer2-Swin-B loses 8.00 mIoU and 7.41 oIoU points. Thus, despite the improved ab-solute hard-set accuracy, acoustic interference remains a material limitation. The condition breakdown in Table 6 provides a more detailed view. AeroReformer2-Swin-B ranks first in mIoU in all nine cells, with margins over the best baseline ranging from 3.70 to 6.37 points. The gains remain 3.70, 5.02, and 4.78 points at high-severity rotor, wind, and mixed interference, respectively. All methods nevertheless deteriorate sharply near 0 dB, indicating that the benchmark does not reduce to a benign augmentation test. Because no hard-set ablation of the confidence gate is available, these results characterize the complete architecture and should not be interpreted as evidence that CGTM estimates or suppresses interference. 
+
+5.4. Ablation study 
+
+As shown in Table 7, post-fusion kernel attention is the most influential tested component: removing it reduces mIoU by 4.50 points and oIoU by 1.37 points, with losses of 5.69, 5.14, and 2.60 points at Pr@0.5, Pr@0.7, and Pr@0.9, respectively. This block operates after the detail and speech-conditioned context streams have been merged, so its global refinement can suppress 9Table 6. Hard-test mean intersection over union (mIoU) by interference type and severity for the Swin-Base methods (%). Low, medium, and high correspond to nominal signal-to-noise ratios (SNRs) of 15, 7.5, and 0 decibels (dB). Rotor Wind Mixed Method Low Med. High Low Med. High Low Med. High FIANet adapter 52.31 49.27 37.70 52.42 47.96 38.55 54.16 47.75 37.18 SBANet adapter 54.40 51.78 37.73 53.05 51.13 39.74 55.20 51.28 37.92 STDNet adapter 49.96 47.82 36.06 49.64 47.59 37.99 49.98 46.27 35.83 LSCF adapter 55.57 52.49 36.73 55.71 51.23 38.94 56.39 51.58 37.52          
+
+> AeroReformer2 61.94 58.36 41.43 61.55 57.42 44.76 61.27 57.36 42.70
+
+spatially disconnected distractors while restoring coherence to the selected object. Removing the 1 /32 visual KLA causes smaller but consistent drops of 1.01 mIoU and 0.24 oIoU, indi-cating that global low-resolution context complements the two cross-modal fusion stages. Replacing the learned confidence gate with uniform token weights lowers mIoU by 0.27 points and oIoU by 0.01 points; its larger 1.29-point reduction at Pr@0.9 indicates that confidence weighting contributes most clearly to stringent-overlap predictions. A matched ablation of the 1 /4head is not available in the current experiment set. 
+
+5.5. Qualitative comparisons 
+
+Figures 5 to 7 compare six methods on examples involving a partially visible sports field, a small central object, and a tiny waterfront vehicle. Each panel contains the aerial image, ground-truth mask, and predicted masks at the native 512 ×512 evaluation resolution. 
+
+Partially visible baseball field. In Figure 5, AeroReformer2 reaches 0.971 IoU and follows the visible portion of the lower-edge field. Every comparison method instead segments the salient central field and obtains zero IoU. The example isolates relational grounding: recognizing the object category and shape is insu ffi cient unless “partially visible at the lower edge” is used to select the intended instance. 
+
+Small object near the center. In Figure 6, AeroReformer2 ob-tains 0.878 IoU and closely matches the compact target. The strongest alternative reaches only 0.102 IoU; the remaining pre-dictions range from 0 to 0.084 and mostly cover large peripheral structures or disconnected regions. This case shows the benefit of retaining the directional phrase “slightly left from the center” when appearance alone provides a weak target cue. 
+
+Tiny waterfront vehicle. In Figure 7, AeroReformer2 achieves 0.875 IoU on a target occupying only a small fraction of the image. FIANet reaches 0.249 but adds a second false-positive fragment, while SBANet reaches 0.084 and the other three meth-ods obtain zero overlap. The comparison illustrates the comple-mentary roles of far-left directional grounding and the 1 /4 detail refinement head for tiny-object delineation. 
+
+5.6. E ffi ciency analysis Hardware-matched end-to-end profile. We profile all nine mod-els in Table 4 on an NVIDIA GeForce RTX 4070 Laptop graph-ics processing unit (GPU) with 8 gigabytes (GB) of memory,                           
+
+> Table 7. Component ablation of AeroReformer2-Swin-B on the clean test split (%). Each ablation row removes one component from the complete model. Variant mIoU oIoU Pr@.5 Pr@.7 Pr@.9 w/o post-fusion KLA 57.59 66.85 63.56 51.57 24.89 w/o 1 /32 visual KLA 61.08 67.98 68.40 56.03 26.84 w/o confidence gate 61.82 68.21 69.16 56.52 26.20
+> Full AeroReformer2 62.09 68.22 69.25 56.71 27.49
+
+using PyTorch 2.13 and NVIDIA Compute Unified Device Ar-chitecture (CUDA) 13.0. Every model receives a 352 ×352 red– green–blue (RGB) tensor and an 8-second, 16-kHz waveform at batch size one under automatic mixed precision (AMP). The frozen wav2vec 2.0 encoder is included in the parameter count, latency, throughput, and peak allocated memory. Latency is measured after 10 warm-up iterations using three blocks of 50 synchronized iterations, and the median block latency is re-ported. 
+
+Accuracy–e ffi ciency comparison. As shown in Table 8, the pri-mary Swin-Base model gives the highest accuracy rather than the lowest absolute latency. Among the five Swin-Base systems, it has the fewest total and trainable parameters and the lowest peak memory. Relative to LSCF, it is 10.9% faster (39.19 ver-sus 44.00 ms), uses 13.7% less peak memory, and improves mIoU by 5.38 points. Relative to FIANet, it has 3.0% higher latency but gains 8.61 mIoU points while reducing peak mem-ory by 7.9%. Relative to SBANet, it is 2.0% faster, improves mIoU by 6.81 points, and uses 9.8% less peak memory. It is also 7.2% faster than STDNet, uses 11.8% less memory, and is 11.75 mIoU points more accurate. The e ffi ciency advantage is therefore expressed in both memory use and accuracy per model capacity, although the complete Swin-Base network is not the fastest model in every comparison. The ResNet-101 version provides a second operating point: it retains 59.26% mIoU at 28.67 ms (34.88 FPS) and 666.9 MB. Compared with AeroReformer2-Swin-B, it sacrifices 2.83 mIoU points but lowers latency and peak memory by 26.8% and 22.1%, respectively. The conventional baselines are faster, but their pooled audio conditioning incurs substantial accuracy losses: DeepLabV3 is 7.39 mIoU points lower, and U-Net is 31.42 points lower despite its higher throughput. 
+
+Analytical attention state. At 352 ×352, the 1 /16 and 1 /8 maps contain 484 and 1,936 positions. An 8-second wav2vec-like se-quence at 50 tokens /s has T = 400. With four heads and d = 16, softmax attention across both scales materializes 3,872,000 a ffi n-ity values (14.771 mebibytes (MiB) in 32-bit floating-point (FP32) format). SV-KLA stores 2,048 head-specific d × d state values (0.007812 MiB), a 1,890.62 × reduction in the cross-modal a ffi nity state. The corresponding simplified multiply– accumulate (MAC) counts are 123.904 million (M) and 3.297 M, respectively, or 37.58 × lower for the attention core. Com-mon query, key, and value projections and activation tensors are excluded from both sides. At 512 ×512, the same calcu-lation yields a 4,000 × affi nity-state and 43.24 × attention-core arithmetic reduction (Table 9). 10 Input RGB Ground truth AeroReformer2 (ours) IoU 0.971 LSCF adapter IoU 0.000     
+
+> FIANet adapter IoU 0.000 SBANet adapter IoU 0.000 DeepLabV3-R101 IoU 0.000 FCN-R101 IoU 0.000
+> Spoken instruction: "The baseball field partially visible at the lower edge of the image appears smaller and features a similar diamond shape." Fig. 5. Baseball-field example. The instruction selects the smaller field that is only partially visible at the lower image boundary. AeroReformer2 recovers that truncated diamond with 0.971 IoU, whereas all five comparison methods select the fully visible central field and therefore obtain zero overlap.
+
+Scope of the e ffi ciency claim. The measured profile and the an-alytical attention analysis answer di ff erent questions. Table 8 includes the complete audio encoder, visual backbone, fusion modules, and decoder, whereas Table 9 isolates the cross-modal attention core. Optimized convolution and softmax kernels can make a model with denser attention faster for a particular tensor shape, so the linear formulation guarantees neither the lowest end-to-end latency nor the same ranking on another device. It does, however, remove the N × T affi nity state, which is consis-tent with the lower peak memory of AeroReformer2 among the Swin-Base comparisons. 
+
+6. Conclusion and Future Work 
+
+This paper addresses the missing interaction layer between spoken user intent and pixel-level remote-sensing perception. VoiceAeroRef converts a large text-based RRSIS resource into a controlled audio benchmark with eight training voices, balanced single-voice clean evaluation, and a nine-condition hard evalu-ation grid. Its epoch sampler exposes one acoustic realization per source image–mask pair per epoch, preserving the statistical size of the visual training set. The linguistic analysis shows that the task is heavily driven by position, size, and relational cues, which supports retaining speech tokens rather than relying only on a pooled utterance vector. AeroReformer2 is designed for this setting. Its bilateral paths balance semantic context with small-object boundaries; SV-KLA performs token-level grounding without an explicit visual–speech a ffi nity matrix; CGTM assigns task-dependent confidence before token aggregation; dual-scale fusion routes speech to coarse localization and fine grounding; and the 1 /4refinement head restores high-resolution boundaries after fu-sion. On the clean test split, AeroReformer2-Swin-B reaches 62.09% mIoU and 68.22% oIoU, improving over the strongest non-ours method by 5.38 and 2.08 percentage points. It also attains the highest hard-set mIoU of 54.09%, a 5.63-point mar-gin over LSCF. In the component ablation, post-fusion kernel attention contributes 4.50 mIoU points over its removal. On the matched RTX 4070 profile, the full model uses the least memory among Swin-Base methods, is 10.9% faster and 13.7% lighter in peak memory than LSCF, and o ff ers a 28.67-ms ResNet-101 operating point. Future work should collect synchronized speech from remote-sensing analysts and source-matched aerial or satellite imagery; evaluate realistic o ffi ce, control-room, outdoor, radio, and mi-crophone conditions; extend the benchmark to multilingual and code-switched commands; model streaming speech for low-latency online masks; calibrate uncertainty and allow clarifica-tion when a command is ambiguous; and compress the audio en-coder for e ffi cient deployment. Cross-dataset evaluation across satellite and airborne image sources, together with human-in-the-loop studies, will be essential to establish whether improved benchmark metrics translate into faster and more reliable image-analysis workflows. 11 Table 8. End-to-end e ffi ciency on an RTX 4070 Laptop graphics processing unit (GPU) at 352 ×352, batch size 1, 8-second audio, and automatic mixed precision (AMP). Latency is the median of three synchronized 50-iteration blocks after 10 warm-up iterations. Parameters and memory include the frozen wav2vec 2.0 encoder. M denotes millions, FPS denotes frames per second, and MB denotes megabytes. 
+
+Method Params (M) Trainable (M) Latency (ms) FPS Peak (MB) mIoU Audio U-Net 96.627 2.255 15.41 64.91 546.6 27.84 Audio FCN-R101 147.560 53.188 24.92 40.12 758.8 49.54 Audio DeepLabV3-R101 154.247 59.875 27.51 36.35 804.1 51.87 FIANet adapter 182.428 88.056 38.04 26.29 928.9 53.48 SBANet adapter 182.904 88.533 39.99 25.00 948.7 55.28 STDNet adapter 183.169 88.797 42.22 23.69 969.7 50.34 LSCF adapter 184.936 90.565 44.00 22.73 991.5 56.71 AeroReformer2-R101 (ours) 138.007 43.635 28.67 34.88 666.9 59.26 
+
+AeroReformer2-Swin-B (ours) 182.063 87.692 39.19 25.52 855.6 62.09     
+
+> Table 9. Analytical cross-modal attention-core complexity for an 8-second, 400-token utterance, four heads, and d=16. MiB denotes mebibytes, M denotes millions, and MACs denotes multiply–accumulate operations. These are not end-to-end memory or latency measurements.
+
+Image Softmax state Linear state State reduction Softmax MACs MAC reduction 352 14.771 MiB 0.007812 MiB 1,890.62 × 123.904 M 37.58 ×
+
+512 31.250 MiB 0.007812 MiB 4,000.00 × 262.144 M 43.24 ×
+
+Declaration of Competing Interest 
+
+The authors declare that they have no known competing finan-cial interests or personal relationships that could have appeared to influence the work reported in this paper. 
+
+References 
+
+[1] Q. Zhang, S. Zheng, C. Zhang, X. Wang, R. Li, E ffi cient large-scale oblique image matching based on cascade hash-ing and match data scheduling, Pattern Recognition 138 (2023) 109442. [2] R. Li, X. Zhao, AeroReformer: Aerial referring trans-former for UAV-based referring image segmentation, Inter-national Journal of Applied Earth Observation and Geoin-formation 143 (2025) 104817. doi:10.1016/j.jag. 2025.104817 .[3] R. Li, J. Zhang, X. Zhao, Long-range near-surface wake signatures of o ff shore wind farm clusters revealed by satellite observations, Communications Engineering doi: 10.1038/s44172-026-00684-7 .[4] J. Long, E. Shelhamer, T. Darrell, Fully convolutional networks for semantic segmentation, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2015, pp. 3431–3440. [5] O. Ronneberger, P. Fischer, T. Brox, U-Net: Convolutional networks for biomedical image segmentation, in: Medical Image Computing and Computer-Assisted Intervention, 2015, pp. 234–241. [6] L.-C. Chen, G. Papandreou, F. Schro ff , H. Adam, Rethink-ing atrous convolution for semantic image segmentation, arXiv preprint arXiv:1706.05587. [7] R. Li, X. Zhao, LSwinSR: UAV imagery super-resolution based on linear Swin Transformer, IEEE Transactions on Geoscience and Remote Sensing 62 (2024) 1–13. doi: 10.1109/TGRS.2024.3463204 .[8] Z. Yuan, L. Mou, Y. Hua, X. X. Zhu, RRSIS: Referring remote sensing image segmentation, IEEE Transactions on Geoscience and Remote Sensing 62 (2024) 1–16. doi: 10.1109/TGRS.2024.3357333 .[9] S. Liu, Y. Ma, X. Zhang, H. Wang, J. Ji, X. Sun, R. Ji, Rotated multi-scale interaction network for referring re-mote sensing image segmentation, in: Proceedings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition, 2024, pp. 26658–26668. [10] Z. Dong, Y. Sun, Y. Gu, T. Liu, Cross-modal bidirectional interaction model for referring remote sensing image seg-mentation, arXiv preprint arXiv:2410.08613. URL https://arxiv.org/abs/2410.08613 
+
+[11] Z. Yang, H. Yao, L. Tian, X. Zhao, Q. Li, Q. Wang, A large-scale referring remote sensing image segmentation dataset and benchmark, arXiv preprint arXiv:2506.03583. URL https://arxiv.org/abs/2506.03583 
+
+[12] J. Zhou, J. Wang, J. Zhang, W. Sun, J. Zhang, S. Birchfield, D. Guo, L. Kong, M. Wang, Y. Zhong, Audio-visual seg-mentation, in: European Conference on Computer Vision, 2022. [13] Y. Wang, P. Sun, D. Zhou, G. Li, H. Zhang, D. Hu, Ref-AVS: Refer and segment objects in audio-visual scenes, in: 12 Input RGB Ground truth AeroReformer2 (ours) IoU 0.878 LSCF adapter IoU 0.084     
+
+> FIANet adapter IoU 0.000 SBANet adapter IoU 0.102 DeepLabV3-R101 IoU 0.000 FCN-R101 IoU 0.054
+> Spoken instruction: "The object located slightly left from the center of the image." Fig. 6. Small-object example. The instruction refers to the object slightly left of image center. AeroReformer2 isolates the compact target with 0.878 IoU, whereas the alternatives activate on larger structures, image boundaries, or multiple distractors.
+
+European Conference on Computer Vision, 2024. URL https://arxiv.org/abs/2407.10957 
+
+[14] W. Pan, H. Shi, Z. Zhao, J. Zhu, X. He, Z. Pan, L. Gao, J. Yu, F. Wu, Q. Tian, Wnet: Audio-guided video object segmentation via wavelet-based cross-modal denoising net-works, in: Proceedings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition, 2022, pp. 1320– 1331. [15] J. A. Santos, Z. Wu, X. Alameda-Pineda, R. Timofte, Lay-over or direct flight: Rethinking audio-guided image seg-mentation, arXiv preprint arXiv:2511.22025. [16] K. Ying, H. Ding, G. Jie, Y.-G. Jiang, Towards omnimodal expressions and reasoning in referring audio-visual seg-mentation, in: Proceedings of the IEEE /CVF International Conference on Computer Vision, 2025, pp. 22575–22585. [17] R. Hu, M. Rohrbach, T. Darrell, Segmentation from nat-ural language expressions, in: European Conference on Computer Vision, 2016, pp. 108–124. [18] C. Liu, Z. Lin, X. Shen, J. Yang, X. Lu, A. Yuille, Recur-rent multimodal interaction for referring image segmenta-tion, in: Proceedings of the IEEE International Conference on Computer Vision, 2017, pp. 1271–1280. [19] R. Li, K. Li, Y.-C. Kuo, M. Shu, X. Qi, X. Shen, J. Jia, Referring image segmentation via recurrent refinement networks, in: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 2018, pp. 5745– 5753. [20] L. Ye, M. Rochan, Z. Liu, Y. Wang, Cross-modal self-attention network for referring image segmentation, in: Proceedings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition, 2019, pp. 10502–10511. [21] S. Huang, T. Hui, S. Liu, G. Li, Y. Wei, J. Han, L. Liu, B. Li, Referring image segmentation via cross-modal pro-gressive comprehension, in: Proceedings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition, 2020, pp. 10488–10497. [22] Z. Yang, J. Wang, Y. Tang, K. Chen, H. Zhao, P. H. S. Torr, LAVT: Language-aware vision transformer for referring image segmentation, in: Proceedings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition, 2022, pp. 18155–18165. [23] Z. Wang, Y. Lu, Q. Li, X. Tao, Y. Guo, M. Gong, T. Liu, CRIS: CLIP-driven referring image segmentation, in: Pro-ceedings of the IEEE /CVF Conference on Computer Vi-sion and Pattern Recognition, 2022, pp. 11686–11695. [24] Y. Hu, Q. Wang, W. Shao, E. Xie, Z. Li, J. Han, P. Luo, Beyond one-to-one: Rethinking the referring image seg-13 Input RGB Ground truth AeroReformer2 (ours) IoU 0.875 LSCF adapter IoU 0.000     
+
+> FIANet adapter IoU 0.249 SBANet adapter IoU 0.084 DeepLabV3-R101 IoU 0.000 FCN-R101 IoU 0.000
+> Spoken instruction: "The small vehicle located on the far left side of the waterfront area." Fig. 7. Waterfront-vehicle example. The target is a very small vehicle on the far-left side of the waterfront. AeroReformer2 preserves the correct location and compact extent with 0.875 IoU; the comparison methods miss it, fragment it, or select a di ff erent object.
+
+mentation, in: Proceedings of the IEEE /CVF International Conference on Computer Vision, 2023, pp. 4067–4077. [25] N. A. Shah, V. VS, V. M. Patel, LQMFormer: Language-aware query mask transformer for referring image seg-mentation, in: Proceedings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition, 2024, pp. 12903–12913. [26] G.-S. Xia, X. Bai, J. Ding, Z. Zhu, S. Belongie, J. Luo, M. Datcu, M. Pelillo, L. Zhang, DOTA: A large-scale dataset for object detection in aerial images, Proceedings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition (2018) 3974–3983. [27] K. Li, G. Wan, G. Cheng, L. Meng, J. Han, Object detection in optical remote sensing images: A survey and a new benchmark, in: ISPRS Journal of Photogrammetry and Remote Sensing, Vol. 159, 2020, pp. 296–307. [28] X. Li, J. Wang, X. Xu, M. Yang, F. Yang, Y. Zhao, R. Singh, B. Raj, Towards noise-tolerant speech-referring video object segmentation: Bridging speech and text, in: Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing, Association for Computational Linguistics, 2023, pp. 2283–2296. doi: 10.18653/v1/2023.emnlp-main.140 .[29] C. Yu, J. Wang, C. Peng, C. Gao, G. Yu, N. Sang, BiSeNet: Bilateral segmentation network for real-time semantic seg-mentation, in: European Conference on Computer Vision, 2018, pp. 325–341. [30] R. Li, S. Zheng, C. Zhang, C. Duan, L. Wang, P. M. Atkinson, ABCNet: Attentive bilateral contextual network for e ffi cient semantic segmentation of fine-resolution re-motely sensed imagery, in: ISPRS Journal of Photogram-metry and Remote Sensing, Vol. 181, 2021, pp. 84–98. 
+
+doi:10.1016/j.isprsjprs.2021.09.005 .[31] M. Fan, S. Lai, J. Huang, X. Wei, Z. Chai, J. Luo, X. Wei, Rethinking BiSeNet for real-time semantic segmentation, in: Proceedings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition, 2021, pp. 9716–9725. [32] Z. Shen, M. Zhang, H. Zhao, S. Yi, H. Li, E ffi cient atten-tion: Attention with linear complexities, in: IEEE Winter Conference on Applications of Computer Vision, 2021, pp. 3531–3539. [33] A. Katharopoulos, A. Vyas, N. Pappas, F. Fleuret, Trans-formers are RNNs: Fast autoregressive transformers with linear attention, in: Proceedings of the International Con-ference on Machine Learning, 2020, pp. 5156–5165. [34] A. Baevski, Y. Zhou, A. Mohamed, M. Auli, wav2vec 2.0: A framework for self-supervised learning of speech repre-14 sentations, in: Advances in Neural Information Processing Systems, Vol. 33, 2020, pp. 12449–12460. [35] T. Hui, S. Liu, S. Huang, G. Li, S. Yu, F. Zhang, J. Han, Linguistic structure guided context modeling for referring image segmentation, in: European Conference on Com-puter Vision, 2020, pp. 59–75. [36] S. Yu, P. H. Seo, J. Son, Zero-shot referring image segmen-tation with global–local context features, in: Proceedings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition, 2023, pp. 19456–19465. [37] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo, et al., Segment anything, in: Proceedings of the IEEE /CVF International Conference on Computer Vision, 2023, pp. 4015–4026. [38] C. Shang, Z. Song, H. Qiu, L. Wang, F. Meng, H. Li, Prompt-driven referring image segmentation with instance contrasting, in: Proceedings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition, 2024, pp. 4124–4134. [39] Y. X. Chng, H. Zheng, Y. Han, X. Qiu, G. Huang, Mask grounding for referring image segmentation, in: Proceed-ings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition, 2024, pp. 26573–26583. [40] K. Ito, Feature design for bridging SAM and CLIP to-ward referring image segmentation, in: Proceedings of the IEEE /CVF Winter Conference on Applications of Com-puter Vision, 2025. [41] T. Liu, S. Li, Hybrid global–local representation with aug-mented spatial guidance for zero-shot referring image seg-mentation, in: Proceedings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition, 2025, pp. 29634–29643. [42] X. Li, J. Ding, M. Elhoseiny, VRSBench: A versatile vision-language benchmark dataset for remote sensing image understanding, in: Advances in Neural Informa-tion Processing Systems, Datasets and Benchmarks Track, 2024. URL https://arxiv.org/abs/2406.12384 
+
+[43] S. Lei, X. Xiao, T. Zhang, H.-C. Li, Z. Shi, Q. Zhu, Exploring fine-grained image–text alignment for refer-ring remote sensing image segmentation, IEEE Transac-tions on Geoscience and Remote Sensing 63 (2025) 1–11. 
+
+doi:10.1109/TGRS.2024.3522293 .[44] K. Li, G. Vosselman, M. Y. Yang, Scale-wise bidirec-tional alignment network for referring remote sensing im-age segmentation, ISPRS Journal of Photogrammetry and Remote Sensing 226 (2025) 350–363. doi:10.1016/j. isprsjprs.2025.05.014 .[45] T. Zhang, Z. Wen, B. Kong, K. Liu, Y. Zhang, P. Zhuang, J. Li, Referring remote sensing image segmentation via multi-scale spatially-guided joint prediction, IEEE Journal of Selected Topics in Applied Earth Observations and Re-mote Sensing (2025) 1–16 doi:10.1109/JSTARS.2025. 3638802 .[46] Q. Ma, L. Li, X. Lu, L. Jiao, F. Liu, W. Ma, X. Liu, L. Sun, LSCF: Long-term semantic-guidance ConvFormer for re-ferring remote sensing image segmentation, IEEE Transac-tions on Geoscience and Remote Sensing 63 (2025) 1–13. 
+
+doi:10.1109/TGRS.2025.3578515 .[47] C.-H. Ho, D.-K. Nguyen, M.-T. Pham, S. Lefèvre, RSSep: Sequence-to-sequence model for simultaneous referring remote sensing segmentation and captioning, in: Asian Conference on Computer Vision Workshops, 2024. [48] A. Howard, M. Sandler, G. Chu, L.-C. Chen, B. Chen, M. Tan, W. Wang, Y. Zhu, R. Pang, V. Vasudevan, et al., Searching for MobileNetV3, in: Proceedings of the IEEE /CVF International Conference on Computer Vision, 2019, pp. 1314–1324. [49] J. Xu, Z. Xiong, S. P. Bhattacharyya, PIDNet: A real-time semantic segmentation network inspired by PID con-trollers, in: Proceedings of the IEEE /CVF Conference on Computer Vision and Pattern Recognition, 2023, pp. 19529–19539. [50] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, L. Kaiser, I. Polosukhin, Attention is all you need, Advances in Neural Information Processing Systems 30. [51] S. Gao, Z. Chen, G. Chen, W. Wang, T. Lu, AVSegFormer: Audio-visual segmentation with transformer, in: Proceed-ings of the AAAI Conference on Artificial Intelligence, Vol. 38, 2024, pp. 12155–12163. [52] J. Liu, Y. Wang, C. Ju, C. Ma, Y. Zhang, W. Xie, Annotation-free audio-visual segmentation, in: Proceed-ings of the IEEE /CVF Winter Conference on Applications of Computer Vision, 2024, pp. 5604–5614. [53] Q. Yang, X. Nie, T. Li, P. Gao, Y. Guo, C. Zhen, P. Yan, S. Xiang, Cooperation does matter: Exploring multi-order bilateral relations for audio-visual segmentation, in: Pro-ceedings of the IEEE /CVF Conference on Computer Vi-sion and Pattern Recognition, 2024, pp. 27134–27143. [54] W.-N. Hsu, B. Bolte, Y.-H. H. Tsai, K. Lakhotia, R. Salakhutdinov, A. Mohamed, HuBERT: Self-supervised speech representation learning by masked prediction of hidden units, IEEE /ACM Transactions on Audio, Speech, and Language Processing 29 (2021) 3451–3460. [55] S. Chen, C. Wang, Z. Chen, Y. Wu, S. Liu, Z. Chen, J. Li, N. Kanda, T. Yoshioka, X. Xiao, et al., WavLM: Large-scale self-supervised pre-training for full stack speech pro-cessing, IEEE Journal of Selected Topics in Signal Pro-cessing 16 (6) (2022) 1505–1518. 15 [56] D. S. Park, W. Chan, Y. Zhang, C.-C. Chiu, B. Zoph, E. D. Cubuk, Q. V. Le, SpecAugment: A simple data augmen-tation method for automatic speech recognition, in: Inter-speech, 2019, pp. 2613–2617. [57] Z. Liu, Y. Lin, Y. Cao, H. Hu, Y. Wei, Z. Zhang, S. Lin, B. Guo, Swin Transformer: Hierarchical vision transformer using shifted windows, in: Proceedings of the IEEE /CVF International Conference on Computer Vision, 2021, pp. 10012–10022. 16
