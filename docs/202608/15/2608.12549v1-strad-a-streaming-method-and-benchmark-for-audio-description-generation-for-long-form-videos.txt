@@ -1,0 +1,1003 @@
+Title: StrAD: A Streaming Method and Benchmark for Audio Description Generation for Long-form Videos
+
+URL Source: https://arxiv.org/pdf/2608.12549v1
+
+Published Time: Fri, 14 Aug 2026 00:11:34 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+# StrAD: A Streaming Method and Benchmark for Audio Description Generation for Long-form Videos 
+
+Julian Spravil 1,2, ∗ Sebastian Houben 1,3 Sven Behnke 1,2,4,5 1Fraunhofer IAIS, Germany 
+
+> 2
+
+AIS, Computer Science Institute VI, University of Bonn, Germany 
+
+> 3
+
+A2S, University of Applied Sciences Bonn-Rhein-Sieg, Germany 
+
+> 4
+
+Lamarr Institute for Machine Learning and Artificial Intelligence, Germany 
+
+> 5
+
+Center for Robotics, University of Bonn, Germany 
+
+## Abstract 
+
+Visual content is the dominant medium of communication, yet without audio de-scriptions (ADs), it remains inaccessible to blind and low-vision people. ADs narrate context-relevant visual events during natural audio pauses. Manually cre-ating ADs is expensive, limiting coverage to a small fraction of available content. Most existing automatic AD generation methods frame the task as video clip cap-tioning, requiring ground-truth timestamps and additional context cues such as character databases. Current benchmarks reinforce this framing, consisting of short video segments paired with automatic or task-mismatched annotations. We introduce StrAD, a benchmark for long-form AD generation on full-length videos spanning diverse genres such as movies, documentaries, short films, performances, and video games. We reformulate AD generation as streaming dense video caption-ing. Our approach processes full-length videos with a sliding window, inserting ADs into existing transcripts without ground-truth timestamps, and supports both fine-tuned models and zero-shot prompting of vision-language models. On the segment-level task with given timestamps, our fine-tuned StrAD-FT sets the state of the art on CMD-AD with 36.3 CIDEr (+10.0 over Shot-by-shot), establishes a reference point on StrAD (51.0 CIDEr), and remains competitive on MAD-Eval at 24.9 CIDEr. On the full-video streaming task, StrAD-FT reaches a SODA score of 2.4 against 1.1 for our zero-shot baseline StrAD-Zero, though both exhibit limitations in temporal localization and narrative coherence. While prior work has tackled full-video AD generation in an offline, multi-stage fashion, ours is the first streaming approach, generating ADs on the fly without ground-truth timestamps. StrAD makes progress on full-video AD generation measurable, a prerequisite for scaling accessibility. 
+
+## 1 Introduction 
+
+Audio descriptions (ADs) are short narrations placed in speech gaps to convey on-screen events without overlapping dialogue or other relevant sounds [34]. For the estimated 2.2 billion people worldwide with visual impairments [49], ADs are an important visual aid and sometimes the only way to follow visual media. Today, trained describers write ADs manually. The process is slow and expensive, leaving the vast majority of video content, such as online videos, without ADs. Interactive video games are especially demanded yet hard to describe [22].    
+
+> ∗Corresponding author: julian.spravil @ iais.fraunhofer.de
+> Preprint. arXiv:2608.12549v1 [cs.CV] 12 Aug 2026 2m 10m 2h AD duration 0.0 0.5 1.0 AD event density
+> CMD-AD MAD-Eval StrAD (ours)
+
+(a) Duration & Density. 05k 10k # AD events  CMD-AD MAD-Eval StrAD (ours) Movie Doc. S. film Game Perf. (b) Genre Diversity. AD events per gap No speech overlap Gaps with AD 1.98 98% 41%  
+
+> CMD-AD MAD-Eval
+> StrAD (ours)
+
+(c) AD Quality. 
+
+Figure 1: Statistics of StrAD. Relative to the MAD-Eval [38, 12] and CMD-AD test split [3, 14], StrAD (a) spans a wider range of video durations and AD densities; (b) covers diverse formats including documentaries (Doc.), short films (S. Film), video games, and performances (Perf.); and (c) provides more speech gaps with AD, more AD events per gap, and less speech overlap. Audio Video Context AD  
+
+> tste
+> Model Full video
+
+(a) Segment-level task. AD   
+
+> tModel Transcript AD tste
+> Full video
+
+(b) Streaming task. Model ADs with timestamps Full video (c) Document-level task. 
+
+Figure 2: Tasks on StrAD. The three tasks differ in input context and the granularity at which ADs are produced: (a) generate an AD for one segment given ground-truth timestamps ts, t e and curated context (e.g., characters, screenplay); (b) generate the next AD conditioned on video, audio, transcript, and previously generated ADs up to cursor t advanced by stride δ; (c) generate the complete AD transcript for the full video in multiple passes. Automatic AD generation has therefore received growing interest. An early approach by Lakritz and Salway [21] leverages screenplays to semi-automatically generate AD. Later, Wang et al. [47] proposed an automatic, full-video AD generation solution for the first time. More recent methods focus mostly on single-sentence AD generation by fine-tuning vision-language models (VLMs) [12– 14, 25, 46, 9] or applying large language models (LLMs) in a zero-shot manner [51, 8, 52, 28, 18, 55]. These approaches share three key limitations: (i) Framing the problem as a single-sentence AD generation task for a video excerpt, as defined by ground-truth start and end timestamps [12–14, 51, 52, 46, 28]. This makes the task similar to video clip captioning, but with extra context, such as a character database. In a real-world setting, timestamps and extra context are usually unavailable. A recent user study also highlights the potential challenges of scaling clip-level AD to full videos [5]. (ii) Most methods ignore the audio signal entirely. Vision-only generation overlooks the role of audio in supporting AD generation without being overly verbose: tone of voice, ambient sounds, and dialogue can already resolve story ambiguities. (iii) Complex AD forms are not considered, such as very short, fragmented, or multi-sentence descriptions. One reason for these limitations is the lack of benchmarks to evaluate the full video setting. Current evaluation datasets are restricted to short clips from movies and TV series, with annotations either verified but task-misaligned (MAD-Eval [38, 12]) or unchecked (CMD-AD [14], TV-AD [51]). To quantify performance in the full video setting, extensive user studies are currently required [47]. While user studies are important for ensuring that user requirements are taken into account [5], the lack of open access weights and source code of methods, mostly due to copyright reasons, makes progress tracking impossible. In this work, we introduce the streaming audio description (StrAD) benchmark for full-video AD generation on long-form videos from diverse genres (see Figure 1), enabling systematic, automatic evaluation. We reformulate AD generation as three distinct tasks: the segment-level task, extract-ing and describing video clips with known ground-truth timestamps and additional metadata; the streaming task, producing AD sentences with timestamps in real time from a sliding window; and the document-level task, generating the ADs for the entire video in multiple passes. The streaming and document-level tasks move beyond the local, segment-bounded perspective toward long video 2understanding [39, 35]. We address the tasks jointly with a zero-shot baseline, StrAD-Zero, and a fine-tuned baseline, StrAD-FT, which emit AD sentences and timestamps for full videos. The main contributions of this paper is the first end-to-end streaming AD generation approach for full-length videos, complementing the offline, multi-stage full-video pipelines of Wang et al. [47] and Lee et al. [23], paired with StrAD, the first benchmark of full-length videos of diverse genres with manually verified annotations. Concretely, our contributions are: • StrAD, an AD benchmark distinct from prior work in that it features: 
+
+◦ the streaming and document-level tasks to evaluate full video AD generation performance for the first time alongside the established segment-level task, 
+
+◦ diverse video genres of different length and AD densities, and 
+
+◦ manually verified transcripts and AD sequences; • fine-tuned and zero-shot baselines built on Phi-4-mm [1] and Qwen-3.5 [31] ( <5B parameters) that approach AD generation as dense video captioning streaming, processing full videos with a sliding window without ground-truth timestamps, where our StrAD-FT: 
+
+◦ matches or exceeds prior methods on the segment-level tasks CMD-AD, MAD-Eval, and StrAD, 
+
+◦ generates coherent full-video AD without ground-truth timestamps on StrAD, placing descrip-tions where the audio leaves room, 
+
+◦ enables faster-than-real-time streaming, using <5B parameters, and 
+
+◦ improves streaming localization and reduces redundancy via audio. 
+
+## 2 Related Work 
+
+Lakritz and Salway [21] leverage screenplays to semi-automatically generate AD, the earliest ap-proach to the task. More recently, new AD datasets and LLMs have enabled fine-tuning and zero-shot prompting to address single-sentence AD generation. 
+
+Audio description datasets. M-VAD [44] and MPII-MD [36] were among the first AD datasets, providing 59k and 68k aligned AD sentences from movies, respectively. Both datasets were later combined to LSMDC [37]. MAD [38] scales this effort to 384k AD sentences from 650 movies. MAD-v2 [12] is a cleaned revision with 264k sentences across 488 movies with a 10-movie evaluation split called MAD-Eval. MAD-Eval is a standard evaluation benchmark for segment-level methods [12– 14, 51, 9, 46, 52]. These datasets are short video clips cropped around the vision-aligned AD events designed for retrieval. CMD-AD [3, 14] provides 101k AD sentences from 1,432 YouTube-sourced movie clips paired with a character identity database [13]. The AudioVault community 2 contributes a large text-only AD corpus [12]. TV-AD [51] focuses on television shows with 31k training and 3k evaluation sentences. ADAQ [16] is a benchmark with LLM-generated visual and narrative question-answer pairs based on CMD-AD. Our StrAD benchmark is the first purpose-built benchmark for full-video AD generation with temporal alignment covering full-length videos across diverse genres. 
+
+Audio description generation. Segment-level AD generation produces one description per video segment given the ground-truth timestamps. There are fine-tuned [12–14, 25, 46, 9] and training-free approaches [51, 8, 52, 28, 18, 55] to the segment-level task. Training-free pipelines chain pre-trained vision models and LLMs, combining face detection, character identification, video captioning, and prompting [51, 8, 52, 28, 18, 55]. Since the segment-level task only provides a partial view of the full problem, the main focus is on enriching metadata. Some approaches inject character identities directly into the prompt [13, 14, 9], while others detect character faces and mark them on the frame [51, 8, 52], optionally with character relevance classification [46]. Additional context include temporal context such as previous and future frames [46, 54, 9], screenplays [21, 28], dialogue [55], and generated AD [55]. Domain-specific approaches focus on movies in general [52, 54], animated movies [57], soccer [6, 33], or basketball [50]. A mostly unaddressed challenge is to generate AD for full videos. Wang et al. [47] proposed a pipeline that includes localization, candidate generation, and cost minimization to find a sequence with minimal irrelevance, diversity, and perplexity cost. Related work classifies AD gaps [13, 23], fits AD into speech gaps [28], reduces repetition [9, 18], and incorporates prior predictions [55]. 
+
+Dense video captioning. Dense video captioning generates timestamped visual descriptions [19]. Vid2Seq [53] applies dense video captioning to the full video, outputting a sequence of captions with 
+
+> 2https://audiovault.net/
+
+3··· ··· ··· ···     
+
+> 02:49 02:54 03:07 03:10 03:20 The hero walks towards the source of the pleading which is a large jar
+> He's stuck in a ditch. The hero swaps out his sword and shield for a comically large club. The trees are blowing in the background. After two large swings the jar catapults out of the ground landing on
+
+Figure 3: Example from StrAD. An example sequence from Elden Ring—Gameplay Preview 
+
+(youtu.be/JldMvQMO_5U ) and its audio-described version ( youtu.be/neQPEIAqpQ8 ). temporal grounding. Zhou et al. [58] processes videos in a streaming fashion by building a memory via online clustering of frame embeddings, generating captions at decoding points. In contrast, AD events need to be story-relevant, are limited in the number of words, must not override relevant audio, and are not perfectly aligned to the visual event. 
+
+Audio descriptions evaluation. Segment-level AD is typically evaluated with image captioning metrics, including CIDEr [45], METEOR [4], and ROUGE-L [24]. Specialized AD metrics include Recall@ k/N [13], LLM-AD-eval [14], and CRITIC [14]. Recall@ k/N checks whether the predicted AD falls in the top-k of a window of size N . LLM-AD-eval uses an LLM to rate the predicted AD against the ground truth AD. It is the most popular of the other AD-focused LLM-based metrics [55, 16]. CRITIC rates the correct appearance of character names in AD. More recently, Xie et al. [52] introduce ActionScore to measure action coverage in AD. Lee et al. [23] evaluate localization with recall, precision, and F1 at tIoU > 0.1, and AD generation with image captioning metrics on temporally closest prediction–reference pairs. Dense video captioning averages such metrics over multiple tIoU thresholds [19], with SODA measuring correct temporal order [10]. 
+
+## 3 StrAD Benchmark 
+
+Current AD datasets are either focused on movies, e.g., MAD-Eval [38, 12] and CMD-AD [3, 14], or on television shows, e.g., TV-AD [51]. Annotations are not intended directly for AD generation, e.g., MAD-Eval is intended for retrieval [38], or are not manually verified, e.g., CMD-AD uses an automatic annotation pipeline [14]. Furthermore, the existing datasets consist of short clips with pre-defined segment boundaries. We introduce the Streaming Audio Description (StrAD) benchmark for evaluating AD generation for full-length videos in the wild. The benchmark is visualized in Figures 1 to 3. Details about dataset creation and reproducibility can be found in Section A. 
+
+Task definition. We propose three tasks on StrAD visualized in Figure 2, listed below: 1. Segment-level task. Segment-level AD generation is the standard formulation [12]: given a short video segment with known boundaries, generate a single AD sentence describing the visual content. Additional contextual information, such as character databases or screenplays, may be used as input because the task is inherently ambiguous. 2. Streaming task. Streaming AD generation moves a temporal cursor forward to generate AD sentences with temporal localization in real time for an entire video. The system must infer characters, relations, and key objects from the generated context, the current video, and its transcript, without access to ground-truth timestamps or other metadata. We treat the speech transcript as part of the input signal rather than as auxiliary metadata, since transcripts are routinely available from on-platform subtitles or off-the-shelf ASR. 3. Document-level task. Document-level AD generation is the offline, full-video AD generation task. It explicitly incorporates derivatives of the entire video to iteratively generate the complete ADs, in multiple passes, without relying on external metadata. 
+
+Statistics. StrAD comprises 33 videos totaling 22.3 hours, spanning durations from 1 minute to 5.8 hours (median 21.5 minutes) across five genres: short films, documentaries, video games, movies, and performances. The videos contain 9,131 manually verified AD events (6.8 hours, 84k words), with events averaging 2.7 s and 9.3 words, and per-video AD density ranging from 0.1 to 0.9. This makes StrAD the largest AD evaluation set by AD events (vs. 7,316 for CMD-AD test and 6,520 for MAD-Eval) and the only one composed of full-length videos. The dataset has one overlap with an 4Algorithm 1: AD Streaming Inference 
+
+Input: transcript segments T , video V, text window wc, video window wv , duration D, stride δ
+
+Output: predicted AD segments A 
+
+> 1
+
+A ← ∅ ; 
+
+> 2
+
+t ← 0; 
+
+> 3
+
+while t < D do  
+
+> 4
+
+t += δ; 
+
+> 5
+
+if ¬ HAS GAP (T , t − δ, t ) then continue ; 
+
+> 6
+
+prediction ← GENERATE (V[t − wv , t ], T [t − wc, t ], A[t − wc, t ]) ; 
+
+> 7
+
+if prediction invalid ∨ prediction = WAIT then continue ; 
+
+> 8
+
+A ← A ∪ { prediction }, t ← max( t, t − wv + prediction .t e);existing dataset based on the IMDb ID 3, that is the ID tt0031397 also included in the AudioVault train dataset. 
+
+## 4 Audio Description Streaming 
+
+Current AD generation methods assume the availability of ground-truth context at inference time, e.g., segment boundaries, character information, or screenplays [12–14, 52]. Such metadata and especially AD event timestamps are rarely available for arbitrary videos. Existing approaches aiming for the full-video setting generally fall into the document-level category, requiring iterative refinement [47, 28, 18, 23]. Generating ADs for full videos in real time and without prior context would be a valuable tool to make, for example, online video, live events, or interactive media such as video games [22] accessible. We propose two baselines for joint AD segment-level generation and streaming: a zero-shot approach building on AutoAD-Zero [51], StrAD-Zero, and a fine-tuned approach, StrAD-FT. Inspired by whisper [32] and long video understanding methods [58, 39, 35], both baselines use a sliding window to process the full video. The algorithm finds speech gaps and iteratively fills them with AD sentences, advancing the window via estimated timestamps. 
+
+4.1 StrAD-Zero 
+
+StrAD-Zero, is built on AutoAD-Zero [51], with a segment-level and a streaming path. The segment-level path follows the original AutoAD-Zero approach: sequential execution of (i) a face detection and character identification stage, (ii) a video captioning stage, and (iii) an AD generation stage. If character identities are available, they are added to the prompt and displayed with colored bounding boxes. We adapt AutoAD-Zero to streaming by extending the AD generation stage to consume previously generated ADs and the transcript within a context window wc = 120 s. The video captioning stage uses a visual window wv = δ equal to the stride, so it only describes new visuals. Character information is not used for streaming. Before AD generation, we add a decision stage that predicts whether the current window should emit an AD, conditioned on prior context and the current video caption. Assuming a fixed speech rate of 150 words per minute, we estimate the AD’s spoken duration and center it within the visual window to derive its timestamps. Prompts are documented in Section B. We use Qwen-3.5-4B [31] for all stages in StrAD-Zero. 
+
+4.2 StrAD-FT 
+
+Fine-tuned models achieve state-of-the-art results on segment-level AD generation [12–14, 9, 46]. However, as they rely on ground-truth segment boundaries, they cannot be applied directly to the streaming setting. We propose StrAD-FT that is jointly trained on segment-level task and streaming task to predict AD sentences with timestamps. We train the projection layers of a pre-trained MLLM for vision and, if supported, audio. We use LoRA [15] to adapt the language model layers. For the segment-level task, zero-shot approaches typically pass the AD duration [51] or an AD word count estimate derived from dataset-specific speech rates [52]. We sample 8 evenly-spaced frames and audio from a padded segment [ts − δp, t e + δp], with δp = 2 s for both training and inference. 
+
+> 3imdb.com
+
+5For MAD-Eval, we set δp = 0 s since the released clips contain no surrounding context. By fixing δp,the model can infer the duration of the AD event and, consequently, the number of words required to describe it. We overlay character information in the same way as for AutoAD-Zero [51] (Section 4.1). For the streaming task, we use a fixed visual window of wv = 8 s. The transcript and previous ADs are included from the context window wc = 120 s. Timestamps are encoded inline as tokenized text inserted at the start and end of each element in the sequence ( (t=0.1) for Phi-4-mm and 
+
+<0.1 seconds> for Qwen-3.5). Character identities are not provided. Each prediction is prefixed with AD or WAIT . Wait signals serve three purposes: deferring when dialogue occupies the gap, preserving intentional audio (e.g., music or sound effects), and pausing until sufficient visual context has accumulated. We create streaming data by moving a window with a random stride over each video. An unseen AD event becomes a sample, while previous events and transcripts are used for context. Samples are labeled as WAIT if the window contains just dialogue, if it contains no ADs, or if it has a partial AD event (i.e., mostly outside the window). We fine-tune the multimodal model Phi-4-mm [1] and the vision-language model Qwen-3.5 [31]. Both models are extensively pre-trained on web-scale data. For Phi-4-mm [1], we reduce the model size to 4.8B parameters by merging the pre-trained vision LoRA with the main weights. 
+
+4.3 Streaming Model Deployment 
+
+At inference, StrAD-Zero and StrAD-FT process a full-length video by sweeping a backwards-facing sliding window from start to end and emitting AD sentences as it advances (Algorithm 1). The window position is tracked by a cursor t that moves through the full video duration. For each iteration, the method advances t by stride δ until transcript T has a sufficient gap ( ≥ 0.5s). The model takes as input the visual window wv and text context window wc (T and generated ADs A) to generate the next AD. If generation fails or returns a WAIT signal, the loop continues. Otherwise, if the predicted end time te exceeds the current t, we set t = te.
+
+## 5 Experiments 
+
+Our experiments support our claims that our approach (i) matches or exceeds prior and baseline methods on CMD-AD, MAD-Eval, and StrAD, (ii) generates coherent full-video AD without ground-truth timestamps, (iii) is more efficient than our zero-shot baseline, enabling real-time streaming on an A100 GPU, and (iv) improves streaming localization and reduces redundancy via audio. 
+
+5.1 Experimental Setup Datasets. We train on CMD-AD [3, 14], using the 7,456 of 8,339 clips available at publication time, and hold out 25 movies with 147 clips for validation (Section C.1). We evaluate segment-level performance on CMD-AD (551 of 591 test clips, 6,740 AD events), MAD-Eval [38, 12] (10 movies, 6.5K AD events), and StrAD. We verify in Section E that the incomplete test set does not change the relative ranking of methods. For CMD-AD and MAD-Eval we use the character database from Han et al. [13]. Streaming is evaluated on StrAD, with videos split into 30-minute chunks. 
+
+Training. We use AdamW [27] with cross-entropy loss, training for 2 epochs with early stopping following Han et al. [14]. We use LoRA with r=16 and α=32 , batch size 8, and tune the learning rate per backbone with Optuna [2] ( 9.2e −5 for Phi-4-mm, 4.3e −5 for Qwen-3.5). Of the sample budget, 25 % is allocated to WAIT signals and the remainder split equally between segment-level and streaming samples. Full hyperparameters and hardware setup are reported in Section C. 
+
+Inference. We use greedy decoding, with a presence penalty [17] of 1.5 for streaming to reduce repetitions. For segment-level evaluation, the model receives only character names and face detections, matching prior work. For streaming, each window is conditioned on previously generated ADs and the ground-truth transcript overlapping the text context window. We use the verified transcript to isolate AD generation from ASR error. 
+
+Metrics. For segment-level evaluation we report CIDEr [45], Recall@ k/N [13], CRITIC [14], and LLM-AD-Eval [14]. For streaming, we group metrics into four categories. Quality adopts standard dense video captioning metrics [19, 53, 58]: SODA [10], CIDEr, and METEOR [4], averaged over tIoU thresholds 0.1, 0.3, and 0.5. Temporal localization reports Recall and Precision over the same 6Table 1: Segment-level evaluation on CMD-AD, MAD-Eval, and StrAD.                                                                                                      
+
+> CMD-AD MAD-Eval StrAD Method CIDEr ↑R@1/5 ↑CRITIC ↑LLM-AD-Eval ‡↑CIDEr ↑R@5/16 ↑CIDEr ↑R@5/16 ↑
+> Fine-tuned AutoAD-II [13] 13.5 26.1 8.2 2.08 | 19.5 51.3 AutoAD-III [14] 25.0 31.2 32.7 2.89 | 2.01 24.0 52.8 MovieSeq [25] 24.4 51.6 DistinctAD [9] 22.7 33.0 2.88 | 2.03 27.3 56.0 UniAD [46] 28.2 54.9 AutoAD-III [14] †21.6 30.2 26.7 3.26 | 2.35 21.7 51.1 17.5 45.2 StrAD-FT (Phi-4-mm, ours) 29.8 35.6 29.6 3.35 | 2.51 19.4 49.9 32.3 52.6 StrAD-FT (Qwen-3.5, ours) 36.3 38.0 31.8 3.44 | 2.74 24.9 54.8 51.0 57.9
+> Zero-shot MM-Narrator ⋆[55] 13.9 49.0 LLM-AD ⋆[8] 20.5 AutoAD-Zero [51] 17.7 26.9 43.7 2.83 | 1.96 22.4 47.0 Shot-by-shot [52] 26.3 33.0 47.8 3.15 | 2.42 25.0 50.6 StoryContext-AD [54] 26.0 50.3 NarrAD ⋆[28] 26.4 54.0 Shot-by-shot ⋆[52] 26.1 36.5 49.1 3.17 | 2.66 26.9 56.4 StrAD-Zero [51] (Qwen-3.5, ours) 18.8 29.8 44.0 3.48 |2.86 22.0 57.1 12.6 45.8
+> †denotes our reproduction. ‡LLM-AD-Eval [14] reported as Llama-2-7B [41] |Llama-3-8B [42] as in [51]. ⋆are proprietary.
+
+tIoU-matched pairs. Diagnostics target streaming-specific failures: repetition (REP) measures the fraction of consecutive AD pairs that are exact duplicates (METEOR = 1 ), and overlap (OL) measures the fraction of predicted AD duration overlapping transcribed speech. Efficiency reports the real time factor (RTF) and lag (LAG), averaged over AD-emitting windows. Metric definitions and a reproducibility analysis are given in Section D. 
+
+5.2 Segment-level Evaluation 
+
+We compare against prior zero-shot and fine-tuned segment-level methods to support claim (i) that our approach matches or exceeds their AD quality. The results are reported in Table 1. 
+
+Validating the zero-shot and fine-tuned baselines. Built on AutoAD-Zero [51], StrAD-Zero achieves a small improvement (+1.1 CIDEr) using only Qwen-3.5 4B, despite using less than a third of the parameters (AutoAD-Zero uses VideoLLaMA2-7B [7] and LLaMA3-8B [42]). Next, we re-ran AutoAD-III [14]. Our reproduced numbers for CMD-AD are lower than the published ones (21.6 < 25.0 CIDEr), likely due to differences in the character database and model inference setup. On StrAD, AutoAD-III performs better than StrAD-Zero (+4.9 CIDEr), while R@5/16 is close, indicating a better use of AD vocabulary. 
+
+Comparing results on CMD-AD and StrAD. Our Qwen-3.5 and Phi-4-mm StrAD-FT are the smallest models in the comparison. StrAD-FT sets the state of the art on CMD-AD with improvements of +10.0 CIDEr over Shot-by-shot [52] and +11.3 CIDEr over AutoAD-III [14], improving over fine-tuned and proprietary models. Similarly, R@1/5 is the highest with 38.3, 1.8 points higher than Shot-by-shot. Previous fine-tuned models rely on extensive pre-pretraining on AD-related data [13, 14, 46]. Instead StrAD-FT is fine-tuned only on CMD-AD and relies on broad vision-language pre-training, extended vision context, and temporal cues. The CRITIC metric is dominated by zero-shot approaches, while for fine-tuned models AutoAD-III [14] has the highest score. We hypothesize that zero-shot approaches are more verbose and name characters more frequently, though whether this benefits AD quality remains an open question for future work. On StrAD, our Qwen-3.5 StrAD-FT sets the highest score with 51.0 CIDEr, ahead of Phi-4-mm StrAD-FT (+18.7 CIDEr), AutoAD-III (+33.5 CIDEr), and StrAD-Zero (+38.4 CIDEr). 
+
+Investigating the MAD-Eval domain-gap. Temporal cues [46, 51, 52] and extended vision con-text [46, 52, 9] are commonly used. However, the impact of temporal cues is rarely discussed. We observe that the CMD-AD performance does not transfer to MAD-Eval. Our StrAD-FT achieves a lower score than UniAD [46] (-3.3 CIDEr) and DistinctAD [9] (-2.4 CIDEr). Notably, the R@5/16 differs by only 0.1 for UniAD, suggesting similar semantics. The CIDEr metric is sensitive to sentence length [45], requiring temporal cues to estimate the word count in the segment-level task. 7Table 2: Streaming evaluation on StrAD.                                        
+
+> Quality Localization Diagnostics Efficiency Method SODA ↑CIDEr ↑METEOR ↑R↑P↑REP ↓OL ↓RTF ↓LAG ↓
+> StrAD-FT (Phi-4-mm, ours) 1.6 16.3 5.3 57.3 55.9 19.5 2.0 0.47 4.0
+> StrAD-FT (Qwen-3.5, ours) 2.4 34.0 7.5 59.5 57.8 0.7 1.5 0.52 4.2 StrAD-Zero (Qwen-3.5, ours) 1.1 9.5 5.0 31.9 52.7 4.1 8.2 2.92 5.0
+
+Furthermore, MAD is intended for video clip retrieval, aligning and expanding AD events to visual events [38]. UniAD [46] and DistinctAD [9] are fine-tuned on MAD-v2 [38, 12] learning the MAD-specific temporal cues. Conversely, DistinctAD does not generalize well to CMD-AD. Shot-by-shot addresses this gap by providing a dataset-specific speech rate factor to the prompt [52]. We train a variant of StrAD-FT that uses a random padding for segments δp ∼ U (0 , 2) s instead of δp = 2 s. This model achieves 31.1 CIDEr on CMD-AD and 31.9 on MAD-Eval. Although this model achieves state-of-the-art results for CMD-AD and MAD-Eval, we opted for the model with temporal cues because it preserves the AD temporal alignment. Further discussion of this trade-off will be deferred to future work. Overall, these results support claim (i): StrAD-FT matches or exceeds prior segment-level methods using fewer parameters and only the CMD-AD training data. At the same time, the gap between CMD-AD and MAD-Eval justifies the need for StrAD. 
+
+5.3 Streaming Evaluation 
+
+We evaluate the full streaming pipeline on StrAD to support claim (ii) that our approach generates coherent AD across a full video without ground-truth timestamps. The results are reported in Table 2. 
+
+Comparing results. The fine-tuned Qwen-3.5 and Phi-4-mm StrAD-FT perform better than StrAD-Zero (+1.3 SODA and +24.5 CIDEr). Qualitative examples (see Section H) suggest that fine-tuned models tend to be more verbose, whereas zero-shot models tend to write longer sentences and pause more frequently. Despite its additional audio input, Phi-4-mm scores lower than Qwen-3.5 (-1.0 SODA, -17.7 CIDEr), likely because the more recent Qwen-3.5 has stronger video understanding. Qwen-3.5 also shows better temporal localization than Phi-4-mm (+2.2 Recall and +1.9 Precision) and StrAD-Zero (+27.6 Recall and +5.1 Precision). Regarding diagnostics, we see that StrAD-Zero has a large overlap with speech while fine-tuned models successfully reduce the overlap. Both StrAD-Zero and Phi-4-mm StrAD-FT tend to repeat sentences, Phi-4-mm shows a severe collapse though. This problem is also studied in text-only LLMs [40]. However, existing approaches that avoid repetition [47, 9, 18] do not transfer to the streaming setting or cause high output variability. Inference strategies like contrastive search can help but increase computational cost [40]. Qwen-3.5 is only slightly affected by this problem. Overall, these results support claim (ii): StrAD-FT produces coherent AD across a full video without requiring ground-truth timestamps. The gap to the segment-level upper bound and the streaming-specific failure modes confirm that StrAD sets a meaningful and unsolved target for future work. 
+
+5.4 Efficiency 
+
+We measure the inference speed on the streaming task to support claim (iii) that our approach runs in real time. The speed is measured by executing our approach on the first 2 minutes of each video in StrAD. The measurements are reported in Table 2. Both Qwen-3.5 and Phi-4-mm StrAD-FT run faster than real time, with RTF 0.52 and 0.47 respectively, and a lag of about 4 s. 
+
+5.5 Component Analysis 
+
+We ablate the input modalities to support claim (iv) that incorporating audio improves streaming localization and reduces redundancy. We fine-tune each Phi-4-mm variant for 1 epoch on CMD-AD and evaluate on the CMD-AD val set. The results are shown in Table 3. 8Table 3: Phi-4-mm StrAD-FT training ablations on the CMD-AD validation split.                                                                     
+
+> Augmentations (stepwise removal) Modalities Baseline - segment aug. - subtitle aug. - face drop - context aug. - audio aug. - frame aug. All modalities No audio No video Context only
+> Streaming
+> SODA ↑1.4 1.4 1.6 1.5 1.5 1.6 1.6 1.4 1.4 0.9 0.9 CIDEr ↑10.9 10.7 10.3 10.9 11.3 12.3 11.1 10.7 9.7 5.4 5.6 OL ↓4.6 3.9 4.1 4.3 5.1 4.4 4.3 3.9 5.3 5.3 6.1 REP ↓15.7 11.5 12.5 8.3 19.1 16.0 16.3 11.5 16.3 49.6 39.0
+> Segment-level
+> CIDEr ↑24.3 32.4 33.6 34.8 30.5 34.4 31.5 32.4 33.4 8.3 4.4 R@1/5 ↑35.5 36.0 36.2 37.6 35.4 36.1 35.5 36.0 36.2 24.6 20.0
+> green/orange: step-wise improvement/regression.
+
+Modalities. We train three variants of the full vision-audio-text baseline, dropping video, audio, or both. Removing video collapses CIDEr from 32.4 to 8.3, halves SODA, and pushes REP from 11.5 % to 49.6 %. Removing audio improves the segment-level task but reduces streaming performance where streaming CIDEr drops from 10.7 to 9.7, OL worsens from 3.9 % to 5.3 %, and REP from 11.5 % to 16.3 %. This suggests that audio is important for streaming and helps the model decide 
+
+when to speak rather than what to say. This confirms that video is the dominant signal and audio’s contribution stacks on top of it, supporting claim (iv). 
+
+Augmentations. We apply input augmentations during training: segment randomizes the pad around each clip; subtitle overlays subtitle bars for robustness; face drops character bounding boxes to match streaming evaluation; context perturbs the AD context list by dropping or repeating entries; audio 
+
+applies random gain and Gaussian noise; and frame combines aspect-ratio crops with photometric perturbations. Dropping segment jitter has the largest impact on segment-level CIDEr while reducing overlap and repetition. Dropping audio augmentation helps streaming and segment-level tasks. Removing context resampling sharply increases repetitions and degrades segment-level performance. The other augmentations are inconclusive. We remove segment and audio augmentations for training. 
+
+## 6 Limitations 
+
+Our work has the following limitations. Currently, all models fall short of human-level AD quality and may produce errors that are confusing or misleading to visually impaired viewers. Our benchmark, while broader in scope than prior datasets, does not yet cover the full diversity of video genres, languages, and cultural contexts found in the real world. Because our benchmark is built on YouTube videos, content may become unavailable over time. We mitigate this with our alignment process and regular availability scans but reproducibility cannot be fully guaranteed. Our streaming evaluation uses the verified transcript, so ASR errors are not reflected in the reported numbers. Finally, our metrics capture lexical and semantic overlap but not the perceived quality of AD for visually impaired audiences. Alignment of these metrics with perceived quality on StrAD remains to be verified through user studies with AD consumers and creators. 
+
+## 7 Conclusion 
+
+We investigated full-video AD generation for visually impaired audiences, a setting that prior work has mostly approached at the segment level with curated metadata and ground-truth timestamps. We introduced StrAD, a benchmark of long-form open-domain videos with manually verified transcripts and AD. We reformulated AD generation as three tasks at increasing levels of difficulty: segment-level, streaming, and document-level. We proposed two streaming baselines, the zero-shot StrAD-Zero and the fine-tuned StrAD-FT, which jointly predict AD sentences and their timestamps from a sliding window over the video, transcript, and previously generated AD. StrAD-FT matches or exceeds prior methods on segment-level CMD-AD, MAD-Eval, and StrAD, produces coherent AD across full-9length videos without ground-truth boundaries, and runs faster than prior pipelines at <5B parameters. Open challenges include entity recognition and grounding from the video alone, identifying character names, their belongings, and relations across minutes or hours, and suppressing repetitive or collapsed outputs without sacrificing streaming throughput. Closing these gaps is what turns automated AD from a research artifact into a practical accessibility tool at the scale of online video. 
+
+## References 
+
+[1] Abdelrahman Abouelenin, Atabak Ashfaq, Adam Atkinson, Hany Awadalla, Nguyen Bach, Jianmin Bao, Alon Benhaim, Martin Cai, Vishrav Chaudhary, Congcong Chen, et al. Phi-4-Mini Technical Report: Compact yet Powerful Multimodal Language Models via Mixture-of-LoRAs. 
+
+CoRR , abs/2503.01743, 2025. [2] Takuya Akiba, Shotaro Sano, Toshihiko Yanase, Takeru Ohta, and Masanori Koyama. Optuna: A next-generation hyperparameter optimization framework. In KDD , pages 2623–2631, 2019. [3] Max Bain, Arsha Nagrani, Andrew Brown, and Andrew Zisserman. Condensed Movies: Story Based Retrieval with Contextual Embeddings. In ACCV , pages 460–479, 2020. [4] Satanjeev Banerjee and Alon Lavie. METEOR: An automatic metric for MT evaluation with improved correlation with human judgments. In Proceedings of the Workshop on Intrinsic and Extrinsic Evaluation Measures for Machine Translation and/or Summarization@ACL , pages 65–72, 2005. [5] Sabine Braun, Shenbin Qian, Yuan Zou, and Constantin Orasan. Evaluation of AI-generated audio description for factual TV/media genres. Research report, Royal National Institute of Blind People (RNIB) and University of Surrey, 2025. URL https://www.rnib.org.uk/ documents/3024/AI-Generated_Audio_Description_Report_August_2025.pdf . Ac-cessed: 2026-04-18. [6] Lipisha Chaudhary, Trisha Mittal, Subhadra Gopalakrishnan, Ifeoma Nwogu, and Jaclyn Pytlarz. MCAD: Multimodal Context-Aware Audio Description Generation for Soccer. In International Symposium on Multimedia (ISM) , pages 280–287, 2025. [7] Zesen Cheng, Sicong Leng, Hang Zhang, Yifei Xin, Xin Li, Guanzheng Chen, Yongxin Zhu, Wenqi Zhang, Ziyang Luo, Deli Zhao, and Lidong Bing. VideoLLaMA 2: Advancing Spatial-Temporal Modeling and Audio Understanding in Video-LLMs. CoRR , abs/2406.07476, 2024. [8] Peng Chu, Jiang Wang, and Andre Abrantes. LLM-AD: Large Language Model based Audio Description System. CoRR , abs/2405.00983, 2024. [9] Bo Fang, Wenhao Wu, Qiangqiang Wu, Yuxin Song, and Antoni B. Chan. DistinctAD: Distinctive Audio Description Generation in Contexts. In CVPR , pages 13571–13581, 2025. [10] Soichiro Fujita, Tsutomu Hirao, Hidetaka Kamigaito, Manabu Okumura, and Masaaki Nagata. Soda: Story oriented dense video captioning evaluation framework. In ECCV , pages 517–531, 2020. [11] Sylvain Gugger, Lysandre Debut, Thomas Wolf, Philipp Schmid, Zachary Mueller, Sourab Mangrulkar, Marc Sun, and Benjamin Bossan. Accelerate: Training and inference at scale made simple, efficient and adaptable. https://github.com/huggingface/accelerate , 2022. [12] Tengda Han, Max Bain, Arsha Nagrani, Gül Varol, Weidi Xie, and Andrew Zisserman. AutoAD: Movie Description in Context. In CVPR , pages 18930–18940, 2023. [13] Tengda Han, Max Bain, Arsha Nagrani, Gül Varol, Weidi Xie, and Andrew Zisserman. AutoAD II: The Sequel - Who, When, and What in Movie Audio Description. In ICCV , pages 13599– 13609, 2023. [14] Tengda Han, Max Bain, Arsha Nagrani, Gül Varol, Weidi Xie, and Andrew Zisserman. AutoAD III: The Prequel - Back to the Pixels. In CVPR , pages 18164–18174, 2024. 10 [15] Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. LoRA: Low-Rank Adaptation of Large Language Models. In 
+
+ICLR , 2022. [16] Divy Kala, Eshika Khandelwal, and Makarand Tapaswi. What You See is What You Ask: Evaluating Audio Descriptions. In EMNLP , pages 23496–23518, 2025. [17] Nitish Shirish Keskar, Bryan McCann, Lav R. Varshney, Caiming Xiong, and Richard Socher. CTRL: A Conditional Transformer Language Model for Controllable Generation. CoRR ,abs/1909.05858, 2019. [18] Eshika Khandelwal, Junyu Xie, Tengda Han, Max Bain, Arsha Nagrani, Andrew Zisserman, Gül Varol, and Makarand Tapaswi. More than a Moment: Towards Coherent Sequences of Audio Descriptions. CoRR , abs/2510.25440, 2025. [19] Ranjay Krishna, Kenji Hata, Frederic Ren, Li Fei-Fei, and Juan Carlos Niebles. Dense-captioning events in videos. In ICCV , pages 706–715, 2017. [20] Woosuk Kwon, Zhuohan Li, Siyuan Zhuang, Ying Sheng, Lianmin Zheng, Cody Hao Yu, Joseph E. Gonzalez, Hao Zhang, and Ion Stoica. Efficient Memory Management for Large Language Model Serving with PagedAttention. In Proceedings of the ACM SIGOPS 29th Symposium on Operating Systems Principles , 2023. [21] James Lakritz and Andrew Salway. The semi-automatic generation of audio description from screenplays. Dept. of Computing Technical Report CS-06-05, University of Surrey , 2006. [22] María Eugenia Larreina-Morales and Carme Mangiron. Audio description in video games? Persons with visual disabilities weigh in. Univers. Access Inf. Soc. , pages 577–588, 2024. [23] Seon-Ho Lee, Jue Wang, David Fan, Zhikang Zhang, Linda Liu, Xiang Hao, Vimal Bhat, and Xinyu Li. Now you see me: Context-aware automatic audio description. In WACV , pages 5530–5539, 2025. [24] Chin-Yew Lin. ROUGE: A Package for Automatic Evaluation of Summaries. In Text Summa-rization Branches Out , pages 74–81, 2004. [25] Kevin Qinghong Lin, Pengchuan Zhang, Difei Gao, Xide Xia, Joya Chen, Ziteng Gao, Jinheng Xie, Xuhong Xiao, and Mike Zheng Shou. Learning Video Context as Interleaved Multimodal Sequences. In ECCV , pages 375–396, 2024. [26] Ilya Loshchilov and Frank Hutter. SGDR: Stochastic Gradient Descent with Warm Restarts. In 
+
+ICLR , 2017. [27] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In ICLR , 2019. [28] Jaehyeong Park, Juncheol Ye, Seungkook Lee, Hyun W. Ka, and Dongsu Han. NarrAD: Automatic Generation of Audio Descriptions for Movies with Rich Narrative Context. In WACV ,pages 409–419, 2025. [29] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, et al. Pytorch: An imperative style, high-performance deep learning library. NeurIPS , 2019. [30] Alexis Plaquet and Hervé Bredin. Powerset multi-class cross entropy loss for neural speaker diarization. In Interspeech , pages 3222–3226, 2023. [31] Qwen Team. Qwen3.5: Towards native multimodal agents, February 2026. URL https: //qwen.ai/blog?id=qwen3.5 .[32] Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever. Robust speech recognition via large-scale weak supervision. In International conference on machine learning , pages 28492–28518. PMLR, 2023. [33] Jiayuan Rao, Haoning Wu, Chang Liu, Yanfeng Wang, and Weidi Xie. MatchTime: Towards Automatic Soccer Game Commentary Generation. In EMNLP , pages 1671–1685, 2024. 11 [34] Aline Remael, Nina Reviers, and Gert Vercauteren. Pictures painted in words: ADLAB audio description guidelines . EUT Edizioni Università di Trieste, 2015. ISBN 978-88-8303-675-0. [35] Shuhuai Ren, Linli Yao, Shicheng Li, Xu Sun, and Lu Hou. TimeChat: A Time-sensitive Multimodal Large Language Model for Long Video Understanding. In CVPR , pages 14313– 14323, 2024. [36] Anna Rohrbach, Marcus Rohrbach, Niket Tandon, and Bernt Schiele. A dataset for Movie Description. In CVPR , pages 3202–3212, 2015. [37] Anna Rohrbach, Atousa Torabi, Marcus Rohrbach, Niket Tandon, Christopher Joseph Pal, Hugo Larochelle, Aaron C. Courville, and Bernt Schiele. Movie description. IJCV , 123(1):94–120, 2017. [38] Mattia Soldan, Alejandro Pardo, Juan León Alcázar, Fabian Caba Heilbron, Chen Zhao, Silvio Giancola, and Bernard Ghanem. MAD: A Scalable Dataset for Language Grounding in Videos from Movie Audio Descriptions. In CVPR , pages 5016–5025, 2022. [39] Enxin Song, Wenhao Chai, Guanhong Wang, Yucheng Zhang, Haoyang Zhou, Feiyang Wu, Haozhe Chi, Xun Guo, Tian Ye, Yanting Zhang, Yan Lu, Jenq-Neng Hwang, and Gaoang Wang. MovieChat: From Dense Token to Sparse Memory for Long Video Understanding. In CVPR ,pages 18221–18232, 2024. [40] Yixuan Su and Nigel Collier. Contrastive Search Is What You Need For Neural Text Generation. 
+
+Trans. Mach. Learn. Res. , 2023. [41] Llama 2 Team. Llama 2: Open Foundation and Fine-Tuned Chat Models. CoRR ,abs/2307.09288, 2023. [42] Llama 3 Team. The Llama 3 Herd of Models. CoRR , abs/2407.21783, 2024. [43] Silero Team. Silero VAD: pre-trained enterprise-grade Voice Activity Detector (VAD), Number Detector and Language Classifier. https://github.com/snakers4/silero-vad , 2024. [44] Atousa Torabi, Christopher J. Pal, Hugo Larochelle, and Aaron C. Courville. Using Descrip-tive Video Services to Create a Large Data Source for Video Annotation Research. CoRR ,abs/1503.01070, 2015. URL http://arxiv.org/abs/1503.01070 .[45] Ramakrishna Vedantam, C Lawrence Zitnick, and Devi Parikh. CIDEr: Consensus-based image description evaluation. In CVPR , pages 4566–4575, 2015. [46] Hanlin Wang, Zhan Tong, Kecheng Zheng, Yujun Shen, and Limin Wang. Contextual AD Narration with Interleaved Multimodal Sequence. In CVPR , pages 8372–8383, 2025. [47] Yujia Wang, Wei Liang, Haikun Huang, Yongqi Zhang, Dingzeyu Li, and Lap-Fai Yu. Toward Automatic Audio Description Generation for Accessible Videos. In CHI Conference on Human Factors in Computing Systems , pages 277:1–277:12, 2021. [48] Thomas Wolf, Lysandre Debut, Victor Sanh, Julien Chaumond, Clement Delangue, Anthony Moi, Pierric Cistac, Tim Rault, Rémi Louf, Morgan Funtowicz, et al. Transformers: State-of-the-art natural language processing. In EMNLP , pages 38–45, 2020. [49] World Health Organization. World report on vision . World Health Organization, 2019. [50] Zeyu Xi, Ge Shi, Xuefen Li, Junchi Yan, Zun Li, Lifang Wu, Zilin Liu, and Liang Wang. A simple yet effective knowledge guided method for entity-aware video captioning on a basketball benchmark. Neurocomputing , 619:129177, 2025. [51] Junyu Xie, Tengda Han, Max Bain, Arsha Nagrani, Gül Varol, Weidi Xie, and Andrew Zisser-man. AutoAD-Zero: A Training-Free Framework for Zero-Shot Audio Description. In ACCV ,pages 81–97, 2024. [52] Junyu Xie, Tengda Han, Max Bain, Arsha Nagrani, Eshika Khandelwal, Gül Varol, Weidi Xie, and Andrew Zisserman. Shot-by-Shot: Film-Grammar-Aware Training-Free Audio Description Generation. In ICCV , 2025. 12 [53] Antoine Yang, Arsha Nagrani, Paul Hongsuck Seo, Antoine Miech, Jordi Pont-Tuset, Ivan Laptev, Josef Sivic, and Cordelia Schmid. Vid2Seq: Large-Scale Pretraining of a Visual Language Model for Dense Video Captioning. In CVPR , pages 10714–10726, 2023. [54] Yuanzhe Yang and Xianzhong Liu. Story-context-aware audio description generation via hierarchical narrative modeling. In International Conference on Virtual Reality and Visualization (ICVRV) , pages 240–245, 2025. [55] Chaoyi Zhang, Kevin Lin, Zhengyuan Yang, Jianfeng Wang, Linjie Li, Chung-Ching Lin, Zicheng Liu, and Lijuan Wang. MM-Narrator: Narrating Long-form Videos with Multimodal In-Context Learning. In CVPR , pages 13647–13657, 2024. [56] Tianyi Zhang, Varsha Kishore, Felix Wu, Kilian Q. Weinberger, and Yoav Artzi. BERTScore: Evaluating Text Generation with BERT. In ICLR , 2020. [57] Zhongrui Gui and Junyu Xie and Tengda Han and Weidi Xie and Andrew Zisserman. Character-Centric Understanding of Animated Movies. In ACM MM , pages 3300–3309, 2025. [58] Xingyi Zhou, Anurag Arnab, Shyamal Buch, Shen Yan, Austin Myers, Xuehan Xiong, Arsha Nagrani, and Cordelia Schmid. Streaming dense video captioning. In CVPR , pages 18243– 18252, 2024. 13 AD video Annotate Mask AD audio AD audio Original video  
+
+> A) Only AD video: B) AD & original video:
+> Annotate Sync Original video
+> C) Original video & annotation:
+> Sync Dataset +AD annotation ++ Combine aligned video with AD transcript
+
+(a) Alignment pipeline. Manual Correction Transcription & Diarization AD Identification Annotate AD audio Corrected transcript with interleaved AD (b) Annotation. (c) Annotation tool. 
+
+Figure 4: StrAD construction pipeline. (a) We source paired YouTube videos with original and AD-augmented audio tracks and align them via cross-correlation with describealign , comparing three alignment strategies. (b) We transcribe the AD track with Whisper [32] and separate AD from speech using Silero VAD [43] and pyannote diarization [30]. (c) We finalize timestamps and transcripts through manual review using a custom annotation tool. 
+
+## A StrAD Dataset Construction 
+
+Constructing StrAD requires pairing each full-length video with an aligned AD track. We address this in three stages: video sourcing, AD extraction, and manual verification (Figure 4). 
+
+Video sourcing. We source videos from YouTube and prioritize pairs of the same content with two audio tracks, one original and one with AD, so that the raw audio is preserved for model input. In case no paired videos exist, we resort to originals with a separate AD audio track or masked AD videos. 
+
+Alignment, annotation, and verification. Following the annotation-process by Han et al. [14], we first obtain candidate AD sentences and timestamps by transcribing the AD track with Whisper [32], leveraging Silero voice activity detection [43] and using pyannote for speaker diarization [30]. We identify AD sentences by the lowest usage of personal pronouns [14]. We align the original video to the annotated AD video via audio cross-correlation using describealign 4. A custom tool then lets annotators correct temporal alignment and edit transcripts and AD sentences. Each video is reviewed by one annotator and spot-checked by a second annotator for quality control. Annotators corrected 73.8 % of all AD events and transcript segments. 
+
+A.1 Reproducibility 
+
+The benchmark is available as a list of YouTube IDs with timestamps and AD sentences. To support reproducibility, our alignment process is even applicable if the original or AD video is no longer available. We support three alignment strategies (Figure 4a): audio-to-audio alignment (default) when both the original and AD videos are available, transcript alignment when the AD video is missing, where we transcribe the original audio and match it to the annotations, and masking when only the AD video is available, where AD segments are replaced with noise. Note that masked samples should not be used for training to avoid bias. The availability of each video will be checked by regularly scanning the benchmark. For future comparability, we recommend publishing the predictions for each video. 
+
+## B StrAD-Zero Prompts 
+
+StrAD-Zero chains three prompted stages on each sliding window: (i) a video captioning stage, (ii) a decision stage, and (iii) an AD generation stage. The face detection and character identification stage of AutoAD-Zero [51] is unchanged and prompt-free. We list the prompt templates in Figures 5 to 7. 
+
+> 4https://github.com/julbean/describealign
+
+14 1 " " " Video captioning from AutoAD - Zero " " "                                                                                                                                  
+
+> 23PROMPT_TEMPLATE =(
+> 4" Please describe the movie clip in the following four steps : "
+> 5" 1. Identify main characters { char_text }; "
+> 6" 2. Describe the actions of characters in one sentence , i . e . , who is doing what , focusing on the movements ; "
+> 7" 3. Describe the interactions between characters in one sentence , such as looking ; "
+> 8" 4. Describe the facial expressions of characters in one sentence . "
+> 9" Note , colored boxes are provided for character indications only , DO NOT mention them in the description . "
+> 10 " Make sure you do not hallucinate information . "
+> 11 " Template : 1. Main characters : ’ ’; 2. Actions : ’ ’; 3. Character -character interactions : ’ ’; 4. Facial expressions : ’ ’. "
+> 12 )
+> 13 14 #{ char_text } is built from the face - detector output .
+> 15 E X AM PL E _C HA R _T EX T_ W IT H_ F AC ES =(
+> 16 "( labeled by boxes ) : Max Mustermann ( red ) , Erika Mustermann ( orange ) "
+> 17 )
+> 18 E XAM PLE_ CHA R_T EXT _NO _FAC ES =" "
+> 19 20 RENDERED_EXAMPLE =PROMPT_TEMPLATE . format ( char_text = E XA MP L E_ CH AR _ TE XT _ WI TH _ FA CE S )
+
+Figure 5: Video captioning prompt. This is the exact prompt used by AutoAD-Zero [51]. 
+
+## C Detailed Experimental Setup 
+
+We provide hyperparameters and other details required for reproduction of StrAD-FT in the Table 4. 
+
+C.1 CMD-AD Validation Split 
+
+CMD-AD only has a train and test split, but we need a validation split for model develop-ment and hyperparameter tuning. We create a validation split by randomly sampling 25 movies from the training set and select the corresponding clips and segments. The selected movies are: tt0020629 , tt0054331 , tt0073802 , tt0088846 , tt0096101 , tt0101635 , tt0108065 ,
+
+tt0116209 , tt0120631 , tt0151568 , tt0232500 , tt0285742 , tt0332452 , tt0376541 ,
+
+tt0421729 , tt0463985 , tt0800039 , tt0959337 , tt1186830 , tt1355644 , tt1622979 ,
+
+tt1981677 , tt2493486 , tt3531824 , and tt5113040 .
+
+C.2 Learning Rate Sweep 
+
+We use Optuna [2] to search for the best learning rate for both Phi-4-mm and Qwen-3.5 with 10 trials each, evaluating the validation loss on our CMD-AD val split. The search space samples the learning rate log-uniformly from 1e −6 to 1e −4. Figure 8 shows the trial results for both models. The chosen learning rates are 9.2e −5 for Phi-4-mm and 4.3e −5 for Qwen-3.5. 
+
+## D Metrics 
+
+D.1 Segment-level metrics CIDEr [45] measures n-gram overlap with the ground-truth AD while down-weighting n-grams that are common across the full ground-truth corpus. Scores are computed for n-grams of length 1 to 4 and averaged. 
+
+Recall@ k/N [13] addresses the imperfect semantic alignment between predicted and ground-truth AD by scoring each predicted sentence against a window of N neighboring ground-truth sentences using BERTScore [56] and reporting the fraction of predictions that match within the top-k. The met-15 1 " " " Decision prompt " " "  
+
+> 23
+
+PROMPT_TEMPLATE = ( 
+
+> 4
+
+" You are deciding whether an audio description ( AD ) sentence should be inserted into a speech - free moment .\ n \ n "  
+
+> 5
+
+" { context_block } "  
+
+> 6
+
+" VISUAL DESCRIPTION ( what is visible in the speech - free window ) :\ n { visual_description }\ n \ n "  
+
+> 7
+
+" { gap_description } "  
+
+> 8
+
+" Should an audio description be inserted here ? Answer YES only if the visuals contain meaningful " 
+
+> 9
+
+" new action , character movement , or narrative information that a blind viewer would benefit from " 
+
+> 10
+
+" and that is NOT already conveyed by RECENT AUDIO DESCRIPTIONS . " 
+
+> 11
+
+" Answer YES if the scene introduces a new action , location change , character behaviour , or important " 
+
+> 12
+
+" visual detail that the context does not yet describe ( e . g . acharacter enters the room , picks something " 
+
+> 13
+
+" up , or the setting shifts ) .\ n "  
+
+> 14
+
+" Answer NO if the scene is static or uneventful or if the context already explains what is happening " 
+
+> 15
+
+" ( e . g . characters keep looking at each other , no new movement vs . the prior window ) .\ n \ n "  
+
+> 16
+
+" Answer with exactly one word : YES or NO . "  
+
+> 17
+
+) 
+
+> 18 19
+
+# { gap_description }  
+
+> 20
+
+G A P_DESCRIPTION_TEMPLATE = " A speech - free gap of { duration :.1 f } seconds is available for narration .\ n \ n "  
+
+> 21
+
+OP EN_GAP_DESCRIPTION = " An open - ended speech - free window is available for narration .\ n \ n "  
+
+> 22
+
+E XAMPLE_GAP_DESCRIPTION = GAP_DESCRIPTION_TEMPLATE . format ( duration =3.4)  
+
+> 23 24
+
+# { context_block } is a multi - line block built from the recent transcript and recent AD predictions  
+
+> 25
+
+CONTEXT_BLOCK_TEMPLATE = " RECENT DIALOGUE :\ n { dialogue }\ n \ nRECENT AUDIO DESCRIPTIONS :\ n { ads }\ n \ n "  
+
+> 26
+
+E MPT Y_DI ALO GUE _PL ACE HOLD ER = " No recent dialogue . "  
+
+> 27
+
+E MPTY_ADS_PLACEHOLDER = " No recent audio descriptions . "  
+
+> 28
+
+E XAMPLE_CONTEXT_BLOCK = CONTEXT_BLOCK_TEMPLATE . format (  
+
+> 29
+
+dialogue = " I just want to make a good impression .\ nYou ’ ll be fine , just be yourself . " ,  
+
+> 30
+
+ads = " Max adjusts his collar nervously .\ nErika squeezes his hand . " ,  
+
+> 31
+
+) 
+
+> 32 33
+
+# { visual_description }  
+
+> 34
+
+E XAM PLE_ VIS UAL _DE SCR IPTI ON = ( 
+
+> 35
+
+" 1. Main characters : Max Mustermann , Erika Mustermann ; " 
+
+> 36
+
+" 2. Actions : Max Mustermann is shaking Erika Mustermann ’s hand ; " 
+
+> 37
+
+" 3. Character - character interactions : Max Mustermann and Erika Mustermann look at each other ; " 
+
+> 38
+
+" 4. Facial expressions : Max Mustermann looks slightly nervous ; Erika Mustermann appears cordial . "  
+
+> 39
+
+) 
+
+> 40 41
+
+RENDERED_EXAMPLE = PROMPT_TEMPLATE . format (  
+
+> 42
+
+context_block = EXAMPLE_CONTEXT_BLOCK ,  
+
+> 43
+
+visual_description = EXAMPLE_VISUAL_DESCRIPTION ,  
+
+> 44
+
+gap_description = EXAMPLE_GAP_DESCRIPTION ,  
+
+> 45
+
+)
+
+Figure 6: Decision prompt. Inserted before AD generation to predict whether the current window should produce an AD. ric is not fully specified with respect to averaging strategy and ordering, which leads to discrepancies across implementations (see Section D.3). 16 1 " " " AD generation prompt based on AutoAD - Zero " " "  
+
+> 23
+
+# Verb priority list by AutoAD - Zero  
+
+> 4
+
+VERB_LIST = " look , turn , take , hold , pull , walk , run , watch , stare , grab , fall , get , go , open , smile "  
+
+> 56
+
+# Based on AutoAD - Zero with an additional context block  
+
+> 7
+
+PROMPT_TEMPLATE = ( 
+
+> 8
+
+" { context_block } "  
+
+> 9
+
+" Please summarise the following description for one movie clip into ONE succinct audio description ( AD ) sentence .\ n "  
+
+> 10
+
+" Description : { description }\ n \ n "  
+
+> 11
+
+" Focus on the most attractive characters and their actions ( focus on point 2. , supplemented by point 3.) .\ n "  
+
+> 12
+
+" For characters , use their first names , remove titles such as ’ Mr . ’ and ’ Dr . ’. " 
+
+> 13
+
+" If names are not available , use pronouns such as ’ He ’ and ’ her ’, do not use expression such as ’a man ’.\ n "  
+
+> 14
+
+" For actions , avoid mentioning the camera , and do not focus on ’talking ’ or position - related ones such as ’ sitting ’ and ’ standing ’.\ n "  
+
+> 15
+
+" Do not mention characters ’ mood .\ n "  
+
+> 16
+
+" Do not hallucinate information that is not mentioned in the input .\ n "  
+
+> 17
+
+" Do NOT restate or paraphrase any sentence already present in RECENT AUDIO DESCRIPTIONS ; " 
+
+> 18
+
+" describe only what has changed or is new in the current clip .\ n "  
+
+> 19
+
+" Try to identify the following motions ( with decreasing priorities ) : {verb_list } , and use them in the description .\ n "  
+
+> 20
+
+" Provide the AD from a narrator perspective and adjust the length of the output according to the duration .\ n "  
+
+> 21
+
+" Duration of the video clip : { duration :.1 f } s \ n \ n "  
+
+> 22
+
+" Template : AD : ’ ’. "  
+
+> 23
+
+) 
+
+> 24 25
+
+CONTEXT_BLOCK_TEMPLATE = " RECENT DIALOGUE :\ n { dialogue }\ n \ nRECENT AUDIO DESCRIPTIONS :\ n { ads }\ n \ n "  
+
+> 26
+
+E XAMPLE_CONTEXT_BLOCK = CONTEXT_BLOCK_TEMPLATE . format (  
+
+> 27
+
+dialogue = " I just want to make a good impression . " ,  
+
+> 28
+
+ads = " Max adjusts his collar nervously . " ,  
+
+> 29
+
+) 
+
+> 30 31
+
+EXAMPLE_DESCRIPTION = ( 
+
+> 32
+
+" 1. Main characters : Max Mustermann , Erika Mustermann ; " 
+
+> 33
+
+" 2. Actions : Max Mustermann is shaking Erika Mustermann ’s hand ; " 
+
+> 34
+
+" 3. Character - character interactions : Max Mustermann and Erika Mustermann look at each other ; " 
+
+> 35
+
+" 4. Facial expressions : Max Mustermann looks slightly nervous ; Erika Mustermann appears cordial . "  
+
+> 36
+
+) 
+
+> 37 38
+
+# { duration } is the gap length in seconds , formatted with one decimal .  
+
+> 39
+
+EXAMPLE_DURATION = 3.4  
+
+> 40 41
+
+RENDERED_EXAMPLE = PROMPT_TEMPLATE . format (  
+
+> 42
+
+context_block = EXAMPLE_CONTEXT_BLOCK ,  
+
+> 43
+
+description = EXAMPLE_DESCRIPTION ,  
+
+> 44
+
+verb_list = VERB_LIST ,  
+
+> 45
+
+duration = EXAMPLE_DURATION ,  
+
+> 46
+
+)
+
+Figure 7: AD generation prompt. This is an extension for streaming of the the AD generation prompt of AutoAD-Zero [51] 
+
+CRITIC [14] calculates the IoU between character identities in predictions and references extracted with a co-referencing model and the ground-truth character list per movie. 17 Table 4: Full training, inference, and hardware configuration. 
+
+Category Hyperparameter Value 
+
+Models Qwen-3.5 Qwen/Qwen3.5-4B 
+
+Phi-4-mm microsoft/Phi-4-multimodal-instruct 
+
+Visual input Qwen-3.5 resolution up to 720 ×1280 
+
+Phi-4-mm resolution 448 ×448 
+
+Optimization Optimizer AdamW [27] Loss Cross-entropy Weight decay 0.01 Gradient clipping 1.0 Epochs ∼2 (with early stopping) Total training steps 20,000 Batch size 8LR schedule Cosine decay [26] Warm-up steps 5 % of total steps Random seed 42 Early stopping Mean loss on CMD-AD val splits Trainable components Vision projection layer Trained Audio projection layer Trained Language model LoRA adapters only Encoders Frozen LoRA [15] Rank r 16 Scaling α 32 Dropout 0.0 Learning rate Search method Optuna, 10 trials per backbone Selection criterion Mean loss on CMD-AD val splits LR 4.3e −5 (Qwen-3.5), 9.2e −5 (Phi-4-mm) Sample budget 
+
+WAIT signals 25 % Segment-level samples 37.5 % Streaming samples 37.5 % Segment-level task Decoding Greedy Max new tokens 128 Padding δp 2 s Eval padding δp 2 s (CMD-AD, StrAD); 0 s (MAD-Eval) Conditioning Character names, face detections, ground-truth timestamps Streaming task Decoding Greedy Max new tokens 128 Presence penalty [17] 1.5 Advance step δ 4 s Visual window size wv 8 s Text context window wc 120 s Conditioning Previous ADs, ground-truth transcript Hardware Training nodes 1Training GPUs 8× NVIDIA A100 Training CPU AMD Epyc Inference GPU 1× NVIDIA A100 Inference CPU Intel Xeon CPU Training time ∼160 GPU-h (Qwen-3.5), 
+
+∼80 GPU-h (Phi-4-mm) 
+
+LLM-AD-Eval [14] provides a complementary assessment that is less sensitive to exact wording using an LLM as a judge, since AD datasets lack diverse reference captions. The LLM rates how well the prediction matches the reference on a scale of 1 to 5. The final score is the micro-average across all prediction-reference pairs. We use the prompts by Xie et al. [51] and the language models 18 0 5k 10k Training step 02.5 57.5 10 Learning rate (×10  5) Learning rate   
+
+> 05k 10k Training step 1.2 1.4 1.6 train/loss
+
+Train loss   
+
+> 05k 10k Training step 1.5 2.0 2.5 val/loss
+
+Val loss 
+
+> 0.1 1.1 10.0
+> Peak learning rate (×10  5)
+
+(a) Phi-4-mm 0 5k 10k Training step 024Learning rate (×10  5) Learning rate 
+
+0 5k 10k Training step 1.3 1.4 1.5 train/loss 
+
+Train loss 
+
+0 5k 10k Training step 1.50 1.75 2.00 2.25 val/loss 
+
+Val loss 
+
+> 0.2 0.9 5.0
+> Peak learning rate (×10  5)
+
+(b) Qwen-3.5 
+
+Figure 8: Learning rate sweep. CMD-AD validation loss across 10 Optuna trials per model. Table 5: Effect of evaluating published predictions against missing entries on CMD-AD. 
+
+CMD-AD Method CIDEr ↑ R@1/5 ↑ CRITIC ↑ ActionScore ↑ LLM-AD-Eval ‡↑
+
+AutoAD-III [14] (as reported in the paper) 25.0 31.2 32.7 31.5 2.89 | 2.01 AutoAD-III [14] (published preds, full) 25.1 31.1 31.8 29.7 3.02 | 2.16 AutoAD-III [14] (published preds, drop missing) 24.9 31.2 32.4 30.0 3.03 | 2.18 AutoAD-III [14] † 21.6 30.2 26.7 32.9 3.26 | 2.35 AutoAD-Zero [51] (as reported in the paper) 17.7 26.9 43.7 25.5 2.83 | 1.96 AutoAD-Zero [51] (published preds, full) 17.7 27.5 38.5 25.5 2.91 | 2.08 AutoAD-Zero [51] (published preds, drop missing) 17.7 27.6 38.0 25.7 2.92 | 2.09 Shot-by-shot ⋆ [52] (as reported in the paper) 26.1 36.5 49.1 32.5 3.17 | 2.66 Shot-by-shot ⋆ [52] (published preds, full) 26.1 34.8 43.2 32.5 3.34 | 2.80 Shot-by-shot ⋆ [52] (published preds, drop missing) 25.8 34.9 42.5 32.7 3.34 | 2.81 Shot-by-shot [52] (as reported in the paper) 26.3 33.0 47.8 28.4 3.15 | 2.42 Shot-by-shot [52] (published preds, full) 26.3 31.4 43.3 28.4 3.33 | 2.55 Shot-by-shot [52] (published preds, drop missing) 25.9 31.4 42.9 28.5 3.33 | 2.56 
+
+meta-llama/Llama-2-7b-chat-hf [41] and meta-llama/Meta-Llama-3-8B-Instruct [42]. We use vLLM [20] to run the LLMs. 
+
+D.2 Streaming metrics 
+
+For streaming evaluation we group metrics into four categories: quality, temporal localization, diagnostics, and efficiency. 19 D.2.1 Quality 
+
+Quality metrics measure how well each AD is phrased, for which we adopt the standard dense video captioning metrics [19, 53, 58]. All metrics are averaged over tIoU thresholds 0.1, 0.3, and 0.5, dropping the 0.9 used in dense video captioning since AD timing is loose by design. 
+
+SODA [10] computes an F-measure over a temporal matching, using METEOR [4] as the caption similarity score. The temporal matching is found with dynamic programming and a tIoU-based cost matrix, where a tIoU matching threshold is applied to zero non-matching entries. SODA only reaches a high score when AD events are both well described and well localized. 
+
+CIDEr [45] is calculated in the same way as for the segment-level task but calculated and averaged for each tIoU threshold. 
+
+METEOR [4] scores a caption by aligning its unigrams to the reference using exact, stem, synonym, and paraphrase matches, then computing a F-measure and a penalty that rewards contiguous matched blocks. 
+
+ActionScore [52] computes the recall of the actions extracted by a LLM from the ground-truth ADs. A text embedding model is used to calculate the cosine similarity of each action to the prediction to identify the actions. 
+
+D.2.2 Temporal localization 
+
+Temporal localization metrics capture whether ADs are emitted at the right time, for which we report Recall and Precision over the tIoU-matched pairs used for quality metrics (see Section D.2.1). 
+
+Recall measures the fraction of ground-truth ADs that are matched by a predicted AD under the tIoU thresholds. 
+
+Precision measures the fraction of predicted ADs that are matched to a ground-truth AD under the tIoU thresholds. 
+
+D.2.3 Diagnostics 
+
+Diagnostic metrics target streaming-specific failure modes, for which we report REP and OL. 
+
+REP or repetition is the percentage of time-ordered consecutive AD pairs (pi, p i+1 ) across all videos for which METEOR (pi, p i+1 ) = 1 , i.e., exact duplicates. 
+
+OL or overlap is the fraction of the total predicted AD duration overlapping transcribed speech. 
+
+D.2.4 Efficiency 
+
+Efficiency metrics reflect runtime cost, for which we report the real time factor (RTF) and lag over all AD-emitting windows. Thus, WAIT signals or skipping transcript is not measured. Efficiency measurements must be run on a single A100 GPU with a batch size of one. 
+
+RTF is the average ratio RTF = 1
+
+> N
+
+PNi=1 twall  
+
+> i
+
+/δ i between per-window generation latency twall  
+
+> i
+
+and the streaming advance step δi, with RTF < 1 meaning the model runs faster than real time. Note that a window only counts to N if it predicts an actual AD event. 
+
+LAG is the average LAG = 1
+
+> N
+
+PNi=1 (ti − tstart  
+
+> i
+
+), where tstart  
+
+> i
+
+is the start timestamp of the first newly emitted AD in window i and ti is its emission time or cursor position. 
+
+D.3 Reproducibility of Metrics 
+
+Some metrics are shared as loose code snippets, which compromises reproducibility. We validate our metric implementation by running published predictions against the published results. Results for AutoAD-III [14], AutoAD-Zero [51] and Shot-by-shot [52] are available for CMD-AD. Some published results for AutoAD-III and AutoAD-Zero are reported by Xie et al. [52]. The results are shown in Table 5. We see that Recall@1/5 [13], CRITIC [14], and LLM-AD-Eval [14] differ across models. 20 Table 6: Segment-level evaluation on CMD-AD.                                                        
+
+> CMD-AD Method CIDEr ↑R@1/5 ↑CRITIC ↑ActionScore ↑LLM-AD-Eval ‡↑
+> Fine-tuned AutoAD-II [13] 13.5 26.1 8.2 2.08 | AutoAD-III [14] 25.0 31.2 32.7 31.5 2.89 | 2.01 DistinctAD [9] 22.7 33.0 2.88 | 2.03 AutoAD-III [14] †21.6 30.2 26.7 32.9 3.26 | 2.35 Phi-4-mm (ours) 29.8 35.6 29.6 34.7 3.35 | 2.51 Qwen-3.5 (ours) 36.3 38.0 31.8 37.7 3.44 | 2.74 Zero-shot AutoAD-Zero [51] 17.7 26.9 43.7 25.5 2.83 | 1.96 Shot-by-shot [52] 26.3 33.0 47.8 28.4 3.15 | 2.42 Shot-by-shot ⋆[52] 26.1 36.5 49.1 32.5 3.17 | 2.66 Qwen-3.5 (ours) 18.8 29.8 44.0 32.0 3.48 |2.86
+
+We found that Recall@1/5 predictions must be sorted first by IMDb ID (movie), then by YouTube ID, and finally by start timestamp, yielding a single, correctly-ordered sequence of predictions and references across all videos and clips. Clips that have fewer ground-truth AD events than N are skipped. The micro-average over all windows is reported as the final score. This can yield unwanted boundary effects. Other approaches may use a different ordering or python package versions affecting the final score. For CRITIC, we achieve a reasonably close score for AutoAD-III [14], the work that introduced the metric. The gap is considerably larger for Shot-by-shot [52], where we obtain 43.2 against the reported 49.1. Since the CIDEr scores match, issues with the published predictions are unlikely. More plausible causes are again differences in averaging or python package versions. Our LLM-AD-Eval implementation tends to achieve slightly higher scores than those reported for Llama-2-7B and Llama-3-8B. The reason is likely differences in language model execution such as numerical precision, hardware, or frameworks. In summary, our implementation reproduces published results closely enough to validate its correct-ness, while the residual discrepancies illustrate why loose code snippets are insufficient for reliable benchmarking. This motivates the unified, executable evaluation suite we release with StrAD. 
+
+## E Impact of an Incomplete CMD-AD Test Set 
+
+The CMD-AD test split is based on 98 movies and originally contains 591 clips with 7,316 AD events [3, 14]. We evaluate on the 551 clips (93.2 %, 6,740 AD events) still available at the time of publication. To validate the impact of the incomplete test set, we compare complete against incomplete predictions using the setup described in Section D.3. The results are reported in Table 5. The CIDEr score drops by -0.2 for AutoAD-III [14], 0.0 for AutoAD-Zero [51], and -0.4 for Shot-by-shot [52]. CRITIC is affected by +0.6 for AutoAD-III, -0.5 for AutoAD-Zero, and -0.4 for Shot-by-shot. Recall@1/5, ActionScore and LLM-AD-Eval are only minimally or not affected. Across all metrics, the differences between complete and incomplete evaluation are small and do not change the relative ranking of methods, confirming that results obtained on the available 551 clips remain comparable to those reported on the full CMD-AD test split. 
+
+## F Extended Segment-level Results 
+
+We provide extended results for the segment-level tasks on CMD-AD [3, 14], MAD-Eval [38, 12] and StrAD in Tables 6 to 8. Specifically, the tables report the ActionScore for CMD-AD, MAD-Eval, and LLM-AD-Eval for each dataset. StrAD-FT models with the randpad tag are trained with random padding δp ∼ U (0 , 2) s for the segment-level task instead of fixed padding δp = 2 s. 21 Table 7: Segment-level evaluation on MAD-Eval.                                                  
+
+> MAD-Eval Method CIDEr ↑R@5/16 ↑ActionScore ↑LLM-AD-Eval ‡↑
+> Fine-tuned AutoAD-II [13] 19.5 51.3 AutoAD-III [14] 24.0 52.8 MovieSeq [25] 24.4 51.6 DistinctAD [9] 27.3 56.0 UniAD [46] 28.2 54.9 AutoAD-III [14] †21.7 51.1 33.8 3.30 | 2.44 StrAD-FT (Phi-4-mm, ours) 19.4 49.9 32.5 2.89 | 2.24 StrAD-FT (Qwen-3.5, ours) 24.9 54.8 39.3 3.08 | 2.60 Zero-shot MM-Narrator ⋆[55] 13.9 49.0 LLM-AD ⋆[8] 20.5 AutoAD-Zero [51] 22.4 47.0 Shot-by-shot [52] 25.0 50.6 StoryContext-AD [54] 26.0 50.3 NarrAD ⋆[28] 26.4 54.0 Shot-by-shot ⋆[52] 26.9 56.4 StrAD-Zero (Qwen-3.5, ours) 22.0 57.1 34.6 3.52 |3.12
+
+Table 8: Segment-level evaluation on StrAD.                  
+
+> StrAD Method CIDEr ↑R@5/16 ↑LLM-AD-Eval ‡↑
+> AutoAD-III [14] †17.5 45.2 2.96 | 2.07 StrAD-FT (Phi-4-mm, ours) 32.3 52.6 3.13 | 2.33 StrAD-FT (Qwen-3.5, ours) 51.0 57.9 3.26 | 2.66 StrAD-Zero (Qwen-3.5, ours) 12.6 45.8 3.41 |2.80
+
+## G Per-Genre Results for StrAD 
+
+To provide insights into per-genre performance on StrAD, we report evaluation results for each genre subset for the segment-level task in Table 9 and for the streaming task in Table 10. 
+
+## H Qualitative Examples 
+
+We provide qualitative examples on two videos from StrAD. Figure 9 gives a full view: for each video, we plot AD events as time-aligned bars for the ground truth, both fine-tuned StrAD-FT variants (Qwen-3.5 and Phi-4-mm), and the zero-shot StrAD-Zero baseline. We observe that fine-tuned models tend to be more verbose, while zero-shot approaches produce longer AD sentences. Figures 10 and 11 zoom into a 60-second segment of each video and show the corresponding video frames together with the transcribed dialogue and the AD stream produced by each model. 
+
+## I Asset Licenses 
+
+Table 11 lists the license of each existing asset used in this work. 22 Table 9: Segment-level evaluation on StrAD broken down by genre. 
+
+StrAD Method CIDEr ↑ R@5/16 ↑ LLM-AD-Eval ‡↑
+
+Documentary (8 videos, 979 GT events) 
+
+StrAD-Zero (Qwen-3.5, zero-shot) 8.9 43.3 3.38 | 2.77 
+
+AutoAD-III [14] 17.0 45.5 2.87 | 1.89 StrAD-FT (Phi-4-mm, randpad) 27.2 50.2 3.25 | 2.41 StrAD-FT (Phi-4-mm) 39.4 53.2 2.98 | 2.12 StrAD-FT (Qwen-3.5, randpad) 57.2 55.4 3.25 | 2.47 StrAD-FT (Qwen-3.5) 65.0 57.2 3.09 | 2.36 
+
+Game (8 videos, 2281 GT events) 
+
+StrAD-Zero (Qwen-3.5, zero-shot) 11.7 44.9 3.37 | 2.65 
+
+AutoAD-III [14] 15.8 44.2 3.04 | 2.04 StrAD-FT (Phi-4-mm, randpad) 19.6 48.9 3.36 | 2.37 StrAD-FT (Phi-4-mm) 25.6 48.9 3.13 | 2.19 StrAD-FT (Qwen-3.5, randpad) 33.4 54.0 3.40 | 2.63 StrAD-FT (Qwen-3.5) 40.3 56.4 3.27 | 2.52 
+
+Movie (5 videos, 4159 GT events) 
+
+StrAD-Zero (Qwen-3.5, zero-shot) 12.6 46.6 3.46 | 2.83 
+
+AutoAD-III [14] 18.8 45.3 2.96 | 2.12 StrAD-FT (Phi-4-mm, randpad) 21.3 48.5 3.30 | 2.49 StrAD-FT (Phi-4-mm) 31.7 52.0 3.04 | 2.14 StrAD-FT (Qwen-3.5, randpad) 45.8 56.6 3.36 | 2.81 StrAD-FT (Qwen-3.5) 52.4 58.2 3.25 | 2.70 
+
+Performance (1 video, 596 GT events) 
+
+AutoAD-III [14] 12.4 41.6 2.98 | 2.20 StrAD-Zero (Qwen-3.5, zero-shot) 13.3 44.5 3.80 | 3.50 StrAD-FT (Phi-4-mm, randpad) 30.1 49.6 3.70 | 3.39 StrAD-FT (Phi-4-mm) 37.8 51.8 3.62 | 3.21 StrAD-FT (Qwen-3.5, randpad) 47.7 56.1 3.76 | 3.57 
+
+StrAD-FT (Qwen-3.5) 56.2 57.0 3.69 | 3.49 
+
+Short Film (11 videos, 1116 GT events) 
+
+StrAD-Zero (Qwen-3.5, zero-shot) 14.1 47.4 3.17 | 2.64 AutoAD-III [14] 18.0 47.9 2.86 | 2.02 StrAD-FT (Phi-4-mm, randpad) 22.6 55.3 3.35 | 2.64 StrAD-FT (Phi-4-mm) 29.7 55.3 3.13 | 2.39 StrAD-FT (Qwen-3.5, randpad) 40.6 58.6 3.35 | 2.71 
+
+StrAD-FT (Qwen-3.5) 49.3 60.5 3.23 | 2.61 
+
+23 Table 10: Streaming evaluation on StrAD broken down by genre. 
+
+Quality Localization Diagnostics Method SODA ↑ CIDEr ↑ METEOR ↑ R↑ P↑ REP ↓ OL ↓
+
+Documentary (8 videos, 979 GT events) 
+
+StrAD-Zero (Qwen-3.5, zero-shot) 0.6 7.3 4.6 18.5 44.3 2.3 30.3 StrAD-FT (Phi-4-mm) 1.6 28.8 6.9 41.7 52.1 15.7 3.3 StrAD-FT (Phi-4-mm, randpad) 1.7 23.5 5.7 44.1 50.5 18.7 2.3 
+
+StrAD-FT (Qwen-3.5, randpad) 2.3 37.8 7.6 45.3 55.3 0.2 2.7 StrAD-FT (Qwen-3.5) 2.6 54.4 10.0 47.5 54.5 0.0 2.4 
+
+Game (8 videos, 2281 GT events) 
+
+StrAD-Zero (Qwen-3.5, zero-shot) 0.7 8.1 4.3 24.3 46.4 2.4 12.2 StrAD-FT (Phi-4-mm) 1.5 14.6 4.8 50.0 56.6 12.7 2.3 StrAD-FT (Phi-4-mm, randpad) 2.0 21.9 6.6 50.0 55.9 16.3 1.8 
+
+StrAD-FT (Qwen-3.5, randpad) 2.1 22.6 8.2 51.6 60.6 0.4 3.3 StrAD-FT (Qwen-3.5) 2.3 40.2 7.7 53.2 61.0 0.2 2.3 
+
+Movie (5 videos, 4159 GT events) 
+
+StrAD-Zero (Qwen-3.5, zero-shot) 1.2 8.4 5.0 40.3 56.5 2.7 5.2 StrAD-FT (Phi-4-mm, randpad) 1.6 8.7 4.6 66.4 59.1 27.8 1.9 StrAD-FT (Phi-4-mm) 1.7 10.7 4.7 65.3 59.0 22.2 2.1 StrAD-FT (Qwen-3.5, randpad) 2.2 17.8 6.5 64.6 60.9 0.3 1.1 StrAD-FT (Qwen-3.5) 2.2 18.4 6.2 65.4 60.7 0.8 0.9 
+
+Performance (1 video, 596 GT events) 
+
+StrAD-Zero (Qwen-3.5, zero-shot) 1.6 7.5 5.8 50.8 44.4 13.7 3.3 StrAD-FT (Phi-4-mm, randpad) 1.6 6.3 4.6 58.1 39.9 39.4 1.4 StrAD-FT (Phi-4-mm) 1.8 6.0 4.8 56.2 39.1 43.6 1.5 StrAD-FT (Qwen-3.5) 2.0 10.0 5.3 58.1 39.5 3.0 1.3 
+
+StrAD-FT (Qwen-3.5, randpad) 2.1 10.1 5.4 59.6 40.5 3.3 1.9 
+
+Short Film (11 videos, 1116 GT events) 
+
+StrAD-Zero (Qwen-3.5, zero-shot) 1.6 12.7 5.7 41.5 62.5 2.5 4.5 StrAD-FT (Phi-4-mm) 1.7 11.7 4.7 70.4 58.2 13.4 1.1 StrAD-FT (Qwen-3.5, randpad) 2.1 17.8 5.6 67.3 58.4 0.0 0.7 StrAD-FT (Phi-4-mm, randpad) 2.2 17.4 5.8 71.3 58.5 19.7 0.8 StrAD-FT (Qwen-3.5) 2.6 23.9 6.3 70.4 58.0 0.3 0.5 
+
+Table 11: Licenses of existing assets used in this work. 
+
+Asset Type License Phi-4-multimodal-instruct [1] Model MIT Qwen-3.5 [31] Model Apache 2.0 Llama-2-7B [41] Model Llama 2 Community License Llama-3-8B [42] Model Llama 3 Community License VideoLLaMA2 [7] Model Apache 2.0 Whisper [32] Model Apache 2.0 Silero VAD [43] Model MIT pyannote.audio [30] Model MIT CMD-AD [3, 14] Dataset CC BY 4.0 MAD [38, 12] Dataset Research-only (NDA) describealign Code GPL-3.0 vLLM [20] Code Apache 2.0 Optuna [2] Code MIT Transformers [48] Code Apache 2.0 Accelerate [11] Code Apache 2.0 PyTorch [29] Code BSD-3-Clause WebDataset Code BSD-3-Clause 
+
+24 00:00 00:07 00:15 00:22 00:30 00:37 00:45 00:53 Ground Truth StrAD-FT (Phi-4-mm) StrAD-FT (Qwen-3.5) StrAD-Zero (Qwen-3.5) (a) The Sense of Sight . Original video: youtu.be/Oph8kL_Z4c4 ; audio-described version: youtu.be/ fNV8TUqjfbQ .00:00 02:41 05:22 08:04 10:45 13:26 16:08 18:49 Ground Truth StrAD-FT (Phi-4-mm) StrAD-FT (Qwen-3.5) StrAD-Zero (Qwen-3.5) 
+
+(b) Elden Ring—Gameplay Preview . Original video: youtu.be/JldMvQMO_5U ; audio-described version: 
+
+youtu.be/neQPEIAqpQ8 .
+
+Figure 9: Full streaming output overview. AD events for the ground truth, our fine-tuned Qwen-3.5 and Phi-4-mm StrAD-FT variants, and the zero-shot StrAD-Zero baseline, placed on the full video timeline. Each bar marks the start and duration of an emitted AD. 25 Frames Ground Truth StrAD-FT (Phi-4-mm) StrAD-FT (Qwen-3.5) StrAD-Zero (Qwen-3.5) 
+
+00:00 00:04 00:09 00:13 00:18 00:23 00:27 00:32 00:37 00:41 00:46 00:51 00:55 A stack of paper rests on the floor with the 
+
+The words disappear as a young man retrieve 
+
+He holds the boat up 
+
+With a smile, he folds and tosses one after 
+
+Holding another boat to his chin, he gazes aimlessly forward with eyes that are cloudy 
+
+He shuts his eyes and as he opens them, the room transforms into 
+
+His now brown eyes follow the paper boat 
+
+The boat slowly ascends, joining hundreds of identical 
+
+The man sits on the grass field watching 
+
+The Sense of Sight, directed by Vlad 
+
+The book, The Sense 
+
+A hand reaches down and picks it up, then 
+
+The book is picked up and turned over, then 
+
+A man in a black shirt picks up the folded 
+
+The man picks up the folded paper boat and tosses it aside, then 
+
+He tosses it, then picks up the other one and 
+
+The man picks up the last one and holds it up, then looks at the othe 
+
+He closes his eyes, then opens them and 
+
+He holds the last one in his hand and looks at 
+
+He looks at the paper boats, then tosses the 
+
+It rises into the air, then descends, spinning a 
+
+It spins and twirls, then falls to the ground, 
+
+The man sits down in the grass, then looks 
+
+The man looks at the book, The Sense of 
+
+The words, the sense of sight, edited by, directed by, and produced by, 
+
+The title of the film, T 
+
+A pair of hands opens a script and flips throug 
+
+Later, a young man folds a piece of paper into a pyramid shape 
+
+He sets it on a table a 
+
+He picks it up and unfolds it, then folds it 
+
+He throws it onto the floor and watches it 
+
+He gathers all the folded pieces of pape 
+
+In a park, he stands with his eyes closed and holds the folded 
+
+He opens his eyes and looks up at the sky, th 
+
+He gently tosses the paper into the air and 
+
+It lands on the ground and bounces towards 
+
+As it bounces higher and higher, it transfor 
+
+The diamonds float upwards and merge 
+
+The camera pulls back from the boy sitting 
+
+Now, hundreds of paper boats are spread acro 
+
+He picks up a book titled "The Sense of Sight" and flips through its pages. He folds a piece of white paper into a boat and holds it up. He folds a piece of paper into a boat and throws it onto the floor. He folds a piece of paper into a boat and throws it onto the floor. He grabs a piece of paper and holds it up. He holds a white object and brings it closer to his face. He releases the paper airplane into the air and watches it fly toward the trees. Figure 10: Side-by-side qualitative comparison on The Sense of Sight . Sampled frames, the transcribed dialogue, and the AD stream emitted by the ground truth, both StrAD-FT variants, and the StrAD-Zero baseline. Original video: youtu.be/Oph8kL_Z4c4 ; audio-described version: 
+
+youtu.be/fNV8TUqjfbQ .26 Frames Ground Truth StrAD-FT (Phi-4-mm) StrAD-FT (Qwen-3.5) StrAD-Zero (Qwen-3.5) 
+
+13:00 13:04 13:09 13:13 13:18 13:23 13:27 13:32 13:36 13:41 13:46 13:50 13:55 The guards don't kno 
+
+You'll breach the castle undetected. Two choices appear and the warrior choos 
+
+Fair enough, you certainly don't have to trust me If you must go through the gates, I'll signal them to open. But of course, I'd advise against it. At the iron gate, the gates rise. The warrior heads forth, immediately takes a barrage of projectiles 
+
+Realizing the man was right, he goes back to the dining hall hall an 
+
+The main route seems risky, so we'll try entering through a ba 
+
+The dragon's head ris 
+
+The dragon's head turns to the rider and the rid 
+
+The dragon's head tur 
+
+The rider turns and walks through a small 
+
+He looks around and sees a large stone 
+
+He looks around and sees a large stone 
+
+The rider looks around and sees the dragon's 
+
+He looks around and sees the dragon's hea 
+
+He looks around and sees the dragon's hea 
+
+He looks around and sees the dragon's hea 
+
+He climbs a wall. The player selects an 
+
+A message appears, 
+
+The player leaves the 
+
+In the courtyard, he passes a large statue 
+
+He approaches the double doors and find 
+
+The player opens the opening and steps inside, finding himself 
+
+He walks down the hall and finds a staircase 
+
+At the top of the stairs, he finds a series of 
+
+As he approaches them, they shoot out 
+
+Now, the player enter 
+
+He climbs over a low 
+
+He runs through the dimly lit stone corridor and bursts into the open courtyard. He holds up an object emitting a blue light while facing the large ornate gate. He enters the dimly lit room, approaches the archway, and leaps through it with dynami Figure 11: Side-by-side qualitative comparison on Elden Ring—Gameplay Preview (780–840 s). 
+
+Sampled frames, the transcribed dialogue, and the AD stream emitted by the ground truth, both StrAD-FT variants, and the StrAD-Zero baseline. Original video: youtu.be/JldMvQMO_5U ; audio-described version: youtu.be/neQPEIAqpQ8 .27
