@@ -6,44 +6,32 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-08-15
-- 运行时间：2026-08-15 19:40:19 UTC
+- 最新运行日期：2026-08-16
+- 运行时间：2026-08-16 19:10:22 UTC
 - 运行状态：成功
-- 本次总论文数：7
-- 精读区：3
-- 速读区：4
+- 本次总论文数：4
+- 精读区：1
+- 速读区：3
 
 ### 今日简报（AI）
-- 今日共生成 7 篇推荐（精读 3 篇，速读 4 篇）
-- 精读：《CookVoice: Unified Framework for Style Controllable Multi-Modal Human Voice Generation》（9.0/10）, 《Structured Phonological Representations for Audio-Articulatory rtMRI Speech Classification》（8.0/10）
-- 速读：《HybridSB-MoE: Dual-Domain Schrödinger Bridges with Scene-Adaptive Expert Routing for Speech Enhancement》（7.0/10）, 《Deep Learning Based Relative Transfer Matrix Estimation for Multiple Sources and Multiple Microphones》（6.0/10）, 《HarmoniDPO: Video-guided Audio Generation via Preference-Optimized Diffusion》（6.0/10）
-- 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
-- 详情：[/202608/15/README](/202608/15/README)
+今日聚焦语音分离与增强：精读AR眼镜阵列双耳目标说话人提取，另速读长语音分离、去抑制修正及混合专家增强三篇。最值得关注的是8.0分的《BiTSE》，其在嘈杂多说话人场景下实现双耳目标提取；7.0分的动态聚类法也为长语音跨段排列对齐提供新思路。建议普通读者优先查看这两篇的高分工作，后续可留意场景自适应与阵列信号结合的方向。
+- 详情：[/202608/16/README](/202608/16/README)
 
 ### 精读区论文标签
-1. [CookVoice: Unified Framework for Style Controllable Multi-Modal Human Voice Generation](/202608/15/2608.11590v2-cookvoice-unified-framework-for-style-controllable-multi-modal-human-voice-generation)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：统一的多模态人声生成框架，支持语音和歌声风格控制
-2. [Structured Phonological Representations for Audio-Articulatory rtMRI Speech Classification](/202608/15/2608.09767v1-structured-phonological-representations-for-audio-articulatory-rtmri-speech-classification)  
+1. [BiTSE: Binaural Target Speaker Extraction in Noisy Multi-Talker Environments for AR Glass Arrays](/202608/16/2608.10106v1-bitse-binaural-target-speaker-extraction-in-noisy-multi-talker-environments-for-ar-glass-arrays)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：音频-发音语音分类与音系特征
-3. [StrAD: A Streaming Method and Benchmark for Audio Description Generation for Long-form Videos](/202608/15/2608.12549v1-strad-a-streaming-method-and-benchmark-for-audio-description-generation-for-long-form-videos)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：长视频音频描述生成基准，提供语音/音频数据集与评测
+   evidence：面向嘈杂多说话人环境的双耳目标说话人提取方法
 
 ### 速读区论文标签
-1. [HybridSB-MoE: Dual-Domain Schrödinger Bridges with Scene-Adaptive Expert Routing for Speech Enhancement](/202608/15/2608.12715v1-hybridsb-moe-dual-domain-schrdinger-bridges-with-scene-adaptive-expert-routing-for-speech-enhancement)  
+1. [Dynamic Clustering for Cross-Segment Permutation Alignment in Long Speech Separation](/202608/16/2608.09451v1-dynamic-clustering-for-cross-segment-permutation-alignment-in-long-speech-separation)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：语音增强属于语音音频核心主题，但未对应具体细分需求
-2. [Deep Learning Based Relative Transfer Matrix Estimation for Multiple Sources and Multiple Microphones](/202608/15/2608.11627v1-deep-learning-based-relative-transfer-matrix-estimation-for-multiple-sources-and-multiple-microphones)  
+   evidence：语音分离中的跨段置换对齐，属于核心语音/音频处理
+2. [Mitigating Over-Suppression in Speech Enhancement via Inference-Time Rethink-and-Refine Correction Module](/202608/16/2608.07781v1-mitigating-over-suppression-in-speech-enhancement-via-inference-time-rethink-and-refine-correction-module)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：深度学习相对传递矩阵估计，是语音增强/音频处理的基础方法
-3. [HarmoniDPO: Video-guided Audio Generation via Preference-Optimized Diffusion](/202608/15/2608.11913v1-harmonidpo-video-guided-audio-generation-via-preference-optimized-diffusion)  
+   evidence：语音增强过度抑制的推理时校正方法
+3. [HybridSB-MoE: Dual-Domain Schrödinger Bridges with Scene-Adaptive Expert Routing for Speech Enhancement](/202608/16/2608.12715v1-hybridsb-moe-dual-domain-schrdinger-bridges-with-scene-adaptive-expert-routing-for-speech-enhancement)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：偏好优化扩散用于音频生成，可迁移到文本到音频合成
-4. [CASA: Content-Acoustic Speaking Assessment with Speech Encoder and Large Language Model](/202608/15/2608.13101v1-casa-content-acoustic-speaking-assessment-with-speech-encoder-and-large-language-model)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：结合语音编码器与大语言模型的口语自动评估
+   evidence：基于双域薛定谔桥的语音增强
 
 
 <div class="dpr-home-promo-card">
