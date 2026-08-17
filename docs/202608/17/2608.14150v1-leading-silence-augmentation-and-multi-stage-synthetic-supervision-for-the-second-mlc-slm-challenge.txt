@@ -1,0 +1,196 @@
+Title: Leading-Silence Augmentation and Multi-Stage Synthetic Supervision for the Second MLC-SLM Challenge
+
+URL Source: https://arxiv.org/pdf/2608.14150v1
+
+Published Time: Mon, 17 Aug 2026 00:40:11 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# Leading-Silence Augmentation and Multi-Stage Synthetic Supervision for the Second MLC-SLM Challenge 
+
+# Kexin Shi 1,2∗, Renhe Sun 1∗, Yuge Huang 1, Ximeng Wang 2, Jiayi Zhou 1, Jian Liu 1, Malu Zhang 21Ant Group, 2UESTC 
+
+skx534179@antgroup.com, sunrenhe.srh@antgroup.com 
+
+# Abstract 
+
+The second Multilingual Conversational Speech Language Model (MLC-SLM) Challenge evaluates two tasks over com-plete, unsegmented multilingual conversations: speaker diariza-tion and recognition (Task 1) and conversational speech un-derstanding (Task 2). Neither task provides oracle utterance boundaries or speaker labels at evaluation, and Task 2 pro-vides no question–answer training set. For Task 1, we fine-tune VibeVoice-ASR-7B with random leading-silence cropping, con-sistent timestamp correction, and an exponential moving average (EMA) training strategy. For Task 2, we construct synthetic question–answer pairs through multimodal candidate generation, silent-audio filtering, and distribution-matched augmentation, and fine-tune Qwen3-Omni-30B-A3B-Instruct for tagged di-rect answering. On the Task 1 evaluation set, cropping reduces tcpMER from 18.30% to 17.27%, and EMA further reduces it to 16.73%. On the Task 2 evaluation set, jointly applying distribution-matched augmentation and tagged direct answering raises accuracy from 83.0% to 86.0%. 
+
+Index Terms : multilingual conversational speech, speaker di-arization, automatic speech recognition, spoken language under-standing, synthetic supervision 
+
+# 1. Introduction 
+
+The second Multilingual Conversational Speech Language Model (MLC-SLM) Challenge evaluates two tasks over com-plete, unsegmented multilingual conversations. Task 1 combines speaker diarization and recognition, whereas Task 2 evaluates acoustic, semantic, and joint acoustic–semantic understanding through single-answer multiple-choice questions. At evaluation, neither task provides oracle utterance boundaries or speaker la-bels, and Task 2 provides only development examples rather than a question–answer training set [1]. These settings combine long-form speaker-attributed transcription with supervision-scarce conversation-level audio understanding. Task 1 is closely related to end-to-end speaker-attributed ASR, which jointly predicts transcription and speaker informa-tion and can be extended to continuous recordings and word-level timing [2, 3, 4]. Long recordings without oracle utterance bound-aries remain especially challenging [5]. We retain the single-pass VibeVoice-ASR-7B backbone [6] and modify only fine-tuning: random leading-silence cropping varies the temporal origin, con-sistent timestamp correction preserves annotation alignment, and an EMA training strategy tracks the trainable parameters. Task 2 must construct task-matched supervision from the released audio. Long-form audio models still struggle with localization, temporal reasoning, counting, and non-phonemic information on full-length recordings [7]. Large synthetic audio-QA corpora and long-audio QA data have supported instruction-
+
+> ∗
+
+These authors contributed equally to this work. 
+
+tuned audio understanding [8, 9], but audio-contribution filtering shows that some multiple-choice examples remain answerable when the audio is replaced by silence [10]. We therefore generate candidate question–answer pairs, apply silent-audio filtering and distribution-matched augmentation, and fine-tune Qwen3-Omni-30B-A3B-Instruct [11] for tagged direct answering. We use one submitted prediction model per task, without model-, score-, or output-level fusion. Our main contributions and findings are: • In the cumulative Task 1 ablation, the LoRA baseline obtains 18.30% tcpMER; adding leading-silence cropping with timestamp correction yields 17.27%, and adding EMA on top yields 16.73%. • For Task 2, the pipeline produces approximately 127k synthetic examples. On evaluation set, the final cumu-lative configuration with distribution-matched augmen-tation and tagged direct answering raises accuracy from 83.0% to 86.0%. 
+
+# 2. System Description 
+
+2.1. Task 1: Multilingual Conversational Speech Diarization and Recognition 
+
+2.1.1. Backbone and Task Formulation 
+
+We use VibeVoice-ASR-7B as the Task 1 backbone. The model supports recordings of up to 60 minutes, more than 50 languages, and code-switching [6], making it suitable for multilingual con-versational speech. We fine-tune it on complete challenge record-ings and serialize its predictions directly in the official output format. We retain the original architecture and single-pass formula-tion. In a single pass, the model encodes each complete recording and emits a temporally ordered sequence of transcripts, speaker identities, and timestamps. Our changes affect only fine-tuning and leave the decoder architecture and output format unchanged. Figure 1 summarizes the system. 
+
+2.1.2. Random Leading-Silence Cropping 
+
+Established ASR augmentation methods perturb waveform speed [12] or mask time–frequency regions in acoustic fea-tures [13]. Random leading-silence cropping instead targets variation in the temporal origin and leading non-speech context while preserving the annotated speech. Because the amount of non-speech audio before the first annotated utterance varies across recordings, we randomly remove part of this region during fine-tuning. For a recording of duration T whose first annotated segment begins at s1, we sample a crop duration δ according to the training-time cropping policy, subject to 0 ≤ δ ≤ s1, and remove the interval [0 , δ ).arXiv:2608.14150v1 [cs.CL] 14 Aug 2026 Figure 1: Overview of our Task 1 system, which retains the original VibeVoice-ASR backbone and adds random leading-silence cropping with consistent timestamp correction. 
+
+After cropping, we shift every annotated timestamp by the same offset: 
+
+s′ 
+
+> i
+
+= si − δ, e′ 
+
+> i
+
+= ei − δ, T ′ = T − δ. (1) The constraint δ ≤ s1 ensures that no annotated speech is re-moved. A common shift preserves transcripts, speaker labels, turn order, segment durations, and relative timing; only the lead-ing non-speech context, absolute time origin, and total recording duration change. This augmentation changes the temporal presentation of an existing example without synthesizing a new conversation or perturbing internal speaker-turn boundaries. Consequently, the aggregate ablation measures the effect of leading-silence augmentation but does not directly establish robustness to turn-boundary errors. 
+
+2.1.3. EMA Training Strategy 
+
+During fine-tuning, we maintain an exponential moving average of the trainable parameters [14]. After optimizer step t, the EMA state is updated as 
+
+¯θt = λ ¯θt−1 + (1 − λ)θt, (2) where θt denotes the current trainable parameters, ¯θt denotes the EMA state, and λ is the decay coefficient. We set λ = 0 .99 
+
+and update the EMA state after every optimizer step throughout fine-tuning. EMA is applied throughout fine-tuning and does not alter decoding or output serialization. Table 1 reports the cumulative configuration in which EMA is added after random leading-silence cropping. 
+
+2.1.4. Training Configuration 
+
+We fine-tune VibeVoice-ASR-7B using low-rank adaptation (LoRA) [15]. The LoRA rank, scaling factor, and dropout prob-ability are set to 32, 128, and 0.05, respectively, and training runs for five epochs. Each of the 16 data-parallel workers uses a per-device batch size of 1 with four gradient-accumulation steps, resulting in an effective global batch size of 64. The optimization configuration uses a learning rate of 
+
+1 × 10 −4, a warmup ratio of 0.03, weight decay of 0.01, and gra-dient clipping with a maximum norm of 1.0. We reduce memory consumption through gradient checkpointing [16], bfloat16 arith-metic, and DeepSpeed ZeRO-2 [17]. Random leading-silence cropping, timestamp correction, and the EMA training strategy remain enabled throughout fine-tuning. 
+
+2.2. Task 2: Multilingual Conversational Speech Under-standing 
+
+2.2.1. Foundation Model and Prediction Format 
+
+Qwen2-Audio demonstrates general audio analysis and instruction-conditioned interaction within the Qwen audio-language model line [18]. Following this broader trend, our Task 2 system uses Qwen3-Omni-30B-A3B-Instruct as its sole prediction model [11]. Each instance is formatted as a user message containing the complete conversation au-Gemini-2.5 Pro 
+
+Specifically Designed Prompt 
+
+> Matched to task, language, and temporal expression patterns.
+
+Training Audio Audio Transcript 
+
+> t1 t2 spk text
+
+～210k 
+
+> Synthetic initial QA candidates
+
+Silent-Audio Filtering 
+
+Silent Audio Replacement 
+
+> Replace the original speech with a silent audio.
+
+Qwen2.5-Omni-7B   
+
+> Audio Independent Audio Dependent
+> Incorrect Answer Correct Answer
+> Filter Out Preserve
+
+67k 
+
+> Audio-Dependent Hard Samples
+
+Distribution-matched Augmentation 
+
+Adapt to Evaluation Set   
+
+> Option Lengths in Hard Examples
+> Avg. 38.0
+> chars Option Lengths in Evaluation Set
+> Avg. 77.9
+> chars
+> >
+> Non-English Speech English Questions and options
+> Translate Synthesize
+> Translate the
+> non-English
+> questions and options into English
+> Synthesize new samples to match the
+> distribution of option lengths .
+
+～60k 
+
+> Augmented Samples
+
+～127k 
+
+> Full Training Dataset
+
+Unified IF Format 
+
+> {“audios”: <speech_001.wav>, “messages”: [ {“role”: “user”, “content”: <audio>Question. Please choose the answer from the following options:[‘’Option A”, “Option B”, “Option C”, “Option D”]. Output the final answer in <answer> </answer>.” }, {“role”: “assistant”, “content”: “<answer>Answer.</answer>” }}
+
+Candidate Generation Serialization Figure 2: Task 2 synthetic-supervision pipeline: candidate generation, silent-audio filtering, distribution-matched augmentation, and unified instruction-format serialization. 
+
+dio, one single-answer question, two to four candidate op-tions, and an instruction to enclose the selected answer within 
+
+<answer></answer> tags. The model processes the original conversation audio directly, without relying on an externally generated transcript. It therefore retains access to both lexical content and non-lexical acoustic cues. The tagged answer format provides a consistent supervi-sion target and facilitates uniform prediction extraction during evaluation. Figure 2 summarizes the complete Task 2 pipeline. 
+
+2.2.2. Synthetic Training Data 
+
+Candidate generation. Synthetic instruction generation offers a scalable alternative when task-specific supervision is scarce [19], and prior audio-language work has extended this strategy to large question–answer corpora [8]. We use Gemini 2.5 Pro [20] to generate approximately 210k candidate question–answer pairs from the released training audio. The prompts follow the released development examples in question type, language, timestamp style, and the required two-to-four-option, single-answer format. 
+
+Silent-audio filtering. Some generated questions may be an-swerable from textual priors or option artifacts rather than evi-dence in the associated conversation. Audio-language models can favor textual input when audio and text disagree [21], and recent audio-QA work has identified multiple-choice examples with little or no audio contribution and used audio-contribution filtering to separate them [10]. To reduce such cases, we use Qwen2.5-Omni-7B [22] as a counterfactual filter. For each can-didate, we retain the question, options, and expected answer but replace the original audio with silence. We discard candidates that are still answered correctly and retain those for which the prediction becomes incorrect. This procedure retains approxi-mately 67k pairs, or 32% of the candidate pool. It increases the likelihood that retained questions depend on audio evidence but does not by itself guarantee acoustic grounding. 
+
+Distribution-matched augmentation. Translation-based mul-tilingual AQA has previously expanded an audio-QA corpus across eight question languages [23]. Relative to the released development examples, the evaluation inputs contain longer op-tions on average (77.9 versus 38.0 characters) and pair some non-English conversations with English questions and options. Using these aggregate, label-free input properties, we translate selected training questions and synthesize long-option examples, producing approximately 60k additional instances. No question, option set, or answer from the evaluation set is copied into the training data. 
+
+Serialization. All retained and augmented examples are con-verted to a common chat-style schema. During training, the user message contains the audio placeholder, question, candidate op-tions, and output instruction, whereas the assistant message con-tains only the gold answer enclosed by <answer></answer> 
+
+tags. At evaluation, the model receives only the user message. 
+
+2.2.3. Training, Inference, and Challenge Compliance 
+
+We fine-tune Qwen3-Omni using LoRA [15]. The LoRA pa-rameters, visual transformer (ViT), and modality aligner remain trainable, while all other parameters are frozen. Training uses a learning rate of 5×10 −5 for two epochs, with a micro-batch size of 4 and a global batch size of 64 across 16 accelerator devices. At inference, sampling is disabled and the implemen-tation sets the temperature to 0.0. The text enclosed by 
+
+<answer></answer> tags is extracted as the prediction. Each task submission is produced by a single trained model, without model-, score-, or output-level fusion. Gemini 2.5 Pro and Qwen2.5-Omni are used exclusively in the offline Task 2 data-construction pipeline, whereas every submitted Task 2 pre-diction is generated solely by Qwen3-Omni. The Qwen check-points are publicly released [11, 22] and disclosed; Gemini 2.5 Pro is used only under the permitted Task 2 commercial-API exception [1]. Table 1: Cumulative Task 1 ablation under the official tcpMER protocol. Lower is better. 
+
+System configuration tcpMER (%) ↓
+
+LoRA baseline (ours) 18.30 
+
++ random leading-silence cropping 17.27 
+
++ EMA training strategy 16.73 
+
+# 3. Experiments and Results 
+
+3.1. Evaluation Protocol 
+
+For Task 1, we use the official scorer and baseline configura-tion [24]. Diarization error rate (DER) first determines the opti-mal permutation between reference and hypothesized speakers. After speaker mapping, the recognition streams are evaluated using tcpCER for Japanese, Korean, and Thai and tcpWER for all other languages with the official 5-s collar [24]; metric com-putation uses MeetEval [25, 26]. We report the across-language average as tcpMER, where lower indicates better performance. Task 2 evaluates conversation understanding using single-answer multiple-choice accuracy. Each question contains two to four options with exactly one correct answer and may require acoustic, semantic, or joint acoustic–semantic evidence. Only the evaluation score contributes to the final challenge ranking [1]. 
+
+3.2. Task 1 Results 
+
+Table 1 summarizes three cumulative Task 1 configurations eval-uated with the official tcpMER metric, for which lower values are better. The configurations and their observed changes are as fol-lows: • LoRA baseline (ours): We fine-tune VibeVoice-ASR-7B using LoRA while retaining the original architecture, single-pass decoding procedure, and serialized output format. This reference configuration obtains a tcpMER of 18.30%. • + Random leading-silence cropping: We randomly crop part of the non-speech region preceding the first anno-tated segment; the required timestamp correction shifts every annotation by the same offset to preserve align-ment. This configuration obtains 17.27% tcpMER, 1.03 absolute tcpMER points lower than the LoRA baseline, corresponding to a 5.6% relative reduction. • + EMA training strategy: During fine-tuning, we ad-ditionally maintain an exponential moving average of the trainable parameters and update it after every opti-mizer step; this strategy does not modify decoding. With cropping already enabled, the EMA configuration obtains 16.73% tcpMER, a further reduction of 0.54 absolute tcpMER points, or 3.1% relative to the preceding config-uration. The two successive additions are associated with monoton-ically lower tcpMER in the evaluated sequence, and cropping gives the larger observed incremental reduction. Overall, the complete configuration records a 1.57-point absolute decrease from the LoRA baseline, equivalent to an 8.6% relative reduction, while retaining the original single-pass inference procedure. Because the ablation rows are cumulative, these compar-isons remain conditional. The cropping row evaluates cropping together with the timestamp correction required to keep its labels Table 2: Task 2 ablation of distribution-matched augmentation and response format on evaluation set (accuracy, %). 
+
+Configuration Accuracy (%) ↑
+
+Baseline (direct answering) 78.0 + candidate generation 81.0 + silent-audio filtering 83.0 + distribution-matched augmentation 85.0 + tagged direct answering 86.0 
+
+valid. The EMA difference is measured only after cropping is enabled; without an EMA-only row, the EMA effect and any in-teraction between the two training strategies cannot be estimated. In addition, aggregate tcpMER cannot show whether the reduc-tions are uniform across languages, recording durations, or first-speech onset conditions; per-language and onset-conditioned analyses would be required to localize the gains. 
+
+3.3. Task 2 Results 
+
+Table 2 presents the incremental ablation results for Task 2 on evaluation set. Starting from the direct-answering baseline, we progressively add candidate generation, silent-audio filter-ing, distribution-matched augmentation, and the tagged direct-answering format. Accuracy improves from 78.0% to 86.0%, confirming that the proposed synthetic data construction pipeline and response-format design provide complementary gains. 
+
+Effect of candidate generation and filtering. Candidate gener-ation improves accuracy from 78.0% to 81.0%, indicating that the synthetic QA pairs provide useful task-specific supervision. Applying silent-audio filtering on top of the generated candi-dates further raises accuracy from 81.0% to 83.0%. This result suggests that filtering out samples that remain answerable with silent audio helps retain more audio-dependent examples and improves the effectiveness of the training data. 
+
+Effect of distribution-matched augmentation. Additionally, distribution-matched augmentation on top of the filtered data further improves accuracy from 83.0% to 85.0%. This gain shows that better matching the training data to the evaluation data distribution leads to stronger generalization. 
+
+Effect of response format. Finally, introducing the tagged direct-answering format improves accuracy from 85.0% to 86.0%. Besides the performance gain, the explicit answer tags also make answer extraction more reliable during inference. We therefore use this format in the final submitted system. 
+
+# 4. Conclusion 
+
+We presented independently adapted single-model systems for both tasks of the second MLC-SLM Challenge. For Task 1, random leading-silence cropping, consistent timestamp correc-tion, and an EMA training strategy reduce tcpMER from 18.30% to 16.73%. For Task 2, we constructed approximately 127k synthetic examples through multimodal candidate generation, silent-audio filtering, and distribution-matched augmentation, and fine-tuned Qwen3-Omni for tagged direct answering. The final sequential configuration reached 86.0% accuracy, compared with 83.0% for the reasoning-then-answer baseline. For Task 1, future work will explore richer speaker–temporal modeling and better use of conversational context. For Task 2, we will investigate stronger multilingual adaptation and more reliable audio-grounded long-context understanding. 5. References 
+
+[1] MLC-SLM Challenge Organizers, “2nd Challenge and Work-shop on Multilingual Conversational Speech Language Model (MLC-SLM),” 2026. [Online]. Available: https://www.nexdata.ai/ competition/mlc-slm (accessed Jul. 10, 2026). [2] Naoyuki Kanda, Guoli Ye, Yashesh Gaur, et al., “End-to-End Speaker-Attributed ASR with Transformer,” in Proc. Interspeech, 2021, pp. 4413–4417. [3] Naoyuki Kanda, Xuankai Chang, Yashesh Gaur, et al., “Inves-tigation of End-to-End Speaker-Attributed ASR for Continuous Multi-Talker Recordings,” in Proc. IEEE SLT, 2021, pp. 809–816. [4] Naoyuki Kanda, Xiong Xiao, Yashesh Gaur, et al., “Transcribe-to-Diarize: Neural Speaker Diarization for Unlimited Number of Speakers Using End-to-End Speaker-Attributed ASR,” in Proc. IEEE ICASSP, 2022, pp. 8082–8086. [5] Huanru Henry Mao, Shuyang Li, Julian McAuley, and Garrison W. Cottrell, “Speech Recognition and Multi-Speaker Diarization of Long Conversations,” in Proc. Interspeech, 2020, pp. 691–695. [6] Zhiliang Peng, Jianwei Yu, Yaoyao Chang, et al., “VIBEVOICE-ASR Technical Report,” arXiv preprint arXiv:2601.18184, 2026. [7] Orevaoghene Ahia, Martijn Bartelds, Kabir Ahuja, et al., “BLAB: Brutally Long Audio Bench,” in Proc. ICML Workshop on Ma-chine Learning for Audio, 2025, arXiv:2505.03054. [8] Yuan Gong, Hongyin Luo, Alexander H. Liu, Leonid Karlinsky, and James R. Glass, “Listen, Think, and Understand,” in Proc. ICLR, 2024. [9] Sreyan Ghosh, Zhifeng Kong, Sonal Kumar, et al., “Audio Flamingo 2: An Audio-Language Model with Long-Audio Under-standing and Expert Reasoning Abilities,” in Proc. ICML, 2025, pp. 19358–19405. [10] Haolin He, Xingjian Du, Renhe Sun, et al., “Measuring Audio’s Impact on Correctness: Audio-Contribution-Aware Post-Training of Large Audio Language Models,” in Proc. ICLR, 2026. [11] Jin Xu, Zhifang Guo, Hangrui Hu, et al., “Qwen3-Omni Technical Report,” arXiv preprint arXiv:2509.17765, 2025. [12] Tom Ko, Vijayaditya Peddinti, Daniel Povey, and Sanjeev Khu-danpur, “Audio Augmentation for Speech Recognition,” in Proc. Interspeech, 2015, pp. 3586–3589. [13] Daniel S. Park, William Chan, Yu Zhang, et al., “SpecAugment: A Simple Data Augmentation Method for Automatic Speech Recog-nition,” in Proc. Interspeech, 2019, pp. 2613–2617. [14] Daniel Morales-Brotons, Thijs Vogels, and Hadrien Hendrikx, “Exponential Moving Average of Weights in Deep Learning: Dy-namics and Benefits,” Trans. Mach. Learn. Res., 2024. [15] Edward J. Hu, Yelong Shen, Phillip Wallis, et al., “LoRA: Low-Rank Adaptation of Large Language Models,” in Proc. ICLR, 2022. [16] Tianqi Chen, Bing Xu, Chiyuan Zhang, and Carlos Guestrin, “Training Deep Nets with Sublinear Memory Cost,” arXiv preprint arXiv:1604.06174, 2016. [17] Samyam Rajbhandari, Jeff Rasley, Olatunji Ruwase, and Yuxiong He, “ZeRO: Memory Optimizations Toward Training Trillion Pa-rameter Models,” in Proc. SC, 2020, pp. 1–16. [18] Yunfei Chu, Jin Xu, Qian Yang, et al., “Qwen2-Audio Technical Report,” arXiv preprint arXiv:2407.10759, 2024. [19] Yizhong Wang, Yeganeh Kordi, Swaroop Mishra, et al., “Self-Instruct: Aligning Language Models with Self-Generated Instruc-tions,” in Proc. ACL, 2023, pp. 13484–13508. [20] Gheorghe Comanici, Eric Bieber, Mike Schaekermann, et al., “Gemini 2.5: Pushing the Frontier with Advanced Reasoning, Mul-timodality, Long Context, and Next Generation Agentic Capabili-ties,” arXiv preprint arXiv:2507.06261, 2025. [21] Cheng Wang, Gelei Deng, Xianglin Yang, Han Qiu, and Tianwei Zhang, “When Audio and Text Disagree: Revealing Text Bias in Large Audio-Language Models,” in Proc. EMNLP, 2025, pp. 4878–4888. [22] Jin Xu, Zhifang Guo, Jinzheng He, et al., “Qwen2.5-Omni Techni-cal Report,” arXiv preprint arXiv:2503.20215, 2025. [23] Swarup Ranjan Behera, Pailla Balakrishna Reddy, Achyut Mani Tripathi, Megavath Bharadwaj Rathod, and Tejesh Karavadi, “To-wards Multi-Lingual Audio Question Answering,” in Proc. Inter-speech, 2023, pp. 356–360. [24] MLC-SLM II Challenge Organizers, “MLC-SLM-2nd-Task1-Baseline,” GitHub repository, 2026. [Online]. Available: https: //github.com/alanshaoTT/MLC-SLM-2nd-Task1-Baseline (ac-cessed Jul. 11, 2026). [25] Thilo von Neumann, Christoph Boeddeker, Marc Delcroix, and Reinhold Haeb-Umbach, “MeetEval: A Toolkit for Computation of Word Error Rates for Meeting Transcription Systems,” in Proc. CHiME, 2023, pp. 27–32. [26] Thilo von Neumann, Christoph Boeddeker, Marc Delcroix, and Reinhold Haeb-Umbach, “Word Error Rate Definitions and Algo-rithms for Long-Form Multi-Talker Speech Recognition,” IEEE Trans. Audio Speech Lang. Process., vol. 33, pp. 3174–3188, 2025.

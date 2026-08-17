@@ -1,0 +1,299 @@
+Title: StreamHear: Domain-Adapted Pseudo-Labeling for Semi-Supervised Streaming Speech Recognition
+
+URL Source: https://arxiv.org/pdf/2608.13717v1
+
+Published Time: Mon, 17 Aug 2026 00:08:01 GMT
+
+Number of Pages: 5
+
+Markdown Content:
+# STREAMHEAR: DOMAIN-ADAPTED PSEUDO-LABELING FOR SEMI-SUPERVISED STREAMING SPEECH RECOGNITION 
+
+# Zefang Liu, Chenyang Zhu, Sangwoo Cho, Xujun Peng, Shi-Xiong Zhang, Sambit Sahu 
+
+# Capital One, USA zefang.liu@capitalone.com 
+
+ABSTRACT 
+
+Streaming automatic speech recognition (ASR) underperforms on domain-shifted target audio, where labeled in-domain data is costly to prepare while unlabeled audio is abundant. We present Stream-Hear, a semi-supervised pipeline that adapts a pretrained stream-ing student by fine-tuning an offline transducer teacher on the la-beled training set, generating pseudo-labels on the unlabeled por-tion, and fine-tuning the student on the mixture. We further in-troduce a prior-regularized dynamic-programming realignment step that fixes chunk-level word placement using an ASR-hypothesis an-chor. Across four datasets spanning financial calls, prepared read speech, and phone-quality dialogue, StreamHear consistently out-performs supervised student fine-tuning and narrows the gap to the offline teacher. 
+
+Index Terms — automatic speech recognition, semi-supervised learning, pseudo-labeling, domain adaptation, cache-aware stream-ing. 
+
+1. INTRODUCTION 
+
+Pretrained streaming automatic speech recognition (ASR) models, such as cache-aware FastConformer-RNN-T [1], enable low-latency transcription for real-time applications. Yet on domain-shifted tar-get audio such as financial earnings calls, international English, and phone-quality customer-service conversation, they still under-perform, struggling with entity-dense vocabulary, accented pronun-ciations, and narrowband acoustics. In-domain fine-tuning is the natural remedy, but labeled in-domain audio is costly to prepare at chunk granularity while unlabeled in-domain audio is abundant. Semi-supervised pseudo-labeling addresses this gap and has been widely studied in ASR, from foundational iterative self-training [2, 3, 4] to teacher-student momentum methods [5], dynamic pseudo-label caches with checkpoint-averaged teachers [6], and cor-rectors based on audio-aware large language models (LLMs) [7, 8]. Despite varied designs, these methods share a common axis: iter-ative refinement, exponential moving average (EMA) teachers, or auxiliary neural machinery to raise pseudo-label quality. For cache-aware streaming ASR, however, a much simpler recipe using a fixed, domain-adapted offline teacher has not been reported. In this work, we present StreamHear , a semi-supervised pipeline for adapting cache-aware streaming ASR to a target do-main, with three contributions. First, the StreamHear pipeline 
+
+fine-tunes an offline transducer teacher on the labeled in-domain training set, generates pseudo-labels on the unlabeled portion, and fine-tunes the streaming student on the mixture, all in a single pass without iteration or auxiliary machinery. Second, we introduce a prior-regularized dynamic-programming realignment step that redistributes ground-truth words across chunk boundaries in the training data using an ASR-hypothesis anchor, correcting resid-ual placement errors left by Connectionist Temporal Classification (CTC) Segmentation [9]. Third, our empirical study on four datasets shows that StreamHear consistently outperforms super-vised student fine-tuning and narrows the gap to the offline teacher, with ablations confirming robustness across latency and context configurations. 
+
+2. RELATED WORK 
+
+Pseudo-labeling for ASR originated with early self-training work [2, 10] and was formalized into iterative pipelines by IPL [3] and slimIPL [4]. Subsequent methods have raised label quality with EMA teachers that continuously trail the student (MPL [5]), dy-namic pseudo-label caches with checkpoint-averaged teachers [6], confidence- and uncertainty-based filtering [11, 12, 13], incremental retraining with data filtering [14], and audio-aware LLM correctors that condition on source audio [7, 8]. The closest prior work applies pseudo-labeling to streaming students: iterative noisy-student train-ing with a large offline teacher paired with a small streaming stu-dent [15], and knowledge distillation from Whisper into streaming Transformer-Transducers trained from scratch [16]. Neither targets cache-aware streaming [1], an architecture that passes activation caches between chunks and eliminates the training-inference gap. Across these methods, the teacher is either updated during training or augmented with auxiliary neural machinery, and the streaming setting is served by iterative noisy-student training or from-scratch distillation. Departing from these paradigms, StreamHear uses a fixed, domain-adapted offline transducer as its teacher, mixing a single round of its pseudo-labels with the labeled training set for one student fine-tuning pass, thereby adapting a pretrained cache-aware streaming transducer without iteration or auxiliary machinery. 
+
+3. METHODOLOGY 
+
+Our proposed StreamHear framework consists of three sequential learning stages preceded by a chunk-level data preparation step. We denote the offline teacher ASR model as MT and the cache-aware streaming student ASR model as MS . Given a labeled in-domain training set DL = {(xl, y l)} and an unlabeled in-domain set DU =
+
+{xu}, the pipeline executes teacher fine-tuning, pseudo-label gen-eration, and student fine-tuning in order, as summarized in Algo-rithm 1. Unlike iterative pseudo-labeling frameworks, StreamHear runs each stage exactly once and yields a single deployable stream-ing checkpoint. 
+
+Teacher fine-tuning. The offline teacher MT , a full-context transducer, is fine-tuned on the labeled training set DL under the standard transducer loss. This stage domain-adapts the teacher to arXiv:2608.13717v1 [cs.CL] 13 Aug 2026 Algorithm 1 StreamHear: Pseudo-Labeling for Streaming ASR 
+
+Models: Offline teacher MT , Streaming student MS
+
+Data: Labeled DL = {(xl, y l)}, Unlabeled DU = {xu} 
+
+> 1:
+
+// Teacher fine-tuning  
+
+> 2:
+
+Fine-tune MT on DL 
+
+> 3:
+
+// Pseudo-label generation  
+
+> 4:
+
+D′ 
+
+> U
+
+← { (xu, M T (xu)) | xu ∈ DU } 
+
+> 5:
+
+// Optional confidence filter  
+
+> 6:
+
+Retain the top-K% of D′ 
+
+> U
+
+ranked by teacher log-likelihood  
+
+> 7:
+
+// Student fine-tuning  
+
+> 8:
+
+Fine-tune MS on DL ∪ D′ 
+
+> U
+> 9:
+
+return MS
+
+the target audio distribution, raising the quality of the pseudo-labels it subsequently generates. Pseudo-label generation. The fine-tuned teacher transcribes the unlabeled portion DU once with greedy de-coding, yielding pseudo-labeled chunks D′ 
+
+> U
+
+= {(xu, y ′
+
+> u
+
+)} where 
+
+y′ 
+
+> u
+
+= MT (xu). Optionally, pseudo-labels can be filtered to the top-
+
+K% ranked by sequence-average teacher log-likelihood. Student fine-tuning. The cache-aware streaming student MS is fine-tuned on the mixed manifest DL ∪ D′ 
+
+> U
+
+under the standard RNN-T loss. 
+
+Chunk-level data preparation. Cache-aware streaming train-ing requires each chunk to carry only the words spoken within its time interval. We segment full-length recordings using voice-activity detection (VAD) and compute word-level timestamps by applying CTC-Segmentation [9] on top of a self-supervised acoustic model. This baseline leaves residual placement drift near non-speech tags and VAD boundaries. To repair these errors, we introduce a prior-regularized dynamic-programming (DP) realignment step, summa-rized in Algorithm 2. We flatten the ground-truth transcript and per-chunk ASR hypothesis into two word streams, each word tagged with its host chunk index. We then run Needleman-Wunsch align-ment scored by word match rewards, skip costs, and a prior penalty on the chunk-index displacement between paired words. Matched ground-truth words inherit their hypothesis partner’s chunk; un-matched words keep their CTC-Segmentation chunk, and a two-pass sweep clamps them into monotonic order. 
+
+Algorithm 2 Dynamic-Programming Realignment 
+
+Input: Per-chunk ground-truth text and ASR hypothesis, match reward r, mismatch cost cm, skip costs cg , c h, prior weight λ
+
+Output: Updated word-to-chunk assignment  
+
+> 1:
+
+Concatenate ground-truth words into (w1, . . . , w N ) and hypoth-esis words into (h1, . . . , h M ), tagging each with its host chunk index cgt  
+
+> i
+
+, chyp  
+
+> j
+> 2:
+
+Initialize dp [0 , 0] = 0, dp [i, 0] = −i · cg for i = 1..N ,
+
+dp [0 , j ] = −j · ch for j = 1 ..M  
+
+> 3:
+
+For i = 1 ..N and j = 1 ..M , set dp [i, j ] to the best of: diagonal 
+
+dp [i−1, j −1] + sij − λ|chyp  
+
+> j
+
+− cgt  
+
+> i
+
+| with sij =r if wi≈hj else 
+
+−cm; vertical dp [i−1, j ] − cg ; horizontal dp [i, j −1] − ch 
+
+> 4:
+
+Traceback from (N, M ): matched wi inherits chyp  
+
+> j
+
+; unmatched 
+
+wi keeps cgt  
+
+> i
+> 5:
+
+Two-pass sweep clamps unmatched words into monotonic chunk order 
+
+Table 1 : Detailed statistics of the datasets utilized in experiments, reporting the total duration in hours for each partition split and the average utterance length in seconds.                             
+
+> Split Earnings-21 Earnings-22 SPGISpeech BankCall
+> Labeled Train 10.72 24.76 19.58 12.96 Labeled Val 3.09 9.16 10.66 2.62 Labeled Test 4.88 12.38 10.23 2.88 Unlabeled 18.85 63.01 58.63 44.33
+> Total 37.54 109.31 99.10 62.79
+> Utterance (s) 23.3 23.0 9.2 6.2
+
+4. EXPERIMENTS 
+
+This section describes the datasets and their chunk-level preparation, the training and inference setup, the main WER comparison against pretrained and fine-tuned baselines, and five ablations probing align-ment correction, pseudo-label pool scaling, context sensitivity, per-latency retraining, and the streaming student architecture. 
+
+4.1. Datasets 
+
+We evaluate on three public English corpora plus one proprietary call-center dataset. Earnings-21 [17] contains 44 quarterly earn-ings calls across nine financial sectors with entity-dense transcripts. 
+
+Earnings-22 [18] contains 125 English earnings calls sourced from global companies spanning seven world-English regions; four files with predominantly non-English audio are excluded at prepare time, leaving 121 effective files. SPGISpeech [19] is a large-scale corpus of professionally-transcribed financial teleconference audio (mix of narrated presentations and spontaneous Q&A); we use its publicly-released small subset, further downsampled per [8] ratios (10% la-beled train, 30% unlabeled, 10% validation, 10% test) at the ses-sion level. BankCall is a proprietary human-annotated set of 155 stereo banking customer-service calls (channel 1 customer, channel 2 agent); the unlabeled pool is 275 additional calls drawn as a 30% subsample of separately-collected raw audio from the same domain. Table 1 lists per-split hour totals. For long-form Earnings-21 and Earnings-22, we standardize raw recordings to 16 kHz, normalize non-speech annotations to unified tags, and produce chunk-level training data via VAD segmenta-tion with pyannote-3.0 [20], CTC-Segmentation forced alignment using Parakeet-CTC-0.6B [21], and the DP realignment step of Al-gorithm 2 with a Whisper-Large-v3 [22] hypothesis anchor. VAD keeps each chunk within Whisper’s 30 s context so the anchor covers it in full. Longer audio can be anchored with an audio-LLM such as Voxtral-Mini-3B [23] that batches multi-window inputs across a longer context. SPGISpeech utterances arrive pre-chunked from the source parquets, so preparation reduces to session-level partitioning at ReHear [8] ratios. For BankCall, human annotations already pro-vide chunk-level segments with speaker channel and timestamps, so no VAD or forced alignment is applied on the labeled portion; digit-mask redactions are filled by a strict-majority vote among three off-the-shelf ASR models (Whisper-Large-v3, Voxtral-Mini-3B, Parakeet-TDT-0.6B-v3) plus a human review pass, and the labeled split is stratified by call reason. The unlabeled BankCall portion is segmented via VAD only. Across all datasets, chunks with empty transcripts are dropped, and partitioning is enforced at the source file or session level. 2Table 2 : Word Error Rate (WER, %) comparison across all datasets. We report the mean and standard deviation (subscript) over 5 seeds on the labeled test and unlabeled splits. BankCall reports labeled test only (unlabeled pool has no transcripts). Bold indicates the best streaming-student result per column. 
+
+Method Earnings-21 Earnings-22 SPGISpeech BankCall Test Unlabeled Test Unlabeled Test Unlabeled Test 
+
+Teacher 6.51 ±0.00 8.35 ±0.00 12.25 ±0.00 10.62 ±0.00 3.97 ±0.00 4.02 ±0.00 12.71 ±0.00 
+
+FT Teacher 6.03 ±0.05 7.68 ±0.03 11.24 ±0.03 9.55 ±0.01 2.20 ±0.02 2.15 ±0.01 8.85 ±0.11 
+
+Student 8.27 ±0.00 10.36 ±0.00 13.55 ±0.00 12.31 ±0.00 3.27 ±0.00 3.18 ±0.00 13.60 ±0.00 
+
+FT Student 7.19 ±0.09 9.62 ±0.10 12.46 ±0.06 10.81 ±0.01 2.77 ±0.02 2.70 ±0.03 10.68 ±0.13 
+
+StreamHear 6.63 ±0.04 7.77 ±0.03 11.76 ±0.01 9.56 ±0.01 2.59 ±0.03 2.26 ±0.01 9.80 ±0.05 
+
+4.2. Experimental Setup Models. The offline teacher is Parakeet-TDT-0.6B-v3 [21], a0.6B-parameter FastConformer transducer with token-and-duration decoding. The primary streaming student is Nemotron-Speech-Streaming-EN-0.6B [1], a 0.6B cache-aware FastConformer-RNN-T trained with multi-latency right-context (RC) sampling; un-less noted, we run inference at RC =1 (80 ms chunk plus 80 ms right-context lookahead, for 160 ms of algorithmic latency). The student-choice ablation additionally evaluates Nemotron-3.5-ASR-Streaming-0.6B, a multilingual variant with LC =56 and English language-ID conditioning. 
+
+Training. All fine-tuning runs share the same recipe: AdamW optimizer with learning rate 2 × 10 −4, betas [0 .9, 0.98] , weight de-cay 10 −3; cosine schedule with 10% warmup and minimum learn-ing rate 10 −6; 10 epochs; bf16 precision; SpecAugment ( 2 freq masks × 10 time masks). Effective batch size 64 (4 A100-SXM-40GB GPUs, per-GPU batch 4, gradient accumulation 4) for the streaming student; teacher fine-tuning uses per-GPU batch 2 with gradient accumulation 8 to fit the RNN-T joint on Earnings-length chunks; Nemotron-3.5 drops to per-GPU batch 1 with gradient ac-cumulation 16 . Each experimental cell is repeated for 5 seeds with matched teacher-student pairings for the pseudo-labeling runs; we report mean and standard deviation. All training and inference use the NVIDIA NeMo Speech framework 1 [24]. 
+
+Inference and metrics. Inference uses greedy decoding under the cache-aware streaming attention mask. Word error rate (WER) is computed after a text normalization pipeline: bracket removal, number and typography normalization, lowercasing, contraction ex-pansion, spelling and compound normalization, diacritic removal, filler-word removal, and punctuation removal. Latency is reported as the algorithmic latency ( (1+ RC ) × 80 ms) imposed by the right-context lookahead. 
+
+4.3. Experimental Results 
+
+As presented in Table 2, StreamHear consistently outperforms the fine-tuned student on all four datasets: by 0.18 to 0.88 percent-age points (pp) of word error rate on the labeled test split, and by 
+
+0.44 to 1.85 pp on the held-out unlabeled split of the three pub-lic benchmarks. Against the offline fine-tuned teacher, StreamHear narrows the labeled-test gap to at most 0.95 pp and the unlabeled gap to at most 0.11 pp; on Earnings-22 unlabeled, the streaming student essentially matches the offline teacher ( 9.56% vs 9.55% ). These results confirm that pseudo-labels from a domain-adapted of-fline teacher transfer to a streaming student in a single fine-tuning 
+
+> 1https://github.com/NVIDIA-NeMo/Speech
+
+pass, without iterative refinement or auxiliary neural machinery. On BankCall’s stereo audio, StreamHear’s 0.88 pp gain is essentially symmetric across the customer and agent channels, bringing stream-ing WER to 12 .55% and 7.00% respectively ( −0.90 and −0.85 pp vs the fine-tuned student) and preserving the intrinsic ∼5.5 pp cus-tomer/agent WER gap that reflects acoustic quality rather than a la-beling asymmetry. 
+
+4.4. Ablation Studies 
+
+We report five ablations. All experiments use Nemotron-Speech-Streaming-EN-0.6B on Earnings-21 unless noted; all numbers are mean WER (%) over 5 seeds under the same normalization pipeline as Table 2. 
+
+4.4.1. Alignment Correction 
+
+We measure alignment quality by running the pretrained offline teacher (Parakeet-TDT-0.6B-v3) on each dataset’s chunk text before and after DP realignment, computing WER against the teacher’s own audio hypothesis on the same chunks. Since the DP step uses Whisper-Large-v3 as its position prior (not Parakeet), the teacher is an independent anchor. Realignment cuts alignment-quality WER by roughly 9 pp on both datasets (Table 3) while changing chunk count by at most 0.4% , confirming that words are reassigned to the correct chunks rather than merely dropped. 
+
+Table 3 : Alignment-quality WER (%) on chunk text against a pre-trained Parakeet-TDT-0.6B-v3 audio hypothesis, before and after DP realignment. 
+
+Dataset Aligned Realigned Change 
+
+Earnings-21 17.46 8.01 −9.45 
+
+Earnings-22 20.54 10.97 −9.57 
+
+4.4.2. Confidence Filtering 
+
+We sweep a top-K% confidence filter on pseudo-labels ranked by sequence-average teacher log-likelihood, for K∈{ 25 , 50 , 75 , 100 },on Earnings-21 and Earnings-22 (Table 4). Larger K monotonically improves WER on both datasets and both splits; discarding low-confidence pseudo-labels never helps. Even K=25% already out-performs the fine-tuned student, indicating that a domain-adapted teacher produces uniformly usable pseudo-labels and that quantity outweighs top-K quality. 3Table 4 : Pseudo-label pool scaling with a top-K% confidence filter. WER (%, mean ±std ) as labeled test / unlabeled. 
+
+Top-K Earnings-21 Earnings-22 
+
+25% 6.92 ±0.03 / 8.65 ±0.07 11.99 ±0.03 / 10.17 ±0.02 
+
+50% 6.83 ±0.06 / 8.28 ±0.05 11.86 ±0.02 / 9.87 ±0.03 
+
+75% 6.72 ±0.08 / 8.01 ±0.02 11.80 ±0.04 / 9.68 ±0.03 
+
+100% 6.63 ±0.04 / 7.77 ±0.03 11.76 ±0.01 / 9.56 ±0.01 
+
+4.4.3. Context Sweeps 
+
+We decode the base checkpoint, the fine-tuned student, and Stream-Hear across right-context RC ∈{ 0, 1, 3, 6, 13 } at fixed LC =70 , giv-ing algorithmic latencies from 80 ms to 1.12 s. The streaming stu-dent is pretrained at RCs {0, 1, 6, 13 }; RC =3 is an interior point reached only through multi-latency generalization. The fine-tuned student and StreamHear are each trained once at the default configu-ration [LC =70 , RC =1] and then decoded at every RC in the sweep. Figure 1 plots labeled test WER (%) against the algorithmic latency 
+
+(1+ RC ) × 80 ms for the three model conditions. Under all three, WER decreases with RC and saturates by RC =6 . StreamHear pre-serves the qualitative shape of the base and fine-tuned curves, so switching from RC =1 to RC =13 yields only 0.20 pp at the cost of 
+
+0.96 s of extra algorithmic latency. We similarly sweep left-context LC ∈{ 18 , 35 , 70 , 140 , 280 } at fixed RC =1 (Figure 2), decoding the same checkpoints at each LC; all three curves reach their minima near the trained value LC =70 and rise on either side, showing a much weaker effect than RC (spread ≤0.65 pp across the whole curve). 10 1 10 0         
+
+> Algorithmic latency = (1+RC)×80 ms (s, log) 78910 11
+> WER (%)
+> RC=0 RC=1 RC=3 RC=6 RC=13
+> RC=0 RC=1 RC=3 RC=6 RC=13
+> RC=0 RC=1 RC=3 RC=6 RC=13
+> Fine-tuned teacher
+> Student Fine-tuned StreamHear
+
+Fig. 1 : Right-context (RC) sweep on Earnings-21 labeled test WER (%) at fixed LC =70 . Algorithmic latency is (1+ RC ) × 80 ms. Error bars are ±1 std; student inference is deterministic, and StreamHear std ( ≤0.06 pp) is smaller than the marker. 
+
+4.4.4. Per-Latency Retraining 
+
+We fine-tune a separate checkpoint at each RC ∈{ 0, 3, 6, 13 } (both supervised and StreamHear) and evaluate at the matching RC. Compared against decoding the single checkpoint trained at RC =1 
+
+at those RCs (Figure 1), supervised per-RC training outperforms decode-sweep by 0.02 to 0.06 pp on labeled test across the four RCs, while StreamHear per-RC training matches decode-sweep to within 0.01 pp at every RC. A single StreamHear checkpoint trained 2 5 10 20 Left context = LC×80 ms (s, log) 78910 11          
+
+> WER (%)
+> LC=18 LC=35 LC=70 LC=140 LC=280
+> LC=18 LC=35 LC=70 LC=140 LC=280
+> LC=18 LC=35 LC=70 LC=140 LC=280
+> Fine-tuned teacher
+> Student Fine-tuned StreamHear
+
+Fig. 2 : Left-context (LC) sweep on Earnings-21 labeled test WER (%) at fixed RC =1 . Left context is LC × 80 ms. Error bars are ±1
+
+std; StreamHear std ( ≤0.05 pp) is smaller than the marker. at RC =1 therefore suffices for the whole latency curve, obviating per-RC retraining. 
+
+4.4.5. Student Choice 
+
+We replace the primary student, hereafter Nemotron-EN (Nemotron-Speech-Streaming-EN-0.6B), with the multilingual Nemotron-ML (Nemotron-3.5-ASR-Streaming-0.6B, trained at LC =56 , prompt-conditioned decoder) and re-run the full StreamHear pipeline on Earnings-21 (Table 5). StreamHear outperforms supervised FT by 0.44 pp on labeled test and 2.28 pp on unlabeled, mirroring Nemotron-EN’s 0.56 and 1.85 pp deltas: both students absorb a similar amount of extra signal from pseudo-labels. Absolute WER for Nemotron-ML stays 0.89 -2.82 pp higher than Nemotron-EN at every stage (Student, FT Student, StreamHear), so the choice of pre-trained backbone sets a ceiling that StreamHear does not fully lift, but the recipe generalizes across streaming student architectures. 
+
+Table 5: Student-choice ablation on Earnings-21 WER (%, mean ±std ) as labeled test / unlabeled. 
+
+Method Nemotron-EN Nemotron-ML 
+
+Student 8.27 ±0.00 / 10.36 ±0.00 10.53 ±0.00 / 13.18 ±0.00 
+
+FT Student 7.19 ±0.09 / 9.62 ±0.10 8.54 ±0.11 / 10.94 ±0.13 
+
+StreamHear 6.63 ±0.04 / 7.77 ±0.03 8.10 ±0.07 / 8.66 ±0.05 
+
+5. CONCLUSION 
+
+We presented StreamHear, a semi-supervised recipe that adapts a cache-aware streaming ASR student to a target domain by fine-tuning on pseudo-labels from a domain-adapted offline teacher. A prior-regularized DP realignment step redistributes ground-truth words across chunk boundaries using an ASR hypothesis anchor. Across Earnings-21, Earnings-22, SPGISpeech, and a proprietary call-center corpus, BankCall, StreamHear consistently outperforms the supervised streaming student on both labeled test and unlabeled, and narrows the gap to the offline teacher. Ablations show these gains are robust across latency operating points, pseudo-label pool sizes, context settings, and student architectures. 46. REFERENCES 
+
+[1] Vahid Noroozi, Somshubra Majumdar, Ankur Kumar, Ja-gadeesh Balam, and Boris Ginsburg, “Stateful Conformer with cache-based inference for streaming automatic speech recogni-tion,” in ICASSP 2024 - 2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2024, pp. 12041–12045. [2] Jacob Kahn, Ann Lee, and Awni Hannun, “Self-training for end-to-end speech recognition,” in ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Pro-cessing (ICASSP) . IEEE, 2020, pp. 7084–7088. [3] Qiantong Xu, Tatiana Likhomanenko, Jacob Kahn, Awni Han-nun, Gabriel Synnaeve, and Ronan Collobert, “Iterative pseudo-labeling for speech recognition,” in Proc. Interspeech 2020 , 2020, pp. 1006–1010. [4] Tatiana Likhomanenko, Qiantong Xu, Jacob Kahn, Gabriel Synnaeve, and Ronan Collobert, “slimIPL: Language-model-free iterative pseudo-labeling,” in Proc. Interspeech 2021 ,2021, pp. 741–745. [5] Yosuke Higuchi, Niko Moritz, Jonathan Le Roux, and Takaaki Hori, “Momentum pseudo-labeling for semi-supervised speech recognition,” in Proc. Interspeech 2021 , 2021, pp. 726– 730. [6] Nune Tadevosyan, Nikolay Karpov, Andrei Andrusenko, Vi-taly Lavrukhin, and Ante Jukic, “Unified semi-supervised pipeline for automatic speech recognition,” in Proc. Inter-speech 2025 , 2025, pp. 3184–3188. [7] Jeena Prakash, Blessingh Kumar, Kadri Hacioglu, Bidisha Sharma, Sindhuja Gopalan, Malolan Chetlur, Shankar Venkatesan, and Andreas Stolcke, “Better pseudo-labeling with multi-ASR fusion and error correction by SpeechLLM,” in Proc. Interspeech 2025 , 2025, pp. 579–583. [8] Zefang Liu, Chenyang Zhu, Sangwoo Cho, and Shi-Xiong Zhang, “ReHear: Iterative pseudo-label refinement for semi-supervised speech recognition via audio large language mod-els,” arXiv preprint arXiv:2602.18721 , 2026. [9] Ludwig K¨ urzinger, Dominik Winkelbauer, Lujun Li, Tobias Watzel, and Gerhard Rigoll, “CTC-segmentation of large corpora for German end-to-end speech recognition,” in In-ternational Conference on Speech and Computer (SPECOM) .Springer, 2020, pp. 267–278. [10] Yang Chen, Weiran Wang, and Chao Wang, “Semi-supervised ASR by end-to-end self-training,” in Proc. Interspeech 2020 ,2020, pp. 2787–2791. [11] Zezhong Jin, Dading Zhong, Xiao Song, Zhaoyi Liu, Naipeng Ye, and Qingcheng Zeng, “Filter and evolve: Progressive pseudo label refining for semi-supervised automatic speech recognition,” arXiv preprint arXiv:2210.16318 , 2022. [12] Sameer Khurana, Niko Moritz, Takaaki Hori, and Jonathan Le Roux, “Unsupervised domain adaptation for speech recog-nition via uncertainty driven self-training,” in ICASSP 2021 -2021 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2021, pp. 6553–6557. [13] Eungbeom Kim and Kyogu Lee, “Uncertainty-aware self-training for CTC-based automatic speech recognition,” in 
+
+Proceedings of the AAAI Conference on Artificial Intelligence (AAAI) , 2025, vol. 39, pp. 24330–24338. [14] Andr´ es Carofilis, Pradeep Rangappa, Srikanth Madikeri, Shashi Kumar, Sergio Burdisso, Jeena Prakash, Esau Villatoro-Tello, Petr Motlicek, Bidisha Sharma, Kadri Hacioglu, et al., “Better semi-supervised learning for multi-domain ASR through incremental retraining and data filtering,” in Proc. In-terspeech 2025 , 2025, pp. 3618–3622. [15] Dongseong Hwang, Khe Chai Sim, Zhouyuan Huo, and Trevor Strohman, “Pseudo label is better than human label,” in Proc. Interspeech 2022 , 2022, pp. 1421–1425. [16] Iuliia Thorbecke, Juan Zuluaga-Gomez, Esa´ u Villatoro-Tello, Shashi Kumar, Pradeep Rangappa, Sergio Burdisso, Petr Motlicek, S. Karthik Pandia, and Aravind Ganapathiraju, “Fast streaming transducer ASR prototyping via knowledge distilla-tion with whisper,” in Findings of the Association for Compu-tational Linguistics: EMNLP 2024 , 2024, pp. 16747–16762. [17] Miguel Del Rio, Natalie Delworth, Ryan Westerman, Michelle Huang, Nishchal Bhandari, Joseph Palakapilly, Quinten Mc-Namara, Joshua Dong, Piotr ˙Zelasko, and Miguel Jett´ e, “Earnings-21: A practical benchmark for ASR in the wild,” in Proc. Interspeech 2021 , 2021, pp. 3465–3469. [18] Miguel Del Rio, Peter Ha, Quinten McNamara, Corey Miller, and Shipra Chandra, “Earnings-22: A practical benchmark for accents in the wild,” arXiv preprint arXiv:2203.15591 , 2022. [19] Patrick K. O’Neill, Vitaly Lavrukhin, Somshubra Majumdar, Vahid Noroozi, Yuekai Zhang, Oleksii Kuchaiev, Jagadeesh Balam, Yuliya Dovzhenko, Keenan Freyberg, Michael D. Shul-man, et al., “SPGISpeech: 5,000 hours of transcribed financial audio for fully formatted end-to-end speech recognition,” in 
+
+Proc. Interspeech 2021 , 2021, pp. 1434–1438. [20] Herv´ e Bredin, Ruiqing Yin, Juan Manuel Coria, Gregory Gelly, Pavel Korshunov, Marvin Lavechin, Diego Fustes, Hadrien Titeux, Wassim Bouaziz, and Marie-Philippe Gill, “pyannote.audio: Neural building blocks for speaker diariza-tion,” in ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2020, pp. 7124–7128. [21] Dima Rekesh, Nithin Rao Koluguri, Samuel Kriman, Somshubra Majumdar, Vahid Noroozi, He Huang, Oleksii Hrinchuk, Krishna Puvvada, Ankur Kumar, Jagadeesh Balam, and Boris Ginsburg, “Fast conformer with linearly scalable attention for efficient speech recognition,” in 2023 IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) . IEEE, 2023, pp. 1–8. [22] Alec Radford, Jong Wook Kim, Tao Xu, Greg Brockman, Christine McLeavey, and Ilya Sutskever, “Robust speech recognition via large-scale weak supervision,” in Proceedings of the International Conference on Machine Learning (ICML) .PMLR, 2023, pp. 28492–28518. [23] Alexander H Liu, Andy Ehrenberg, Andy Lo, Guillaume Lam-ple, Jean-Malo Delignon, Khyathi Raghavi Chandu, Patrick von Platen, Pavankumar Reddy Muddireddy, et al., “Voxtral,” 
+
+arXiv preprint arXiv:2507.13264 , 2025. [24] Oleksii Kuchaiev, Jason Li, Huyen Nguyen, Oleksii Hrinchuk, Ryan Leary, Boris Ginsburg, Samuel Kriman, Stanislav Beli-aev, Vitaly Lavrukhin, Jack Cook, et al., “NeMo: a toolkit for building AI applications using Neural Modules,” arXiv preprint arXiv:1909.09577 , 2019. 5
