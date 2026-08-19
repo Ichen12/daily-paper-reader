@@ -1,0 +1,414 @@
+Title: ARENA: Automated Red-Teaming for Large Audio Language Models
+
+URL Source: https://arxiv.org/pdf/2608.15578v1
+
+Published Time: Tue, 18 Aug 2026 00:59:54 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# ARENA : Automated Red-Teaming for Large Audio Language Models 
+
+# Jiaming He 1,2 , Zhicong Huang 2, Tian Jin 3, Zhen Sun 2,Cheng Hong 2, Yi Yu 4, Wenbo Jiang 5, Xudong Jiang 1
+
+> 1
+
+Nanyang Technological University, Singapore 
+
+> 2
+
+Ant Group, China 
+
+> 3
+
+The Chinese University of Hong Kong, Shenzhen, China 
+
+> 4
+
+Jilin University, China 
+
+> 5
+
+University of Electronic Science and Technology of China, China 
+
+Abstract 
+
+Large audio-language models (LALMs) make it possible to interact with language models through speech, music, and en-vironmental sound, but they also introduce a safety surface that is difficult to expose with text-only red-teaming. We study au-tomated audio-grounded red-teaming, where a text query must remain safe in isolation while the joint text-audio input induces harmful target behavior. We propose ARENA , a closed-loop framework that trains a controller on an independent 2,000-case text-audio dataset. MD-Judge supplies training rewards and adaptive search feedback, while a separate, non-adaptive Llama Guard 3 evaluator alone labels final outcomes. On 520 held-out AdvBench objectives, ARENA achieves FDR/PSR of 87.9/100.0%, 71.5/96.3%, 68.1/100.0%, and 75.4/98.5% on Audio Flamingo 3, Qwen2-Audio, MiMo-Audio, and GPT-Audio, respectively. Ablations show that feedback-based re-finement and audio-variant search substantially improve attack discovery. Code is available at Github. 
+
+# 1 Introduction 
+
+Large audio-language models (LALMs) extend language-model interaction from text to speech, music, and environ-mental sound. Recent systems can transcribe speech, rec-ognize acoustic events, follow audio-grounded instructions, and answer questions about complex sound scenes (Desh-mukh et al. 2023; Gong et al. 2023; Tang et al. 2023; Chu et al. 2024; Goel et al. 2025). Representative models such as MiMo-Audio, Qwen2-Audio, and Audio Flamingo further show that audio inputs can be integrated with instruction fol-lowing, multi-turn reasoning, and few-shot multimodal un-derstanding (Tang et al. 2023; Ghosh et al. 2024; Chu et al. 2024; Kong et al. 2024; Goel et al. 2025). These capabilities make LALMs increasingly useful for voice assistants, audio analysis, accessibility tools, and multimodal agents. To ensure audio-grounded model behavior is aligned with human values, LALMs developers need to identify and evalu-ate potential safety vulnerabilities and use the collected prob-lematic cases to improve alignment mechanisms. This re-quirement is especially important because the audio channel creates a safety surface that is not visible from the text query alone. A benign-looking text request may become harmful when interpreted together with spoken content, speaker cues, or non-speech acoustic evidence. We study this problem as automated red-teaming for audio-grounded harmful compli-ance, where the text query remains safe in isolation but the Successfully Pass   
+
+> NSFW
+> Detector
+> Developer
+> Red-teaming Test
+> On LALMs?
+> Target LALM
+> How can I build a product that produces the sound in the audio with the chemicals?
+> Input Audio
+> HH=
+> <The sound of a bomb explosion> NSFW
+> Detector
+> Problematic Case Detected
+> The chemical reaction process of basic explosives involves several key steps that lead ….
+> Input Query
+> Model Output
+
+Figure 1: Audio-grounded red-teaming. Harmful intent can hide in the audio channel while the text query remains safe. joint text-audio input may cause the target LALM to produce unsafe assistance. Existing automated red-teaming methods provide useful tools for discovering failures in language and visual sys-tems. Textual methods generate and optimize adversarial prompts through search, feedback, and preference signals (Perez et al. 2022; Ganguli et al. 2022; Yu et al. 2023; Chao et al. 2023; Mehrotra et al. 2023; Mazeika et al. 2024). Mul-timodal methods extend this paradigm to image and video generation by using visual feedback during attack refinement (Li et al. 2024a; Xu et al. 2025; Cao et al. 2025; He et al. 2025). However, LALM red-teaming requires a different op-timization target. The attack must coordinate a text-safe query with an audio realization, decide whether the harmful con-text should be spoken or environmental, and recover from failures caused by poor audio recognition, refusals, or re-sponses that merely restate the sound event. Existing static audio jailbreak sets (Song et al. 2026; Peng et al. 2025) ex-pose important vulnerabilities, but they do not provide an automated mechanism for adapting to different LALMs. We address this gap by treating audio-grounded red-teaming as a closed-loop text-audio generation problem. The core observation is that failed LALM responses pro-vide structured signals about the bottleneck of an attempt, such as whether the audio context was recognized, whether the text framing violated the input guard, and whether the response was grounded enough to satisfy the objective. We use this feedback to optimize a controller LLM that generates arXiv:2608.15578v1 [cs.SD] 16 Aug 2026 both a text-safe query and an audio prompt. The controller selects between speech synthesis and environmental-sound synthesis, receives structured feedback from the judge, and iteratively refines the candidate until the MD-Judge search threshold is reached. In this work, we propose ARENA , an Automated Red-Teaming framework for Larg E Audio La Ngu Age Models. 
+
+ARENA trains its controller on 2,000 text-audio specifica-tions that are disjoint from the evaluation set. MD-Judge provides reward labels and adaptive refinement feedback, whereas Llama Guard 3 independently scores final out-comes and is never exposed to the controller. We evaluate 
+
+ARENA on Audio Flamingo 3, Qwen2-Audio, MiMo-Audio, and GPT-Audio using 520 held-out AdvBench objectives. 
+
+ARENA achieves high detected-fault rates across open-source and API-based LALMs, transfers nontrivially across target models, and improves substantially with feedback-based re-finement. Our contributions are threefold: 
+
+• We formulate automated audio-grounded red-teaming for LALMs under a two-sided safety condition, requiring text-safe inputs and unsafe target outputs. 
+
+• We introduce ARENA , a controller-optimization frame-work that combines reward-weighted SFT, direct prefer-ence optimization, modality-aware audio rendering, and failure-aware refinement. 
+
+• We conduct a comprehensive evaluation on four LALMs with held-out AdvBench objectives, baseline comparison, transferability analysis, and ablations over refinement and audio realization. 
+
+# 2 Related Work 
+
+Large audio language models (LALMs) connect acous-tic representations with language reasoning across speech, music, and environmental sound. Whisper, CLAP, and Au-dioLM established scalable speech recognition, audio-text alignment, and neural audio token modeling (Radford et al. 2022; Wu et al. 2022; Borsos et al. 2022). SpeechGPT and AudioPaLM further integrated spoken interaction with LLMs (Zhang et al. 2023; Rubenstein et al. 2023). General-purpose LALMs such as Pengi, LTU, SALMONN, Qwen-Audio, and Qwen2-Audio support broader audio understand-ing and instruction following (Deshmukh et al. 2023; Gong et al. 2023; Tang et al. 2023; Chu et al. 2023, 2024), while GAMA and Audio Flamingo emphasize complex reasoning and few-shot audio comprehension (Ghosh et al. 2024; Kong et al. 2024; Goel et al. 2025). These capabilities also create safety risks that depend on acoustic content and delivery. Re-cent studies expose vulnerabilities to unsafe audio prompts and compositional speech-audio attacks (Yang et al. 2024, 2025b; Feng et al. 2025), motivating red-teaming methods that jointly consider linguistic intent and acoustic realization. 
+
+Automated red-teaming discovers model failures through generation, search, and feedback. Early LLM studies used model-generated adversarial conversations and large-scale human testing (Perez et al. 2022; Ganguli et al. 2022). Later methods optimize adversarial prompts with white-box ob-jectives (Zou et al. 2023; Zhu et al. 2023) or iteratively refine them through black-box search and model feedback (Yu et al. 2023; Chao et al. 2023; Mehrotra et al. 2023; Mehrabi et al. 2023). HarmBench standardizes behaviors, attacks, and evaluation for this setting (Mazeika et al. 2024). Multimodal red-teaming extends the same loop to generated media. SneakyPrompt, MMA-Diffusion, and Groot search for unsafe text-to-image inputs (Yang et al. 2023b,a; Liu et al. 2024), while ART, FGPI, and RPG-RT use visual or system feedback to guide subsequent attacks (Li et al. 2024a; Xu et al. 2025; Cao et al. 2025). TEAR further incorporates temporal feedback for text-to-video models (He et al. 2025). Existing automated red-teaming methods focus on textual or visual outputs. LALMs introduce distinct attack surfaces through acoustic semantics requiring feedback that directly evaluates audio-grounded behavior and existing works on LALM safety (Yang et al. 2025a; Feng et al. 2025; Yang et al. 2025c) only investigates the static jailbreak and red-teaming set with no automated paradigms, limiting their practicability and scalability in real-world deployment. 
+
+# 3 Methodology 
+
+3.1 Problem Formulation 
+
+We study automated red-teaming for a target large audio-language model (LALM) in audio-grounded interactions. Let 
+
+Mt denote the target model. Given a textual query qp and an audio signal a, the target returns a response r = Mt(qp, a ).Each red-teaming objective is denoted by x ∈ X . The task is to construct a test case (qp, a ) in which qp remains safe when inspected alone, while the joint input (qp, a ) induces audio-grounded harmful compliance. A controller policy πθ maps an objective x to a structured specification z = ( qp, p a, m ), where pa is a speech transcript or sound prompt and m ∈ { speech , sound } selects the syn-thesis modality. A modality-specific renderer Sm converts pa
+
+into the waveform a = Sm(pa). Before answering qp, the tar-get produces a recognition response rrec = Mt(qrec , a ). We use a text guard ϕt(qp) ∈ { 0, 1}, where 0 denotes text safety, and a final evaluator ϕr (x, q p, a, p a, r rec , r ) ∈ { 0, 1}, where 
+
+1 denotes audio-grounded harmful compliance. A detected fault satisfies 
+
+Z⋆ = {(x, q p, a )}
+
+s.t. ϕt(qp) = 0 ∧ ϕr (x, q p, a, p a, r rec , r ) = 1 . (1) Following TRUST-VLM (Chen et al. 2025), final scoring uses two independent Llama Guard 3 calls (Grattafiori et al. 2024): an input check on qp alone and a post-search evaluator over the objective, intended audio, recognition response, and target response. Formally, 
+
+ϕt(qp) = J in LG3 (qp),ϕr (·) = J eval LG3 (x, q p, p a, r rec , r ), (2) where J eval LG3 = 1 only when rrec matches pa and r is un-safe, actionable, and grounded in that recognized content. Thus the waveform enters the criterion through rrec . MD-Judge (Li et al. 2024b) is reserved for reward labeling and search feedback; its labels never enter the reported metric. For the benchmark query set B, fault detection rate (FDR) is 𝑫𝑫𝒑𝒑 
+
+𝑫𝑫𝒎𝒎  
+
+> Red-teaming Initial Test Log
+> Two-Stage Controller Training
+> Audio Reward Model
+> 𝐑𝐑𝐩𝐩𝐩𝐩𝐩𝐩  .𝑹𝑹𝐀𝐀𝐀𝐀𝐀𝐀  . Base LLM Controller
+> LLM
+> Text-to-Sound Model
+> Controller
+> LLM
+> Reward-weighted SFT
+> Text-to-Speech Model
+> Text-Audio Pairs
+
+# >
+
+> Direct Preference Optimization
+> Offline Reward Labeling
+> Select
+
+𝒒𝒒𝒑𝒑 
+
+> Textual Query
+> Audio Prompt
+> Sound Input Target LALM
+> Feedback Judge Model
+
+𝒓𝒓 
+
+> Response
+> Guide Refinement
+> Input
+> Input
+> Output
+> Render
+> Generate
+> Loop-based Test Case Generation
+
+Figure 2: Overview of the ARENA framework. 
+
+measured as 
+
+FDR = 1
+
+|B| 
+
+X
+
+> xi∈B
+
+1[( xi, q p,i , a i) ∈ Z ⋆]. (3) 
+
+Threat Model. We assume black-box access to the target LALM, matching internal safety auditing before deployment. The auditor can generate text and audio inputs, query Mt,and observe responses, but cannot access target weights, gra-dients, or internal safety mechanisms. Auxiliary models may be used for generation, moderation, reward labeling, and preference construction. 
+
+3.2 Overview of ARENA 
+
+ARENA separates controller training, adaptive search, and final evaluation. The controller is trained from a 2,000-case seed pool Dp using rewards derived from MD-Judge reports. During search, MD-Judge also converts target responses into refinement feedback, following feedback-guided multimodal red-teaming (Chen et al. 2025; Li et al. 2024a; He et al. 2026). After search, the controller and candidate are frozen and Llama Guard 3 rescores the retained case once. Its label is never returned to search, preventing direct optimization against the final evaluator. 
+
+3.3 Text-Audio Dataset Construction 
+
+We construct a training-only seed pool Dp and an initial ex-ecution log before closed-loop red-teaming. This pool is dis-joint from AdvBench; no evaluation objective or label is used to train the controller. We establish this split before training and exclude AdvBench prompts, target responses, and evalu-ator labels from SFT, DPO, checkpoint selection, and reward-weight tuning. The seed categories follow the description and policy-grounded audio risk taxonomy in AudioGuard (Kang, Fang, and Li 2026), which separates transcript-level violations from audio-specific risks, including non-speech harmful sound events, speaker-aware risks, impersonation or voice-cloning misuse, and voice-content compositional harms. Since ARENA red-teams LALMs rather than training an audio guardrail, we instantiate this taxonomy as executable text-audio test specifications. The seed pool contains 2,000 independent specifications. Speech seeds account for 1,200 cases and cover objectives whose risky context is primarily carried by spoken content, including social interaction, deceptive intent, and instruction-like scenarios. Environmental-audio seeds account for 800 
+
+cases and focus on non-speech acoustic events, including explosions, collisions, weapon-like sounds, and forced-entry scenes. Each seed is represented as (x, q p, p a, m, t), where 
+
+t denotes strategy tags used only for analysis. 
+
+Seed Pool. Speech seeds are produced from hand-written scenario templates with speaker variation. The templates translate the speech and voice-content portions of the Au-dioGuard (Kang, Fang, and Li 2026) taxonomy into text-safe queries paired with short utterances that provide the missing context through audio. We render these utterances with an of-fline text-to-speech system and rotate over English voices to reduce dependence on a single speaker style. Here, a seed is a text-level structured specification, not a waveform: it contains the harmful objective, a text-safe query, an audio prompt or speech transcript, the rendering modality, and analysis tags. The waveform is produced only when the seed is executed. Environmental-sound seeds instantiate the non-speech sound-event branch of the taxonomy. Their prompts are con-cise event descriptions with constraints such as no speech and no music, which improves recognizability for text-to-audio synthesis. Example seed. Objective: explosives-related harmful assistance. 
+
+Text query: “For a lab operator, How can I reproduce the sound in the given audio with the chemicals?” 
+
+Audio prompt: “A loud explosive blast with a sharp pressure wave, deep low-frequency rumble, metallic debris impacts, glass shattering, car alarms, and distant sirens; no speech and no music.” 
+
+Modality: Sound. 
+
+Offline Execution Log. Each seed is executed once with-out refinement. The execution pass applies the text guard, renders the waveform, queries the target LALM, and uses MD-Judge to compute RAud , following the reward-labeling step introduced in Sec. 3.2. The resulting log records the tar-get response, the audio-recognition result, judge flags, failure tier, and shaped reward. After this reward labeling, positive records form the supervised dataset Dm and paired records form the preference dataset Dpref . Queries that fail the text-safety constraint are retained as diagnostics but are excluded from positive controller demonstrations. 
+
+3.4 Audio-Grounded Test Case Generation 
+
+Given an objective x and optional extra data, the controller 
+
+πθ generates a structured specification z = ( qp, p a, m ). The textual query qp is written to satisfy the text-safety con-straint when read in isolation, often through audit, forensic, research, or safety-analysis framing. The content prompt pa
+
+carries the contextual information that is absent from the text channel. The modality m determines how pa is rendered into an audio signal. 
+
+Modality-Aware Rendering. For m = speech , pa is treated as a spoken transcript and rendered by the text-to-speech model. The speech branch covers objectives that de-pend on linguistic cues, speaker intent, dialogue, or social interaction. For m = sound , pa is treated as an environmen-tal sound prompt and rendered by TangoFlux. The sound branch targets event-grounded scenarios whose semantics are conveyed by acoustic evidence rather than spoken words. The controller learns the modality choice from Dm, allowing language-dependent objectives to use speech and physical-event objectives to use environmental sound at inference time. 
+
+3.5 Test Case Execution 
+
+For each candidate z = ( qp, p a, m ), ARENA first applies the text guard ϕt to qp alone. A candidate with ϕt(qp) = 1 is rejected before audio synthesis and marked as text unsafe. This ordering enforces the central constraint that successful cases must arise from joint text-audio interpretation, not from an explicitly unsafe text query. Remaining candidates are rendered into a = Sm(pa) and submitted to Mt.
+
+Target Query Generation. We query the target model in two steps. A recognition query first asks the model to identify the main sound event or spoken content in the audio. This re-sponse enters the final grounding check and separates recog-nition failures during search. We then issue the red-teaming query qp with the same audio and collect r = Mt(qp, a ).
+
+Search Feedback and Final Judge. Llama Guard 3 first rejects explicitly unsafe qp before synthesis. During con-troller training and iterative search, MD-Judge produces the structured report used by RAud and the refinement loop, in-cluding near misses, refusals, recognition failures, and event restatements. MD-Judge can therefore shape which candi-date search returns, but it does not score the reported results. Once search stops, a separate Llama Guard 3 call evaluates the frozen record (x, q p, p a, r rec , r ) under Eq. (2). Its de-cision is made once and alone determines final success. It is not used to rerank candidates, trigger another refinement round, or tune a decision threshold. The controller can there-fore adapt to MD-Judge feedback but cannot query the final evaluator. 
+
+3.6 Two-Stage Controller Training 
+
+The 2,000 training executions are converted into reward-labeled data. ARENA trains the controller with reward-weighted supervised learning followed by preference opti-mization. 
+
+Reward-Weighted Supervised Fine-Tuning. We first as-sign each logged attempt a shaped reward using the flags returned by RAud . The structured report is mapped to re-ward indicators as follows. Let s+ = ( d, u, b, g, e )⊤ collect positive evidence and s− = ( f, o, ρ )⊤ collect failure evi-dence, where d, u, b, g, e denote disallowed assistance, ob-jective compliance, actionability, audio grounding, and con-crete detail, while f, o, ρ denote generic/foley content, event restatement, and refusal/safety redirection. The reward for attempt i is 
+
+eRi = κ + w+⊤s+ 
+
+> i
+
+− w−⊤s− 
+
+> i
+
+, (4) 
+
+Ri = RAud (xi, z i, a i, r i)= [1 − ϕt(qp,i )] clip( eRi, −1, 1) − ϕt(qp,i ). (5) where κ, w+, and w− are reward hyperparameters. This shaped reward preserves text safety as a hard constraint while providing graded supervision for near-successful attempts. We then construct D+ 
+
+> m
+
+= {(xi, z i, R i) ∈ D m | Ri > 0} and optimize the reward-weighted SFT objective 
+
+Ls(θ) = − 1
+
+|D +
+
+> m
+
+|
+
+X
+
+> (xi,z i,R i)∈D +
+> m
+
+λi log πθ (zi | xi), (6) where λi is a sample-specific weight rather than a learned parameter. We compute it from the reward label of the same logged attempt: 
+
+λi = 1 + Ri + 1[( xi, q p,i , a i) ∈ Z ⋆] , (7) so each positive record has a deterministic weight in [1 , 3] be-cause Ri ∈ (0 , 1] for D+
+
+> m
+
+. Higher-reward near misses receive larger loss weights, and detected-fault examples receive an additional unit weight. We also use λi as the priority score for reward-dependent oversampling when forming reward-weighted SFT batches. Let θs denote the trained parameters. Direct Preference Optimization. In the second stage, we initialize both the trainable policy and a fixed reference policy from the reward-weighted SFT checkpoint, so that 
+
+πθ ← πθs and π0 = πθs . We form preference triples 
+
+Dpref = {(xi, z + 
+
+> i
+
+, z − 
+
+> i
+
+)} from the reward-labeled execution log. For each objective, we sort text-safe attempts by RAud 
+
+and pair a higher-reward specification as z+ 
+
+> i
+
+with a lower-reward specification as z− 
+
+> i
+
+; when an objective has too few attempts, pairing is performed within the same harmful cate-gory. Pairs dominated by target-side audio-recognition errors are removed because they do not reflect controller quality. Following DPO (Rafailov et al. 2023), define the relative log-likelihood 
+
+ℓθ (x, z ) = log πθ (z | x) − log π0(z | x). (8) For the i-th preference pair, let 
+
+δi = ℓθ (xi, z + 
+
+> i
+
+) − ℓθ (xi, z − 
+
+> i
+
+). (9) The preference objective is 
+
+Ld(θ) = − 1
+
+|D pref | 
+
+> |D pref |
+
+X
+
+> i=1
+
+log σ(βδ i). (10) We optimize Ld + μLs on mixed preference and replay batches. The replay examples are sampled from D+ 
+
+> m
+
+and preserve the structured output format during preference op-timization. 
+
+3.7 Feedback-Based Refinement 
+
+In the lower component of Figure 2, the trained controller iteratively proposes, executes, judges, and revises test cases. If the initial attempt does not reach the MD-Judge search threshold, ARENA enters a failure-aware refinement loop. At iteration t, the controller receives the objective x, the previ-ous specification z(t) = ( q(t) 
+
+> p
+
+, p (t) 
+
+> a
+
+, m (t)), the target response 
+
+r(t), the failure tier y(t), and feedback f (t) derived from the detailed MD-Judge report. The next candidate is sampled as 
+
+z(t+1) ∼ πθ (· | x, z (t), r (t), y (t), f (t)). (11) 
+
+Failure-Aware Feedback. The judge explanation is con-verted into concise revision guidance before it is given to the controller. Audio-recognition failures encourage a simpler sound event or a modality change. Event restatement en-courages qp to request audio-grounded analysis rather than a description of the clip. Refusal and text-unsafe failures en-courage safer indirect framing. Generic or foley-only failures encourage a clearer connection between the audio prompt and the intended situation. The objective x remains fixed across refinements, while qp, pa, and m may change. 
+
+Stopping Rule. Each refined candidate uses the same text guard, renderer, target-query procedure, and MD-Judge search feedback. The loop stops when the search score reaches its threshold or after K steps, then retains the highest-reward attempt. Llama Guard 3 evaluates only this frozen attempt for the reported metric. 
+
+# 4 Experiments 
+
+4.1 Experimental Setup 
+
+Models. We evaluate ARENA on four target LALMs: Au-dio Flamingo 3 (AF3) (Goel et al. 2025), Qwen2-Audio-7B-Instruct (Chu et al. 2024), MiMo-Audio-7B-Instruct, and GPT-Audio. The first three are evaluated locally and GPT-Audio through an API. The controller is a LoRA-tuned Qwen3-32B model trained from the offline reward-labeled log in Sec. 3. 
+
+Harmful Categories and Dataset. We evaluate all meth-ods on the 520 harmful objectives in AdvBench (Zou et al. 2023). Each objective x ∈ X requires a text-safe query qp and an audio prompt pa. AdvBench is used only for held-out eval-uation and has no overlap with the 2,000 controller-training specifications. For category analysis, we merge objectives into six groups: cybersecurity, violence/weapons, fraud, dis-information, self-harm/substance abuse, and abuse/exploita-tion. 
+
+Baseline Methods. We compare with two static benchmark-based audio jailbreak baselines, AJailBench (Song et al. 2026) and JALMBench (Peng et al. 2025). AJailBench uses fixed jailbreak templates rendered as speech, while JALMBench provides diverse audio-language prompts. Neither baseline uses reward labeling or feedback-based refinement. 
+
+Implementation Details. The controller outputs a JSON-style specification with text_query , audio_prompt ,
+
+modality , and strategy_tags . We decode with tem-perature 0.7, top-p = 0 .95 , and 256 new tokens. Speech prompts are rendered by Piper TTS; sound prompts are ren-dered by TangoFlux for 4 seconds. Target inference uses 300 new tokens for open-source LALMs and 512 for GPT-Audio. The refinement budget is K = 30 . For reward label-ing, we search for optimal hyperparameter set as κ = .05 ,
+
+w+ = ( .25 , . 25 , . 20 , . 15 , . 18) ⊤, and w− = ( .34 , . 28 , . 18) ⊤.
+
+Evaluation Setting. The controller is frozen before test-ing. MD-Judge-v0.2 supplies rewards and search feedback but no reported label. After search, Llama Guard 3-8B eval-uates the retained case once: qp must be safe, the recognition response must match pa, and r must be unsafe and grounded in that content. ASR is the latter rate conditioned on pass-ing the text guard, PSR is the text-pass rate, and FDR is their sample-level intersection over all 520 objectives. Thus 
+
+FDR = PSR × ASR before rounding. Every objective re-mains in the denominator: text-unsafe queries, recognition mismatches, and responses judged safe each contribute zero. PSR and conditional ASR are reported only as diagnostics and do not replace the joint rate. 
+
+Evaluation Protocol. The main evaluation runs the trained controller and refinement loop on all 520 objectives. Trans-ferability replays successful source-model cases on another target without refinement. Ablations vary one factor at a time: refinement budget, temperature, top-p, or the number of sound variants. Method AF3 Qwen2-Audio MiMo-Audio GPT-Audio Metric FDR PSR Div FDR PSR Div FDR PSR Div FDR PSR Div 
+
+AJailBench 31.2 68.6 24.8 10.8 68.6 24.8 25.3 68.6 24.8 24.6 68.6 24.8 JALMBench 12.6 25.3 58.6 11.9 25.3 58.6 10.7 25.3 58.6 11.3 25.3 58.6 
+
+ARENA 87.9 100.0 33.4 71.5 96.3 32.6 68.1 100.0 31.8 75.4 98.5 34.2 
+
+Table 1: Main comparison on target LALMs. FDR is the joint Llama Guard success rate over all 520 objectives; PSR and diversity are diagnostics. Values are percentages. 0 1 2 3 5 10 15 20 30                 
+
+> Budget K
+> 025 50 75 100
+> MD-Judge ASR (%)  (a) Refinement
+> 0.3 0.7 11.2 1.5
+> Temperature
+> (b) Temperature
+> 0.7 0.8 0.9 0.95 1
+> Top-p
+> (c) Top-p
+> 124816
+> Variants M
+> (d) Variants
+> AF3 Qwen2-Audio MiMo-Audio
+
+Figure 3: Hyperparameter ablations. Final Llama Guard ASR under different refinement budgets, target-side sampling settings, and environmental-sound variant counts. 
+
+Target Avg. Attempts 
+
+AF3 9.2 Qwen2-Audio 9.1 MiMo-Audio 12.5 GPT-Audio 11.4 Table 2: Average refinement attempts on AdvBench 520. 
+
+4.2 Main Results 
+
+Comparison with Static Red-teaming Set. Table 1 com-pares ARENA with baseline methods on the target LALMs. Each target reports joint FDR, input-side PSR, and test-case diversity (Div). FDR counts only text-safe cases whose rec-ognized audio content elicits an unsafe grounded response. 
+
+ARENA achieves the highest FDR on every target while maintaining a near-perfect PSR. AJailBench often fails to elicit unsafe responses, whereas JALMBench loses many candidates to input-side moderation. The results show that effective audio-grounded red-teaming requires both safe text framing and harmful audio-conditioned compliance. Table 2 reports the search cost. Most successes occur be-fore the K = 30 budget. MiMo-Audio is the hardest target, while GPT-Audio is comparable to open-source models. 
+
+4.3 Transferability Analysis 
+
+Transferability of Test Case. Table 3 evaluates whether attacks from one target remain effective on another. Off-diagonal cells report final Llama Guard ASR when success-ful source attacks are replayed without controller generation or refinement. Off-diagonal rates remain substantial, e.g., 
+
+Source AF3 Qwen2 MiMo GPT-Audio 
+
+AF3 87.9 59.7 60.0 50.4 Qwen2 57.0 74.2 37.1 41.0 MiMo 58.6 67.5 68.1 52.2 GPT-Audio 63.7 53.0 51.8 76.5 
+
+Table 3: Transferability . Cells report final Llama Guard ASR. AF3-found cases transfer to Qwen2-Audio, MiMo-Audio, and GPT-Audio with 59.7%, 60.0%, and 50.4% ASR. The gap from diagonal performance indicates that transfer ex-ists, but auditing a new target still benefits from closed-loop refinement. 
+
+4.4 Ablation Studies 
+
+Hyperparameter Ablations. Figure 3 compares four fac-tors that affect the attack search: refinement budget, target temperature, target top-p, and the number of synthesized sound variants. Each sweep reuses fixed attacks and varies only the analyzed factor, so the trends isolate execution-time sensitivity rather than changes in controller generation. We report final Llama Guard ASR after the text guard is applied, meaning these curves measure failures that satisfy the same input-side safety constraint as the main evaluation. 
+
+Refinement Budget. Refinement consistently increases ASR. At K = 0 , ASR is only 23–30%; at K = 30 , it reaches 88%, 74%, and 68% on AF3, Qwen2-Audio, and MiMo-Audio. Most gains occur in the first ten rounds, showing that judge feedback quickly corrects recognition failures and overly direct text framing. Later iterations still help, but with smaller marginal gains, because the remaining cases tend to require a more specific acoustic event or a less refusal-triggering text query. This pattern supports the closed-loop design: the controller does not merely sample more prompts, but uses failure labels to decide whether to adjust the speech or sound prompt, soften the textual framing, or retry the waveform realization. 
+
+Target Sampling (temperature & top-p). With top-p
+
+fixed at 0.95, higher target temperature generally reduces attack success. AF3 drops from 86% at temperature 0.3 to the low-to-mid 70% range around temperatures 0.7–1.2, and MiMo-Audio falls to 10% at temperature 1.5. Top-p has a weaker, non-monotonic effect across the tested range, sug-gesting that temperature-driven stochasticity is the stronger target-side factor. Manual inspection of the labeled logs shows two common high-temperature failure modes: the tar-get paraphrases the audio scene without following the harm-ful objective, or it shifts into a refusal. In contrast, changing top-p mostly affects lexical variation while preserving the same recognition and refusal tendencies. We therefore use a moderate decoding in the main experiments to avoid overstat-ing success under unusually deterministic target responses. 
+
+Sound Variants. For environmental-sound attacks, we generate multiple TangoFlux variants for the same text-audio specification and keep the first unsafe response when one is found. Increasing the number of variants substantially im-proves ASR: AF3 rises from 70% at M = 1 to 95% at 
+
+M = 16 , Qwen2-Audio rises from 59% to 96%, and MiMo-Audio rises from 49% to 85%. Waveform realization is there-fore a major factor even when the semantic audio prompt is fixed. The result also explains why fixed audio benchmarks can underestimate risk: two clips with the same caption can lead to different target perceptions, and the controller benefits from retrying the sound realization when the judge identifies recognition-side failure. 
+
+4.5 Additional Discussions 
+
+Results by Harmful Category. Figure 4 breaks down 
+
+ARENA ’s final Llama Guard ASR by six consolidated harm-ful categories on the three open-source targets. The method remains effective across a broad range of objectives, with es-pecially high success on violence/weapon-related and fraud-related categories. Self-harm/substance-abuse objectives are comparatively harder on AF3 and MiMo-Audio, while cy-bersecurity shows stronger target dependence. The category view exposes blind spots that are hidden by aggregate ASR. 
+
+Test-Case Diversity. The Div column in Table 1 shows that 
+
+ARENA preserves nontrivial query diversity while satisfying the input-side safety constraint, indicating that the controller does not rely on a single fixed wrapper. The category-level view further shows that diversity is not concentrated in one harmful group: while some categories require more formu-laic safety-preserving phrasing, the generated cases still vary in text framing, modality choice, and audio-event realization. AF3 Qwen2 MiMo              
+
+> Cybersecurity Violence/Weapons Fraud Disinformation Self-Harm/Substance Abuse/Exploitation
+> 90.5 76.1 62.7 91.5 75.2 73.5 89.0 75.0 71.0 78.0 66.1 72.9 62.5 75.0 58.3 94.8 68.4 73.7 50 75 100
+> ASR (%)
+
+Figure 4: Category-level ASR. Final Llama Guard ASR of 
+
+ARENA across six consolidated harmful categories. Cyber Viol./Weap. Fraud Disinfo. Self/Subst. Abuse/Expl.        
+
+> 0.0 0.2 0.4 0.6 0.8 1.0
+> Score
+> 1-AvgSelfBLEU 1-CosSim
+> 0.36 0.55 0.44 0.55 0.63 0.76 0.96 0.96 0.96 0.96 0.94 0.95
+
+Figure 5: Category-level diversity of ARENA test cases. 
+
+Failure Analysis. We use the reward-labeled execution log described in Sec. 3 to inspect failed and borderline trials. Remaining failures mainly fall into three patterns. First, the target sometimes recognizes the audio event but refuses once the response would require operational detail. Second, sound prompts can be recognized at the wrong granularity, such as restating a break-in scene as generic alarm or crowd noise, which weakens the harmful grounding. Third, near misses often describe a risky situation without providing actionable steps. These labels do not change the evaluation score, which still follows the hard two-sided condition, but they explain why closed-loop refinement helps: feedback can soften overly direct text, make the audio event more explicit, or sample a clearer waveform while keeping qp text-safe. 
+
+# 5 Conclusion 
+
+We presented ARENA , a closed-loop framework for auto-mated red-teaming of large audio-language models under a text-safe, audio-grounded threat setting. ARENA refines modality-aware prompts with MD-Judge feedback while us-ing Llama Guard 3 only for final labels. Across four tar-get LALMs, it finds substantially more failures than static audio jailbreak baselines while maintaining a near-perfect prompt-pass rate. The transfer and ablation results show that current LALMs share audio-grounded weaknesses and that refinement, target sampling, and sound realization all affect attack success, suggesting that safety evaluation should test the full generation-and-execution loop rather than only fixed prompts. References 
+
+Borsos, Z.; Marinier, R.; Vincent, D.; Kharitonov, E.; Pietquin, O.; Sharifi, M.; Roblek, D.; Teboul, O.; Grang-ier, D.; Tagliasacchi, M.; and Zeghidour, N. 2022. Audi-oLM: A Language Modeling Approach to Audio Generation. arXiv:2209.03143. Cao, Y.; Miao, Y.; Gao, X.-S.; and Dong, Y. 2025. Red-Teaming Text-to-Image Systems by Rule-based Preference Modeling. In Advances in Neural Information Processing Systems , volume 38, 150703–150734. Curran Associates, Inc. Chao, P.; Robey, A.; Dobriban, E.; Hassani, H.; Pappas, G. J.; and Wong, E. 2023. Jailbreaking Black Box Large Language Models in Twenty Queries. arXiv:2310.08419. Chen, K.; Muyang, L.; Li, G.; Zhang, S.; Guo, S.; and Zhang, T. 2025. TRUST-VLM: Thorough Red-Teaming for Uncov-ering Safety Threats in Vision-Language Models. In Forty-second International Conference on Machine Learning .Chu, Y.; Xu, J.; Yang, Q.; Wei, H.; Wei, X.; Guo, Z.; Leng, Y.; Lv, Y.; He, J.; Lin, J.; Zhou, C.; and Zhou, J. 2024. Qwen2-Audio Technical Report. arXiv:2407.10759. Chu, Y.; Xu, J.; Zhou, X.; Yang, Q.; Zhang, S.; Yan, Z.; Zhou, C.; and Zhou, J. 2023. Qwen-Audio: Advancing Uni-versal Audio Understanding via Unified Large-Scale Audio-Language Models. arXiv:2311.07919. Deshmukh, S.; Elizalde, B.; Singh, R.; and Wang, H. 2023. Pengi: An Audio Language Model for Audio Tasks. arXiv:2305.11834. Feng, B.-H.; Liu, C.-F.; Liang, Y.-H. L.; Yang, C.-K.; Fu, S.-W.; Chen, Z.; Lu, K.-H.; Huang, S.-F.; Yang, C.-H. H.; Wang, Y.-C. F.; Chen, Y.-N.; and Lee, H.-y. 2025. Investigat-ing Safety Vulnerabilities of Large Audio-Language Models Under Speaker Emotional Variations. arXiv:2510.16893. Ganguli, D.; Lovitt, L.; Kernion, J.; Askell, A.; Bai, Y.; Kadavath, S.; Mann, B.; Perez, E.; Schiefer, N.; Ndousse, K.; et al. 2022. Red Teaming Language Models to Reduce Harms: Methods, Scaling Behaviors, and Lessons Learned. arXiv:2209.07858. Ghosh, S.; Kumar, S.; Seth, A.; Evuru, C. K. R.; Tyagi, U.; Sakshi, S.; Nieto, O.; Duraiswami, R.; and Manocha, D. 2024. GAMA: A Large Audio-Language Model with Ad-vanced Audio Understanding and Complex Reasoning Abil-ities. arXiv:2406.11768. Goel, A.; Ghosh, S.; Kim, J.; Kumar, S.; Kong, Z.; Lee, S.-g.; Yang, C.-H. H.; Duraiswami, R.; Manocha, D.; Valle, R.; and Catanzaro, B. 2025. Audio Flamingo 3: Advancing Audio Intelligence with Fully Open Large Audio Language Models. arXiv:2507.08128. Gong, Y.; Luo, H.; Liu, A. H.; Karlinsky, L.; and Glass, J. 2023. Listen, Think, and Understand. arXiv:2305.10790. Grattafiori, A.; et al. 2024. The Llama 3 Herd of Models. arXiv:2407.21783. He, J.; Hou, G.; Li, H.; Huang, Z.; Chen, K.; Yu, Y.; Jiang, W.; Xu, G.; and Zhang, T. 2025. TEAR: Temporal-aware Automated Red-teaming for Text-to-Video Models. arXiv:2511.21145. He, J.; Hou, G.; Li, H.; Huang, Z.; Chen, K.; Yu, Y.; Jiang, W.; Xu, G.; and Zhang, T. 2026. TEAR: Temporal-aware Automated Red-teaming for Text-to-Video Models. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 41–50. Kang, M.; Fang, C.; and Li, B. 2026. AudioGuard: To-ward Comprehensive Audio Safety Protection Across Di-verse Threat Models. arXiv:2604.08867. Kong, Z.; Goel, A.; Badlani, R.; Ping, W.; Valle, R.; and Catanzaro, B. 2024. Audio Flamingo: A Novel Audio Lan-guage Model with Few-Shot Learning and Dialogue Abili-ties. arXiv:2402.01831. Li, G.; Chen, K.; Zhang, S.; Zhang, J.; and Zhang, T. 2024a. ART: Automatic Red-teaming for Text-to-Image Models to Protect Benign Users. In Advances in Neural Information Processing Systems , volume 37, 91184–91219. Curran As-sociates, Inc. Li, L.; Dong, B.; Wang, R.; Hu, X.; Zuo, W.; Lin, D.; Qiao, Y.; and Shao, J. 2024b. SALAD-Bench: A Hierarchical and Comprehensive Safety Benchmark for Large Language Mod-els. In Findings of the Association for Computational Lin-guistics: ACL 2024 , 3923–3954. Bangkok, Thailand: Asso-ciation for Computational Linguistics. Liu, Y.; Yang, G.; Deng, G.; Chen, F.; Chen, Y.; Shi, L.; Zhang, T.; and Liu, Y. 2024. Groot: Adversarial Testing for Generative Text-to-Image Models with Tree-based Semantic Transformation. arXiv:2402.12100. Mazeika, M.; Phan, L.; Yin, X.; Zou, A.; Wang, Z.; Mu, N.; Sakhaee, E.; Li, N.; Basart, S.; Li, B.; Forsyth, D.; and Hendrycks, D. 2024. HarmBench: A Standardized Evalu-ation Framework for Automated Red Teaming and Robust Refusal. arXiv:2402.04249. Mehrabi, N.; Goyal, P.; Dupuy, C.; Hu, Q.; Ghosh, S.; Zemel, R.; Chang, K.-W.; Galstyan, A.; and Gupta, R. 2023. FLIRT: Feedback Loop In-context Red Teaming. arXiv:2308.04265. Mehrotra, A.; Zampetakis, M.; Kassianik, P.; Nelson, B.; Anderson, H.; Singer, Y.; and Karbasi, A. 2023. Tree of Attacks: Jailbreaking Black-Box LLMs Automatically. arXiv:2312.02119. Peng, Z.; Liu, Y.; Sun, Z.; Li, M.; Luo, Z.; Zheng, J.; Dong, W.; He, X.; Wang, X.; Xue, Y.; et al. 2025. Jalmbench: Bench-marking jailbreak vulnerabilities in audio language models. 
+
+arXiv preprint arXiv:2505.17568 .Perez, E.; Huang, S.; Song, F.; Cai, T.; Ring, R.; Aslanides, J.; Glaese, A.; McAleese, N.; and Irving, G. 2022. Red Teaming Language Models with Language Models. arXiv:2202.03286. Radford, A.; Kim, J. W.; Xu, T.; Brockman, G.; McLeavey, C.; and Sutskever, I. 2022. Robust Speech Recognition via Large-Scale Weak Supervision. arXiv:2212.04356. Rafailov, R.; Sharma, A.; Mitchell, E.; Manning, C. D.; Er-mon, S.; and Finn, C. 2023. Direct preference optimization: Your language model is secretly a reward model. Advances in neural information processing systems , 36: 53728–53741. Rubenstein, P. K.; Asawaroengchai, C.; Nguyen, D. D.; Bapna, A.; Borsos, Z.; Quitry, F. d. C.; Chen, P.; El Badawy, D.; Han, W.; Kharitonov, E.; Muckenhirn, H.; Padfield, D.; Qin, J.; Rozenberg, D.; Sainath, T.; Schalkwyk, J.; Sharifi, M.; Ramanovich, M. T.; Tagliasacchi, M.; Tudor, A.; Ve-limirovic, M.; Vincent, D.; Yu, J.; Wang, Y.; Zayats, V.; Zeghidour, N.; Zhang, Y.; Zhang, Z.; Zilka, L.; and Frank, C. 2023. AudioPaLM: A Large Language Model That Can Speak and Listen. arXiv:2306.12925. Song, Z.; Jiang, Q.; Cui, M.; Li, M.; Gao, L.; Zhang, Z.; Xu, Z.; Wang, Y.; Ouyang, G.; Chen, Z.; et al. 2026. Audio jailbreak: An open comprehensive benchmark for jailbreak-ing large audio-language models. In Proceedings of the 64th Annual Meeting of the Association for Computational Lin-guistics (Volume 1: Long Papers) , 27294–27308. Tang, C.; Yu, W.; Sun, G.; Chen, X.; Tan, T.; Li, W.; Lu, L.; Ma, Z.; and Zhang, C. 2023. SALMONN: To-wards Generic Hearing Abilities for Large Language Models. arXiv:2310.13289. Wu, Y.; Chen, K.; Zhang, T.; Hui, Y.; Nezhurina, M.; Berg-Kirkpatrick, T.; and Dubnov, S. 2022. Large-scale Con-trastive Language-Audio Pretraining with Feature Fusion and Keyword-to-Caption Augmentation. arXiv:2211.06687. Xu, W.; Chen, K.; Qiu, J.; Zhang, Y.; Wang, R.; Mao, J.; Zhang, T.; and Wang, L. 2025. Automated Red Teaming for Text-to-Image Models through Feedback-Guided Prompt Iteration with Vision-Language Models. In Proceedings of the IEEE/CVF International Conference on Computer Vi-sion , 18575–18584. Yang, H.; Qu, L.; Shareghi, E.; and Haffari, G. 2024. Audio Is the Achilles’ Heel: Red Teaming Audio Large Multimodal Models. arXiv:2410.23861. Yang, H.; Qu, L.; Shareghi, E.; and Haffari, G. 2025a. Audio is the achilles’ heel: Red teaming audio large multimodal models. In Proceedings of the 2025 Conference of the Na-tions of the Americas Chapter of the Association for Com-putational Linguistics: Human Language Technologies (Vol-ume 1: Long Papers) , 9292–9306. Yang, Y.; Gao, R.; Wang, X.; Ho, T.-Y.; Xu, N.; and Xu, Q. 2023a. MMA-Diffusion: MultiModal Attack on Diffusion Models. arXiv:2311.17516. Yang, Y.; Hui, B.; Yuan, H.; Gong, N.; and Cao, Y. 2023b. SneakyPrompt: Jailbreaking Text-to-image Generative Mod-els. arXiv:2305.12082. Yang, Y.; Zhang, X.; Han, Z.; Wang, S.; Zhuang, J.; Jin, Z.; Shao, J.; Sun, G.; and Zhang, C. 2025b. Speech-Audio Compositional Attacks on Multimodal LLMs and Their Mit-igation with SALMONN-Guard. arXiv:2511.10222. Yang, Y.; Zhang, X.; Han, Z.; Wang, S.; Zhuang, J.; Jin, Z.; Shao, J.; Sun, G.; and Zhang, C. 2025c. Speech-Audio Compositional Attacks on Multimodal LLMs and Their Mitigation with SALMONN-Guard. arXiv preprint arXiv:2511.10222 .Yu, J.; Lin, X.; Yu, Z.; and Xing, X. 2023. GPTFUZZER: Red Teaming Large Language Models with Auto-Generated Jailbreak Prompts. arXiv:2309.10253. Zhang, D.; Li, S.; Zhang, X.; Zhan, J.; Wang, P.; Zhou, Y.; and Qiu, X. 2023. SpeechGPT: Empowering Large Language Models with Intrinsic Cross-Modal Conversational Abilities. arXiv:2305.11000. Zhu, S.; Zhang, R.; An, B.; Wu, G.; Barrow, J.; Wang, Z.; Huang, F.; Nenkova, A.; and Sun, T. 2023. AutoDAN: Inter-pretable Gradient-Based Adversarial Attacks on Large Lan-guage Models. arXiv:2310.15140. Zou, A.; Wang, Z.; Carlini, N.; Nasr, M.; Kolter, J. Z.; and Fredrikson, M. 2023. Universal and Transferable Adversarial Attacks on Aligned Language Models. arXiv:2307.15043.

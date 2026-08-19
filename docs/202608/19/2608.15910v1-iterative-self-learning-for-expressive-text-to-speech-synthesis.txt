@@ -1,0 +1,332 @@
+Title: Iterative Self-Learning for Expressive Text-to-Speech Synthesis
+
+URL Source: https://arxiv.org/pdf/2608.15910v1
+
+Published Time: Tue, 18 Aug 2026 01:22:08 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+# Iterative Self-Learning for Expressive Text-to-Speech Synthesis 
+
+Nicholas Sanders, Gustav Eje Henter, Simon King, Korin Richmond 
+
+Abstract —Expressive text-to-speech (TTS) systems that use explicit conditioning labels provide direct and interpretable control over expressive attributes, in contrast to reference-based or prompting-based approaches, but require labeled data. Obtaining these labels at scale is costly and time-consuming, yet no prior semi-supervised framework addresses this specific bottleneck. Existing semi-supervised TTS methods instead target scarcity of paired speech-text data or transcriptions. To address the scarcity of expressive labels, we propose an Iterative Self-Learning (ISL) framework for expressive TTS, built on Invert-Classify, a classifier-free method that recovers discrete expressive labels by inverting a frozen generative model. The framework iteratively pseudo-labels unlabeled speech using the current model, retrains on the combined labeled and pseudo-labeled data, and repeats, progressively refining label quality and synthesis. We validate on two expressive tasks, word-level prominence and utterance-level emotion, across multiple low-resource data splits. We find that iterative refinement can improve pseudo-label accuracy over single-pass baselines. Furthermore, we observe that these improvements in pseudo-labeling of expressivity translate to gains in expressive label adherence and synthesis quality, confirmed by objective metrics and human listening tests. In the most data-scarce conditions, ISL-trained models outperform single-pass pseudo-labeling and further approach fully supervised performance, demonstrating that gradient-based ISL is an effec-tive solution to expressive label scarcity in low-resource TTS. 
+
+Index Terms —text-to-speech synthesis, expressive speech, iter-ative self-learning, pseudo-labeling, flow matching, prominence, emotion, semi-supervised learning 
+
+I. I NTRODUCTION 
+
+# MODELING and controlling expressive speech, such as prosodic qualities like prominence or paralinguistic qualities like emotion, remains a central challenge in text-to-speech (TTS). To achieve expressive control, TTS models must be conditioned on representations that capture meaningful variation in speaking style and provide a mechanism for controlling generation at inference time. Existing approaches generally fall into two paradigms: implicit representations learned from reference speech or latent style embeddings, and explicit representations that use symbolic conditioning signals such as emotion categories or prominence labels [1]– [5]. Recent advances in large-scale pretraining of generative speech models have increased the popularity of implicit con-trol methods, including reference-based conditioning, learned style representations, and natural-language prompting [6]–[8]. These approaches offer flexible and open-ended control, but their behavior can be difficult to predict when expressive at-tributes are specified through abstract text-based descriptions. Furthermore, disentangling linguistic content, speaker identity, 
+
+> This work was partially supported by the UKRI CDT in NLP, funded by the UKRI (grant EP/S022481/1), the University of Edinburgh, Huawei, and the Wallenberg AI, Autonomous Systems and Software Program (WASP) funded by the Knut and Alice Wallenberg Foundation.
+
+and expressive characteristics remains an open challenge in controllable TTS, as expressive information is often encoded through acoustic correlates that simultaneously convey linguis-tic, paralinguistic, and speaker-specific information [8]–[11]. Explicit representations therefore remain promising because they provide interpretable and targeted control over percep-tually meaningful expressive attributes. However, their use is fundamentally constrained by the scarcity of large-scale speech corpora annotated with expressive labels. Acquiring expressive labels at scale remains challenging because expressive categories such as emotion and prominence require human perceptual judgments and are often expensive to annotate consistently. Existing approaches commonly address this problem by training dedicated classifiers or adapting self-supervised speech representations to automatically predict expressive labels [12]–[15]. While effective, these approaches introduce an additional modeling stage whose design is sep-arate from the TTS system itself. In practice, deploying such methods requires selecting or adapting suitable classifier ar-chitectures, pretrained representations, and training procedures for each expressive task and dataset. These challenges are fur-ther compounded by variability in how expressive categories are defined, perceived, and represented across speech corpora [16], [17]. As a result, automatic expressive labeling often entails substantial engineering effort beyond the development of the speech synthesis model. One effective strategy for addressing label scarcity is lever-aging unlabeled data via a semi-supervised learning framework known as Iterative Self-Learning (ISL) [18], [19]. In speech processing, ISL is frequently implemented as Iterative Pseudo-Labeling (IPL), where a model trained on limited labeled data is used to generate pseudo-labels for unlabeled examples and then retrained on the combined corpus. In this framework, the same TTS model both performs labelling and uses the labels for controllable TTS training. ISL has proven effective in low-resource speech applications, particularly for Automatic Speech Recognition (ASR), where iterative pseudo-labeling achieves competitive Word Error Rate (WER) while substan-tially reducing reliance on labeled training data [20]. Despite its success in discriminative tasks, applying an ISL paradigm to a generative task like expressive TTS introduces a distinct challenge. In discriminative settings, label quality directly affects task performance. However, in expressive TTS a model must simultaneously adhere to expressive labels and maintain overall synthesis quality. These objectives can decouple: prior work [21] demonstrated that a FastPitch model trained on entirely random prominence labels yielded human-listener quality mean opinion scores approaching those of a model trained with pseudo-labels, despite having no promi-nence control. These prior findings suggest that synthesis quality is partially driven by data quantity, while expressive 1arXiv:2608.15910v1 [eess.AS] 16 Aug 2026 label adherence depends on label quality. Such observations motivate an iterative approach in which repeated pseudo-labeling and retraining may progressively improve expressive label quality as the model evolves, analogous to how IPL improves transcription quality in ASR. To address expressive label scarcity, this paper proposes an ISL framework utilizing Invert-Classify [21], which does not require any external classifiers or pre-trained models that may struggle with cross-domain adaptation. In this framework, a TTS model is trained on a small seed of annotated data, then frozen to pseudo-label a larger corpus of unlabeled speech via Invert-Classify, and then further trained on the combined seed data and pseudo-labeled data. By iterating this cycle, the model effectively refines its own expressive speech labels. This method relies solely on the generative model’s reconstruction of expressive speech to derive labels, rather than being explicitly trained to predict expressive labels as targets. We investigate gradient-based pseudo-labeling across two forms of expressive control: word-level prominence and utterance-level emotion. Similar to previous work, we treat prominence as a binary emphasis label indicating whether a word is perceptually prominent [21], [22]. These tasks differ not only in expressive category but also in control granularity with respect to time-scale, with prominence operating locally at the word level and emotion acting globally across the utterance. Together, the two tasks are also used to investigate whether iterative gradient-based pseudo-labeling generalizes across distinct segmentation levels and expressive control settings while progressively improving expressive label quality and downstream synthesis. This leads to the following research questions: 1) Generalizability: Can iterative gradient-based pseudo-labeling generalize across expressive control tasks with differing segmentation levels and expressive characteris-tics, such as word-level prominence and utterance-level emotion? 2) Iterative Dynamics: How does pseudo-label accuracy evolve during ISL in a generative setting where labels are inferred through gradient-based pseudo-labeling, and what training schedule best balances convergence and label error propagation? 3) Label Quality and Synthesis: Does pseudo-label ac-curacy on held-out data serve as a reliable indicator of expressive label adherence and perceptual expressivity across varying seed-data conditions? 4) Performance Limit: To what extent does iterative refinement improve upon single-pass gradient-based pseudo-labeling, and how closely can ISL-trained mod-els approach fully supervised performance? II. R ELATED WORK 
+
+A. Iterative Self-Learning and Pseudo-Labeling 
+
+While the concept of self-learning is well-established [23], typically involving a static, single-pass approach where a teacher model labels data once for a student model, its success-ful application to modern deep learning relies on managing the dynamics of an iterative loop. In ASR, IPL has emerged as a standard protocol for leveraging unlabeled data [19], [20]. These works have demonstrated that a cyclical “pseudo-label, retrain, pseudo-label, etc.” process prevents the model from converging prematurely to the biases of the initial seed model. Standard IPL implementations in ASR often introduce com-plex heuristics, such as re-initializing models at each step or labeling only a high-confidence subset of unlabeled data based on top-percentage softmax logits [20], [24]. However, the efficacy of IPL is not uniform across all data distributions. Recent work on incremental semi-supervised learning for multi-genre ASR demonstrates that blindly applying IPL to heterogeneous data can lead to performance degradation [25]. These findings underscore the necessity of mechanisms to arrest the feedback loop before noise dominates the signal. The mechanism underlying this balance is further formal-ized by Wallington et al. [26], building on the foundational insight that deep networks tend to learn simple patterns early in training while memorizing noise later [27]. This insight is particularly relevant for expressive TTS, where “label noise” is not merely stochastic error but often stems from the inherent subjectivity of the task itself. For instance, inter-annotator agreement varies significantly between distinct expressive traits, such as structural prominence versus paralinguistic emotion [28]. This further motivates our investigation into generalizing the ISL framework across different expressive speech traits, as the optimal stopping point and learning dynamics may fluctuate based on the subjectivity and difficulty of the specific trait being modeled. 
+
+B. Semi-Supervised TTS 
+
+While semi-supervised learning in ASR typically revolves around iterative label refinement and pseudo-label cycling, work in semi-supervised TTS has generally taken a differ-ent route: rather than improving label quality, it focuses on leveraging unpaired speech to improve internal representation learning. One widely followed strategy uses vector-quantized (VQ) or otherwise discretized speech representations. Tu et al. [29] proposed a semi-supervised multi-speaker TTS framework that uses a VQ-VAE trained with a speech reconstruction task to extract discrete acoustic units (DAUs) from large-scale untranscribed speech. These units serve as an intermediate representation that enables training without relying on aligned text–speech supervision. QS-TTS [30] advances this principle by distilling speech into a more compressed VQ representation via a multi-stage, multi-codebook self-supervised framework with contrastive learning, reporting improvements in intelli-gibility and Mean Opinion Scores in both standard single-speaker and low-resource settings. In contrast, approaches such as StrawNet [31] address data scarcity from the opposite direction. Rather than compensating for missing transcripts in speech data, StrawNet assumes the scarcity lies in speech for a given text corpus, and uses a teacher model to generate synthetic speech targets from text via distillation. While discrete representation learning substantially miti-gates paired speech-text data scarcity, it does not address 2controllability. Closest to addressing controllability, Habib et al. [3] proposed a semi-supervised VAE-based TTS framework that uses partial supervision to encourage latent variables to correlate with expressive attributes such as affect and speaking rate. However, the learned representations remain latent vari-ables inferred from data rather than discrete symbolic labels, placing this work closer to implicit control methods such as Global Style Tokens (GST) [1]. As such, it does not address the scarcity of discrete expressive conditioning labels. In summary, while semi-supervised TTS methods lever-age unlabeled speech to learn acoustic representations, none address the scarcity of discrete symbolic expressive labels used for explicit controllability. Meanwhile, ISL techniques in discriminative tasks have demonstrated the effectiveness of iterative pseudo-label refinement. However, no prior work has integrated an explicit label recovery mechanism into an iterative generative learning loop for expressive speech. In prior work [21], Invert-Classify was introduced as a mechanism for recovering explicit expressive labels using a pre-trained generative model, limited to a single-pass pseudo-labeling procedure. Here, we extend this paradigm by em-bedding Invert-Classify into an Iterative Self-Learning loop, treating the generative TTS model as an evolving teacher that progressively refines both synthesis and labeling quality. III. M ETHODS 
+
+A. Iterative Self-Learning (ISL) Framework 
+
+We propose an ISL framework designed to progressively refine both the generative model and the training labels. Unlike distillation approaches that rely on distinct teacher and student architectures, this framework employs a single evolving model that learns from its own predictions. Our methodology adopts the IPL protocols used in ASR [20]. The pipeline operates as a cyclical interaction where the model evolves through successive rounds of self-labeling and re-training. An overview of the process is shown in Fig. 1 and proceeds as follows: 1) Initialization (Iteration 0): A seed model M0 is trained for Eseed epochs exclusively on the small ground-truth labeled dataset DL = {(XL, Y L)}. Following the pro-tocol in [20], we set Eseed = 100 epochs to ensure the model learns sufficient acoustic representations before exposure to unlabeled data. 2) Pseudo-Labeling: The current model Mi is frozen. Invert-Classify [21], a classifier-free pseudo-labeling method described in Subsection III-E, is applied to the unlabeled dataset DU = {XU }, generating pseudo-labels ˆY and a pseudo-labeled dataset DP L =
+
+{(XU , ˆY )}.3) Iterative Training: The model is further trained on the combined dataset Dcomb = DL ∪ D P L .4) Loop: The updated model Mi+1 is frozen for the next pseudo-labeling step, and steps 2–3 are repeated for I
+
+iterations. 
+
+B. Matcha-TTS Backbone 
+
+To enable spectrogram generative modeling with iterative self-learning and gradient-based pseudo-labeling, we utilize Ground-Truth Labeled   
+
+> Dataset
+> 1. Train Seed Model
+> (Iteration 0)
+> Current Model
+> (Frozen)
+> 2. Pseudo Labeling
+> Unlabeled Data Using
+> Invert-Classify
+> Unlabeled
+> Data
+> Pseudo-Labeled
+> Dataset
+> Combine Pseudo-
+> Labeled Data and
+> Ground-Truth Labeled
+> Data
+> Combined
+> Dataset
+> 3. Train Model
+> on Combined
+> Data
+> Updated
+> Model
+> Seed Model
+> Iterative Self-Learning Loop
+> Repeat Times
+> Fig. 1. Overview of the Iterative Self-Learning loop.
+
+Matcha-TTS [32] as our backbone acoustic model. We select Matcha-TTS for several practical and methodological reasons. Recent expressive TTS systems increasingly rely on large pretrained components or speech/language-model backbones, as seen in systems such as StyleTTS2 [11], XTTS [33], and more recent language-model-based approaches including MaskGCT [34] and IndexTTS2 [35]. While highly capable, these systems introduce additional pretrained dependencies and training complexity that complicate controlled iterative self-learning studies. In contrast, Matcha-TTS is trained from scratch as an acoustic model using only available speech-text data, providing a lightweight and reproducible framework for repeated self-learning experiments. Furthermore, Matcha-TTS learns alignments internally via Monotonic Alignment Search (MAS) [36], avoiding reliance on external forced-alignment pipelines that could otherwise introduce additional engineering dependencies. Its flow-matching formulation further places it within a broader family of successful diffusion and flow-matching based TTS models using related generative objec-tives [37], [38]. While earlier diffusion probabilistic models (e.g., Grad-TTS [37]) formulate this denoising process using stochastic differential equations (SDEs) and typically require many in-ference steps, Matcha-TTS improves inference efficiency by adopting Optimal Transport Conditional Flow Matching (OT-CFM) [39]. Rather than modeling a stochastic diffusion pro-cess, OT-CFM learns an ordinary differential equation (ODE) defining a transport trajectory from noise to data that is close to being a straight-line path between the source and target distributions, enabling diffusion-like quality in substantially fewer inference steps. For text processing, we use the same setup as the original released code, phonemizer [40] with an espeak-ng [41] frontend for grapheme-to-phoneme conversion. 
+
+C. Modeling Expressive Representations 
+
+To investigate the generalizability of our framework, we modify the Matcha-TTS acoustic model to condition on two distinct expressive representations spanning different scales of control. For word-level prominence , following Latif et al. [22], binary prominence tags <PROM> and <NOTPROM> 
+
+are interleaved with phoneme tokens at word boundaries and 3learned as trainable embeddings in a separate embedding ta-ble, decoupling phonetic and prominence representations. For 
+
+utterance-level emotion , a learned embedding corresponding to the target emotion class is concatenated to the text encoder outputs, a standard approach in emotional TTS [1], [4], [5]. 
+
+D. Generative Modeling via OT-CFM 
+
+Matcha-TTS [32] is trained via Optimal Transport Condi-tional Flow Matching (OT-CFM) [39], which learns a vector field defining a trajectory from a Gaussian source to the mel-spectrogram data distribution along nearly straight lines. While the OT-CFM objective models transport from noise to data, the auxiliary losses Ldur and Lenc stabilize duration predictions and encoder representations during training, using hyperparameters λdur and λenc as weights for balancing the combined fusion loss. The total training objective combines the OT-CFM loss with auxiliary duration and encoder prior losses: 
+
+LTotal = LOT −CFM + λdur Ldur + λenc Lenc (1) The combined objective is used both for training and as the inversion loss in Section III-E. 
+
+E. Gradient-Based Pseudo-Labeling 
+
+Invert-Classify [21] is a classifier-free pseudo-labeling method for generative models. A model trained on seed labeled data is frozen, and unlabeled samples are pseudo-labeled via a two-step process. First, the missing label representation is initialized as the mean of all possible label embeddings and updated via gradient descent with respect to the same training loss used for training the seed model i.e., updated via gradient descent with respect to LTotal (Equation 1), a form of inversion [42], [43]. The label representation is updated toward the conditioning signal most consistent with the observed speech. Second, the updated continuous embedding is quan-tized by assigning it to the nearest entry in the label embedding table via cosine similarity, producing a discrete pseudo-label suitable for training. The Invert-Classify approach bears a conceptual resemblance to classifier-free guidance [44] in that both leverage the generative model itself as a signal about the conditioning space, but differs in mechanism and purpose: CFG manipulates conditioning at inference time to improve sample quality, whereas Invert-Classify optimizes conditioning at the input level to recover missing discrete labels for pseudo-labeling. 
+
+Stochastic Sampling and Inversion. Standard flow-matching training relies on stochastic sampling of a random timestep t ∼ U [0 , 1] and noise x0 ∼ N (0 , I ) at every batch. This stochasticity renders inversion intractable: if t and x0
+
+are resampled at every update step of the inversion loop, the objective shifts constantly, preventing input embeddings from converging to a stable representation. 
+
+Adapting Inversion to Flow-Matching. During inversion, we adopt a deterministic environment by fixing the timestep to a constant value (e.g., t = 0 .9) and using a single fixed noise tensor x0 across all inversion steps for a given input. This ensures that ∇L Total primarily reflects the conditioning                      
+
+> TABLE I EXAMPLE CONTRASTIVE FOCUS GROUP FROM NAVER -P ROSODY .
+> Prominence-labeled utterance
+> <NOTPROM> Abby <NOTPROM> went <NOTPROM> home
+> <PROM> Abby <NOTPROM> went <NOTPROM> home
+> <NOTPROM> Abby <PROM> went <NOTPROM> home
+> <NOTPROM> Abby <NOTPROM> went <PROM> home
+
+labels rather than stochastic sampling variance. We treat t as a hyperparameter and conduct all experiments at t = 0 .9 (i.e., timesteps near the end of interpolation), which yielded greater gradient magnitudes with respect to the conditioning labels for the given tasks and datasets used. 
+
+F. Dataset Selection and Retraining Strategy 
+
+Iterative pseudo-labeling introduces two practical consid-erations. First, pseudo-label accuracy determines the model’s ability to realize target expressive traits. Second, the number of training epochs per iteration affects convergence and general-ization. Too few epochs may yield suboptimal synthesis, while past work has shown that running an ISL loop indefinitely risks reinforcing errors in the pseudo-labels [26]. To address this, we use a Select and Retrain strategy. We monitor pseudo-label accuracy on a held-out validation set across all ISL iterations, identify the iteration i∗ achieving the highest validation accuracy, and train a new model from scratch on the fixed dataset D(i∗)comb , decoupling the benefits of improved labels from the model state accumulated during the iterative process. IV. E XPERIMENTAL SETUP 
+
+A. Datasets 
+
+Emotion – ESD. We use the English subset of the Emotional Speech Dataset (ESD) [45], comprising 10 native English speakers and approximately 14.5 hours of speech across five emotion classes: Neutral , Happy , Angry , Sad , and 
+
+Surprise . Its parallel structure, where identical lexical content is recorded across all emotion categories, minimizes lexical bias. We follow the official train-test splits and resample audio from 16 kHz to 22.05 kHz for compatibility with HiFi-GAN. 
+
+Prominence – Naver-Prosody. We use the Naver Prosody-Control dataset [22], containing 26.7 hours of speech ( ≈36,600 utterances) from a single female American English speaker. Utterances are organized in contrastive focus groups with prominence placed on different constituents, from which we derive binary prominence targets ( <PROM> vs. <NOTPROM> ). Interrogative utterances are excluded, leaving groups of four parallel utterances per text. An example contrastive focus group is shown in Table I. 
+
+B. Low-Resource Data Partitioning 
+
+Stratified Sampling (ESD). Given the multi-speaker and multi-class nature of ESD, we use stratified random sampling by both Speaker ID and Emotion Class . The target percentage is applied individually to the utterance count within each 4stratum, guaranteeing full coverage of speakers and emotion categories even in extreme low-resource settings. 
+
+Group-wise Sampling (Naver-Prosody). For Naver-Prosody, we sample at the lexical group level. A “1% split” refers to sampling 1% of available lexical groups (quadru-plets), ensuring that for every text included, all four variations of prominence placement are observed, preserving the discrim-inative nature of the dataset at low data volumes. 
+
+C. Model Configuration and Hyperparameters 
+
+TTS Training. We use the Adam optimizer [46] with a learning rate of 4 × 10 −4, no weight decay, gradient clipping at 5.0, and a batch size of 32. All seed models are trained for 100 epochs prior to the first IPL iteration [20]. For the final Select-and-Retrain phase, models are trained for a total of 1000 epochs. During synthesis, we use the Euler ODE sampler with temperature 1.0 and 40 steps. 
+
+Inversion. Emotion embeddings are updated for 200 steps with a learning rate of 0.01; prominence embeddings for 100 steps with a learning rate of 10 −4. Both use a batch size of 32. 
+
+Vocoder. We train a HiFi-GAN V1 vocoder [47] on the combined training splits of both datasets, using an 80-bin mel-spectrogram at 22.05 kHz for 500,000 steps (batch size 16, Adam optimizer, initial learning rate 2 × 10 −4, exponential decay). The vocoder is fixed throughout all experiments, providing a consistent waveform reconstruction ceiling across systems and ensuring that observed differences arise from the acoustic models and pseudo-labeling framework rather than vocoder variation. 
+
+D. Evaluation Metrics 
+
+We evaluate along three axes: pseudo-label accuracy, objec-tive synthesis quality, and objective and subjective expressive-label adherence. 
+
+Pseudo-Label Accuracy.  
+
+> •
+
+Macro F1 (Emotion): F1 score calculated independently per class and averaged with equal weight across all five emotion classes.  
+
+> •
+
+Binary F1 (Prominence): F1 score for the <PROM> 
+
+class, focusing on the model’s precision and recall in detecting prosodic stress. 
+
+Synthesis Quality – TTSDS2. We use the improved Text-to-Speech Distribution Score (TTSDS2) [48], which measures the 2-Wasserstein distance between synthesized and reference speech across multiple feature spaces, normalized against a discriminative noise distribution. We report four factors: General Quality (HuBERT, WavLM), Prosody (Pitch, MPM, Speaking Rate), Speaker Similarity (D-Vector, WeSpeaker), and Intelligibility (Whisper, Wav2Vec2). All TTSDS scores are in a 0–100 range where higher values indicate better performance. 
+
+Emotion Recognition. We use the pre-trained emo-tion2vec_plus_large checkpoint [49] to classify the emotion of synthesized audio, reporting Macro F1 score between intended and predicted emotion labels. 
+
+Subjective Expressivity. We conduct A/B preference lis-tening tests to assess perceptual expressivity. Thirty listeners were recruited via Prolific and compensated at the platform minimum rate. Each participant completed one set of 30 ques-tions per task. For the emotion task, participants were shown a target label and sentence, for example: Target Emotion: Neutral. Sentence: The football teams give a tea party. Which sample sounds most faithful to the emotion label ‘Neutral’?” 
+
+For the prominence task, participants were shown the target word marked with asterisks and in all capital letters, for example: Sentence: Anthony teaches the *SENIOR*. Which sample sounds closest to the intended emphasis on the word ‘senior’?” Question and choice order were randomized. Sys-tem preference scores were estimated by fitting a Bradley-Terry model [50] to the collected pairwise judgments. V. E XPERIMENTS 
+
+To address the research questions in Section I, we conduct two experiments. The first investigates Generalizability and Iterative Dynamics. The second evaluates Performance Limit & Initialization. 
+
+A. Generalizability and Iterative Dynamics 
+
+We perform the ISL loop on diverse expressive labels using the partitioning strategies in Section IV-B. To ensure consistency, we use an identical set of splits for both datasets, chosen to simulate different data scarcity scenarios:  
+
+> •
+
+ESD (Utterance-Level Emotion): Partitions of 0.5% ,
+
+1% , 5% , and 20% of training data. The 0.5% condition contains exactly 50 samples (one example per emotion per speaker).  
+
+> •
+
+Naver-Prosody (Word-Level Prominence): Identical partitions of 0.5% , 1% , 5% , and 20% of training groups. To empirically determine the impact of training duration on label noise propagation, we run parallel experiments varying training duration between pseudo-labeling phases:  
+
+> •
+
+Conservative (3 Epochs): Tests whether minimal gradi-ent updates per iteration prevent memorization of noise, prioritizing stability over convergence.  
+
+> •
+
+Standard (10 Epochs): Consistent with established IPL protocols [20], serving as a baseline for the convergence– stability trade-off.  
+
+> •
+
+Saturation (50 Epochs): Identifies whether the system tends toward model collapse or shifts optimization toward general synthesis quality at the expense of expressive conditioning. For each iteration, we checkpoint the model and evaluate pseudo-label accuracy (Macro F1 for ESD, Binary F1 for Naver) on the held-out validation set. 
+
+B. Performance Limit and Initialization 
+
+This experiment isolates the quality of the pseudo-labeled data from the quantity of training iterations. As described in Section III-F we follow a Select-and-Retrain methodology to train fresh models from random initialization for 1000 epochs on three datasets derived from Experiment 1: 5(a) 0.5% Data Split (b) 1% Data Split 
+
+(c) 5% Data Split (d) 20% Data Split   
+
+> Fig. 2. Iterative Dynamics on ESD (Emotion): Macro F1-Score of pseudo-labels on the validation set across iterations. The green line (50 epochs) illustrates model collapse; the orange line (10 epochs) demonstrates stable convergence.
+
+1) Optimal ISL Data: Pseudo-labeled by the iteration i∗
+
+achieving highest pseudo-label accuracy (high-quality, self-refined condition). 2) Single-Pass Control Data: Generated by the base model (Iteration 0), representing baseline Invert-Classify per-formance. 3) Reference (100% GT): Standard supervised model trained on 100% ground-truth data, serving as the per-formance ceiling. The resulting models form the basis of the objective synthesis metrics in Subsection VI-D and the subjective listening study described in Subsection VI-E. VI. R ESULTS 
+
+A. Impact of Training Duration 
+
+The stability of the self-learning loop under varying training intensities is visualized in Figs. 2 and 3, which show pseudo-label accuracy on the held-out validation set across all data partitions. A consistent failure mode is observed in the Saturation (50 Epochs) condition across both tasks: longer training between pseudo-labeling phases leads to degradation in pseudo-label accuracy. For example, in the 1% Prominence split (Fig. 3b), the F1-score collapses from ≈0.45 to ≈0.24 . All Emotion splits (Fig. 2) exhibit characteristic signs of model collapse, with pseudo-labeling accuracy degrading significantly below the seed model’s initial accuracy. In contrast, the Standard (10 Epochs) and Conservative (3 Epochs) conditions demonstrate that limiting training per iter-ation is crucial for stability. The 10-epoch setting consistently yields the most robust pseudo-label accuracy for both tasks, balancing convergence speed with noise resistance. However, the 3-epoch setting occasionally achieves higher late-stage performance (e.g., Figs. 3c and 3b). We therefore identify 10 epochs per iteration as the more consistent optimal trade-off, though this remains a tunable hyperparameter with respect to a given task, dataset, and seed dataset size. 
+
+B. Generalizability and Task-Dependent Learning Dynamics 
+
+Comparing the trajectories of both datasets reveals a fun-damental distinction in how ISL applies to different levels of expressive hierarchy: For utterance-level emotion control, the primary perfor-mance gain is realized almost immediately. In the 1% and 5% ESD splits (the orange lines in Figs. 2b and 2c), the Macro F1-Score improves most significantly within the first self-training pass (Iteration 0 → 1), increasing from ≈0.35 
+
+to over ≈0.45 for the 5% split. Subsequent iterations provide marginal stability gains but saturate quickly, suggesting a high signal-to-noise ratio in the initial ground-truth labels. 6(a) 0.5% Data Split (b) 1% Data Split 
+
+(c) 5% Data Split (d) 20% Data Split   
+
+> Fig. 3. Iterative Dynamics on Naver-Prosody (Prominence): Binary F1-Score of pseudo-labels on the validation set.
+
+Conversely, word-level prominence exhibits a slower, more gradual performance curve, with iterative refinement requir-ing more iterations before improvements stabilize (Figs. 3a and 3b). However, in both tasks we see either performance plateauing or degradation after reaching a local peak in pseudo-labeling accuracy over iterations, which bears some resemblance to past findings in ASR [18], [20]. These differing trajectories in pseudo-labeling performance influence the number of iterations required for effective ISL and motivate the selection of different checkpoints for the final synthesis experiments reported in Subsections VI-D and VI-E. 
+
+C. Impact of Data Scarcity 
+
+The results delineate an inverse relationship between su-pervised data availability and the efficacy of the self-learning loop. In the most data-scarce prominence settings (0.5% and 1%), ISL yields performance significantly above the control baseline of a single iteration. For the 1% Emotion split, ISL improves pseudo-label F1 from ≈0.33 to ≈0.40 , a relative improvement of over 20%. However, a lower bound to this efficacy is observed: in the 0.5% Emotion split, pseudo-label accuracy remains flat, suggesting that a minimum threshold of supervised signal is required to initiate bootstrapping. As supervised data increases to 20% (Figs. 2d and 3d), ISL benefits are no longer observed. This confirms that ISL functions primarily as a low-resource intervention, yielding diminishing returns when the supervised signal is already sufficient to learn robust generalizations. Based on these findings, we focus subsequent synthesis analysis on the 1% and 5% splits for the Emotion task, and the 0.5% and 1% splits for the Prominence task. 
+
+D. Objective Synthesis Quality and Expressive Label Adher-ence 1) Expressive Label Adherence: A consistent trend is ob-served: models trained with ISL data generally outperform Single-Pass Control models, with a specific exception in the lowest-resource prominence condition. Significant gains are observed in the Emotion label adher-ence (Table II). The 1% ISL condition achieves an emo2vec F1 of 29.87 vs. 26.58 for the Control. The gap widens at the 5% split (49.58 vs. 39.38), supporting the conclusion 7TABLE II                
+
+> EMOTION DATASET :COMPARISON OF SINGLE -P ASS CONTROL VS . ISL AT 1% AND 5% DATA SPLITS . TTSDS-DERIVED SCORES ARE IN A 0–100
+> RANGE (↑HIGHER VALUES INDICATE BETTER PERFORMANCE ). F0 RMSE IS REPORTED IN SEMITONES (↓LOWER IS BETTER ).
+
+Metric 1% Control 1% ISL 5% Control 5% ISL 100% GT Ref. Vocoded GT 
+
+Emotion Recognition 
+
+Emo2vec F1 Score ↑ 26.58 29.87 39.38 49.58 45.95 69.32 
+
+Prosody 
+
+F0 RMSE ↓ 5.39 5.33 5.55 4.73 4.04 2.56 MPM ↑ 96.82 98.90 97.68 99.01 99.33 98.81 Allosaurus SR ↑ 84.46 89.49 87.79 89.37 92.86 95.26 HuBERT Token SR ↑ 75.81 76.14 74.58 74.89 81.71 86.97 TTSDS Prosody Average ↑ 85.70 88.18 86.68 87.76 91.30 93.68 
+
+Speaker Similarity 
+
+D-Vector ↑ 92.66 93.83 93.37 93.94 94.77 96.00 WeSpeaker ↑ 82.37 83.34 83.75 83.20 83.97 87.52 TTSDS Speaker Average ↑ 87.52 88.59 88.56 88.57 89.37 91.76 
+
+Intelligibility 
+
+Whisper Activations ↑ 81.92 81.01 79.68 81.49 85.27 84.39 Wav2Vec2 Activations ↑ 94.10 94.14 94.16 94.43 96.22 98.44 TTSDS Intelligibility Average ↑ 88.01 87.58 86.92 87.96 90.75 91.42 
+
+General Quality 
+
+HuBERT ↑ 94.47 95.28 94.80 95.36 95.85 97.32 WavLM ↑ 96.71 96.96 96.79 96.97 97.23 98.71 TTSDS General Quality Average ↑ 95.59 96.12 95.80 96.17 96.54 98.02 
+
+Overall 
+
+TTSDS Average Scores ↑ 88.70 89.90 89.18 89.85 92.02 93.71 
+
+that pseudo-label accuracy improvements translate to better expressive label adherence in the final synthesis. Notably, the 5% ISL model (49.58) outperforms the model trained on 100% Ground Truth (45.95) in terms of Emo2vec F1 score. However, given potential domain effects and uncer-tainty regarding Emo2vec performance on synthetic speech, we defer to the listening test results in Subsection VI-E and other objective synthesis results for further interpreta-tion. Overall, for the emotion task, models trained using ISL pseudo-labels outperform their single-pass counterparts in downstream expressive evaluation. For the Prominence task, no reliable pretrained classifier was available; perceptual evaluation via the listening study therefore serves as the primary measure of expressive label adherence, with results reported in Section VI-E. 
+
+2) Prosody, Quality, and Speaker Similarity: Beyond ex-pressive label adherence, ISL generally maintains or improves objective synthesis quality as measured by objective synthesis metrics. For the Prominence task (Table III), ISL improves overall TTSDS scores relative to single-pass controls at both low-resource conditions (91.37 vs. 93.15 at 0.5%, and 91.57 vs. 92.66 at 1%). Improvements are particularly evident in intelligibility-related metrics, while prosody remains broadly comparable across conditions. The TTSDS Pitch metric pro-duced an unexpected result: Vocoded GT scored lower than all TTS systems. Upon investigation, we identified voicing detection failures in DIO, the F0 extractor used by TTSDS. Our analysis revealed that 97.7% of natural GT utterances contain voiced regions below DIO’s pitch floor (72 Hz). Dur-ing vocoder reconstruction, these regions were systematically shifted upward above DIO’s floor, causing the Vocoded GT pitch distribution to shift upward relative to the original GT (129.4 Hz vs. 135.0 Hz mean F0). Because TTS systems never produced sub-100 Hz voiced F0, they were unaffected by this artifact. Therefore, we report pYIN-based F0 RMSE [51], which confirms Vocoded GT as the expected ceiling (2.01 semitones) and indicates broadly comparable pitch reconstruc-tion between ISL and single-pass systems. ISL with 0.5% resulted in better TTSDS Prosody Average scores and F0 RMSE in comparison to the control, however 1% ISL did not. Beyond objective prosody metrics, ISL overall maintains or improves synthesis quality for the prominence task, as shown in the overall, intelligibility, and general quality TTSDS scores relative to single-pass controls. For the Emotion task (Table II), ISL similarly improves overall TTSDS scores relative to single-pass controls (88.70 vs. 89.90 at 1%, and 89.18 vs. 89.85 at 5%). Gains are most pronounced in prosody-related metrics and are accompanied by improved Emo2vec classification performance, suggesting that iterative refinement can improve expressive control while maintaining or modestly improving general synthesis quality. 
+
+E. Subjective Evaluation 
+
+Each row observes a specific pairwise comparison related to the following: ISL versus single-pass control, the effect of 8TABLE III 
+
+PROMINENCE DATASET : COMPARISON OF SINGLE -P ASS CONTROL VS . ISL AT 0.5% AND 1% DATA SPLITS . TTSDS-DERIVED SCORES ARE IN A 0–100  
+
+> RANGE
+
+(↑ HIGHER VALUES INDICATE BETTER PERFORMANCE ). F0 RMSE ( PYIN) IS REPORTED IN SEMITONES (↓ LOWER IS BETTER ). T HE TTSDS PITCH SCORE IS ANOMALOUS FOR THIS DATASET DUE TO DIO VOICING DETECTION FAILURE ON LOW -F0 FRAMES IN NATURAL SPEECH ; SEE 
+
+SECTION VI FOR FURTHER EXPLANATION . A BSOLUTE VALUES SHOULD BE INTERPRETED RELATIVE TO THE VOCODED GROUND -TRUTH AND 100% 
+
+> REFERENCE MODELS
+
+.
+
+Metric 0.5% Control 0.5% ISL 1% Control 1% ISL 100% GT Ref. Vocoded GT 
+
+Prosody 
+
+F0 RMSE ↓ 2.66 2.57 2.68 2.91 2.55 2.01 MPM ↑ 97.15 96.87 96.72 98.65 97.06 98.51 Allosaurus SR ↑ 84.26 88.57 84.00 92.49 88.19 96.80 HuBERT Token SR ↑ 90.15 94.55 92.29 80.52 95.98 94.29 TTSDS Prosody Average ↑ 90.52 93.33 91.00 90.55 93.74 96.53 
+
+Intelligibility 
+
+Whisper Activations ↑ 84.65 88.95 86.45 91.33 87.39 93.41 Wav2Vec2 Activations ↑ 96.73 97.36 96.43 97.89 97.50 98.64 TTSDS Intelligibility Average ↑ 90.69 93.16 91.44 94.61 92.45 96.03 
+
+General Quality 
+
+HuBERT ↑ 92.75 93.28 92.67 92.94 92.94 96.33 WavLM ↑ 93.93 93.46 93.45 94.78 93.57 97.73 TTSDS General Quality Average ↑ 93.34 93.37 93.06 93.86 93.26 97.03 
+
+Overall 
+
+TTSDS Average Scores ↑ 91.37 93.15 91.57 92.66 93.23 96.53 TABLE IV A/B PREFERENCE LISTENING TEST RESULTS . W IN PROBABILITY FOR SYSTEM B AND 95% CONFIDENCE INTERVALS ARE ESTIMATED VIA THE 
+
+BRADLEY -T ERRY MODEL . A WIN PROBABILITY ABOVE 0.5 INDICATES PREFERENCE FOR SYSTEM B; VALUES WITH CONFIDENCE INTERVALS THAT OVERLAP WITH 0.5 INDICATE A TIE .
+
+Task System A System B Preferred Win Prob. (B) ± CI 
+
+Naver-Prosody (Word-Level Prominence) 
+
+NP 0.5% Control 0.5% ISL ISL 0.656 ± 0.117 
+
+NP 1.0% Control 1.0% ISL ISL 0.678 ± 0.078 
+
+NP 0.5% ISL 1.0% ISL Tie 0.458 ± 0.140 
+
+NP 1.0% ISL 100% GT Ref. Tie 0.629 ± 0.132 
+
+NP 100% GT Ref. Vocoded GT Vocoded GT 0.617 ± 0.110 
+
+ESD (Utterance-Level Emotion) 
+
+ESD 1.0% Control 1.0% ISL Tie 0.500 ± 0.094 
+
+ESD 5.0% Control 5.0% ISL ISL 0.633 ± 0.037 
+
+ESD 1.0% ISL 5.0% ISL Tie 0.539 ± 0.045 
+
+ESD 5.0% ISL 100% GT Ref. 100% GT Ref. 0.633 ± 0.042 
+
+ESD 100% GT Ref. Vocoded GT Tie 0.533 ± 0.062 
+
+additional seed data, and the performance gap between fully supervised and vocoded ground-truth anchors. In terms of subjective preference of expressivity, ISL is shown in Table IV to be preferred over single-pass control for both tasks at the more resourced splits (NP: 0.678 ± 0.078 ;ESD 5%: 0.633 ± 0.037 ), confirming that improvements in pseudo-labeling translate to perceptually stronger expressive synthesis. At the most data-scarce conditions (0.5% NP, 1% ESD), ISL trained models are preferred for prominence but yield a tie with respect to the 95% confidence intervals over-lapping with a win probability of 50% for emotion, consistent with the smaller pseudo-label accuracy gains observed at 1% ESD. Seed data scaling comparisons for ISL trained models are ties for both tasks, suggesting that expressivity in down-stream synthesis does not scale strongly with additional seed data within the ranges tested. A gap between ISL training and fully supervised with 100% GT training data remains for the emotion task, where the reference model trained on 100% GT data was preferred over 5% ISL for emotion ( 0.633 ± 0.042 ), but tied with 1% ISL for prominence ( 0.629 ± 0.132 ). Anchor pairwise comparisons show that vocoded GT was preferred over the fully supervised reference model for prominence (0.617 ± 0.110 ) and tied for emotion ( 0.533 ± 0.062 ). VII. D ISCUSSION 
+
+Pseudo-label accuracy on held-out validation data proved to be a strong indicator of successful iterative self-learning. Across both emotion and prominence tasks, improvements in pseudo-label accuracy were generally accompanied by im-provements in expressive label adherence, objective synthesis metrics, and subjective A/B preferences for expressivity, sug-gesting that the ability to recover expressive labels is closely linked to downstream controllability. However, the magnitude of these gains depended on both the expressive task and the 9amount of ground-truth seed data. When the initial seed set was sufficiently large, iterative self-learning often produced diminishing returns and sometimes degradation in pseudo-label accuracy, consistent with overfitting to self-generated labels. Conversely, when the seed set was extremely small, the initial model lacked sufficient supervision to bootstrap reliable improvements. Altogether, these results suggest that ISL is most effective within a bounded low-resource regime, where enough labeled data exist to initialize meaningful pseudo-labels, but expressive label scarcity remains the primary lim-itation. This behavior is broadly consistent with observations from iterative pseudo-labeling in ASR, where the quality of the initial model and the propagation of pseudo-label errors strongly influence the effectiveness of self-training [18], [20]. Furthermore, although prominence is represented as a binary label in the present work, its acoustic realization is highly variable and can be expressed through multiple combinations of pitch, duration, intensity, and voice quality [52], [53]. Prior work has highlighted the substantial variability involved in prosodic annotation, including variability in acoustic cues, contextual realization, and transcriber judgments, motivating approaches such as Rapid Prosody Transcription that repre-sent prominence using continuous perceptual scores rather than strictly categorical labels [54]. Likewise, emotional ex-pression arises from complex and speaker-dependent interac-tions among multiple acoustic correlates rather than a single acoustic template [9], [55]. Consequently, differences in ISL dynamics may reflect not only the expressive category being modeled, but also the degree to which the chosen label rep-resentation captures the underlying variation in the expressive phenomenon. Future work should investigate how alternative labeling schemes, including continuous prominence and af-fective representations like valence, arousal, and dominance used in EmoSphere++ [56], influence iterative self-learning behavior. VIII. L IMITATIONS 
+
+A limitation of the study is that ISL was evaluated us-ing only a Matcha-TTS backbone. However, the underly-ing gradient-based pseudo-labeling mechanism has now been demonstrated across both regression-based architectures [21] and flow-matching generative models in the present work, suggesting that the approach is not restricted to a specific TTS paradigm. Nevertheless, recent TTS systems increasingly utilize larger architectures, including diffusion-based models and LLM-based systems [11], [34], [35]. Whether the self-learning dynamics observed here persist at larger model scales remains an open question. Similarly, the present work focuses on self-contained gen-erative pseudo-labeling and its impact on downstream con-trol in TTS, rather than external classifier-based pipelines. Direct comparison is complicated by differences in classifier architectures, supervision requirements, and even the choice of classifier itself, which may vary substantially across expressive tasks. Establishing fair comparisons between gradient-based and classifier-based pseudo-labeling under matched supervi-sion budgets remains an important direction for future work. IX. C ONCLUSION 
+
+This paper investigated whether an Iterative Self-Learning (ISL) framework based on gradient-based pseudo-labeling can address expressive label scarcity in TTS. Building on prior work in inversion-based pseudo-labeling for word-level prominence [21], we extended the approach to an iterative self-learning framework and evaluated it across two distinct expressive control tasks: word-level prominence and utterance-level emotion. The results show that iterative refinement can improve expressive pseudo-label accuracy beyond single-pass pseudo-labeling, although these improvements depend on both the expressive task and the ISL training configuration. Across both datasets, ISL was most effective within a bounded low-resource regime. Excessive retraining between pseudo-label updates often led to degradation in pseudo-label accuracy, while initializing with too little seed data provided insufficient supervision for reliable self-learning. Furthermore, the dynam-ics of self-learning differed across prominence and emotion, suggesting that both the expressive representation and dataset characteristics influence iterative refinement behavior. A consistent finding across experiments was that pseudo-label accuracy on held-out validation data served as a useful indicator of downstream expressive controllability. Improve-ments in pseudo-label accuracy were generally accompanied by improvements in expressive label adherence, objective synthesis metrics, and subjective listener preferences. These results suggest that, unlike discriminative tasks where label accuracy and task performance are closely coupled, evaluating iterative self-learning for expressive TTS requires considering both pseudo-label quality and downstream synthesis behavior. Several directions remain open. Future work should investi-gate alternative expressive representations, including continu-ous prominence and affective control spaces, alongside larger generative architectures. Established self-learning techniques such as confidence-based data selection, adaptive stopping criteria, and selective re-initialization [20], [24], [26] may further improve robustness by limiting propagation of noisy pseudo-labels. Understanding how these factors interact with expressive label representations, generative training objectives, and downstream TTS controllability remains an important direction. REFERENCES [1] Y. Wang, D. Stanton, Y. Zhang, R.-S. Ryan, E. Battenberg, J. Shor, Y. Xiao, Y. Jia, F. Ren, and R. A. Saurous, “Style tokens: Unsupervised style modeling, control and transfer in end-to-end speech synthesis,” in International conference on machine learning . PMLR, 2018, pp. 5180–5189. [2] R. Skerry-Ryan, E. Battenberg, Y. Xiao, Y. Wang, D. Stanton, J. Shor, R. Weiss, R. Clark, and R. A. Saurous, “Towards end-to-end prosody transfer for expressive speech synthesis with Tacotron,” in international conference on machine learning . PMLR, 2018, pp. 4693–4702. [3] R. Habib, S. Mariooryad, M. Shannon, E. Battenberg, R. Skerry-Ryan, D. Stanton, D. Kao, and T. Bagby, “Semi-supervised generative model-ing for controllable speech synthesis,” arXiv preprint arXiv:1910.01709 ,2019. [4] J. Lorenzo-Trueba, G. E. Henter, S. Takaki, J. Yamagishi, Y. Morino, and Y. Ochiai, “Investigating different representations for modeling and controlling multiple emotions in DNN-based speech synthesis,” Speech Communication , vol. 99, pp. 135–143, 2018. 
+
+10 [5] D. Diatlova and V. Shutov, “Emospeech: guiding fastspeech2 towards emotional text to speech,” in Proc. SSW 2023 , 2023, pp. 106–112. [6] C. Wang, S. Chen, Y. Wu, Z. Zhang, L. Zhou, S. Liu, Z. Chen, Y. Liu, H. Wang, J. Li et al. , “Neural codec language models are zero-shot text to speech synthesizers,” arXiv preprint arXiv:2301.02111 , 2023. [7] Z. Du, Q. Chen, S. Zhang, K. Hu, H. Lu, Y. Yang, H. Hu, S. Zheng, Y. Gu, Z. Ma et al. , “CosyVoice: A scalable multilingual zero-shot text-to-speech synthesizer based on supervised semantic tokens,” CoRR ,2024. [8] X. Zhang, J. Zhang, Y. Wang, C. Wang, Y. Chen, D. Jia, Z. Chen, and Z. Wu, “Vevo2: A unified and controllable framework for speech and singing voice generation,” IEEE Transactions on Audio, Speech and Language Processing , vol. 34, pp. 2262–2275, 2026. [9] K. R. Scherer, “Vocal communication of emotion: A review of research paradigms,” Speech Communication , vol. 40, no. 1-2, pp. 227–256, 2003. [10] C. Gobl and A. N. Chasaide, “The role of voice quality in communicat-ing emotion, mood and attitude,” Speech Communication , vol. 40, no. 1-2, pp. 189–212, 2003. [11] Y. A. Li, C. Han, V. Raghavan, G. Mischler, and N. Mesgarani, “StyleTTS 2: Towards human-level text-to-speech through style diffu-sion and adversarial training with large speech language models,” Ad-vances in Neural Information Processing Systems , vol. 36, pp. 19 594– 19 621, 2023. [12] S. W. Yang, P. H. Chi, Y. S. Chuang, C. I. J. Lai, K. Lakhotia, Y. Y. Lin, A. T. Liu, J. Shi, X. Chang, G. T. Lin et al. , “Superb: Speech processing universal performance benchmark,” in 22nd Annual Conference of the International Speech Communication Association, INTERSPEECH 2021 . International Speech Communication Association, 2021, pp. 3161–3165. [13] Y. Li, Y. Mohamied, P. Bell, and C. Lai, “Exploration of a self-supervised speech model: A study on emotional corpora,” in 2022 IEEE Spoken Language Technology Workshop (SLT) , 2023, pp. 868–875. [14] M. de Seyssel, A. D’Avirro, A. Williams, and E. Dupoux, “EmphAssess: a prosodic benchmark on assessing emphasis transfer in speech-to-speech models,” in Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing , 2024, pp. 495–507. [15] W. Ren, Y.-C. Lin, H.-C. Chou, H. Wu, Y.-C. Wu, C.-C. Lee, H.-y. Lee, H.-M. Wang, and Y. Tsao, “Emo-codec: An in-depth look at emotion preservation capacity of legacy and neural codec models with subjective and objective evaluations,” in 2024 Asia Pacific Signal and Information Processing Association Annual Summit and Conference (APSIPA ASC) .IEEE, 2024. [16] H. Mori, A. Nagaoka, and Y. Arimoto, “Accuracy of automatic cross-corpus emotion labeling for conversational speech corpus commoniza-tion,” in Proceedings of the Tenth International Conference on Language Resources and Evaluation (LREC’16) , 2016, pp. 4019–4023. [17] P. Van Rijn and P. Larrouy-Maestri, “Modelling individual and cross-cultural variation in the mapping of emotions to speech prosody,” Nature Human Behaviour , vol. 7, no. 3, pp. 386–396, 2023. [18] Q. Xie, M.-T. Luong, E. Hovy, and Q. V. Le, “Self-training with noisy student improves imagenet classification,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , 2020, pp. 10 687–10 698. [19] G. Synnaeve, Q. Xu, J. Kahn, T. Likhomanenko, E. Grave, V. Pratap, A. Sriram, V. Liptchinsky, and R. Collobert, “End-to-end ASR: from supervised to semi-supervised learning with modern architectures,” in 
+
+ICML 2020 Workshop on Self-supervision in Audio and Speech , 2020. [Online]. Available: https://openreview.net/forum?id=OSVxDDc360z [20] Q. Xu, T. Likhomanenko, J. Kahn, A. Hannun, G. Synnaeve, and R. Col-lobert, “Iterative pseudo-labeling for speech recognition,” Interspeech 2020 , 2020. [21] N. Sanders and K. Richmond, “Invert-classify: Recovering discrete prosody inputs for text-to-speech,” in 2023 IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) , 2023, pp. 1–7. [22] S. Latif, I. Kim, I. Calapodescu, and L. Besacier, “Controlling prosody in end-to-end TTS: A case study on contrastive focus generation,” in Proceedings of the 25th Conference on Computational Natural Language Learning . Online: Association for Computational Linguistics, Nov. 2021, pp. 544–551. [Online]. Available: https: //aclanthology.org/2021.conll-1.42 [23] H. Scudder, “Probability of error of some adaptive pattern-recognition machines,” IEEE Transactions on Information Theory , vol. 11, no. 3, pp. 363–371, 1965. [24] T. Likhomanenko, Q. Xu, J. Kahn, G. Synnaeve, and R. Collobert, “slim-ipl: Language-model-free iterative pseudo-labeling,” in Proc. Interspeech 2021 , 2021, pp. 741–745. [25] B. Khonglah, S. Madikeri, S. Dey, H. Bourlard, P. Motlicek, and J. Billa, “Incremental semi-supervised learning for multi-genre speech recognition,” in ICASSP 2020-2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2020, pp. 7419–7423. [26] E. Wallington, B. Kershenbaum, P. Bell, and O. Klejch, “On the learning dynamics of semi-supervised training for ASR,” in Interspeech 2021: The 22nd Annual Conference of the International Speech Communica-tion Association . International Speech Communication Association, 2021, pp. 716–720. [27] D. Arpit, S. Jastrz˛ ebski, N. Ballas, D. Krueger, E. Bengio, M. S. Kanwal, T. Maharaj, A. Fischer, A. Courville, Y. Bengio et al. , “A closer look at memorization in deep networks,” in International conference on machine learning . PMLR, 2017, pp. 233–242. [28] J. Roy, J. Cole, and T. Mahrt, “Individual differences and patterns of convergence in prosody perception,” Laboratory Phonology , vol. 8, no. 1, p. 22, 2017. [Online]. Available: https://doi.org/10.5334/labphon. 108 [29] T. Tu, Y.-J. Chen, A. H. Liu, and H.-y. Lee, “Semi-supervised learning for multi-speaker text-to-speech synthesis using discrete speech repre-sentation,” in Proc. Interspeech 2020 , 2020, pp. 3191–3195. [30] H. Guo, F. Xie, J. Kang, Y. Xiao, X. Wu, and H. Meng, “QS-TTS: Towards semi-supervised text-to-speech synthesis via vector-quantized self-supervised speech representation learning,” IEEE Transactions on Audio, Speech and Language Processing , vol. 33, pp. 3307–3319, 2025. [31] M. Sharma, T. Kenter, and R. Clark, “StrawNet: Self-training WaveNet for TTS in low-data regimes.” in INTERSPEECH , 2020, pp. 3550–3554. [32] S. Mehta, R. Tu, J. Beskow, É. Székely, and G. E. Henter, “Matcha-TTS: A fast TTS architecture with conditional flow matching,” in ICASSP 2024-2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) . IEEE, 2024, pp. 11 341–11 345. [33] E. Casanova, K. Davis, E. Gölge, G. Göknar, I. Gulea, L. Hart, A. Aljafari, J. Meyer, R. Morais, S. Olayemi et al. , “XTTS: a massively multilingual zero-shot text-to-speech model,” in Proc. Interspeech 2024 ,2024, pp. 4978–4982. [34] Y. Wang, H. Zhan, L. Liu, R. Zeng, H. Guo, J. Zheng, Q. Zhang, X. Zhang, S. Zhang, and Z. Wu, “Maskgct: Zero-shot text-to-speech with masked generative codec transformer,” in International Conference on Learning Representations , vol. 2025, 2025, pp. 47 127–47 150. [35] S. Zhou, Y. Zhou, Y. He, X. Zhou, J. Wang, W. Deng, and J. Shu, “IndexTTS2: A breakthrough in emotionally expressive and duration-controlled auto-regressive zero-shot text-to-speech,” in Proceedings of the AAAI Conference on Artificial Intelligence , vol. 40, no. 41, 2026, pp. 35 139–35 148. [36] J. Kim, S. Kim, J. Kong, and S. Yoon, “Glow-TTS: A generative flow for text-to-speech via monotonic alignment search,” Advances in Neural Information Processing Systems , vol. 33, pp. 8067–8077, 2020. [37] V. Popov, I. Vovk, V. Gogoryan, T. Sadekova, and M. Kudinov, “Grad-TTS: A diffusion probabilistic model for text-to-speech,” in International conference on machine learning . PMLR, 2021, pp. 8599–8608. [38] Y. Chen, Z. Niu, Z. Ma, K. Deng, C. Wang, J. JianZhao, K. Yu, and X. Chen, “F5-TTS: A fairytaler that fakes fluent and faithful speech with flow matching,” in Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,2025, pp. 6255–6271. [39] Y. Lipman, R. T. Chen, H. Ben-Hamu, M. Nickel, and M. Le, “Flow matching for generative modeling,” in The Eleventh International Con-ference on Learning Representations , 2023. [40] M. Bernard, “Phonemizer,” 2025, python library for phonemization. [Online]. Available: https://github.com/bootphon/phonemizer [41] eSpeak NG Developers, “eSpeak NG: An open source speech synthesizer,” 2025, phonetic engine used by Phonemizer. [Online]. Available: https://github.com/espeak-ng/espeak-ng [42] J. Kindermann and A. Linden, “Inversion of neural networks by gradient descent,” Parallel Computing , vol. 14, no. 3, pp. 277– 286, 1990. [Online]. Available: https://www.sciencedirect.com/science/ article/pii/016781919090081J [43] R. Gal, Y. Alaluf, Y. Atzmon, O. Patashnik, A. H. Bermano, G. Chechik, and D. Cohen-or, “An image is worth one word: Personalizing text-to-image generation using textual inversion,” in The Eleventh International Conference on Learning Representations , 2023. [Online]. Available: https://openreview.net/forum?id=NAQvF08TcyG [44] J. Ho and T. Salimans, “Classifier-free diffusion guidance,” in NeurIPS 2021 Workshop on Deep Generative Models and Downstream Applica-tions , 2021. [45] K. Zhou, B. Sisman, R. Liu, and H. Li, “Emotional voice conversion: Theory, databases and esd,” Speech Communication , vol. 137, pp. 
+
+11 1–18, 2022. [Online]. Available: https://www.sciencedirect.com/science/ article/pii/S0167639321001308 [46] D. Kingma and J. Ba, “Adam: A method for stochastic optimization,” in International Conference on Learning Representations (ICLR) , San Diega, CA, USA, 2015. [47] J. Kong, J. Kim, and J. Bae, “Hifi-GAN: Generative adversarial networks for efficient and high fidelity speech synthesis,” Advances in Neural Information Processing Systems , vol. 33, pp. 17 022–17 033, 2020. [48] C. Minixhofer, O. Klejch, and P. Bell, “TTSDS-text-to-speech distribu-tion score,” in SLT , 2024. [49] Z. Ma, Z. Zheng, J. Ye, J. Li, Z. Gao, S. Zhang, and X. Chen, “emotion2vec: Self-supervised pre-training for speech emotion repre-sentation,” in Findings of the Association for Computational Linguistics: ACL 2024 , 2024, pp. 15 747–15 760. [50] R. A. Bradley and M. E. Terry, “Rank analysis of incomplete block designs: I. the method of paired comparisons,” Biometrika ,vol. 39, no. 3/4, pp. 324–345, 1952. [Online]. Available: http: //www.jstor.org/stable/2334029 [51] M. Mauch and S. Dixon, “PYIN: A fundamental frequency estimator using probabilistic threshold distributions,” in 2014 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 2014, pp. 659–663. [52] D. B. Fry, “Duration and intensity as physical correlates of linguistic stress,” The Journal of the Acoustical Society of America , vol. 27, no. 4, pp. 765–768, 1955. [53] A. Murphy, I. Yanushevskaya, A. N. Chasaide, and C. Gobl, “Voice source contribution to prominence perception: Rd implementation.” in 
+
+INTERSPEECH , 2018, pp. 217–221. [54] J. Cole and S. Shattuck-Hufnagel, “New methods for prosodic tran-scription: Capturing variability as a source of information,” Laboratory Phonology , vol. 7, no. 1, 2016. [55] R. Banse and K. R. Scherer, “Acoustic profiles in vocal emotion expression,” Journal of Personality and Social Psychology , vol. 70, no. 3, pp. 614–636, 1996. [56] D.-H. Cho, H.-S. Oh, S.-B. Kim, and S.-W. Lee, “Emosphere++: Emotion-controllable zero-shot text-to-speech via emotion-adaptive spherical vector,” IEEE Transactions on Affective Computing , 2025. 
+
+12
