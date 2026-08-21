@@ -1,0 +1,429 @@
+Title: ACE-Cap: Active Evidence Acquisition via Agentic Co-Evolution for Long-Paragraph Fine-Grained Audio Captioning
+
+URL Source: https://arxiv.org/pdf/2608.16162v1
+
+Published Time: Tue, 18 Aug 2026 01:39:20 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# ACE-Cap: Active Evidence Acquisition via Agentic Co-Evolution for Long-Paragraph Fine-Grained Audio Captioning 
+
+Fengji Ma 1,2 ∗, Yan Rong 1,2 ∗, Xu Li 2†, Xuenan Xu 2, Chen Zhang 2, Li Liu 1‡
+
+> 1
+
+The Hong Kong University of Science and Technology (Guangzhou) 
+
+> 2
+
+Kling Team, Kuaishou Technology 
+
+Abstract 
+
+Long-paragraph fine-grained audio captioning requires mod-els to recover diverse acoustic facts while avoiding omissions and unsupported details. However, prevailing captioners re-main passive one-shot generators: once a relevant detail is overlooked, they cannot identify the evidence gap, query the audio for targeted information, or adaptively determine when sufficient evidence has been collected. We formulate long-paragraph fine-grained audio captioning as an active evidence-acquisition problem and introduce Agentic Co-Evolution for Captioning (ACE-Cap). The framework uses multi-turn inter-action between a Composer and an Instruct model to form a closed evidence-acquisition loop. A Captioner first produces an initial description. Conditioned only on this description and the interaction history, a text-only Composer asks tar-geted questions about unresolved acoustic attributes, while an audio-conditioned Instruct model provides grounded an-swers. The Composer then decides when to terminate the interaction and synthesizes the accumulated evidence into a final caption. ACE-Cap trains these roles through a unified gold-to-prediction reward derived from fixed, gold-grounded multiple-choice questions and a frozen caption-only judge. To assign credit within variable-length interactions, LOOP-GRPO replaces the trajectory-wide scalar advantage with span-aligned signals: leave-one-out contributions computed from the accumulated evidence for individual questions, a quality–cost utility for stopping, and an evidence-preservation utility for final synthesis. Role-wise warm-up followed by al-ternating Composer and Instruct optimization keeps each up-date a well-defined single-policy problem while allowing the two roles to co-evolve. Together, ACE-Cap turns captioning from passive one-shot generation into an adaptive process that learns what evidence to acquire, when to stop acquiring it, and how to preserve it in a long-paragraph fine-grained audio cap-tion. 
+
+Introduction 
+
+Automated audio captioning (AAC) translates an acoustic scene into a natural-language description. Early benchmarks such as AudioCaps and Clotho enabled AAC research at scale by providing standardized benchmarks. Advances in Transformer-based audio-language architectures and large-scale fine-grained datasets have substantially improved the fluency and accuracy of audio captioning (Mei et al. 2021; Ghosh et al. 2025; Chen et al. 2025; Rong et al. 2026b). The emerging goal, however, is not merely to produce a longer 
+
+> ∗
+
+Work done during an internship at Kling Team. 
+
+> †
+
+Project Leader. 
+
+> ‡
+
+Corresponding author. 
+
+sentence. A useful fine-grained caption must recover a broad set of acoustic facts, including speech, music, sound events, ambience, recording characteristics, and temporal relations. Meeting this broader target exposes a basic limitation of the prevailing captioning framework. Most captioners remain passive one-shot generators : they encode the audio and commit to a complete description in a single decoding process. Once a relevant detail is over-looked, the model has no explicit mechanism to diagnose what is missing, revisit the audio with a targeted query, or allocate additional computation to an uncertain acoustic di-mension. Increasing model or data scale improves the under-lying representation, but does not by itself provide an active information-acquisition procedure. Consequently, vague or omitted acoustic details can persist into the final caption without an opportunity for targeted correction. A natural response is to replace single-pass generation with active evidence acquisition , as illustrated in Fig. 1. An initial caption serves as a provisional hypothesis rather than an irrevocable output. A text-only questioner inspects this hypothesis and the interaction history to identify an unre-solved acoustic dimension, while an audio-conditioned an-swerer revisits the recording to provide targeted evidence. Repeated question–answer turns form the Accumulated Ev-idence (Eg ); the system then decides when the evidence is sufficient and synthesizes it into a final caption. This formula-tion provides the missing correction mechanism, but training it introduces two additional problems that do not arise in the same form for one-shot captioning. The first training problem is credit assignment across heterogeneous actions. Existing caption metrics primarily score a completed output, from learned semantic similarity to multi-factor and graph-grounded evaluation (Zhou et al. 2022; Wang, Gu, and Ling 2024; Luong et al. 2025). Like-wise, standard Group Relative Policy Optimization (GRPO) derives one group-relative advantage from a completion-level reward and applies it across the sampled completion (Shao et al. 2024). In an active captioning trajectory, how-ever, one question may reveal a unique event, another may repeat known information, a stopping action may be prema-ture or wastefully late, and the final synthesis may discard ev-idence that was successfully collected. Rewarding each turn by its score improvement over the immediately preceding state is also insufficient: this sequential difference depends arXiv:2608.16162v1 [cs.SD] 17 Aug 2026 An outdoor recording captures a man giving rapid, repetitive commands amid wind and distant traffic. Several sharp, rhythmic sounds and faint background noises are also audible. An outdoor recording captures a man giving rapid, repetitive commands amid wind and distant traffic. Several sharp, rhythmic sounds and faint background noises are also audible. 
+
+Q1. Scene understanding 
+
+> Who is the speaker addressing, and what activity is taking place?
+
+Q2 · Fine-grained actions 
+
+> What specific movements does the coach instruct the athlete to perform?
+
+Q3 · Audio relationships 
+
+> How do the athlete’s movements relate to the coach’s vocal cues, and what subtle background sounds are present?
+
+Evidence 1 
+
+> He is coaching a human athlete through an outdoor conditioning drill; the rhythmic sounds are vocal cues and shoes striking grass or turf, not dog barks.
+
+Evidence 2 
+
+> The instructions include weaving in and out, large bounds, bunny hops, side shuffles, quick directional changes, and an explosive acceleration.
+
+Evidence 3 
+
+> The footstep rhythm changes in direct response to short cues such as “Go,” “Hop,” and “Good.” Wind, distant road traffic, faint voices, birds, and a remote whistle remain audible in the background.
+> In an outdoor sports setting, a male coach leads a human athlete through a fast-paced conditioning drill. He delivers short, rhythmic cues such as “Go,” “Hop,” and “Good,” followed by more specific instructions to weave in and out, perform large bounds and bunny hops, change direction, and move through a side shuffle. The athlete’s shoes repeatedly crunch and thud against the grass or turf, with the pace and intensity of the footsteps changing in direct response to the coach’s commands. Brief percussive vocalizations help mark transitions between movements, while the coach’s encouraging feedback maintains the rhythm of the exercise.
+
+Active Evidence Acquisition Captioner Audio Audio Captioner Initial Caption 𝑪 𝟎 
+
+Final Caption 𝑪 𝑭 
+
+Composer Instruct      
+
+> ACCUMULATED EVIDENCE c₀ (q₁,a₁) (q₂,a₂) (q₃,a₃) Eg
+
+PASSIVE ONE-SHOT — GAPS PERSIST ACE-CAP — GAPS ACTIVELY RESOLVED             
+
+> ONE-SHOT ✕WHO / WHAT ACTIVITY? ✕WHAT MAKES THE RHYTHM? ✕WHAT IS IN THE BACKGROUND?
+> ACE-CAP ✓COACH → ATHLETE DRILL ✓VOCAL CUES + FOOTSTEPS ✓VOICES / BIRDS + CUE→MOVE LINKS
+
+Figure 1: Paradigm comparison for long-paragraph fine-grained audio captioning. Passive one-shot captioners produce a caption without actively resolving missing details (top). ACE-Cap instead uses a text-only Composer to query an audio-conditioned Instruct model, accumulates the resulting question–answer evidence as Accumulated Evidence Eg , and synthesizes a detailed final caption (bottom). on the order-specific history, gives early questions first-mover credit, and can undervalue later but more precise questions after the score has partially saturated. What is needed in-stead is post-rollout counterfactual credit: after the interac-tion ends, evaluate how much the accumulated evidence state degrades when one question–answer turn is removed. This leave-one-out view follows counterfactual credit assignment in cooperative reinforcement learning (Foerster et al. 2018), but adapts it to questioning, stopping, and synthesis in active captioning. The second training problem is instability caused by jointly adapting the interacting roles. As the questioner changes, the distribution of questions presented to the answerer also changes; as the answerer changes, the responses observed by the questioner change in turn. Each role is therefore op-timized against a moving target, a known source of training instability in multi-agent learning (Papoudakis et al. 2019). Sequential or multi-timescale updates can mitigate this in-stability (Nekoei et al. 2023), yet alternating updates alone are insufficient when initially weak roles generate poor su-pervision for one another. Training therefore requires both role-specific preparation and a controlled schedule in which only one policy changes at a time. To realize this active captioning process while addressing its two training problems, we propose Agentic Co-Evolution for Captioning (ACE-Cap) , a framework for fine-grained audio captioning. A Captioner first produces the provisional caption. A text-only Composer then asks what remains unre-solved, an audio-conditioned Instruct model listens to the au-dio and answers, and the Composer decides when to stop and synthesizes the Accumulated Evidence. A unified gold-to-prediction (G2P) reward evaluates every textual state through fixed multiple-choice questions constructed offline from each audio–gold-caption pair and a frozen caption-only judge that sees only the candidate text. On top of G2P, our LOOP-GRPO (Leave-One-Out Per-turn GRPO) assigns each ques-tion its leave-one-out contribution to the accumulated evi-dence, trains stopping according to a quality–cost trade-off, and rewards the final caption for preserving acquired evi-dence. Finally, the three roles receive separate supervised and GRPO warm-ups; the Captioner is then fixed while Com-poser and Instruct are optimized alternately, so every agentic update remains a well-defined single-policy problem. Our contributions are threefold: 
+
+• We formulate fine-grained audio captioning as active evi-dence acquisition and introduce ACE-Cap, which decom-poses generation into initial captioning, targeted ques-tioning, audio-grounded answering, adaptive termination, and evidence-aware summarization. 
+
+• We introduce LOOP-GRPO under a unified G2P reward, providing action-aligned credit for what to ask, when to stop, and how to preserve the acquired information; unlike adjacent reward differences, its question credit measures each turn’s contribution to the accumulated evidence state and is therefore more robust to turn order and score satu-ration. 
+
+• We develop a warm-started co-evolution strategy that sep-arately prepares all three roles, freezes the Captioner dur-ing agentic optimization, and alternates updates between Composer and Instruct so that each GRPO stage remains a well-defined single-policy problem. Related Works 
+
+Audio Captioning and Agentic Interaction 
+
+Audio captioning developed through AudioCaps and Clotho (Kim et al. 2019; Drossos, Lipping, and Virtanen 2020), transformer encoder–decoders (Mei et al. 2021), and weakly labeled pretraining in WavCaps (Mei et al. 2024). Gen-eral audio–language models include Pengi (Deshmukh et al. 2023), Audio Flamingo (Kong et al. 2024), Audio Flamingo 2 (Ghosh et al. 2025), and FusionAudio (Chen et al. 2025). Agentic systems couple reasoning with actions (Yao et al. 2022), coordinate perceptual experts for multimodality-to-multiaudio generation (Yang et al. 2023; Rong et al. 2025), support audio dialogue and immersive audiobook generation (Kong et al. 2024; Rong et al. 2026c), or acquire and iter-atively refine acoustic evidence for reasoning (Xing et al. 2026; Rong et al. 2026a). These systems broaden acoustic coverage and interaction, but existing audio agents primar-ily target downstream reasoning or audio-content generation, while captioners still produce descriptions in one pass. ACE-Cap instead uses interaction to identify and repair missing acoustic evidence before synthesizing a long-form caption. 
+
+Reinforcement Learning for Interactive Audio Captioning 
+
+Captioning has been optimized with self-critical training (Rennie et al. 2017) and audio-specific reinforcement learn-ing (Xu et al. 2020), supported by semantic, LLM-based, and factorized caption metrics (Zhou et al. 2022; Wu et al. 2025b; Wang, Gu, and Ling 2024). For multi-turn policies, GRPO supplies group-relative optimization (Shao et al. 2024), turn-level methods assign intermediate credit (Zeng et al. 2025), and counterfactual learning estimates action contributions (Foerster et al. 2018). Adaptive agents additionally face non-stationarity (Papoudakis et al. 2019), which multi-timescale updates can mitigate (Nekoei et al. 2023). ACE-Cap com-bines these directions through a gold-derived G2P reward evaluated by a frozen caption-only judge, LOOP-GRPO credits for questioning, stopping, and synthesis, and alter-nating Composer–Instruct optimization. This design targets evidence-preserving caption generation rather than answer generation alone. 
+
+Methodology 
+
+ACE-Cap Framework 
+
+Let D = {(xn, c ⋆n)}|D|  
+
+> n=1
+
+contain audio xn and its gold long-form caption c⋆n; we omit n below. ACE-Cap has three roles as shown in Fig. 1. The audio-conditioned Captioner fϕ pro-duces c0 = fϕ(x); the text-only Composer πθ asks ques-tions, stops, and synthesizes the final caption; and the audio-conditioned Instruct model pψ answers those questions. Be-cause the Composer never receives audio, missing acoustic evidence can enter only through Instruct answers. Offline Gold-MCQs derived from each audio–caption pair define a shared reward. A frozen caption-only judge scores candidate text without seeing the audio or gold caption. These supervision artifacts are used only during training and eval-uation. 
+
+Unified Gold-to-Prediction Reward 
+
+For a pair (x, c ⋆), the offline stage constructs a fixed question bank 
+
+M⋆(x, c ⋆) = {(mj , o ⋆j )}Lj=1 , (1) where mj contains one question and five options, and o⋆j ∈{A, B, C, D} is the correct option. Option E is always Not Given and is never a gold answer. Given a candidate text y, the frozen judge J predicts ˆoj (y) = J (y, m j ). Following (Rong et al. 2026b), we assign the graded per-question score 
+
+sj (y) = 
+
+
+
+1, ˆoj (y) = o⋆j ,
+
+−0.5, ˆoj (y) = E ,
+
+−1, otherwise ,
+
+(2) and define the gold-to-prediction (G2P) reward as 
+
+RG(y) = 1
+
+L
+
+> L
+
+X
+
+> j=1
+
+sj (y). (3) Thus, supported, omitted, and conflicting facts receive 1,
+
+−0.5, and −1, respectively. All stages use Eq. (3) with the same judge and scale. Fig. 2 shows the localized grounding. Because the bank is fixed, RG evaluates only represented facts and cannot detect unsupported claims outside it. 
+
+Agentic Captioning Rollout 
+
+For each audio, GRPO samples a group of G Composer rollouts indexed by g ∈ { 1, . . . , G }. Before its t-th possible question, the Composer observes the text history 
+
+hg,t =  c0, (qg,s , a g,s )t−1
+
+> s=1
+
+ (4) and samples an action 
+
+zg,t ∼ πθ (· | hg,t ), zg,t ∈ { ASK( qg,t ), READY }.
+
+(5) For an ASK action, the Instruct model returns 
+
+ag,t ∼ pψ (· | x, h g,t , q g,t ). (6) The answer is a loss-masked environment observation. If 
+
+READY precedes question t, then Tg = t − 1; otherwise, the scheduler forces finalization at Tg = K without creating a policy stop token. After the interaction stops, the accumulated evidence state, hereafter Accumulated Evidence (Eg ), and its leave-one-out counterpart are 
+
+Eg =
+
+
+
+c0, (qg,t , a g,t )Tg
+
+> t=1
+
+
+
+, (7) 
+
+E−tg =
+
+
+
+c0, (qg,s , a g,s )1≤s≤Tg
+
+> s̸=t
+
+
+
+. (8) The Composer then generates the final caption from Eq. (7), 
+
+cFg ∼ πθ (· | Eg , FINALIZE) . (9) We use only three score types throughout the Composer objective: 
+
+r0 = RG(c0), rEg = RG(ser( Eg )) , rFg = RG(cFg ).
+
+(10) Here, ser( Eg ) is the judge input formed by deterministically concatenating c0 and all completed question–answer pairs in Eq. (7), in interaction order and with role delimiters. Ques-tions are marked non-assertive, so only c0 and answers count as evidence. MCQ only 
+
+> Caption Judge LLM Filter Questions Audio Grounding Avoid Leakage Audio Score Gemini
+
+Figure 2: Gold-MCQ construction and G2P scoring. Colors link fixed MCQs to gold-caption evidence spans. Candidate questions are filtered offline; during GRPO, the frozen judge scores only the candidate caption against the retained MCQs, without audio or the gold caption. Algorithm 1: ACE-Cap Training 
+
+Require: D, offline banks {M ⋆n}, rollout size G, budget K 
+
+> 1:
+
+SFT Captioner fϕ, Instruct pψ , and Composer πθ 
+
+> 2:
+
+Warm up fϕ by GRPO using Eq. (22)  
+
+> 3:
+
+Warm up pψ by per-QA GRPO using Eq. (23)  
+
+> 4:
+
+Warm up πθ by LOOP-GRPO with fixed pψ 
+
+> 5:
+
+Freeze fϕ permanently  
+
+> 6:
+
+for each co-evolution cycle do  
+
+> 7:
+
+Freeze πθ ; harvest prompts and update pψ 
+
+> 8:
+
+Freeze pψ ; roll out G trajectories and update πθ 
+
+> 9:
+
+end for  
+
+> 10:
+
+return fϕ, pψ , and πθ
+
+LOOP-GRPO 
+
+Standard GRPO broadcasts one group-relative completion advantage to all tokens (Shao et al. 2024). LOOP-GRPO instead assigns separate utilities to question, stop, and final-caption spans. 
+
+Leave-one-out question credit. For each question that ac-tually occurs, we first score its leave-one-out evidence state, 
+
+rEg, −t = RG(ser( E−tg )) , (11) and assign the raw question utility 
+
+uQg,t = rEg − rEg, −t − cQ, (12) where cQ ≥ 0 is a per-question cost. Utility is low when removing a question–answer pair leaves the completed evi-dence unchanged. A sequential alternative would use the adjacent difference 
+
+dg,t = RG(ser( Eg,t )) − RG(ser( Eg,t −1)) , (13) where Eg,t is the prefix after turn t. This marginal depends on facts already exposed and can favor early coarse questions under a saturating score. Equation (12) instead removes each turn from the same final evidence state, following counter-factual credit assignment (Foerster et al. 2018). Serialization and judge behavior may still introduce residual order sensi-tivity. 
+
+Stop and final-caption credits. The stopping and syn-thesis actions depend jointly on the final outcome and on whether collected evidence survives summarization. We de-fine the evidence-preserving base utility 
+
+bg = ( rFg − r0) + λ min( rEg , r Fg ) − r0 , λ ≥ 0. (14) The first term measures improvement over c0; the bottle-neck term is high only when both collected evidence and its synthesis preserve the same facts. For a sampled READY 
+
+action, the stop utility is 
+
+uSg = bg − cS Tg , (15) where cS ≥ 0 trades quality against interaction length. The final-caption utility is 
+
+uFg = bg . (16) The costs in Eqs. (12) and (15) control individual questions and trajectory length, respectively. For budget truncation, Eq. (15) is omitted, while questions and synthesis remain trained through Eqs. (12) and (16). 
+
+Span-aligned group-relative optimization. Let τ ∈{Q, S, F } denote an action type and let Ξτ collect all valid actions of that type from the G rollouts of the same audio. For an action instance ξ ∈ Ξτ with raw utility u(ξ), its normalized advantage is 
+
+A(ξ) = u(ξ) − μτ
+
+στ + εnorm 
+
+, (17) where μτ and στ are the mean and standard deviation within 
+
+Ξτ , preventing scale differences across action types. Let IQg,t , ISg , and IFg be the Composer-token spans for the t-th question, a sampled READY action, and the final caption. The token-aligned advantage is 
+
+Atok  
+
+> g,k
+
+=
+
+
+
+AQg,t , k ∈ I Qg,t ,ASg , k ∈ I Sg ,AFg , k ∈ I Fg ,
+
+0, otherwise .
+
+(18) For forced finalization, ISg = ∅. The Composer loss mask 
+
+Mg,k also excludes Instruct answers, prompts, user messages, scheduler tokens, and padding. For Composer token yg,k with text context Hg,k , define 
+
+ρg,k (θ) = πθ (yg,k | H g,k )
+
+πθold (yg,k | H g,k ) . (19) We denote its clipped value by 
+
+¯ρg,k (θ) = clip( ρg,k (θ), 1 − εclip , 1 + εclip ) . (20) LOOP-GRPO preserves the clipped GRPO objective and replaces only its broadcast scalar advantage: 
+
+LLOOP (θ) = −
+
+P 
+
+> g,k
+
+Mg,k min 
+
+
+
+ρg,k Atok  
+
+> g,k
+
+, ¯ρg,k Atok 
+
+> g,k
+
+P 
+
+> g,k
+
+Mg,k 
+
++ βD KL (πθ ∥πref ),
+
+(21) where DKL is the masked token-average KL penalty. We use separate constants εnorm and εclip for advantage normaliza-tion and policy clipping. 
+
+Role-Wise Warm-Up and Alternating Co-Evolution 
+
+Each role is first trained with supervised fine-tuning on its own interface, then warmed up by single-policy GRPO while the other components remain fixed. Captioner GRPO directly uses 
+
+uCap = RG(c0). (22) For Instruct GRPO, a fixed (x, h t, q t) is replayed with G
+
+answers. Let y− 
+
+> t
+
+denote the evidence before an answer and 
+
+y+ 
+
+> g,t
+
+the same context with sampled answer ag,t . Its utility is 
+
+uIg,t = RG(y+
+
+> g,t
+
+) − RG(y− 
+
+> t
+
+). (23) Only answer tokens receive advantage. Composer warm-up applies LOOP-GRPO with a fixed Instruct model. After warm-up, the Captioner remains frozen. Instruct phases freeze the Composer and update ψ on its harvested prompts using Eq. (23); Composer phases freeze Instruct and update θ using Eq. (21). Alternation keeps each up-date single-policy while the roles co-evolve through chang-ing prompts and responses. At inference, all roles are frozen and interact until READY or budget K; the gold caption, MCQs, and judge are unused.                                                    
+
+> Method MMAU ↑MMAR ↑MMSU ↑
+> Proprietary models
+> GPT-4o Audio 62.4 59.3 56.4 Gemini2.0-Flash 58.6 50.6 51.0 Gemini2.5-Flash 65.6 58.2 58.1 Gemini2.5-Pro 70.0 64.1 71.8 Gemini3.1-Pro 71.3 65.7 69.5 Qwen3.5-Omni-Plus 71.6 62.6 69.8
+> Open-source models
+> Audio-Flamingo 3-7B 47.1 36.7 42.5 Kimi-Audio-7B 54.5 39.8 43.4 Step-Audio-2-mini-8B 62.5 44.6 53.6 MiDashengLM-7B 67.6 51.7 62.2 Qwen2-Audio-7B 63.3 44.2 53.3 Qwen2.5-Omni-7B 65.2 51.8 60.6 Qwen3-Omni-30B-A3B-Instruct 67.9 54.5 67.4 Qwen3-Omni-30B-A3B-Captioner 66.4 55.3 68.2
+> ACE-Cap (ours) 73.0 64.1 70.4
+
+Table 1: Caption-as-evidence accuracy (%) on the audio-only MMAU, MMAR, and MMSU evaluations. Qwen3.6-27B answers each question using only the generated caption as audio-derived evidence. All entries are reserved for results obtained under the unified protocol. Best and second-best results among open-source models are highlighted in bold and underlined, respectively. 
+
+Experiments 
+
+Experimental Setup 
+
+Training Data and Implementation Details. ACE-Cap is trained on 50,000 audio clips sampled from ASID-1M (Li et al. 2026). We use Gemini 3.1 Pro-Preview 1 (hereafter Gemini 3.1 Pro) to generate gold captions for all clips and Gold-MCQs from a 3,000-pair subset. The Captioner and Instruct models are initialized from Qwen2.5-Omni-7B (Xu et al. 2025a), while the Composer is initialized from Qwen3-8B (Yang et al. 2025). Further data-construction and imple-mentation details are provided in Appendix A of the supple-mentary document, with the complete annotation prompts in Appendix D. 
+
+Baselines and Evaluation Benchmarks. Following Omni-Captioner (Ma et al. 2025), we evaluate all compari-son systems as caption generators under a unified caption-as-evidence protocol. Proprietary baselines include GPT-4o Au-dio (Hurst et al. 2024), Gemini 2.0 Flash (Team et al. 2023), Gemini 2.5 Flash and Gemini 2.5 Pro (Comanici et al. 2025), Gemini 3.1 Pro, and Qwen3.5-Omni-Plus (Team 2026). Open-source baselines include Audio-Flamingo 3-7B (Goel et al. 2025), Kimi-Audio-7B (Ding et al. 2025), Step-Audio-2-mini-8B (Wu et al. 2025a), SALMONN-13B (Tang et al. 2024), and MiDashengLM-7B (Dinkel et al. 2025). We fur-ther include Qwen2-Audio-7B (Chu et al. 2024), Qwen2.5-Omni-7B (Xu et al. 2025a), Audio-Captioner-7B (Ma et al. 2025), and the Qwen3-Omni-30B-A3B-Instruct and Qwen3-     
+
+> 1Official model card: https://deepmind.google/models/model-cards/gemini-3-1-pro/. SP (Speech & transcription) TM (Temporal structure) CT (Context & intent) MU (Music) SG (Signal & recording) EV (Sound events & Foley) VO (Speaker & delivery)
+> 0.5 1.0 1.5
+> SP (5.9%) MU (17.1%) EV (36.2%) TM (4.2%) SG (16.6%) VO (13.8%) CT (6.2%)
+> Raw Qwen3-8B Composer
+> 0.5 1.5 2.5 SP (48.1%) MU (14.2%) EV (13.4%) TM (7.5%) SG (9.9%) VO (5.7%) CT (1.3%)
+> Ours Composer
+
+(a) Composer query behavior 1 2 4 6 8   
+
+> Composer Query Budget K
+> 64.0 64.5 65.0 65.5 66.0
+> Omni-Cloze Accuracy (%)
+> Qwen3.6-27B Composer Qwen3-8B Composer Accumulated Evidence ( Eg)Final Caption ( cFg)
+
+(b) Query-budget ablation 
+
+Figure 3: Composer analysis on Omni-Cloze. (a) Query-category behavior: sector angle denotes the proportion of queries assigned to each category, while radius denotes the category-specific mean query turn. (b) Accuracy versus the maximum Composer query budget K. Dashed and solid lines evaluate the Accumulated Evidence Eg and final caption cFg , respectively. Blue denotes the frozen base Qwen3.6-27B Composer, which was not trained with LOOP-GRPO or alternating co-evolution. Teal denotes our Qwen3-8B Composer, which was trained with both. 
+
+Method Omni-Cloze ↑
+
+Proprietary models 
+
+GPT-4o Audio 35.8 Gemini2.0-Flash 20.0 Gemini2.5-Flash 42.6 Gemini2.5-Pro 48.0 Gemini3.1-Pro 64.1 Qwen3.5-Omni-Plus 57.6 
+
+Open-source models 
+
+Kimi-Audio-7B 2.9 Step-Audio-2-mini-8B 5.7 Audio-Flamingo 3-7B 6.3 SALMONN-13B 10.6 MiDashengLM-7B 19.5 Qwen2-Audio-7B 22.2 Qwen2.5-Omni-7B 25.8 Audio-Captioner-7B 53.2 Qwen3-Omni-30B-A3B-Instruct 35.3 Qwen3-Omni-30B-A3B-Captioner 57.5 
+
+ACE-Cap (ours) 64.4 
+
+Table 2: Audio-only results on the Omni-Cloze audio subset. The metric is official overall accuracy (%). All entries are reserved for results obtained under the same caption-only Qwen3.6-27B evaluation protocol. Omni-30B-A3B-Captioner variants (Xu et al. 2025b). Eval-uation covers Omni-Cloze (Ma et al. 2025), MMAR (Ma et al. 2026), MMAU (Sakshi et al. 2025), and MMSU (Wang et al. 2025), using the same frozen Qwen3.6-27B (Qwen Team 2026) text-only judge. Detailed descriptions of the baselines, benchmarks, and evaluation protocol are provided in Appendix B of the supplementary document. 
+
+Main Comparison 
+
+Caption utility on audio question answering. Table 1 compares the extent to which each caption can substitute for the audio on the three downstream question-answering benchmarks. ACE-Cap achieves 73.0%, 64.1%, and 70.4% on MMAU, MMAR, and MMSU, respectively. It outper-forms the strongest open-source baseline by 5.1, 8.8, and 2.2 percentage points on the three benchmarks. Across the 18 comparisons with proprietary models, ACE-Cap records 15 higher scores, one tie, and two lower scores. It exceeds GPT-4o Audio and Qwen3.5-Omni-Plus on all three bench-marks. Compared with Gemini 2.5 Pro, it leads MMAU by 3.0 points, matches MMAR, and trails MMSU by 1.4 points. Compared with Gemini 3.1 Pro, it leads MMAU and MMSU by 1.7 and 0.9 points, while trailing MMAR by 1.6 points. The MMAR result therefore remains competitive with the strongest proprietary system, while the broader pattern in-dicates strong caption utility across varied audio reasoning tasks. 
+
+Fine-grained evidence coverage on Omni-Cloze. Table 2 reports the corresponding audio-only Omni-Cloze compari-son. On Omni-Cloze, ACE-Cap achieves 64.4%, the high-est accuracy among all evaluated methods. This exceeds the strongest open-source model, Qwen3-Omni-30B-A3B-Captioner, by 6.9 points. ACE-Cap also outperforms every proprietary baseline, including GPT-4o Audio, Gemini 2.5 Pro, Qwen3.5-Omni-Plus, and Gemini 3.1 Pro. The margins over these models are 28.6, 16.4, 6.8, and 0.3 points, respec-tively. The 0.3-point margin over Gemini 3.1 Pro is modest, so we interpret the result as the best point estimate rather than a large separation. Under the unified caption-only evaluation protocol, this result shows that ACE-Cap retains fine-grained evidence needed to resolve masked acoustic details. 
+
+Analysis & Ablation Studies 
+
+Ablation of the ACE-Cap Alternating Training Pipeline. 
+
+Following Algorithm 1, Fig. 4 evaluates the successive stages of the ACE-Cap alternating training pipeline. Total accu-racy improves monotonically from 58.6% at S1 to 64.1% at S5. Captioner GRPO yields a modest 0.5-point gain at S2, whereas adding Instruct GRPO produces the largest im-Signal Perception Semantic Cultural Total     
+
+> 20 30 40 50 60 70 80
+> Accuracy
+> S1 S2 S3 S4 S5
+
+Figure 4: Ablation of the ACE-Cap alternating training pipeline on MMAR. S1–S5 follow the ordered training stages in Algorithm 1: S1 is the all-SFT initialization; S2 applies Captioner GRPO after S1; S3 further applies Instruct GRPO; S4 further applies Composer LOOP-GRPO warm-up; and S5 is the final ACE-Cap model after alternating Composer–Instruct co-evolution. Accuracy (%) is reported for the four MMAR capability layers and the full test set. The y-axis begins at 20%. The corresponding single- and mixed-modality results are reported in Appendix C.1 of the supplementary document. provement of 2.5 points at S3, together with clear gains on the Perception and Semantic layers. Composer LOOP-GRPO warm-up further raises the total by 1.1 points at S4, and alter-nating co-evolution adds another 1.4 points at S5. From S1 to S5, Perception, Semantic, and Cultural accuracy increase by 5.44, 5.09, and 8.51 points, respectively, indicating that the later training stages mainly improve higher-level evidence acquisition and integration. Signal accuracy is less stable: it peaks at S4 and returns to its S1 value at S5, partly reflect-ing the small size of this subset ( n = 43 ). Thus, the overall gain is not caused by a uniform increase across all layers. Each variant retains the preceding training stages, so adjacent comparisons quantify the incremental effect of the newly in-troduced stage within the ordered pipeline rather than an iso-lated component-removal effect. Results for speech, sound, music, and their mixed-modality subsets are provided in Ap-pendix C.1 of the supplementary document. 
+
+Active Evidence Acquisition Fig. 3(a) shows that the Raw Composer distributes its queries more broadly, with a strong preference for sound events (EV, 36.2%), and asks most ques-tions near the first turn. In contrast, Ours Composer focuses more on speech and transcription (SP, 48.1%) while plac-ing temporal, speaker-related, and contextual queries in later turns. This shift indicates a more focused and structured ev-idence acquisition strategy. 
+
+Query-Budget Ablation. Fig. 3(b) evaluates how the maximum query budget affects evidence acquisition and preservation. We measure preservation using ∆ret (K) = Acc( Eg ) − Acc( cFg ). The two policies differ in both back-bone and training, so this comparison does not isolate the causal effect of LOOP-GRPO. We therefore treat the reten-tion gap as a diagnostic rather than a controlled training ablation. For the frozen Qwen3.6-27B Composer, ∆ret is 0.40– 0.52 percentage points (pp) for K ≤ 4, but increases to 1.83 and 1.49 pp at K = 6 and K = 8 , respectively. Thus, the higher accumulated-evidence accuracy at larger budgets is not preserved by the final caption. In contrast, our Qwen3-8B Composer maintains a narrower gap of 0.25–0.45 pp across all budgets. This pattern is consistent with the objec-tive of LOOP-GRPO’s turn-level, stopping, and final-caption credits, which are designed to improve multi-turn credit as-signment and evidence-preserving synthesis. For our Com-poser, K = 2 –4 provides a favorable accuracy–cost trade-off: budgets above four increase interaction cost without improv-ing final-caption accuracy. Complete results for all evaluated configurations are reported in Appendix C.2 of the supple-mentary document. 
+
+Conclusion 
+
+We presented ACE-Cap, an active framework that reformu-lates long-paragraph, fine-grained audio captioning as iter-ative evidence acquisition. A text-only Composer identifies missing information, queries an audio-conditioned Instruct model, and synthesizes the accumulated evidence, while LOOP-GRPO, role-wise warm-up, and alternating optimiza-tion train effective questioning, stopping, and evidence-preserving generation. Across the evaluated audio bench-marks, ACE-Cap consistently outperforms strong open-source baselines and remains competitive with proprietary systems, supporting active interaction as an effective strat-egy for detailed audio understanding. The current study is limited to audio-only inputs and a fixed caption-as-evidence evaluation protocol; future work will consider audio-visual evidence, broader evaluation, and adaptive interaction bud-gets. References 
+
+Chen, S.; Xie, X.; Chen, Z.; Zhao, L.; Lee, O.; Su, Z.; Sun, Q.; and Wang, B. 2025. Fusionaudio-1.2 m: Towards fine-grained audio captioning with multimodal contextual fusion. 
+
+arXiv preprint arXiv:2506.01111 .Chu, Y.; Xu, J.; Yang, Q.; Wei, H.; Wei, X.; Guo, Z.; Leng, Y.; Lv, Y.; He, J.; Lin, J.; et al. 2024. Qwen2-audio technical report. arXiv preprint arXiv:2407.10759 .Comanici, G.; Bieber, E.; Schaekermann, M.; Pasupat, I.; Sachdeva, N.; Dhillon, I.; Blistein, M.; Ram, O.; Zhang, D.; Rosen, E.; et al. 2025. Gemini 2.5: Pushing the fron-tier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 .Deshmukh, S.; Elizalde, B.; Singh, R.; and Wang, H. 2023. Pengi: An audio language model for audio tasks. Advances in Neural Information Processing Systems , 36: 18090–18108. Ding, D.; Ju, Z.; Leng, Y.; Liu, S.; Liu, T.; Shang, Z.; Shen, K.; Song, W.; Tan, X.; Tang, H.; et al. 2025. Kimi-audio technical report. arXiv preprint arXiv:2504.18425 .Dinkel, H.; Li, G.; Liu, J.; Luan, J.; Niu, Y.; Sun, X.; Wang, T.; Xiao, Q.; Zhang, J.; and Zhou, J. 2025. Midashenglm: Efficient audio understanding with general audio captions. 
+
+arXiv preprint arXiv:2508.03983 .Drossos, K.; Lipping, S.; and Virtanen, T. 2020. Clotho: An audio captioning dataset. In ICASSP 2020-2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 736–740. IEEE. Foerster, J.; Farquhar, G.; Afouras, T.; Nardelli, N.; and Whiteson, S. 2018. Counterfactual multi-agent policy gra-dients. In Proceedings of the AAAI conference on artificial intelligence , volume 32. Ghosh, S.; Kong, Z.; Kumar, S.; Sakshi, S.; Kim, J.; Ping, W.; Valle, R.; Manocha, D.; and Catanzaro, B. 2025. Au-dio flamingo 2: An audio-language model with long-audio understanding and expert reasoning abilities. arXiv preprint arXiv:2503.03983 .Goel, A.; Ghosh, S.; Kim, J.; Kumar, S.; Kong, Z.; Lee, S.-g.; Yang, C.-H. H.; Duraiswami, R.; Manocha, D.; Valle, R.; et al. 2025. Audio flamingo 3: Advancing audio intelligence with fully open large audio language models. arXiv preprint arXiv:2507.08128 .Hurst, A.; Lerer, A.; Goucher, A. P.; Perelman, A.; Ramesh, A.; Clark, A.; Ostrow, A.; Welihinda, A.; Hayes, A.; Rad-ford, A.; et al. 2024. Gpt-4o system card. arXiv preprint arXiv:2410.21276 .Kim, C. D.; Kim, B.; Lee, H.; and Kim, G. 2019. Audiocaps: Generating captions for audios in the wild. In Proceed-ings of the 2019 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies, Volume 1 (Long and Short Papers) ,119–132. Kong, Z.; Goel, A.; Badlani, R.; Ping, W.; Valle, R.; and Catanzaro, B. 2024. Audio flamingo: A novel audio language model with few-shot learning and dialogue abilities. arXiv preprint arXiv:2402.01831 .Li, Y.; Zhang, H.; Guo, M.-H.; Gao, W.; Jia, S.; Jiao, S.; Hou, Q.; and Cheng, M.-M. 2026. Towards universal video mllms with attribute-structured and quality-verified instruc-tions. arXiv preprint arXiv:2602.13013 .Luong, M.; Haffari, G.; Phung, D.; and Qu, L. 2025. Graph-Score: A Graph-grounded Metric for Audio Captioning. In Proceedings of the 23rd Annual Workshop of the Aus-tralasian Language Technology Association , 192–201. Ma, Z.; Ma, Y.; Zhu, Y.; Yang, C.; Chao, Y.-W.; Xu, R.; Chen, W.; Chen, Y.; Chen, Z.; Cong, J.; et al. 2026. Mmar: A challenging benchmark for deep reasoning in speech, au-dio, music, and their mix. Advances in Neural Information Processing Systems , 38. Ma, Z.; Xu, R.; Xing, Z.; Chu, Y.; Wang, Y.; He, J.; Xu, J.; Heng, P.-A.; Yu, K.; Lin, J.; et al. 2025. Omni-Captioner: Data Pipeline, Models, and Benchmark for Omni Detailed Perception. arXiv preprint arXiv:2510.12720 .Mei, X.; Liu, X.; Huang, Q.; Plumbley, M. D.; and Wang, W. 2021. Audio captioning transformer. arXiv preprint arXiv:2107.09817 .Mei, X.; Meng, C.; Liu, H.; Kong, Q.; Ko, T.; Zhao, C.; Plumbley, M. D.; Zou, Y.; and Wang, W. 2024. Wavcaps: A chatgpt-assisted weakly-labelled audio captioning dataset for audio-language multimodal research. IEEE/ACM Trans-actions on Audio, Speech, and Language Processing , 32: 3339–3354. Nekoei, H.; Badrinaaraayanan, A.; Sinha, A.; Amini, M.; Rajendran, J.; Mahajan, A.; and Chandar, S. 2023. Deal-ing with non-stationarity in decentralized cooperative multi-agent deep reinforcement learning via multi-timescale learn-ing. In Conference on Lifelong Learning Agents , 376–398. PMLR. Papoudakis, G.; Christianos, F.; Rahman, A.; and Albrecht, S. V. 2019. Dealing with non-stationarity in multi-agent deep reinforcement learning. arXiv preprint arXiv:1906.04737 .Qwen Team. 2026. Qwen3.6-27B: Flagship-Level Coding in a 27B Dense Model. Rennie, S. J.; Marcheret, E.; Mroueh, Y.; Ross, J.; and Goel, V. 2017. Self-critical sequence training for image captioning. In Proceedings of the IEEE conference on computer vision and pattern recognition , 7008–7024. Rong, Y.; Li, C.; Yu, D.; and Liu, L. 2026a. AudioGenie-Reasoner: A Training-Free Multi-Agent Framework for Coarse-to-Fine Audio Deep Reasoning. In ICASSP 2026-2026 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 14497–14501. IEEE. Rong, Y.; Ma, F.; Li, X.; Wang, J.; Zhang, C.; and Liu, L. 2026b. AudioMap: Cloze-and-Choice Reinforcement Learn-ing for Time-Aware Dense Audio Captioning. arXiv preprint arXiv:2608.09559 .Rong, Y.; Wang, J.; Lei, G.; Yang, S.; and Liu, L. 2025. AudioGenie: A Training-Free Multi-Agent Framework for Diverse Multimodality-to-Multiaudio Generation. In Pro-ceedings of the 33rd ACM International Conference on Mul-timedia , 8872–8881. Rong, Y.; Yang, S.; Li, C.; Yu, D.; and Liu, L. 2026c. Dopamine Audiobook: A Training-Free MLLM Agent for Emotional and Immersive Audiobook Generation. IEEE Transactions on Audio, Speech and Language Processing ,34: 2526–2538. Sakshi, S.; Tyagi, U.; Kumar, S.; Seth, A.; Selvakumar, R.; Nieto, O.; Duraiswami, R.; Ghosh, S.; and Manocha, D. 2025. Mmau: A massive multi-task audio understanding and reasoning benchmark. In International Conference on Learning Representations , volume 2025, 84929–84964. Shao, Z.; Wang, P.; Zhu, Q.; Xu, R.; Song, J.; Bi, X.; Zhang, H.; Zhang, M.; Li, Y.; Wu, Y.; et al. 2024. Deepseekmath: Pushing the limits of mathematical reasoning in open lan-guage models. arXiv preprint arXiv:2402.03300 .Tang, C.; Yu, W.; Sun, G.; Chen, X.; Tan, T.; Li, W.; Lu, L.; Ma, Z.; and Zhang, C. 2024. Salmonn: Towards generic hear-ing abilities for large language models. In International Con-ference on Learning Representations , volume 2024, 16607– 16629. Team, G.; Anil, R.; Borgeaud, S.; Alayrac, J.-B.; Yu, J.; Sori-cut, R.; Schalkwyk, J.; Dai, A. M.; Hauth, A.; Millican, K.; et al. 2023. Gemini: a family of highly capable multimodal models. arXiv preprint arXiv:2312.11805 .Team, Q. 2026. Qwen3. 5-omni technical report. arXiv preprint arXiv:2604.15804 .Wang, D.; Li, J.; Wu, J.; Yang, D.; Chen, X.; Zhang, T.; and Meng, H. 2025. Mmsu: A massive multi-task spoken language understanding and reasoning benchmark. arXiv preprint arXiv:2506.04779 .Wang, Q.; Gu, J.-C.; and Ling, Z.-H. 2024. X-ace: Ex-plainable and multi-factor audio captioning evaluation. In 
+
+Findings of the Association for Computational Linguistics: ACL 2024 , 12273–12287. Wu, B.; Yan, C.; Hu, C.; Yi, C.; Feng, C.; Tian, F.; Shen, F.; Yu, G.; Zhang, H.; Li, J.; et al. 2025a. Step-audio 2 technical report. arXiv preprint arXiv:2507.16632 .Wu, T.-H.; Gonzalez, J. E.; Darrell, T.; and Chan, D. M. 2025b. CLAIR A: Leveraging Large Language Models to Judge Audio Captions. In 2025 IEEE Automatic Speech Recognition and Understanding Workshop (ASRU) , 1–7. IEEE. Xing, Z.; Xu, R.; Wang, Y.; He, J.; Ma, Z.; Yang, Q.; Chu, Y.; Xu, J.; Lin, J.; Fu, C.-W.; et al. 2026. Native Active Perception as Reasoning for Omni-Modal Understanding. 
+
+arXiv preprint arXiv:2606.19341 .Xu, J.; Guo, Z.; He, J.; Hu, H.; He, T.; Bai, S.; Chen, K.; Wang, J.; Fan, Y.; Dang, K.; et al. 2025a. Qwen2. 5-Omni Technical Report. arXiv preprint arXiv:2503.20215 .Xu, J.; Guo, Z.; Hu, H.; Chu, Y.; Wang, X.; He, J.; Wang, Y.; Shi, X.; He, T.; Zhu, X.; et al. 2025b. Qwen3-omni technical report. arXiv preprint arXiv:2509.17765 .Xu, X.; Dinkel, H.; Wu, M.; and Yu, K. 2020. A CRNN-GRU Based Reinforcement Learning Approach to Audio Caption-ing. In DCASE , 225–229. Yang, A.; Li, A.; Yang, B.; Zhang, B.; Hui, B.; Zheng, B.; Yu, B.; Gao, C.; Huang, C.; Lv, C.; et al. 2025. Qwen3 technical report. arXiv preprint arXiv:2505.09388 .Yang, Z.; Li, L.; Wang, J.; Lin, K.; Azarnasab, E.; Ahmed, F.; Liu, Z.; Liu, C.; Zeng, M.; and Wang, L. 2023. Mm-react: Prompting chatgpt for multimodal reasoning and ac-tion. arXiv preprint arXiv:2303.11381 .Yao, S.; Zhao, J.; Yu, D.; Du, N.; Shafran, I.; Narasimhan, K.; and Cao, Y. 2022. React: Synergizing reasoning and acting in language models. arXiv preprint arXiv:2210.03629 .Zeng, S.; Wei, Q.; Brown, W.; Frunza, O.; Nevmyvaka, Y.; Zhao, Y. K.; and Hong, M. 2025. Reinforcing multi-turn reasoning in llm agents via turn-level credit assignment. In 
+
+ICML 2025 Workshop on Computer Use Agents .Zhou, Z.; Zhang, Z.; Xu, X.; Xie, Z.; Wu, M.; and Zhu, K. Q. 2022. Can audio captions be evaluated with image caption metrics? In ICASSP 2022-2022 IEEE International Confer-ence on Acoustics, Speech and Signal Processing (ICASSP) ,981–985. IEEE.

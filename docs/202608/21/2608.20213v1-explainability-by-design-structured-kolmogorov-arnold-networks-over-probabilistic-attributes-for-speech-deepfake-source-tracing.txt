@@ -1,0 +1,661 @@
+Title: Explainability by Design: Structured Kolmogorov-Arnold Networks over Probabilistic Attributes for Speech Deepfake Source Tracing
+
+URL Source: https://arxiv.org/pdf/2608.20213v1
+
+Published Time: Fri, 21 Aug 2026 01:06:41 GMT
+
+Number of Pages: 26
+
+Markdown Content:
+# Explainability by Design: Structured Kolmogorov–Arnold Networks over Probabilistic Attributes for Speech Deepfake Source Tracing 
+
+## Hoang H. Pham a,∗, Manasi Chhibber a and Tomi H. Kinnunen a
+
+> a
+
+School of Computing, University of Eastern Finland, Joensuu, FI-80101, Finland 
+
+A R T I C L E I N F O 
+
+Keywords :Anti-spoofing Speech deepfake Source tracing Kolmogorov-Arnold network Explainable artificial intelligence 
+
+A B S T R A C T 
+
+Modern speech synthesizers can produce highly realistic speech, making source tracing (i.e. identifying the generator behind a spoofed utterance) increasingly important for forensics, online content provenance, and platform accountability. Building on our prior work on transparent probabilistic attributes, which represent utterances as probability distributions over synthesizer sub-components, we extend speech deepfake source tracing with two key ingredients: multi-task training of the probabilistic attribute extractors and a structured Kolmogorov–Arnold Network (KAN) for attack classification. The probabilistic features are estimated jointly with a multi-task learning module built on a shared AASIST or SSL-AASIST countermeasure backbone. The resulting probabilistic feature embedding is classified by a structured KAN whose topology follows known attribute-to-attack relationships. This provides interpretability by construction: the architecture reflects the generative hierarchy of attacks, while KAN feature-importance scores quantify each probabilistic feature’s contribution without post-hoc explainers such as SHAP. On ASVspoof2019-attr-17, the extended framework achieves balanced accuracies above 99% 
+
+for all seven probabilistic feature extractors, with EERs of 0.16% –0.07% , and 99 .64% balanced accuracy with 0.11% EER for 17-class attack classification. Our revised model outperforms the earlier two-stage baselines, in addition to demonstrating reliable interpretability, with importance scores consistent with SHAP values, and stable results across batch sizes. These findings highlight the potential of structured KAN for speech deepfake source tracing that is both accurate and interpretable by design. For transparency and reproducibility, our codebase is publicly available: 
+
+https://github.com/HoangHPham/KAN-Probabilistic-Deepfake-Attribution .
+
+## 1. Introduction 
+
+Recent advances in generative artificial intelligence (GenAI), including speech synthesis technology (Liao et al., 2026; Hieu et al., 2025), have substantially improved convenience, accessibility, and efficiency in our daily lives. Despite its many beneficial applications, speech synthesis technology has also increased risks related to information security and system reliability, including threats ranging from identity theft and misinformation spread to defamation campaigns and financial fraud (Gambín et al., 2024; Sobolev, 2025). These risks have heightened concerns about voice spoofing attacks, which deliberately aim to deceive human listeners or automatic speaker verification systems. In such exploitative contexts, the contemporary expression speech deepfake refers to an artificial or synthesized speech sample generated using a deep learning model. Detecting the presence of speech deepfakes is crucial for protecting both individuals and organizations against attacks involving the use of deepfakes. In response, the research community has devoted substantial effort to developing deepfake detection systems, commonly known as anti-spoofing systems or countermeasures (CMs). These systems address a binary hypothesis testing problem: given a speech utterance 𝑋 , the objective is to determine whether 𝑋 is more likely to originate from a bona fide (real) human speech production system (null hypothesis, 𝐻 0) or from a speech synthesis system (alternative hypothesis, 𝐻 1). However, the increasing diversity and sophistication of spoofing attacks demand more reliable and adaptable countermeasures. In this context, speech deepfake source tracing extends the scope of binary detection by aiming to identify the specific generative model, algorithm(s), or software used to produce a given synthetic recording. Hence, in source tracing one has already established that 𝑋 does not originate from a bona fide human being, with the aim being to identify its source generator. Formally, the source tracing task can be formulated as a multi-class problem:  
+
+> ⋆
+
+This research is the results of the SPEECHFAKES project funded by the Academy of Finland. 
+
+> ∗
+
+Corresponding author 
+
+hpham@uef.fi (H.H. Pham); manasi.chhibber@uef.fi (M. Chhibber); tomi.kinnunen@uef.fi (T.H. Kinnunen) 
+
+> ORCID
+
+(s): 0009-0007-4601-9216 (H.H. Pham) 
+
+H. H. Pham et al.: Preprint submitted to Elsevier Page 1 of 26 arXiv:2608.20213v1 [eess.AS] 20 Aug 2026 Explainable speech deepfake source tracing  
+
+> Figure 1: Architectural design strategies for source tracing system (adapted from Klein et al. (2024)).
+
+given a spoofed speech utterance 𝑋 and a set of known attacks (source generators) 𝒜 = { a1, a2, … , a𝑛 }, the goal is to determine which attack generated 𝑋 , or to infer that it originates from an unknown source not included in 𝒜 .Accordingly, the source tracing problem can be considered under either closed-set or open-set conditions. In the former case, 𝑋 is assumed to originate from one of the known attack methods in 𝒜 . In contrast, the open-set scenario allows 
+
+𝑋 to be generated by previously unseen attacks outside the set 𝒜 . We focus on the closed-set formulation. From the literature, we identify two primary ways for designing source tracing systems (Klein et al., 2024), as illustrated in Fig. 1. As in other speech classification tasks, an end-to-end design is understood as a monolithic model optimized directly for the given task on one go, here, for identifying the known source generator (attack). In contrast, in the two-stage design, a binary system is first trained for the detection task of distinguishing between bona fide and spoofed speech. The representations extracted from this pre-trained model are then used as inputs to a back-end classifier to identify the sources of spoofed samples. In this work, we develop an end-to-end source-tracing model that jointly classifies the attack system and its sub-components, such as waveform generators (vocoders). The focus of our work is to advance explainable speech deepfake source tracing. Our work builds upon recent efforts to incorporate XAI into speech anti-spoofing, moving beyond simple heatmaps toward structural transparency; a review of related work is provided in Section 2. In particular, our work builds upon (and substantially extends) our recent methodology (Chhibber et al., 2025; Mishra et al., 2026) based on high-level probabilistic characterization of synthetic speech generators . The idea is simple: we replace abstract high-dimensional latent space embeddings (whose dimensions are generally meaningless to humans) with probabilistic features (that can be readily interpreted). The probabilistic features can then be used in the same way as other features, i.e. combined with a back-end classifier to identify the source generator. Concretely, the probabilistic features used in Chhibber et al. (2025); Mishra et al. (2026) represent the uncertainty of a particular synthesizer sub-component (e.g. a particular waveform generator, duration model, or acoustic feature predictor) being present in the given recording 𝑋 . In terms of operationalization, Chhibber et al. (2025); Mishra et al. (2026) utilized a bank of independently-trained feedforward networks to estimate the probabilistic features. Following the two-stage design philosophy, the probabilistic feature extractors used the same binary detector embeddings. While in our earlier work (Chhibber et al., 2025; Mishra et al., 2026) we successfully demonstrated that probabilistic attribute embeddings perform comparably to raw latent-space features, the underlying architecture was inherently fragmented. Specifically, these frameworks relied on a bank of independently trained multi-layer perceptrons (MLPs) for attribute extraction, followed by separate back-end classifiers (e.g., decision trees (Breiman et al., 1984) or logistic regression (Cox, 1958)). Furthermore, they depended on post-hoc Shapley value (SHAP) (Lundberg and Lee, 2017) estimations to quantify feature importance. This disjointed pipeline presents fundamental limitations: not only do basic classifiers like decision trees struggle with stability and large-scale accuracy (Bertsimas and Jr, 2023), but relying       
+
+> H. H. Pham et al.: Preprint submitted to Elsevier Page 2 of 26 Explainable speech deepfake source tracing
+> Figure 2: Proposed end-to-end source tracing model for speech deepfakes in the ASVspoof 2019 LA dataset. The multi-task learning (MTL) module, consisting of a shared backbone and 𝑇 attribute extractors (Attr. 𝑖 ), predicts attack attributes, while the structured Kolmogorov–Arnold network module (SKM) performs attack classification. A built-in interpretability mechanism is further employed to assess the contribution of each attribute in the classification process.
+
+on external post-hoc explainers increases computational overhead and obscures whether the generated explanations faithfully reflect the model’s true internal logic. Consequently, while we established a necessary conceptual foundation, there remains a critical need for a unified, high-performance architecture where explainability is an intrinsic structural feature rather than an afterthought. To bridge this gap, the present work proposes a novel, end-to-end architecture that jointly optimizes feature representation, attribute extraction, and attack classification. Moving away from independently trained MLPs, we integrate multi-task learning (MTL) with a specialized Kolmogorov–Arnold network (KAN). In this unified framework, the MTL module leverages a countermeasure backbone to learn shared, globally informed speech representations that are used to train probabilistic attribute extractors. Probabilistic attribute embeddings are then directly feed into our proposed structured KAN module (SKM), bypassing the need for black-box back-ends. The adoption of KAN serves as our primary structural contribution, yielding both intrinsic and extrinsic interpretability by design. Specifically, the SKM explicitly wires the relationships between attacks and their corresponding generative attributes (derived from ASVspoof 2019 LA metadata) into the network’s topology, ensuring complete structural transparency. Furthermore, KAN features a built-in importance analysis mechanism that directly quantifies the contribution of each attack attribute without relying on external post-hoc tools. Alongside standard classification metrics, the robustness of our integrated interpretability mechanism is further validated through targeted consistency and stability evaluations. 
+
+## 2. Background: Explainability 
+
+2.1. Explainable Artificial Intelligence (XAI) 
+
+Whereas advances in deep learning have paved way for many new applications—including speech deepfake detection and source tracing—it is also widely acknowledged that pure black-box decisions are insufficient in many cases. In critical domains such as forensics or medicine, the reasoning and transparency of decision making are vital. In this   
+
+> H. H. Pham et al.: Preprint submitted to Elsevier Page 3 of 26 Explainable speech deepfake source tracing
+
+context, the umbrella term explainable artificial intelligence (XAI) (Minh et al., 2022) refers to approaches for "opening the black box", typically in the context of deep neural network models. Even if the two terms are often used exchangeably, in XAI one distinguishes between interpretability and explainability. Interpretability refers to the extent to which the internal structure of a model is understandable, while explainability refers to the ability to provide reasons for model decisions. This leads to two distinguishable terms: (1) intrinsic and (2) extrinsic interpretability (Escalante and Aakur, 2018). In the former, the model structure itself provides insight into its internal functioning, whereas the latter relates to the rationale behind the model decisions through post-hoc analyses, such as input feature importance estimation or heatmap-based visualization techniques. In practice, extrinsic interpretability is often achieved using post-hoc explanation methods that analyze a trained model after training. These methods estimate the contribution of input to the prediction of a model. Common approaches include integrated gradients (IG) (Sundararajan et al., 2017), which attributes importance by accumulating gradients from a baseline input; local interpretable model-agnostic explanations (LIME) (Ribeiro et al., 2016), which approximates the local behavior of a complex model using a simpler surrogate model; and shapley additive explanations (SHAP) (Lundberg and Lee, 2017), which assigns feature importance values based on a game-theoretic formulation. These techniques do not change the model itself but provide post-hoc insights into its decisions. In contrast, intrinsic interpretability is achieved by designing models that are transparent by structure, such as classical interpretable models like decision trees or random forests, as well as more recent explainable neural architectures, including the speech formant audio transformer network (SFATNet) (Cuccovillo et al., 2024a,b), which is designed to be interpretable by design. SFATNet uses frame-level segmentation along the time axis, where each token represents a full frequency frame, enabling frame-level analysis. It also applies multi-head attention pooling to assign importance weights to different time frames, indicating their contribution to the final decision. In this work, we address both intrinsic and extrinsic interpretability within a unified framework. 
+
+2.2. Explainable AI (XAI) for speech anti-spoofing 
+
+Anti-spoofing in speech technologies has become a significant research area, with recent advances focusing on improving interpretability of system. Table 1 summarizes prior works on interpretability for both detection and source-tracing tasks. Many studies applied post-hoc explanation methods to analyze the outputs of deepfake detectors. For example, Lim et al. (2022) and Naresh et al. (2025) used gradient-based methods such as integrated gradients (Sundararajan et al., 2017), layer-wise relevance propagation (Binder et al., 2016), and Taylor decomposition (Montavon et al., 2018). Other works estimated feature importance using SHAP or LIME (Ge et al., 2022; Yu et al., 2024a; Mundik et al., 2025; LaRock et al., 2025; Xuan et al., 2026). Some studies instead focus on intrinsic interpretability through model design or interpretable machine learning architectures, including the SFATNet-based model (Negroni et al., 2026) and classical models such as decision tree or random forest combined with explanation tools (Bisogni et al., 2024; Channing et al., 2024). Beyond detection, far fewer studies examine interpretability for the source tracing task. Examples include the attention-based method (Chen et al., 2025) and the use of a decision tree with SHAP analysis in Chhibber et al. (2025) and Mishra et al. (2026). Despite these efforts, research that jointly ensures both intrinsic and extrinsic interpretability in speech deepfake systems remains limited, particularly in source tracing. In addition, post-hoc methods increase computational cost, while simple interpretable models often underperform. We therefore design a source-tracing system with both intrinsic and extrinsic interpretability, without relying on any post-hoc method. 
+
+2.3. Kolmogorov-Arnold Network for speech anti-spoofing 
+
+Kolmogorov-Arnold network (KAN) introduced recently by Liu et al. (2025b) is a neural network architecture that provides an alternative to conventional multilayer perceptrons. Before providing a self-contained introduction to KAN architecture (Section 3.1), we provide a brief review of its typical usage, including prior studies in speech anti-spoofing. In practice, KAN has been integrated into several deep learning architectures and has been applied in many domains beyond speech, including computer vision, time series analysis, and graph learning. In transformer-based models introduced by Yang and Wang (2025) and Raffel and Chen (2025), KAN layers are typically used to replace MLP blocks in feed-forward networks to improve nonlinear transformation. Similarly, in CNN and ResNet-based architectures, KAN is applied as a substitute for fully connected layers or convolutional components, leading to variants such as Convolutional-KAN (Bodner et al., 2025) and Residual-KAN (Yu et al., 2025).   
+
+> H. H. Pham et al.: Preprint submitted to Elsevier Page 4 of 26
+
+Explainable speech deepfake source tracing 
+
+Table 1 
+
+Summary of related works on interpretable speech deepfake detection and source tracing. Abbreviations: SHAP = SHapley Additive exPlanations, LIME = Local Interpretable Model-agnostic Explanations, Grad-CAM = Gradient-weighted Class Activation Mapping, SFATNet = Speech Formant Audio Transformer Network and KAN = Kolmogorov–Arnold Network. 
+
+Paper Task Dataset Interpretability XAI Method 
+
+Lim et al. (2022) Detection - ASVspoof 2021 LA - LJSpeech Extrinsic - Integrated gradients - Taylor decomposition Ge et al. (2022) Detection ASVspoof 2019 LA Extrinsic SHAP Yu et al. (2024a) Detection ASVspoof 2019 LA Extrinsic SHAP Naresh et al. (2025) Detection - ASVspoof 2019 LA - LJSpeech Extrinsic - Layer-wise relevance propagation - Integrated gradients - Deep Taylor decomposition Negroni et al. (2026) Detection - ASVspoof 5 - In-the-Wild - FakeOrReal - TIMIT-TTS Intrinsic SFATNet-based design (Cuccovillo et al., 2024a,b) Bisogni et al. (2024) Detection - ASVspoof 2019 LA - ASVspoof 2019 PA - In-the-Wild - FakeAVCelebV2 Intrinsic & Extrinsic - ML-based designs (KNN, random forest, XG Boost) - SHAP Channing et al. (2024) Detection - ASVspoof 5 - FakeAVCeleb Intrinsic & Extrinsic - Gradient boosting decision tree based feature importance analysis - Attention visualization Mundik et al. (2025) Detection ASVspoof 2021 LA Extrinsic - SHAP - LIME - Grad-CAM LaRock et al. (2025) Detection In-the-Wild Extrinsic LIME Xuan et al. (2026) Detection - Deepfake-Eval-2024 - SpoofCeleb - In-the-Wild Extrinsic SHAP Chen et al. (2025) Source tracing CodecFake+ Extrinsic Attention visualization Chhibber et al. (2025) Detection & Source tracing ASVspoof 2019 LA (2 attacks) Intrinsic & Extrinsic - Decision tree - SHAP Mishra et al. (2026) Detection & Source tracing ASVspoof 2019 LA (17 attacks) Intrinsic & Extrinsic - Decision tree - SHAP 
+
+This work Detection & Source tracing ASVspoof 2019 LA (17 attacks) Intrinsic & Extrinsic - Structured KAN - KAN’s built-in mechanism for feature importance analysis 
+
+In speech anti-spoofing, the use of KAN remains limited, as seen from the summary in Table 2. Prior work has mainly explored two configurations: using KAN as a feature projector to learn intermediate representations, or applying it only in the final classification layer (Badugu et al., 2025). For example, Borodin et al. (2024) integrate KAN into the well-known AASIST deepfake detection model introduced by Jung et al. (2021). However, these studies treat KAN largely as a drop-in replacement for MLP, leaving the overall network architecture largely unchanged and focusing primarily on detection performance rather than interpretability. More broadly, existing work typically replaces the linear transformations and fixed activation functions of MLP with KAN’s learnable activations while retaining the surrounding architecture, such as a transformer, CNN, ResNet, or AASIST backbone. Consequently, KAN has so far 
+
+H. H. Pham et al.: Preprint submitted to Elsevier Page 5 of 26 Explainable speech deepfake source tracing                         
+
+> Table 2
+> Summary of related works on the use of KAN in speech anti-spoofing.
+> Paper Task Dataset Interpretability Role of KAN
+> Phuong and Dat (2025) Deepfake detection - ASVspoof 2019 LA - ASVspoof 2021 LA, DA No Feature projector Tran et al. (2025) Deepfake detection - ASVspoof 2019 LA - ASVspoof 2021 LA, DA - In-the-Wild No Feature projector Borodin et al. (2024) Deepfake detection ASVspoof 5 No Feature projector Badugu and Singh (2026) Deepfake detection ASVspoof 2021 LA No Feature projector Shah and Kamble (2026) Voice liveness detection - POCO - ASVspoof 2017 V2 - ASVspoof 2019 No Classifier
+> This work Deepfake source tracing ASVspoof 2019 LA (17 attacks) Yes Classifier
+
+been evaluated mainly for predictive performance. In contrast, Liu et al. (2025a) introduce a built-in mechanism to directly estimate input feature importance from the model. This provides an alternative to post-hoc interpretability methods such as SHAP and helps address an important gap in speech anti-spoofing research. 
+
+## 3. Methodological Preliminaries 
+
+3.1. Kolmogorov-Arnold Network (KAN) 
+
+While multi-layer perceptron (MLP) (Rumelhart et al., 1986) are grounded in the universal approximation theorem 
+
+(UAT) (Hornik et al., 1989), Kolmogorov-Arnold network (KAN) (Liu et al., 2025b) rely on the Kolmogorov-Arnold representation theorem (KART) (Nikolaevich, 1957) to approximate functions of multivariate inputs. Specifically, UAT guarantees approximation of a target function through compositions of multivariate functions with suitable parameters, whereas KART guarantees approximation through compositions of continuous univariate functions. The key difference between the computational schemes in Equations (1) and (2) is therefore how they represent nonlinearity. Key difference of representation theorems relevant to MLP and KAN. 
+
+Theorem 3.1 (Universal approximation theorem, UAT). Let 𝐱 ∈ ℝ𝑚 be the input vector, let 𝜎 be a fixed nonlinear activation function (e.g., sigmoid, tanh, or ReLU), and let 𝐰 ∈ ℝ𝑚 and 𝑏 ∈ ℝ denote the learnable weight vector and bias, respectively. Then the finite sum 
+
+𝑓 NN (𝐱 ) = 
+
+> 𝑁 −1
+
+∑
+
+> 𝑖 =0
+
+𝜎 (𝐰 ⊺ 
+
+> 𝑖
+
+𝐱 + 𝑏 𝑖 ) , (1) defines the approximation of a function 𝑓 by a one-hidden-layer neural network with 𝑁 hidden neurons. 
+
+Theorem 3.2 (Representation theorem, KART). Let 𝑓 ∶ [0 , 1] 𝑚 → ℝ be a continuous multivariate function, and let 𝐱 ∈ [0 , 1] 𝑚 be the input vector. Then 𝑓 can be represented as 
+
+𝑓 (𝐱 ) = 𝑓 (𝑥 0, 𝑥 1, … , 𝑥 𝑚 −1 ) = 
+
+> 2𝑚
+
+∑
+
+> 𝑞 =0
+
+Φ𝑞 
+
+(𝑚 −1 ∑
+
+> 𝑝 =0
+
+𝜙 𝑞,𝑝 
+
+(𝑥 𝑝 
+
+))
+
+, (2) where Φ𝑞 ∶ [0 , 1] → ℝ and 𝜙 𝑞,𝑝 ∶ ℝ → ℝ are continuous univariate functions.   
+
+> H. H. Pham et al.: Preprint submitted to Elsevier Page 6 of 26
+
+Explainable speech deepfake source tracing 
+
+Figure 3: Computational graph of multilayer KAN model. 
+
+The representation theorem in Eq. (2) shows that (2 𝑚 + 1) × 𝑚 inner univariate functions 𝜙 𝑞,𝑝 and 2𝑚 + 1 outer univariate functions Φ𝑞 are sufficient to represent exactly the given 𝑚 -variate function. When considering KART in the context of a neural network, the Equation (2) follows precisely the form of a function approximation performed by a one-hidden-layer neural network. However, similar to MLP, this shallow form limits the expressive power of the network. This has motivated generalizations of Equation (2) to wider and deeper architectures, leading to the development of KAN. The key idea inherited from KART is the use of learnable univariate functions 𝜙 . Instead of applying a linear transformation followed by a fixed nonlinear activation at each node (as in MLP), KAN places parameterized 
+
+univariate activation functions on the edges. In the original KAN study by Liu et al. (2025b), each univariate function is parameterized by a B-spline curve (Chaudhuri, 2021), whose local B-spline basis coefficients are learned during training. Figure 3 illustrates the overall architecture of a multilayer KAN model. The structure of an 𝐿 -layer KAN is specified by an array [𝑛 (0) , 𝑛 (1) , … , 𝑛 (𝐿 )], where 𝑛 (0) is the input dimension, 𝑛 (𝐿 )
+
+is the output dimension, and 𝑛 (𝑙 ) for 𝑙 = 1 , … , 𝐿 − 1 is the number of nodes in the 𝑙 th hidden layer. Connecting layer 
+
+𝑙 to layer (𝑙 + 1) requires 𝑛 (𝑙 ) × 𝑛 (𝑙 +1) learnable activation functions, each linking node 𝑖 in layer 𝑙 to node 𝑗 in layer 
+
+(𝑙 + 1) . We denote each such function by 
+
+𝜙 𝑙,𝑖,𝑗 ; 𝑙 = 0 , … , 𝐿 − 1 , 𝑖 = 0 , … , 𝑛 (𝑙 ) − 1 , 𝑗 = 0 , … , 𝑛 (𝑙 +1) − 1 . (3) Given the univariate input 𝑥 𝑙,𝑖 to 𝜙 𝑙,𝑖,𝑗 , the corresponding output (post-activation) ̃𝑥 𝑙,𝑗,𝑖 ≡ 𝜙 𝑙,𝑖,𝑗 (𝑥 𝑙,𝑖 ) is defined as ̃𝑥 𝑙,𝑗,𝑖 ≡ 𝜙 𝑙,𝑖,𝑗 (𝑥 𝑙,𝑖 ) = 𝑤 𝑏 𝑙,𝑖,𝑗 𝑏 (𝑥 𝑙,𝑖 ) + 𝑤 𝑠 𝑙,𝑖,𝑗 spline 𝑙,𝑖,𝑗 (𝑥 𝑙,𝑖 ), (4) where 𝑏 (𝑥 𝑙,𝑖 ) is the sigmoid linear unit (SiLU) function (Elfwing et al., 2018), used as a residual connection: 
+
+𝑏 (𝑥 𝑙,𝑖 ) = SiLU( 𝑥 𝑙,𝑖 ) = 𝑥 𝑙,𝑖 ⋅ 11 + 𝑒 −𝑥 𝑙,𝑖 , (5) and where spline 𝑙,𝑖,𝑗 (𝑥 𝑙,𝑖 ) denotes a 𝐵 -spline defined by: 
+
+spline 𝑙,𝑖,𝑗 (𝑥 𝑙,𝑖 ) = 
+
+> 𝐺 +𝑘 −1
+
+∑
+
+> ℎ=0
+
+𝑐 ℎ𝐵 ℎ(𝑥 𝑙,𝑖 ). (6) 
+
+H. H. Pham et al.: Preprint submitted to Elsevier Page 7 of 26 Explainable speech deepfake source tracing 
+
+Figure 4: Each learnable univariate activation function in KAN is parameterized from 𝑘 -degree B-spline curve defined by 𝐺 
+
+intervals and weighted sum of basis functions with learnable weights. 
+
+Here, 𝑐 ℎ are learnable coefficients and 𝐵 ℎ are fixed 𝐵 -spline basis functions determined by the spline order and knot configuration (Chaudhuri, 2021). Figure 4 illustrates how a spline in KAN is constructed from the weighted sum of the B-spline basis functions. The 
+
+𝑘 th degree B-spline is defined by a grid of the 𝐺 intervals corresponding to 𝐺 + 1 grid points, also known as internal knots (Chaudhuri, 2021). At the training time, each learnable activation function 𝜙 𝑙,𝑖,𝑗 is initialized with 𝑤 𝑠 𝑙,𝑖,𝑗 = 1 ,
+
+spline 𝑙,𝑖,𝑗 (𝑥 𝑙,𝑖 ) ≈ 0 and Xavier initialization (Glorot and Bengio, 2010) based 𝑤 𝑏 𝑙,𝑖,𝑗 . Then, the activation value of the 
+
+𝑗 th node at layer 𝑙 + 1 is calculated by the sum of all incoming post-activations: 
+
+𝑥 𝑙 +1 ,𝑗 =
+
+> 𝑛 (𝑙 )−1
+
+∑
+
+> 𝑖 =0
+
+̃𝑥 𝑙,𝑖,𝑗 =
+
+> 𝑛 (𝑙 )−1
+
+∑
+
+> 𝑖 =0
+
+𝜙 𝑙,𝑖,𝑗 (𝑥 𝑙,𝑖 ), 𝑗 = 0 , ..., 𝑛 (𝑙 +1) − 1 . (7) We can present (7) more compactly in matrix notation. The activation vector x𝑙 +1 ∈ ℝ𝑛 (𝑙 +1) ×1 in layer 𝑙 + 1 is a dot product of a matrix of 𝑛 (𝑙 +1) × 𝑛 (𝑙 ) 1D functions 𝚽 (𝑙 ) with a pre-activation vector x𝑙 ∈ ℝ𝑛 (𝑙 )×1 in layer 𝑙 :
+
+x𝑙 +1 =
+
+⎛⎜⎜⎜⎝
+
+𝜙 𝑙, 0,0(⋅) 𝜙 𝑙, 1,0(⋅) ⋯ 𝜙 𝑙,𝑛 𝑙 −1 ,0(⋅)
+
+𝜙 𝑙, 0,1(⋅) 𝜙 𝑙, 1,1(⋅) ⋯ 𝜙 𝑙,𝑛 𝑙 −1 ,1(⋅)
+
+⋮ ⋮ ⋱ ⋮
+
+𝜙 𝑙, 0,𝑛 𝑙 +1 −1 (⋅) 𝜙 𝑙, 1,𝑛 𝑙 +1 −1 (⋅) ⋯ 𝜙 𝑙,𝑛 𝑙 −1 ,𝑛 𝑙 +1 −1 (⋅)
+
+⎞⎟⎟⎟⎠
+
+⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏞⏟ 
+
+> =∶ 𝚽 (𝑙 )
+
+x𝑙 . (8) Then, given an input vector x, the output of a 𝐿 -layer KAN model is calculated by a composition of 𝐿 function matrices: 
+
+KAN( x) = ( 𝚽 (𝑙 −1) ◦𝚽 (𝑙 −2) ◦ ⋯ ◦ 𝚽 (1) ◦𝚽 (0) )x . (9) 
+
+3.2. KAN vs MLP: an interpretable alternative 
+
+As noted above, most previous studies treat KAN simply as a replacement for MLP for representation learning. In practice, however, the practical performance difference between KAN and MLP remains unclear. On the one hand, KAN is used due to their ability to potentially achieve faster convergence by replacing linear weight matrices with spline-based functions, which can reduce the number of parameters. On the other hand, several challenges associated with KAN have also been reported, including scalability issues and slow training (Yang and Wang, 2025). A systematic study conducted by Yu et al. (2024b) indicates that, under the same number of parameters, KAN may outperform MLP in symbolic regression tasks but remain inferior in other tasks such as computer vision, natural language processing, and speech processing. Our motivation for using KAN lies in its interpretability, rather than predictive performance. In fact, in its first version (Liu et al., 2025b), KAN was introduced as an interpretable architecture due to its learnable B-spline-based activation functions. In KAN 2.0 (Liu et al., 2025a), a built-in mechanism was further proposed for estimating the contribution of these functions, enabling direct assessment of input feature importance. We focus on leveraging this capability, as opposed to suggesting KAN to replace MLP in terms of predictive performance. We expect that integrating KAN can provide a new direction for explainable AI, which is currently dominated by post-hoc methods. 
+
+H. H. Pham et al.: Preprint submitted to Elsevier Page 8 of 26 Explainable speech deepfake source tracing 
+
+## 4. Proposed source tracing model 
+
+We propose an end-to-end speech deepfake source tracing architecture that takes spoofed speech as input, extracts attribute values and classifies the corresponding attack simulatenously, as illustrated in Figure 2. The proposed architecture comprises three main components: (1) a multi-task learning module (MTL), (2) a structured KAN module 
+
+(SKM), and (3) a built-in feature importance mechanism . The MTL module extracts probabilistic features, extending our recent works (Chhibber et al., 2025; Mishra et al., 2026). The SKM module, based on a KAN architecture, then serves as a back-end classifier that predicts the source generator label (attack ID). Finally, the feature importance mechanism enabled by the KAN classifier quantifies the relative contribution of the probabilistic features to the attack-label prediction. 
+
+4.1. Multi-task learning (MTL) module: Enhancing Posterior Feature Extraction 
+
+As background, we represent a speech utterance 𝑋 through a set of attribute-wise posterior distributions rather than a single opaque embedding. Let h(𝑋 ) ∈ ℝ𝐷 denote an utterance-level representation extracted from 𝑋 by a suitable front-end speech model. Assume that we define 𝑇 discrete attributes relevant to synthetic speech generation, and that attribute 𝑡 has 𝐶 𝑡 possible values. For each attribute, we design a feedforward neural network 𝑔 𝑡 ∶ ℝ𝐷 → ℙ𝐶 𝑡 to predict a vector of attack attribute posteriors 1:
+
+𝐩 (𝑡 )(𝑥 ) = 𝑔 𝑡 (𝒉 (𝑥 )) = [𝑝 (𝑡 )1 (𝑥 ), … , 𝑝 (𝑡 ) 
+
+> 𝐶 𝑡
+
+(𝑥 )]⊺ (10) whose elements are non-negative and sum up to 1. Whereas 𝑡 indices semantic attributes (e.g. vocoder type or duration model architecture) relevant for high-level characterization of the synthesizer, the elements of the posterior vector in (10) correspond to uncertainty in the predicted values of these attributes—a discrete probability distribution over the allowed outcomes (e.g. list of vocoders available at the training time). Stacking all attribute-wise posteriors yields a probabilistic attribute embedding . This construction turns the utterance into a compact, semantically structured representation in which each block corresponds to one interpretable attribute and its uncertainty over possible values. In our earlier works (Chhibber et al., 2025; Mishra et al., 2026), the attribute posterior predictors were realized as a bank of separately trained MLPs on top of spoofing countermeasure embeddings. In contrast, the MTL module introduced in the present work trains the probabilistic attribute extractors jointly . The MTL module consists of a shared front-end module along with 𝑇 attribute-specific blocks, one per attribute. For the former, we adopt two modern deepfake detection architectures, AASIST (Jung et al., 2021) and SSL-AASIST (Tak et al., 2022). These are used as backbones where the final linear layer (originally designed for binary classification) is removed. The output of the last hidden layer is used as the shared representation that feeds the attribute specific models. Concretely, each attribute-specific branch consists of two components: an attribute adapter and an attribute head .The attribute adapter follows the Houlsby architecture (Houlsby et al., 2019) to learn attribute-specific representations. In our implementation, each adapter applies layer normalization to stabilize shared representations, followed by a bottleneck structure consisting of a down-projection and an up-projection layer that compresses features into a lower-dimensional space and then restores them. GELU activation (Hendrycks and Gimpel, 2023) and dropout are used to introduce nonlinearity and improve generalization. A residual connection is added between the input and transformed features to facilitate stable optimization and preserve shared information. Finally, an output projection layer maps the adapted representations to the attribute-specific feature space. On top of each attribute adapter, an attribute head is implemented as a single linear layer whose output dimension matches the number of values of the corresponding attribute. A softmax function is then applied to produce a probability distribution over the possible attribute values. The architectural details are presented in Section 5.2. At the training time, each attribute-specific block is optimized using a categorical cross-entropy loss: 
+
+𝑡 = − 
+
+> 𝐶 𝑡
+
+∑
+
+> 𝑖 =1
+
+𝑦 𝑡,𝑖 log( ̂𝑦 𝑡,𝑖 ), (11) where 𝑦 𝑡,𝑖 is the ground-truth of the value 𝑖 of attribute 𝑡 . The overall (multi-task) loss for probabilistic attribute extraction, denoted by AttAttr , is the sum of the losses across all the 𝑇 attributes, i.e. AttAttr = ∑𝑇 𝑡 =1 𝑡 .    
+
+> 1Here, ℙ𝐶 𝑡 denotes a probability simplex.
+> H. H. Pham et al.: Preprint submitted to Elsevier Page 9 of 26 Explainable speech deepfake source tracing
+
+4.2. Structured Kolmogorov-Arnold network module (SKM) 
+
+The second module of the proposed model is a classifier that predicts the attack ID from the probabilistic attribute embedding produced by the MTL module. We adopt a KAN-based classifier for this stage because its learnable univariate functions offer a more transparent mapping from attribute-level evidence to the final class decision, as motivated in Section 3.1. This way, the classifier is intended not only to achieve accurate attack prediction but also to make the relationship between attack attributes and attack classes transparent. Our proposed structured KAN module (SKM) is implemented as a shallow KAN that maps the probabilistic attribute embeddings into attack posteriors 2. Rather than relying on an unconstrained fully-connected KAN design, our SKM is structured according to prior knowledge about the relationship between attack classes and attribute groups available at the training time (elaborated further in the experimental part). This architectural constraint encourages the model to reflect meaningful dependencies between extracted attributes and predicted attacks, thereby improving interpretability at the model level. The output logits are converted to class probabilities using a softmax function, and the predicted attack is given by the class with the highest posterior probability. The attack classification branch is trained with a categorical cross-entropy loss, denoted by AttCls . The overall training objective combines the attribute-extraction loss of the MTL module with the attack-classification loss of the SKM: 
+
+Total = AttAttr + AttCls . (12) 
+
+4.3. Extrinsic interpretability: a built-in feature importance mechanism 
+
+To complement the interpretability of the probabilistic attribute representation, we also exploit the intrinsic feature-importance capability of KAN. Unlike post-hoc methods that explain a trained classifier “from the outside”, KAN 2.0 introduced by Liu et al. (2025a) includes an internal mechanism that estimates how strongly each input feature contributes to the model output based on the learned signal flow through the network. In our setting, this is particularly useful because the inputs to the SKM already correspond to semantically defined attribute posterior distributions. The resulting importance scores can therefore be interpreted directly at the attribute-value level, both globally for the attack classification task and locally for individual attack predictions. The KAN feature-importance mechanism is based on the idea that important features induce stronger variation in the activations propagated through the network. In a KAN, each layer is computed from the previous one through learnable univariate activation functions defined on edges (Section 3.1). During training, these functions adapt to the data, and their outputs reflect how variation in the inputs is transformed and transmitted across layers. Once the model has been trained, feature-importance analysis can be performed depending on the dataset 𝒟 fed into the model, whether the training or test set. Specifically, the importance scores are estimated over 𝒟 by measuring the variation of node and edge activations across all samples in the dataset. Feature importance is then quantified by propagating these variation-based scores backward from the output layer to the input layer. In practice, the variation is measured by the standard deviation. Formally, consider an 𝐿 -layer KAN with layer widths 𝑛 (0) , 𝑛 (1) , … , 𝑛 (𝐿 ), where 𝑛 (0) is the input dimension and 𝑛 (𝐿 )
+
+is the number of output classes. For a set of data samples 𝒟 , let 𝑁 𝑙,𝑖 (𝒟 ) denote the standard deviation of the activation at node 𝑖 in layer 𝑙 , and let 𝐸 𝑙,𝑖,𝑗 (𝒟 ) denote the standard deviation of the post-activation on the edge from node 𝑖 in layer 𝑙 to node 𝑗 in layer 𝑙 + 1 . Let 𝑆 𝐧  
+
+> 𝑙,𝑖
+
+and 𝑆 𝐞  
+
+> 𝑙,𝑖,𝑗
+
+denote the corresponding node and edge importance scores. Assuming equal initial importance for all output nodes, we set 𝑆 𝐧  
+
+> 𝐿,𝑖
+
+= 1 for 𝑖 = 0 , 1, … , 𝑛 (𝐿 ) − 1 . The scores are then propagated backward through the network according to 
+
+𝑆 𝐞  
+
+> 𝑙 −1 ,𝑖,𝑗
+
+= 𝑆 𝐧  
+
+> 𝑙,𝑗
+
+⋅ 𝐸 𝑙 −1 ,𝑖,𝑗 (𝒟 )
+
+𝑁 𝑙,𝑗 (𝒟 ) (13) and 
+
+𝑆 𝐧  
+
+> 𝑙 −1 ,𝑖
+
+=
+
+> 𝑛 (𝑙 )−1
+
+∑
+
+> 𝑗 =0
+
+𝑆 𝐞  
+
+> 𝑙 −1 ,𝑖,𝑗
+
+, (14) where 𝑙 = 𝐿, 𝐿 − 1 , … , 1, 𝑖 = 0 , 1, … , 𝑛 (𝑙 −1) − 1 , and 𝑗 = 0 , 1, … , 𝑛 (𝑙 ) − 1 . In this way, the final scores assigned to the input nodes quantify the relative contribution of the corresponding attack-attribute values to the classifier output.   
+
+> 2technically, into their logits.
+> H. H. Pham et al.: Preprint submitted to Elsevier Page 10 of 26
+
+Explainable speech deepfake source tracing 
+
+Table 3 
+
+Indices of 50 values in each attribute of ASVspoof 2019 LA dataset (Wang et al., 2020). The attribute values are sequentially indexed from 1 to 50 by enumerating all rows within the column of one attribute before proceeding to the next column, starting from attribute 1 (Attr. 1) and continuing through attribute 7 (Attr. 7).                                        
+
+> Attr. 1 (inputs) Attr. 2 (processor) Attr. 3 (duration) Attr. 4 (conversion) Attr. 5 (speaker) Attr. 6 (outputs) Attr. 7 (waveform)
+> Text (1) NLP (4) HMM (10) AR-RNN (16) VAE (25) MCC-F0 (30) WaveNet (40) Speech_human (2) WORLD (5) FF (11) FF (17) One-hot (26) MCC-F0-BAP (31) WORLD (41) Speech_TTS (3) LPCC/MFCC (6) RNN (12) CART (18) d-vector_RNN (27) MFCC-F0 (32) Concat (42) CNN+bi-RNN (7) Attention (13) VAE (19) PLDA (28) MCC-F0-AP (33) SpecFiltOLA (43) ASR (8) DTW (14) GMM-UBM (20) None (29) LPC (34) NeuralFilt (44) MFCC/i-vector (9) None (15) RNN (21) MCC-F0-BA (35) Vocaine (45) AR-RNN+CNN (22) Mel-spec (36) WaveRNN (46) Moment-match (23) F0+ling (37) GriffinLim (47) Linear (24) MCC (38) WaveFilt (48) MFCC (39) STRAIGHT (49) MFCCvoc (50)
+
+## 5. Experimental setup 
+
+In this section, we provide an overview of the selected dataset and describe the model configurations in detail, including the multi-task learning framework for probabilistic attribute extraction and the proposed KAN model for attack classification. To ensure reproducibility, the full implementation details and source code are publicly available 3.
+
+5.1. Data preparation 
+
+5.1.1. ASVspoof 2019 LA dataset, closed-set protocol and metadata 
+
+The ASVspoof 2019 LA dataset (Wang et al., 2020), originally designed for speech deepfake detection, contains both real (bona fide) and spoofed speech data. To facilitate study of source tracing, Mishra et al. (2026) proposed two protocols: ASVspoof2019-attr-2, which follows the original ASVspoof 2019 protocol structure (but for source tracing rather than deepfake detection), and ASVspoof2019-attr-17, which focuses exclusively on spoofed speech, including 17 source generators (attacks). We adopt this larger protocol for our experiments. It partitions the data into training, development, and evaluation sets, with all 17 attacks ( 𝐴 16 and 𝐴 19 merged into 𝐴 04 and 𝐴 06 ) present across subsets. Despite its age, ASVspoof 2019 LA remains a valuable benchmark for source tracing research because it provides detailed metadata describing the synthesis and voice-conversion components used to generate each attack. This rich annotation enables systematic investigation of the relationships between source generators and their underlying attributes, making the dataset particularly suitable for evaluating the interpretability. The metadata of the ASVspoof 2019 LA dataset describes the systems used to generate each attack (Wang et al., 2020, Table 1). Each attack is produced by either a text-to-speech (TTS) or voice conversion (VC) system and is characterized by seven attributes , corresponding to the columns of Table 3. The values of these attributes, shown in the rows, specify the corresponding synthesizer subcomponents and are indexed from 1 to 50. We model the relationship between attack, or source-generator, IDs and their attribute values as a single-layer neural network, where attribute values serve as inputs and attack IDs as outputs, as illustrated in Figure 5. Instead of using a conventional fully connected layer, the proposed predefined structure explicitly specifies the inter-layer connections, providing intrinsic interpretability. 
+
+5.1.2. Preprocessing and data augmentation 
+
+Silence removal is an essential preprocessing step, as non-speech segments carry little information and may introduce spurious patterns ( shortcuts ) that degrade performance (Müller et al., 2021; Sahidullah et al., 2025). We apply silence trimming (Ramírez et al., 2004) to all utterances by removing leading and trailing silences using a hybrid approach based on short-time energy (STE) and zero-crossing rate (ZCR) (D., 2010; Huang et al., 2001). In addition, we use 
+
+RawBoost augmentation (Tak et al., 2021), which comprises three methods: (i) linear and non-linear convolutive noise (LnL-convolutive noise), (ii) impulsive signal-dependent additive noise, and (iii) stationary signal-independent additive noise. Prior work (Pierre and Tony, 2024) has shown that combining these methods improves performance. Instead of 
+
+> 3https://github.com/HoangHPham/KAN-Probabilistic-Deepfake-Attribution
+
+H. H. Pham et al.: Preprint submitted to Elsevier Page 11 of 26 Explainable speech deepfake source tracing 
+
+Figure 5: Structural diagram representing the relationship between the attacks and their attributes in the ASVspoof 2019 LA dataset. The dataset contains a total of 50 attribute values ( 𝐴𝑉 ), that we index sequentially according to their corresponding attributes. For example, 𝐴𝑉 01 corresponds to “Text (Attr. 1)”, 𝐴𝑉 02 to “Speech_human (Attr. 1)”, 𝐴𝑉 03 
+
+to “Speech_TTS (Attr. 1)”, 𝐴𝑉 04 to “NLP (Attr. 2)”, 𝐴𝑉 05 to “WORLD (Attr. 2)”, and so forth. For visual clarity, we only display attacks 𝐴 01 , 𝐴 02 , and 𝐴 18 as examples; 𝐴 01 , for instance, is characterized by attribute values “Text”, “NLP”, “HMM”, “AR-RNN”, “VAE”, “MCC-F0”, and “WaveNet”. 
+
+Figure 6: Overview of main components of the proposed model configurations and their roles in the experimental scenarios. 
+
+using a fixed combination, we assign probabilities 𝑝 DA to all possible combinations, enabling diverse mixtures during training. Further details are provided in Appendix A. 
+
+5.2. Model configuration 
+
+Figure 6 summarizes the proposed model configurations and their roles in the two main experimental scenarios: (1) source tracing performance and (2) interpretability validation. 
+
+H. H. Pham et al.: Preprint submitted to Elsevier Page 12 of 26 Explainable speech deepfake source tracing    
+
+> Table 4
+> Performance of the pretrained countermeasure (CM) models (AASIST and SSL-AASIST) on the deepfake detection task using the ASVspoof2019-attr-2 protocol. Pretrained weights are loaded into the shared module of the proposed model.
+> CM model EER (%)
+> AASIST 2.82 SSL-AASIST 0.29
+
+5.2.1. Countermeasure backbones 
+
+As described in Section 4.1, our proposed source tracing model adopts deepfake detection architectures as backbones to learn shared representations for probabilistic attribute extraction. We consider three training strategies: (1) training from scratch , (2) full fine-tuning , and (3) partial fine-tuning . In the first strategy, the entire model is trained from random initialization. In the latter two, the countermeasure backbone (either AASIST or SSL-AASIST) is first pretrained for the binary deepfake detection task following the original ASVspoof 2019 protocol. The pretrained weights, excluding the final classification layer, are then loaded into the shared block of the MTL module (Figure 2), after which the entire model is trained on the ASVspoof2019-attr-17 protocol. The two fine-tuning strategies differ in scope: full fine-tuning updates all parameters, whereas partial fine-tuning freezes the backbone and updates only the remaining parameters. These strategies result in shared representations encoding different knowledge. The model trained from scratch learns only from spoofed speech in ASVspoof2019-attr-17. Full fine-tuning initializes the model with representations learned from both bona fide and spoofed speech in the original protocol, which are subsequently refined. Partial fine-tuning preserves the deepfake detection knowledge in the frozen backbone. Table 4 reports the deepfake detection performance of the pretrained AASIST and SSL-AASIST models on the ASVspoof2019-attr-2 protocol, evaluated with the equal error rate (EER) (Cheng and Wang, 2004). We adopt the architectures and configurations from the original papers (Jung et al., 2021; Tak et al., 2022). For SSL-AASIST, the pretrained wav2vec 2.0 XLS-R (0.3B) model (Babu et al., 2022) is fine-tuned on ASVspoof2019-attr-2; training from scratch is omitted because it would require data and computational resources unavailable in this study. 
+
+5.2.2. Probabilistic attribute extractors trained using multi-task learning 
+
+The multi-task learning (MTL) module is used to train the probabilistic attribute extractors (Section 4.1). It consists of shared layers and attribute-specific layers. The shared layers correspond to one of the backbones presented above, while each attribute-specific block comprises an attribute adapter and an attribute head. The attribute adapter follows the Houlsby adapter design (Houlsby et al., 2019), and the attribute head is a simple linear layer. All seven attribute-specific extractors share the same adapter architecture: layer normalization is first applied to stabilize the shared representations, followed by a bottleneck structure with down-projection and up-projection layers, GELU activation (Hendrycks and Gimpel, 2023) for nonlinearity, and dropout for regularization. A residual connection preserves shared information and ensures stable gradient flow, and an output projection layer maps the adapted representations to the attribute-specific feature space. Each attribute head contains a number of output neurons equal to the number of values in its corresponding attribute; specifically, attributes 1 through 7 have 3, 6, 6, 9, 5, 10, and 11 values, respectively, as indicated in Table 3. 
+
+5.2.3. Structured KAN module (SKM) 
+
+The objective of the SKM is to classify 17 attacks using the 50-dimensional logit vector produced by the bank of probabilistic attribute extractors. It is a KAN (Section 3.1) with a single hidden layer consisting of 50 × 17 learnable univariate functions. Each function uses 5 grid intervals ( 𝐺 = 5 ) and a piecewise polynomial of order 3 (degree-2 B-spline). To embed the auxiliary structure derived from the metadata of the ASVspoof 2019 LA dataset into the KAN, we manually configure its edges—namely, only the edges corresponding to valid attribute values for each attack are retained, following the hierarchy in Figure 5. Further details are provided in Appendix B. 
+
+5.3. Performance metrics 
+
+We evaluate the performance of both probabilistic attribute extraction and attack classification using balanced accuracy (BAcc) 4 and equal error rate (EER) (Cheng and Wang, 2004). Balanced accuracy is preferred over standard   
+
+> 4https://scikit-learn.org/dev/modules/model_evaluation.html#balanced-accuracy-score
+> H. H. Pham et al.: Preprint submitted to Elsevier Page 13 of 26 Explainable speech deepfake source tracing
+
+accuracy because the evaluation set exhibits an uneven distribution of samples across attribute values and attack classes. It is defined as the average recall over all classes: 
+
+BAcc = 1
+
+𝐶 
+
+> 𝐶
+
+∑
+
+> 𝑐 =1
+
+TP (𝑐 )
+
+TP (𝑐 ) + FN (𝑐 ) (15) where 𝐶 denotes the number of classes, and TP (𝑐 ) and FN (𝑐 ) denote the numbers of true positives and false negatives for class 𝑐 , respectively. A higher BAcc indicates better classification performance. In addition to BAcc, we report EER, which is widely used in speech processing and biometric recognition tasks. Since both probabilistic attribute extraction and attack classification are formulated as multi-class classification problems, EER is computed using a one-versus-rest strategy following (Mishra et al., 2026). For probabilistic attribute extraction, the ground-truth value of an attribute is treated as the target class (positive class), while all remaining values of the same attribute are treated as non-target classes (negative class). The distributions of target and non-target scores are then used to compute the EER. Similarly, for attack classification, the ground-truth attack is considered the target class and the remaining attacks are considered non-target classes. Lower EER indicates better discrimination between target and non-target classes. All reported results are obtained on the evaluation set of the ASVspoof2019-attr-17 protocol. For attack classification, the attack label predicted by the model is directly used to compute the evaluation metrics. For probabilistic attribute extraction, BAcc and EER are computed independently for each attribute. 
+
+## 6. Experimental results 
+
+6.1. Experiment 1: Source tracing performance 
+
+6.1.1. Baseline model 
+
+We first reproduce the baseline results reported in (Chhibber et al., 2025; Mishra et al., 2026) using the two-stage training framework to establish the reference performance for comparison. Different from these two prior studies, our reproduced setup additionally incorporates the silence trimming and RawBoost augmentations described above. Among all reproduced configurations, the best performance is achieved using probabilistic attribute extractors trained on latent features extracted from the AASIST model. For attack classification, the extracted probabilistic embeddings are used as inputs to a logistic regression (LR) back-end. For probabilistic attribute extraction, the best performance is achieved for Attribute 1, with a balanced accuracy of 91.59% and an EER of 3.16%. The remaining attributes also show stable performance, with balanced accuracies ranging from 83.82% to 89.51% and EERs between 3.22% and 5.66%. Using concatenated probabilistic attribute embeddings, the LR classifier achieves a balanced accuracy of 84.37% and an EER of 3.35%, yielding the best baseline performance for attack classification. A detailed comparison of the reproduced baseline configurations and their corresponding performance is provided in Appendix C. 
+
+6.1.2. Proposed model 
+
+Building on the extended reproduced baseline, which incorporates both silence trimming and RawBoost, we next present the results of the proposed system, which further integrates multitask learning for probabilistic attribute extraction and KAN-based attack classification. The results in Table 5 indicate that the proposed end-to-end model consistently outperforms the baselines on both tasks. When using AASIST as the backbone, both the training-from-scratch and full-finetuning configurations (i.e., 
+
+ST_RB_AASIST_ts and ST_RB_AASIST_ff ) achieve balanced accuracies above 99% across all attribute extractors, despite differences in the number of predicted attribute values. This indicates that the multi-task learning (MTL) architecture effectively captures shared representations while maintaining strong attribute-specific performance. In the attack classification task, the model reaches 99.53% and 99.61% balanced accuracy and 0.12% and 0.11% EER for AASIST_ts and AASIST_ff , respectively. This suggests that the model trained from scratch achieves performance comparable to that of the fully fine-tuned model, despite the latter being trained for more epochs and using both bona fide and spoofed speech. In contrast, partial finetuning significantly degrades performance, yielding balanced accuracies between 79.81% and 91.57% (6.98%–3.69% EER) for attribute extraction and 81.96% (EER: 3.64%) for attack classification. We observe similar trends when using SSL-AASIST as the backbone. With full fine-tuning ( SSL-AASIST_ff ), the model achieves highly stable performance across the attribute extraction tasks, with balanced accuracies ranging from   
+
+> H. H. Pham et al.: Preprint submitted to Elsevier Page 14 of 26
+
+Explainable speech deepfake source tracing 
+
+Table 5 
+
+Performance of our proposed source tracing model (end-to-end workflow of countermeasure based multi-task learning and Kolmogorov-Arnold Network) on ASVspoof2019-attr-17 protocol. The results on evaluation set are reported as 
+
+< balanced accuracy > (%) / < equal error rate > (%). The abbreviations in the table represent the following: BAcc (balanced accuracy), ST (silence trimming), RB (RawBoost), ts (training from scratch), ff (full finetuning), pf (partial finetuning), MTL (multi-task learning), SKM (structured KAN module).                     
+
+> MTL SKM Countermeasure backbone Probabilistic attribute extraction Attack classification
+> BAcc (%) / EER (%) BAcc (%) / EER (%) Attr. 1 Attr. 2 Attr. 3 Attr. 4 Attr. 5 Attr. 6 Attr. 7
+> ST_RB_AASIST_ts 99.98 / 0.02 99.72 / 0.17 99.54 / 0.17 99.68 / 0.13 99.61 / 0.21 99.37 / 0.15 99.60 / 0.14 99.53 / 0.12
+> ST_RB_AASIST_ff 99.99 / 0.01 99.80 / 0.13 99.60 / 0.19 99.68 / 0.12 99.66 / 0.20 99.48 / 0.15 99.61 / 0.13 99.61 / 0.11
+> ST_RB_AASIST_pf 91.57 / 3.69 80.79 / 4.87 83.27 / 5.14 85.64 / 3.91 79.81 / 6.98 82.20 / 4.43 82.58 / 4.50 81.96 / 3.64
+> ST_RB_SSL-AASIST_ff 99.92 / 0.07 99.76 / 0.12 99.68 / 0.14 99.74 / 0.12 99.68 / 0.16 99.59 / 0.15 99.63 / 0.14 99.64 / 0.11
+> ST_RB_SSL-AASIST_pf 69.66 / 15.07 50.38 / 13.32 54.30 / 15.31 62.41 / 11.82 59.75 / 15.70 57.54 / 12.12 61.31 / 12.84 61.71 / 9.86
+
+Table 6 
+
+Comparison between the best proposed model, ST_RB_SSL-AASIST_ff (multi-task learning module using full-finetuned SSL-AASIST and structured KAN module) and baselines (AASIST-based feature extractor combined with logistic regression) for probabilistic attribute extraction and attack classification on the ASVspoof2019-attr-17 protocol. The reported baseline results include those originally reported by Mishra et al. (2026) and the corresponding baseline reproduced in this work using the same preprocessing pipeline as the proposed system (silence trimming and Rawboost augmentation). Results are presented as < balanced accuracy > (BAcc, %) / < equal error rate > (EER, %). A dash ("–") indicates that the corresponding metric was not reported in the original study.                
+
+> Model Probabilistic attribute extraction Attack classification
+> BAcc (%) / EER (%) BAcc (%) / EER (%) Attr. 1 Attr. 2 Attr. 3 Attr. 4 Attr. 5 Attr. 6 Attr. 7 baseline model (reported) – / 2.0 – / 3.2 – / 3.3 – / 2.3 – / 4.2 – / 3.0 – / 2.9 90.23 / 2.07 baseline model (reproduced) 91.59 / 3.16 87.16 / 3.92 85.26 / 4.58 89.51 / 3.22 86.25 / 5.66 83.82 / 4.00 86.06 / 3.96 84.37 / 3.35 proposed model 99.92 / 0.07 99.76 / 0.12 99.68 / 0.14 99.74 / 0.12 99.68 / 0.16 99.59 / 0.15 99.63 / 0.14 99.64 / 0.11
+
+99.59% to 99.92% and EERs from 0.15% to 0.07%. For attack classification, this model achieves 99.64% balanced accuracy and 0.11% EER. In contrast, partial fine-tuning of SSL-AASIST yields the lowest performance among all configurations, with attribute extraction accuracies ranging from 50.38% to 69.66% and EERs from 15.70% to 11.82%. The corresponding attack classification performance is 61.71% balanced accuracy and 9.86% EER. These results further indicate that training from scratch or full fine-tuning is more suitable than partial fine-tuning when using countermeasure models as backbones. For an easier comparison, we compare the strongest baseline, based on AASIST features with an LR classifier, with the best proposed configuration, ST_RB_SSL-AASIST_ff . As shown in Table 6, the proposed model substantially outperforms the baseline in both attribute extraction and attack classification. 
+
+6.1.3. Ablation study: KAN without auxiliary model structure 
+
+With the main classification experiments completed, we now assess the contribution of the metadata-derived auxiliary structure in the proposed KAN module. We conduct an ablation study in which this auxiliary structure, derived 
+
+H. H. Pham et al.: Preprint submitted to Elsevier Page 15 of 26 Explainable speech deepfake source tracing 
+
+Table 7 
+
+Experimental results of the ablation study - proposed model without auxiliary model structure in KAN module. The results on evaluation set of ASVspoof2019-attr-17 protocol are shown in the form of < balanced accuracy > (%). The abbreviations in the table represent the following: BAcc (balanced accuracy), ST (silence trimming), RB (RawBoost), ts (training from scratch), ff (full finetuning), pf (partial finetuning), MTL (multi-task learning), KAN w/o MS (KAN without auxiliary model structure).                                     
+
+> MTL KAN w/o aux MS Countermeasure backbone Probabilistic attribute extraction Attack classification
+> BAcc (%) BAcc (%) Attr. 1 Attr. 2 Attr. 3 Attr. 4 Attr. 5 Attr. 6 Attr. 7
+> ST_RB_AASIST_ts 99.99 99.72 99.55 99.66 99.59 99.50 99.57 99.58
+> ST_RB_AASIST_ff 99.99 99.78 99.63 99.69 99.66 99.53 99.64 99.65
+> ST_RB_AASIST_pf 91.20 81.05 83.21 85.60 80.08 81.75 82.57 82.41
+
+from the ASVspoof 2019 LA metadata, is removed from the KAN module. Specifically, instead of manually defining the connections between input features and activation functions, we adopt a fully connected KAN architecture in which each of the 50 input nodes is connected to 17 hidden activation functions corresponding to the output units (one per attack). Table 7 summarizes the results obtained using AASIST as the backbone under the three training strategies described above. The results indicate that the ablated model and the proposed model achieve highly similar performance in both attribute extraction and attack classification. For attack classification, the fully connected configuration with AASIST_ff 
+
+achieves a balanced accuracy of 99.65%, compared to 99.61% obtained by the proposed model using SKM. The corresponding results for AASIST_ts and AASIST_pf are 99.58% and 82.41%, respectively, which are also very close to those obtained using SKM. In general, the findings suggest that incorporating the metadata-derived auxiliary structure does not substantially affect classification performance. The fully connected KAN and the proposed structured KAN provide comparable results across all training strategies. Consequently, the choice between the two architectures may be primarily guided by factors other than predictive performance. In the present work, the auxiliary structure is motivated by its ability to explicitly encode known relationships between attributes and attacks, thereby providing an interpretable model structure. At the same time, the results indicate that a conventional fully connected KAN remains a viable alternative when interpretability is not a primary consideration. 
+
+6.2. Experiment 2: Feature importance analysis and validation 
+
+6.2.1. Global and local feature importance at model level and per-class level 
+
+We now examine feature importance (FI) within the structured KAN module, where the inputs correspond to the 50 attribute values and the outputs correspond to the 17 attacks. We aim to quantify the contribution of attack attributes to the predicted attacks. The FI results are categorized along two criteria: • Amount of data observed by the model: – Global FI reflects feature importance over the entire dataset. 
+
+– Local FI captures feature importance within a specific batch of samples. • Target of interpretation: – Model-level FI measures the contribution of each feature to the overall system performance. 
+
+– Per-class FI highlights the importance of features in predicting a specific attack. In other words, model-level FI focuses on the importance scores of all 50 input attack attribute values, whereas per-class FI focuses on the seven attributes associated with each attack. For consistency, we assess feature importance 
+
+H. H. Pham et al.: Preprint submitted to Elsevier Page 16 of 26 Explainable speech deepfake source tracing 
+
+Figure 7: Global importance scores of the 50 attack attribute values at the model-level of the attack classification task. Attribute values are ranked in descending order of importance. 
+
+Table 8 
+
+Global importance ranking of each attribute value at the per-class level of the attack classification task. The attribute values are ranked in descending order of importance, with each row corresponding to a specific attack class. Attacks A04 and A16 share identical attributes and are reported jointly; the same applies to A06 and A19. 
+
+Attack Rank 1 2 3 4 5 6 7A01 VAE (speaker) WaveNet (waveform) MCC-F0 (outputs) HMM (duration) AR-RNN (conversion) Text (inputs) NLP (processor) 
+
+A02 Text (inputs) VAE (speaker) HMM (duration) MCC-F0-BAP (outputs) WORLD (waveform) AR-RNN (conversion) NLP (processor) 
+
+A03 FF (conversion) MCC-F0-BAP (outputs) Text (inputs) FF (duration) NLP (processor) WORLD (waveform) one-hot (speaker) 
+
+A04(16) Text (inputs) Concat (waveform) MFCC-F0 (outputs) CART (conversion) None (speaker) None (duration) NLP (processor) 
+
+A05 MCC-F0-AP (outputs) WORLD (waveform) VAE (conversion) WORLD (processor) Speech_human (inputs) None (duration) one-hot (speaker) 
+
+A06(19) SpecFiltOLA (waveform) LPC (outputs) GMM-UBM (conversion) LPCC/MFCC (processor) None (speaker) Speech_human (inputs) None (duration) 
+
+A07 WORLD (waveform) MCC-F0-BA (outputs) Text (inputs) RNN (conversion) RNN (duration) NLP (processor) one-hot (speaker) 
+
+A08 NeuralFilt (waveform) HMM (duration) AR-RNN (conversion) NLP (processor) MCC-F0 (outputs) Text (inputs) one-hot (speaker) 
+
+A09 Vocain (waveform) Text (inputs) MCC-F0 (outputs) RNN (conversion) one-hot (speaker) RNN (duration) NLP (processor) 
+
+A10 Text (inputs) WaveRNN (waveform) mel-spec (outputs) CNN+bi-RNN (processor) AR-RNN+CNN (conversion) d-vector_RNN (speaker) Attention (duration) 
+
+A11 GriffinLim (waveform) Text (inputs) CNN+bi-RNN (processor) mel-spec (outputs) d-vector_RNN (speaker) AR-RNN+CNN (conversion) Attention (duration) 
+
+A12 Text (inputs) WaveNet (waveform) F0+ling (outputs) one-hot (speaker) RNN (conversion) NLP (processor) RNN (duration) 
+
+A13 MCC (outputs) DTW (duration) Moment-match (conversion) None (speaker) Speech_TTS (inputs) WaveFilt (waveform) WORLD (processor) 
+
+A14 STRAIGHT (waveform) MCC-F0-BAP (outputs) ASR (processor) Speech_TTS (inputs) RNN (conversion) None (speaker) None (duration) 
+
+A15 ASR (processor) Speech_TTS (inputs) WaveNet (waveform) MCC-F0 (outputs) None (speaker) RNN (conversion) None (duration) 
+
+A17 WaveFilt (waveform) VAE (conversion) Speech_human (inputs) MCC-F0 (outputs) one-hot (speaker) None (duration) WORLD (processor) 
+
+A18 MFCC (outputs) PLDA (speaker) linear (conversion) MFCC/i-vector (processor) MFCCvoc (waveform) None (duration) Speech_human (inputs) 
+
+produced by the SKM using the ST_RB_AASIST_MTL_SKM_ts configuration, which uses AASIST as the backbone and is trained from scratch. The evaluation set of the ASVspoof2019-attr-17 protocol is used for all interpretability experiments. We first present the rankings of global feature importance at the model level and per-class level in Figure 7 and Table 8, respectively. The feature importance scores are computed using the KAN-based mechanism described in Section 4.3, which propagates activation variability through the network to quantify the contribution of features. At the model level, the results show that the value text of the inputs attribute dominates the importance scores, reflecting its strong influence on the decision-making process, whereas attention (duration) contributes the least. Attribute values from the conversion and processor attributes generally exhibit relatively low importance. At the per-class level, in contrast, values from the inputs , waveform , and outputs attributes frequently rank among the most 
+
+H. H. Pham et al.: Preprint submitted to Elsevier Page 17 of 26 Explainable speech deepfake source tracing  
+
+> Figure 8: Spearman rank correlation of global feature importance at model-level using KAN’s built-in FI mechanism and SHAP method.
+
+important features for predicting specific attacks, while values from the duration and processor attributes typically appear near the bottom of the rankings. These findings are consistent with those reported by Mishra et al. (2026), who investigated attack-attribute relevance using a model-agnostic SHAP-based attribution framework (Lundberg and Lee, 2017). Despite the different methodology, both approaches consistently identify system input type (e.g., speech in VC systems or text in TTS systems) and waveform generation as key discriminative factors for attack classification. These patterns suggest that the classifier relies primarily on high-level properties of the spoofing pipeline rather than on secondary implementation details. In particular, the prominence of the inputs attribute indicates that the generation paradigm itself provides a strong cue for distinguishing attacks. The per-class rankings further indicate that specific attacks are characterized by distinct combinations of input type, waveform generation, and output representation. Overall, these results support the interpretability of the structured KAN module by showing that its decisions are driven by technologically meaningful attributes of the spoofing systems. 
+
+6.2.2. Criteria 1: Consistency (KAN’s built-in FI vs. SHAP values) 
+
+To evaluate consistency , we examine whether the FI results are significantly different between different interpretability methods. Specifically, we compare the FI rankings obtained from KAN’s built-in feature importance mechanism with those derived from a widely used post-hoc method, namely SHapley Additive exPlanations (SHAP) (Lundberg and Lee, 2017). We perform the analysis for global feature importance at both the model and per-class levels. To quantify agreement between KAN- and SHAP-based rankings, we use the Spearman rank correlation coefficient (Spearman., 1904; Lehman, 2005; Arsov et al., 2019). For global FI, both methods produce one importance value per feature over the entire evaluation set, yielding two 50-dimensional vectors corresponding to the 50 attribute values. The Spearman correlation is computed between these vectors. For per-class analysis, the same procedure is applied separately for each attack class using 7-dimensional vectors corresponding to the 7 attributes. Figures 8 and 9 present the results for the model-level and per-class analyses, respectively. The results reveal that the feature importance (FI) rankings produced by KAN’s built-in mechanism largely agree with those obtained from SHAP. At the model level, the two methods exhibit a strong correlation, with a Spearman coefficient of 0.72. We observe a similar trend at the per-class level, where most attacks show positive rank correlations. Lower correlations (below 0.5) occur for 𝐴 01 , 𝐴 06(19) , 𝐴 09 , 𝐴 13 , and 𝐴 17 , while 𝐴 18 is the only case with a negative coefficient ( −0 .71 ). Overall, these results indicate consistency between the two methods and suggest that KAN’s built-in FI mechanism can reliably capture feature importance in a manner comparable to the widely used SHAP approach. 
+
+6.2.3. Criteria 2: Stability (with respect to input data size) 
+
+In the context of model explainability, stability requires that explanation results remain reasonably consistent when the same model processes different input data. In our experiment, in particular, we assess the stability of the     
+
+> H. H. Pham et al.: Preprint submitted to Elsevier Page 18 of 26 Explainable speech deepfake source tracing
+> Figure 9: Spearman rank correlation of global feature importance at per-class level using KAN’s built-in FI mechanism and SHAP method.
+> Figure 10: Spearman rank correlation of global and local feature importance at model-level.
+
+FI mechanism across different batch sizes by comparing importance scores computed from mini-batches and then aggregated (local FI) with those obtained from the full dataset (global FI). We compute FI using batch sizes of 1, 8, 32, 64, 256, and full batch. In this context, a batch denotes a set of evaluation samples processed jointly to compute feature importance, as defined in Section 4.3, and is unrelated to model training mini-batches. Smaller batch sizes are expected to introduce higher variance in the estimated FI scores and may therefore lead to less stable rankings. We perform both global and local FI analyses at the model and per-class levels. To quantify stability, we compare the resulting rankings using the Spearman rank correlation coefficient. Figure 10 shows that the Spearman rank correlation between global and local feature importance (FI) at the model level remains high for moderate to large batch sizes (8, 32, 64, and 256), ranging from 0.88 to 0.92. Correlations among the corresponding local FI estimates are similarly stable, ranging from 0.95 (between batch sizes 8 and 256) to 1.00, indicating strong consistency across these settings. In contrast, batch size 1 yields substantially lower correlations, both    
+
+> H. H. Pham et al.: Preprint submitted to Elsevier Page 19 of 26 Explainable speech deepfake source tracing
+> Figure 11: Spearman rank correlation of global and local feature importance at per-class level.
+
+with global FI (0.56) and with the other local FI estimates (0.64–0.66), as one might expect. Nevertheless, all coefficients remain positive, suggesting that the model-level FI ranking is broadly preserved across batch-size configurations. These findings indicate that the model-level FI estimates are generally robust to batch size, provided that the batch contains more than a single sample. The near-identical rankings obtained for batch sizes of 8 and above suggest that the main interpretative conclusions are not driven by a specific batching choice. At the same time, the reduced agreement observed for batch size 1 confirms that extremely small batches introduce greater variability into the FI estimates. Overall, the results support the reliability of the proposed FI analysis under typical evaluation settings while also highlighting the limitations of singleton-batch explanations. 
+
+6.3. Feature importance vs KAN activation shape 
+
+As our final analysis, we examine the role of the activation functions learned by KAN. As discussed above, feature importance in KAN is driven by the variability of activations. It is therefore meaningful to analyze how the shapes of the learned activation functions influence the estimation of feature importance. Because the proposed KAN module adopts a single-hidden-layer architecture, these activation functions can be visualized directly. Based on the global importance ranking of attribute values in Section 6.2.1, which showed that text (inputs) is the most important feature across attacks, we first visualize the activation functions associated with this attribute. Figure 12 presents the 10 activation functions corresponding to the 10 attacks involving text (inputs) . Overall, these functions exhibit highly similar shapes, with the main differences appearing in their orientation. This consistency suggests that 
+
+text (inputs) contributes in a stable and systematic manner across different attack categories. To be more precise, most of the activation functions follow an approximately monotonic piecewise-linear pattern, indicating that the influence of 
+
+text (inputs) changes in a structured rather than irregular way. The recurrence of nearly identical shapes across attacks further supports the interpretation that KAN captures a common response pattern for this attribute. In other words, although the direction of the effect may vary between attacks, the functional form remains largely preserved. This observation aligns with the high global importance of text (inputs) , since a consistently varying activation pattern across tasks implies that this feature provides informative and reusable signals for distinguishing attack types. Next, we visualize the activation functions associated with the attribute values of attack 𝐴 04(16) , which we select because it shows high consistency and stability in the feature-importance analysis (Figures 9 and 11). Figure 13 graphs the corresponding activation shapes. When compared with the global importance ranking in Table 8, the results suggest an inverse relationship between activation nonlinearity and feature importance: attributes with smoother and more       
+
+> H. H. Pham et al.: Preprint submitted to Elsevier Page 20 of 26 Explainable speech deepfake source tracing
+> Figure 12: Activation functions connected from the input attribute value text (inputs) .
+> Figure 13: Activation functions connected to the output attack 𝐴 04(16) .
+
+nearly linear activation functions tend to receive higher importance scores. For instance, text (inputs) , which exhibits the smoothest and least nonlinear activation pattern, is ranked as the most important attribute for 𝐴 04(16) .This finding is consistent with the intuition underlying the KAN feature-importance mechanism, which is based on the standard deviation of the activations. In particular, the activation function for text (inputs) shows the largest overall gradient magnitude, which likely produces greater variation in activation values and, consequently, a higher standard deviation than the other attributes. More generally, these results indicate that the shape of the learned activation function is closely related to the importance assigned to the corresponding input feature. 
+
+## 7. Conclusion 
+
+In this work, we extended our recent probabilistic feature embedding approach for speech deepfake source tracing Chhibber et al. (2025); Mishra et al. (2026). In contrast to abstract and non-transparent latent-space features, probabilistic attributes provide an interpretable feature domain that reflects the presence or absence of specific synthesizer sub-components. The main novel contributions beyond Chhibber et al. (2025); Mishra et al. (2026) were twofold: (1) an end-to-end training framework, based on multitask learning, for probabilistic attribute extraction; and (2) a structured Kolmogorov–Arnold Network (KAN) for attack classification. Unlike post-hoc explainability methods such as SHAP (Lundberg and Lee, 2017), KAN provides a native built-in explainability mechanism. Although our study is not the first study to apply KAN to deepfake source tracing, earlier work in the context of speech deepfakes (Section 2) has primarily used KAN as a replacement for conventional multilayer perceptrons, without fully exploiting the interpretability potential emphasized in the original KAN formulation. In contrast, our proposed design explicitly incorporated this interpretability aspect into the model structure and analysis. Taken together, the proposed model aimed to provide an integrated framework in which classifier decisions and explanations were tightly linked. Our proposed model achieved balanced accuracies exceeding 99% on both attribute extraction and attack classification (source tracing) tasks. The corresponding EERs ranged from 0.16% to 0.07% for attribute extraction, while attack classification achieved an EER of 0.11%. Beyond classification performance, the proposed framework provided meaningful and robust model explanations. The built-in KAN feature importance mechanism consistently identified interpretable attack attributes and produced rankings that were broadly consistent with those obtained using SHAP. Furthermore, the feature importance estimates remained stable across different evaluation batch sizes, supporting the reliability of the resulting explanations. Our study addresses the key challenges of moving beyond binary spoofing detection toward fine-grained source tracing, as well as the need for interpretability in speech anti-spoofing. The results demonstrate that spoofed speech attribution combined with a KAN classifier is an effective solution for both accurate classification and transparent decision-making. Moreover, the built-in feature importance mechanism offers a promising alternative to post-hoc explainable AI methods. Our proposed system has one main limitation that should be addressed in future work. Similar to Chhibber et al. (2025); Mishra et al. (2026), the attribute extractors rely on available deepfake generator metadata, which limits generalization to scenarios in which such metadata is unavailable. Future work will therefore focus on improving                       
+
+> H. H. Pham et al.: Preprint submitted to Elsevier Page 21 of 26 Explainable speech deepfake source tracing
+> Table 9
+> Probabilities of RawBoost augmentation combinations. “ +” denotes sequential composition, where one augmentation is applied to the output of another, while “ || ” denotes parallel composition, where multiple augmented signals are independently generated from the same input and then combined.
+> RawBoost algorithms Augmented data 𝑝 DA
+> ∅𝑥 0.04 LnL LnL( 𝑥 )0.12 ISD ISD( 𝑥 )0.12 SSI SSI( 𝑥 )0.12 LnL + ISD + SSI SSI(ISD(LnL( 𝑥 ))) 0.12 LnL + ISD ISD(LnL( 𝑥 )) 0.12 LnL + SSI SSI(LnL( 𝑥 )) 0.12 ISD + SSI SSI(ISD( 𝑥 )) 0.12 LnL || ISD LnL( 𝑥 ) + ISD( 𝑥 )0.12
+
+cross-dataset generalization and evaluating robustness under more realistic conditions, including background noise, audio compression, and channel distortions. A further practical consideration is the higher computational complexity of KAN compared to conventional MLP-based architectures. Despite this, our results suggest that KAN provides a promising foundation for developing interpretable and highly accurate speech deepfake source tracing systems. To support transparency, reproducibility, and future extensions, we have made the implementation code publicly available. 
+
+## Appendix A. Probabilistic composition strategies for RawBoost augmentation 
+
+Table 9 lists the combinations of RawBoost algorithms and their probabilities used during augmentation. Two composition strategies are considered: sequential and parallel composition. The former refers to applying one augmentation to the output of another, whereas the latter generates multiple augmented signals independently from the same input and then combines them. Eight different combinations are considered that involve one, two, or all three main RawBoost algorithms. Since no prior evidence suggests that any particular combination yields greater robustness, we assign all combinations an equal probability of 12%. The remaining 4% of the data are kept unchanged to preserve a portion of the original samples. 
+
+## B. KAN is configured with auxiliary structure 
+
+Table 10 represents the configuration in the implementation of connections between the input features and the hidden-layer activation functions in the structured KAN module (SKM). The input feature vector is indexed from 0 to 49, with each feature connected to one or more of the 17 possible outputs (indexed from 0 to 16). Each connection maps an input attribute value to the activation functions associated with its corresponding attack, following the hierarchical relationships shown in Figure 5. In each row, the first column lists the index of the input feature, while the second column specifies the indices of the connected activation functions. 
+
+## C. Reproduced baseline source tracing results 
+
+The results in Table 11 summarize the performance of the reproduced two-stage baseline source tracing systems evaluated on the ASVspoof2019-attr-17 protocol. Following the setup of prior studies (Chhibber et al., 2025; Mishra et al., 2026), attack attribute extractors are first trained independently and their output embeddings are subsequently used for attack type classification. We additionally incorporate silence trimming and RawBoost augmentation in all reproduced configurations. The table reports the performance of individual attack attribute extractors ( 𝐴𝑆 1–𝐴𝑆 7) as well as the final attack type classifier using different back-end models, including naive bayes (NB), decision tree (DT), logistic regression (LR), and support vector machine (SVM).   
+
+> H. H. Pham et al.: Preprint submitted to Elsevier Page 22 of 26
+
+Explainable speech deepfake source tracing 
+
+Table 10 
+
+Connections between input features and hidden-layer activation functions in the SKM. Each connection links an attribute value to its corresponding attack (Figure 5). The first column shows the input feature index while the second lists the connected function indices.                                                     
+
+> Input feature index Hidden function index
+> 11, 2, 3, 4, 7, 8, 9, 10, 11, 12 25, 6, 16, 17 313, 14, 15 41, 2, 3, 4, 7, 8, 9, 12 55, 13, 16 66710, 11 814, 15 917 10 1, 2, 8 11 312 7, 9, 12 13 10, 11 14 13 15 4, 5, 6, 14, 15, 16, 17 16 1, 2, 8 17 318 419 5, 16 20 621 7, 9, 12, 14, 15 22 10, 11 23 13 24 17 25 1, 2
+> Input feature index Hidden function index
+> 26 3, 5, 7, 8, 9, 12, 16 27 10, 11 28 17 29 4, 6, 13, 14, 15 30 1, 8, 9, 15, 16 31 2, 3, 14 32 433 534 635 736 10, 11 37 12 38 13 39 17 40 1, 12, 15 41 2, 3, 5, 7 42 443 644 845 946 10 47 11 48 13, 16 49 14 50 17
+
+Table 11 
+
+Performance of baseline source tracing models (two-phase architectures) on ASVspoof2019-attr-17 protocol. The results on evaluation set are reported as < balanced accuracy > (%) / < equal error rate > (%) . The abbreviations in the table represent the following: CM (countermeasure), BAcc (balanced accuracy), ST (silence trimming), RB (RawBoost), ebds (embeddings), Clf (Classifier).                     
+
+> CM extractor Attack attribute classification Attack type classification
+> BAcc (%) / EER (%) Clf BAcc (%) / EER (%)
+> 𝐴𝑆 1𝐴𝑆 2𝐴𝑆 3𝐴𝑆 4𝐴𝑆 5𝐴𝑆 6𝐴𝑆 7
+> ST_RB_AASIST 91.59 / 3.16 87.16 / 3.92 85.26 / 4.58 89.51 / 3.22 86.25 / 5.66 83.82 / 4.00 86.06 / 3.96 NB 76.70 / 5.41 DT 81.55 / 9.11 LR 84.37 / 3.35 SVM 82.32 / 3.80
+> ST_RB_SSL-AASIST 79.36 / 10.42 70.35 / 9.75 70.16 / 10.78 71.74 / 9.22 67.72 / 12.99 67.09 / 10.03 67.90 / 9.88 NB 52.42 / 29.10 DT 58.24 / 12.30 LR 66.23 / 8.48 SVM 63.67 / 9.18
+
+## CRediT authorship contribution statement 
+
+Hoang H. Pham: Writing – review & editing, Writing – original draft, Validation, Software, Methodology, Investigation, Formal analysis, Data curation, Conceptualization. Manasi Chhibber: Writing – review & editing, Writing – original draft, Methodology, Investigation, Formal analysis. Tomi H. Kinnunen: Writing – review & editing, Validation, Supervision, Project administration, Methodology, Investigation, Funding acquisition, Formal analysis, Data curation, Conceptualization. 
+
+H. H. Pham et al.: Preprint submitted to Elsevier Page 23 of 26 Explainable speech deepfake source tracing 
+
+## Declaration of competing interest 
+
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper. 
+
+## Acknowledgments 
+
+The work has been partially supported by the Academy of Finland (Decision No. 349605, project “SPEECHFAKES”). The authors wish to acknowledge CSC—IT Center for Science, Finland, for computational resources. 
+
+## References 
+
+Arsov, N., Dukovski, M., Evkoski, B., Cvetkovski, S., 2019. A measure of similarity in textual data using spearman’s rank correlation coefficient. ArXiv abs/1911.11750. URL: https://api.semanticscholar.org/CorpusID:208291163 .Babu, A., Wang, C., Tjandra, A., Lakhotia, K., Xu, Q., Goyal, N., Singh, K., von Platen, P., Saraf, Y., Pino, J., Baevski, A., Conneau, A., Auli, M., 2022. Xls-r: Self-supervised cross-lingual speech representation learning at scale, in: Proceedings of Interspeech, pp. 2278–2282. URL: 
+
+https://www.isca-archive.org/interspeech_2022/babu22_interspeech.pdf , doi: 10.21437/Interspeech.2022-143 .Badugu, V.K., Singh, M., 2026. Convolutional kolmogorov-arnold network(ckan) based spoofing countermeasure system(scms). International Journal of Speech Technology 29, 33. URL: https://link.springer.com/article/10.1007/s10772-026-10258-9 , doi: 10.1007/ s10772-026-10258-9 . published online: 20 February 2026. Badugu, V.K., Veesa, S., Singh, M., 2025. The kolmogorov-arnold networks: A new foundation paradigm for hierarchical function learning in asv anti-spoofing research, in: 2025 IEEE International Conference on Communication, Networks and Satellite (COMNETSAT), pp. 359–366. doi: 10.1109/COMNETSAT68601.2025.11324962 .Bertsimas, D., Jr, V.D., 2023. Improving stability in decision tree models. URL: https://arxiv.org/abs/2305.17299 , arXiv:2305.17299 .Binder, A., Montavon, G., Lapuschkin, S., Müller, K.R., Samek, W., 2016. Layer-wise relevance propagation for neural networks with local renormalization layers, in: Villa, A.E., Masulli, P., Pons Rivero, A.J. (Eds.), Artificial Neural Networks and Machine Learning – ICANN 2016, Springer International Publishing, Cham. pp. 63–71. Bisogni, C., Loia, V., Nappi, M., Pero, C., 2024. Acoustic features analysis for explainable machine learning-based audio spoofing detection. Computer Vision and Image Understanding 249, 104145. URL: https://www.sciencedirect.com/science/article/pii/S1077314224002261 ,doi: https://doi.org/10.1016/j.cviu.2024.104145 .Bodner, A.D., Tepsich, A.S., Spolski, J.N., Pourteau, S., 2025. Convolutional kolmogorov-arnold networks. URL: https://arxiv.org/abs/ 2406.13155 , arXiv:2406.13155 .Borodin, K., Kudryavtsev, V., Korzh, D., Efimenko, A., Mkrtchian, G., Gorodnichev, M., Rogov, O.Y., 2024. AASIST3: KAN-enhanced AASIST speech deepfake detection using SSL features and additional regularization for the ASVspoof 2024 Challenge, in: The Automatic Speaker Verification Spoofing Countermeasures Workshop (ASVspoof 2024), pp. 48–55. doi: 10.21437/ASVspoof.2024-8 .Breiman, L., Friedman, J., Olshen, R., Stone, C.J., 1984. Classification and Regression Trees. Wadsworth. Channing, G., Sock, J., Clark, R., Torr, P., de Witt, C.S., 2024. Toward robust real-world audio deepfake detection: Closing the explainability gap. URL: https://arxiv.org/abs/2410.07436 , arXiv:2410.07436 .Chaudhuri, A., 2021. B-splines. URL: https://arxiv.org/abs/2108.06617 , arXiv:2108.06617 .Chen, X., Lin, I.M., Zhang, L., Wu, H., yi Lee, H., Jang, J.S.R., 2025. Towards generalized source tracing for codec-based deepfake speech. URL: 
+
+https://arxiv.org/abs/2506.07294 , arXiv:2506.07294 .Cheng, J.M., Wang, H.C., 2004. A method of estimating the equal error rate for automatic speaker verification, in: 2004 International Symposium on Chinese Spoken Language Processing, pp. 285–288. doi: 10.1109/CHINSL.2004.1409642 .Chhibber, M., Mishra, J., Shim, H., Kinnunen, T.H., 2025. An explainable probabilistic attribute embedding approach for spoofed speech characterization, in: ICASSP 2025 - 2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP), pp. 1–5. doi: 10.1109/ICASSP49660.2025.10889868 .Cox, D.R., 1958. The regression analysis of binary sequences. Journal of the Royal Statistical Society: Series B (Methodological) 20, 215–242. URL: https://www.jstor.org/stable/2983890 .Cuccovillo, L., Gerhardt, M., Aichroth, P., 2024a. Audio transformer for synthetic speech detection via formant magnitude and phase analysis. ICASSP 2024 - 2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 4805–4809URL: 
+
+https://api.semanticscholar.org/CorpusID:268604794 .Cuccovillo, L., Gerhardt, M., Aichroth, P., 2024b. Audio transformer for synthetic speech detection via multi-formant analysis, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 4409–4417. D., O., 2010. Speech Communications: Human And Machine. Universities Press (India) Pvt. Limited. URL: https://books.google.fi/books? id=UWmD8aY_448C .Elfwing, S., Uchibe, E., Doya, K., 2018. Sigmoid-weighted linear units for neural network function approximation in reinforcement learning. Neural Networks 107, 3–11. URL: https://www.sciencedirect.com/science/article/pii/S0893608017302976 , doi: https://doi.org/ 10.1016/j.neunet.2017.12.012 . special issue on deep reinforcement learning. Escalante, H.J., Aakur, S.N., 2018. Explainable and interpretable models in computer vision and machine learning. The Springer Series on Challenges in Machine Learning, Springer, Cham, Switzerland. Gambín, Á.F., Yazidi, A., Vasilakos, A., Haugerud, H., Djenouri, Y., 2024. Deepfakes: current and future trends. Artificial Intelligence Review 57, 64. URL: https://doi.org/10.1007/s10462-023-10679-x , doi: 10.1007/s10462-023-10679-x .
+
+H. H. Pham et al.: Preprint submitted to Elsevier Page 24 of 26 Explainable speech deepfake source tracing 
+
+Ge, W., Patino, J., Todisco, M., Evans, N., 2022. Explaining deep learning models for spoofing and deepfake detection with shapley additive explanations, in: ICASSP 2022, pp. 6387–6391. doi: 10.1109/ICASSP43922.2022.9747476 .Glorot, X., Bengio, Y., 2010. Understanding the difficulty of training deep feedforward neural networks, in: Teh, Y.W., Titterington, M. (Eds.), Proceedings of the Thirteenth International Conference on Artificial Intelligence and Statistics, PMLR, Chia Laguna Resort, Sardinia, Italy. pp. 249–256. URL: https://proceedings.mlr.press/v9/glorot10a.html .Hendrycks, D., Gimpel, K., 2023. Gaussian error linear units (gelus). URL: https://arxiv.org/abs/1606.08415 , arXiv:1606.08415 .Hieu, N.H.N., Nguyen, N.S., Dang, H.N., Vo, T., Hy, T.S., Nguyen, V., 2025. OZSpeech: One-step zero-shot speech synthesis with learned-prior-conditioned flow matching, in: Che, W., Nabende, J., Shutova, E., Pilehvar, M.T. (Eds.), Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), Association for Computational Linguistics, Vienna, Austria. pp. 21500–21517. URL: 
+
+https://aclanthology.org/2025.acl-long.1043/ , doi: 10.18653/v1/2025.acl-long.1043 .Hornik, K., Stinchcombe, M., White, H., 1989. Multilayer feedforward networks are universal approximators. Neural Networks 2, 359–366. URL: https://www.sciencedirect.com/science/article/pii/0893608089900208 , doi: https://doi.org/10.1016/ 0893-6080(89)90020-8 .Houlsby, N., Giurgiu, A., Jastrzebski, S., Morrone, B., de Laroussilhe, Q., Gesmundo, A., Attariyan, M., Gelly, S., 2019. Parameter-efficient transfer learning for NLP, in: Proceedings of the 36th International Conference on Machine Learning, pp. 2790–2799. Huang, X., Acero, A., Hon, H.W., Reddy, R., 2001. Spoken Language Processing: A Guide to Theory, Algorithm, and System Development. 1st ed., Prentice Hall PTR, USA. Jung, J.W., Heo, H.S., Tak, H., jin Shim, H., Chung, J.S., Lee, B.J., Yu, H.J., Evans, N., 2021. Aasist: Audio anti-spoofing using integrated spectro-temporal graph attention networks. arXiv preprint arXiv:2110.01200 URL: https://arxiv.org/abs/2110.01200 .Klein, N., Chen, T., Tak, H., Casal, R., Khoury, E., 2024. Source Tracing of Audio Deepfake Systems, in: Interspeech 2024, pp. 1100–1104. doi: 10.21437/Interspeech.2024-1283 .LaRock, J., Shajalal, M., Stevens, G., 2025. Interpretable deepfake voice detection: A hybrid deep-learning model and explanation evaluation, in: Biecek, Nowaczyk et al. (Eds.): Joint Proceedings of the xAI 2025 Late-breaking Work, Demos and Doctoral Consortium co-located with the 3rd World Conference on eXplainable Artificial Intelligence (xAI 2025), Istanbul, Turkey, July 9-11, 2025, pp. 97 – 104. URL: 
+
+https://ceur-ws.org/Vol-4017/#paper_13 .Lehman, A., 2005. Jmp for basic univariate and multivariate statistics : a step-by-step guide. URL: https://api.semanticscholar.org/ CorpusID:117112527 .Liao, X., Jin, R., Yu, H., Pandya, D., Li, X., 2026. Rvcbench: Benchmarking the robustness of voice cloning across modern audio generation models. URL: https://arxiv.org/abs/2602.00443 , arXiv:2602.00443 .Lim, S.Y., Chae, D.K., Lee, S.C., 2022. Detecting deepfake voice using explainable deep learning techniques. Applied Sciences 12. URL: 
+
+https://www.mdpi.com/2076-3417/12/8/3926 , doi: 10.3390/app12083926 .Liu, Z., Tegmark, M., Ma, P., Matusik, W., Wang, Y., 2025a. Kolmogorov-arnold networks meet science. Phys. Rev. X 15, 041051. URL: 
+
+https://link.aps.org/doi/10.1103/4t7t-v19l , doi: 10.1103/4t7t-v19l .Liu, Z., Wang, Y., Vaidya, S., Ruehle, F., Halverson, J., Soljacic, M., Hou, T., Tegmark, M., 2025b. Kan: Kolmogorov–arnold networks, in: Yue, Y., Garg, A., Peng, N., Sha, F., Yu, R. (Eds.), International Conference on Learning Representations, pp. 70367–70413. URL: https: //proceedings.iclr.cc/paper_files/paper/2025/file/afaed89642ea100935e39d39a4da602c-Paper-Conference.pdf .Lundberg, S., Lee, S.I., 2017. A unified approach to interpreting model predictions, in: Proceedings of the 31st International Conference on Neural Information Processing Systems, Curran Associates Inc., Red Hook, NY, USA. p. 4768–4777. Minh, D., Wang, H.X., Li, Y.F., Nguyen, T.N., 2022. Explainable artificial intelligence: a comprehensive review. Artificial Intelligence Review 55, 3503–3568. Mishra, J., Chhibber, M., jin Shim, H., Kinnunen, T.H., 2026. Towards explainable spoofed speech attribution and detection: A probabilistic approach for characterizing speech synthesizer components. Computer Speech and Language 95, 101840. URL: https://www.sciencedirect.com/ science/article/pii/S0885230825000658 , doi: https://doi.org/10.1016/j.csl.2025.101840 .Montavon, G., Samek, W., Müller, K.R., 2018. Methods for interpreting and understanding deep neural networks. Digital Signal Processing 73, 1–15. URL: https://www.sciencedirect.com/science/article/pii/S1051200417302385 , doi: https://doi.org/10.1016/ j.dsp.2017.10.011 .Mundik, M., Jadhav, A., Yerkal, A., Tambe, K., Kamthe, S., 2025. Towards robust deepfake audio detection: A hybrid cnn-transformer approach with xai, in: 2025 IEEE 4th International Conference for Advancement in Technology (ICONAT), pp. 1–6. doi: 10.1109/ICONAT66879.2025. 11362428 .Müller, N., Dieckmann, F., Czempin, P., Canals, R., Böttinger, K., Williams, J., 2021. Speech is Silver, Silence is Golden: What do ASVspoof-trained Models Really Learn?, in: 2021 Edition of the Automatic Speaker Verification and Spoofing Countermeasures Challenge, pp. 55–60. doi: 10.21437/ASVSPOOF.2021-9 .Naresh, B., Ch, R., Reddy, K.S., Srinivas, S., Sheikh, A.N., Raghavendar, K., 2025. Enhancing the detection of deepfake audio using explainable ai techniques for secure and trustworthy applications, in: 2025 International Conference on Applications of Machine Intelligence and Data Analytics (ICAMIDA), pp. 1–6. doi: 10.1109/ICAMIDA64673.2025.11209741 .Negroni, V., Cuccovillo, L., Bestagini, P., Aichroth, P., Tubaro, S., 2026. Multi-task transformer for explainable speech deepfake detection via formant modeling. ArXiv abs/2601.14850. URL: https://api.semanticscholar.org/CorpusID:284917320 .Nikolaevich, K.A., 1957. On the representation of continuous functions of many variables by superpositions of continuous functions of one variable and addition. Doklady Akademii Nauk SSSR 114, 953–956. Phuong, T.D., Dat, T.H., 2025. Xlsr-kanformer: A kan-intergrated model for synthetic speech detection. 2025 IEEE International Conference on Advanced Visual and Signal-Based Systems (AVSS) , 1–6URL: https://api.semanticscholar.org/CorpusID:281245234 .Pierre, F., Tony, M., 2024. Whispeak speech deepfake detection systems for the asvspoof5 challenge. doi: 10.21437/ASVspoof.2024-5 .
+
+H. H. Pham et al.: Preprint submitted to Elsevier Page 25 of 26 Explainable speech deepfake source tracing 
+
+Raffel, M., Chen, L., 2025. Flashkat: Understanding and addressing performance bottlenecks in the kolmogorov-arnold transformer. arXiv preprint arXiv:2505.13813 . Ramírez, J., Segura, J.C., Benitez, C., Ángel de la Torre, Rubio, A.J., 2004. Efficient voice activity detection algorithms using long-term speech information. Speech Communication 42, 271–287. URL: https://www.sciencedirect.com/science/article/pii/ S0167639303001201 , doi: https://doi.org/10.1016/j.specom.2003.10.002 .Ribeiro, M.T., Singh, S., Guestrin, C., 2016. "why should i trust you?": Explaining the predictions of any classifier, in: Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, Association for Computing Machinery, New York, NY, USA. p. 1135–1144. URL: https://doi.org/10.1145/2939672.2939778 , doi: 10.1145/2939672.2939778 .Rumelhart, D.E., Hinton, G.E., Williams, R.J., 1986. Learning representations by back-propagating errors. Nature 323, 533–536. doi: 10.1038/ 323533a0 .Sahidullah, M., Shim, H.j., Hautamäki, R.G., Kinnunen, T.H., 2025. Shortcut learning in binary classifier black boxes: Applications to voice anti-spoofing and biometrics. IEEE Journal of Selected Topics in Signal Processing 19, 1542–1557. doi: 10.1109/JSTSP.2025.3569430 .Shah, A.J., Kamble, M.R., 2026. Leveraging kolmogorov-arnold networks for voice liveness detection in anti-spoofing systems. Speech Communication 178, 103364. URL: https://www.sciencedirect.com/science/article/pii/S0167639326000129 , doi: https: //doi.org/10.1016/j.specom.2026.103364 .Sobolev, A., 2025. The last call for authenticity: Ai reshaping voice fraud landscape. Journal of Cyber Policy 0, 1–21. URL: https://doi.org/10.1080/23738871.2025.2597191 , doi: 10.1080/23738871.2025.2597191 ,
+
+arXiv:https://doi.org/10.1080/23738871.2025.2597191 .Spearman., C., 1904. The proof and measurement of association between two things. The American Journal of Psychology 15, 72–101. URL: 
+
+http://www.jstor.org/stable/1412159 .Sundararajan, M., Taly, A., Yan, Q., 2017. Axiomatic attribution for deep networks, in: Proceedings of the 34th International Conference on Machine Learning - Volume 70, JMLR.org. p. 3319–3328. Tak, H., Kamble, M.R., Patino, J., Todisco, M., Evans, N.W.D., 2021. Rawboost: A raw data boosting and augmentation method applied to automatic speaker verification anti-spoofing. ICASSP 2022 - 2022 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) , 6382–6386URL: https://api.semanticscholar.org/CorpusID:243847663 .Tak, H., Todisco, M., Wang, X., weon Jung, J., Yamagishi, J., Evans, N., 2022. Automatic speaker verification spoofing and deepfake detection using wav2vec 2.0 and data augmentation. URL: https://arxiv.org/abs/2202.12233 , arXiv:2202.12233 .Tran, H.M., Lolive, D., Guennec, D., Sini, A., Delhay, A., Marteau, P.F., 2025. Kan you hear the truth? audio deepfake detection with kolmogorov–arnold networks, in: 2025 33rd European Signal Processing Conference (EUSIPCO), pp. 561–565. doi: 10.23919/EUSIPCO63237. 2025.11226534 .Wang, X., Yamagishi, J., Massimiliano Todisco, H.D., Nautsch, A., Evans, N., Sahidullah, M., Vestman, V., Kinnunen, T., Lee, K.A., Juvela, L., Alku, P., Peng, Y.H., Hwang, H.T., Tsao, Y., Wang, H.M., Maguer, S.L., Becker, M., Henderson, F., Clark, R., Zhang, Y., Wang, Q., Jia, Y., Onuma, K., Mushika, K., Kaneda, T., Jiang, Y., Liu, L.J., Wu, Y.C., Huang, W.C., Toda, T., Tanaka, K., Kameoka, H., Steiner, I., Matrouf, D., Bonastre, J.F., Govender, A., Ronanki, S., Zhang, J.X., Ling, Z.H., 2020. Asvspoof 2019: A large-scale public database of synthesized, converted and replayed speech. Computer Speech and Language 64, 101114. URL: https://www.sciencedirect.com/science/article/pii/ S0885230820300474 , doi: https://doi.org/10.1016/j.csl.2020.101114 .Xuan, X., et al., 2026. Wst-x series: Wavelet scattering transform for interpretable speech deepfake detection. URL: https://arxiv.org/abs/ 2602.02980 , arXiv:2602.02980 .Yang, X., Wang, X., 2025. Kolmogorov-arnold transformer. The Thirteenth International Conference on Learning Representations (ICLR). URL: 
+
+https://openreview.net/forum?id=BCeock53nt .Yu, N., Chen, L., Leng, T., Chen, Z., Yi, X., 2024a. An explainable deepfake of speech detection method with spectrograms and waveforms. Journal of Information Security and Applications 81, 103720. URL: https://www.sciencedirect.com/science/article/pii/ S2214212624000231 , doi: https://doi.org/10.1016/j.jisa.2024.103720 .Yu, R., Yu, W., Wang, X., 2024b. Kan or mlp: A fairer comparison. URL: https://arxiv.org/abs/2407.16674 , arXiv:2407.16674 .Yu, R.C., Wu, S., Gui, J., 2025. Residual kolmogorov-arnold network for enhanced deep learning. URL: https://arxiv.org/abs/2410.05500 ,
+
+arXiv:2410.05500 .
+
+H. H. Pham et al.: Preprint submitted to Elsevier Page 26 of 26
