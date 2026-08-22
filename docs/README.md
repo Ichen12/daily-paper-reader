@@ -6,65 +6,56 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-08-21
-- 运行时间：2026-08-21 20:55:52 UTC
+- 最新运行日期：2026-08-22
+- 运行时间：2026-08-22 20:20:06 UTC
 - 运行状态：成功
-- 本次总论文数：15
-- 精读区：4
+- 本次总论文数：12
+- 精读区：1
 - 速读区：11
 
 ### 今日简报（AI）
-今日精选15篇语音论文，2篇获9分精读，覆盖小语种ASR与基准优化。重点关注Mizo语音识别微调与形态感知评估，以及ASR模型基准优化量化方法。若需拓展，可速读多模态对话检索与视听觉语音增强方向。
-- 详情：[/202608/21/README](/202608/21/README)
+今日阅读12篇论文，精读1篇、速读11篇，核心聚焦语音深度伪造溯源与音频学习。最值得关注的是精读论文《Explainability by Design》，用结构化KAN网络在概率属性上实现深度伪造源追踪，可解释性突出；速读中“下一补丁预测”的音频学习方法也有参考价值。建议普通读者优先了解深度伪造溯源的可解释性设计，再关注音频模型扩展思路。
+- 详情：[/202608/22/README](/202608/22/README)
 
 ### 精读区论文标签
-1. [A Speech Corpus for Mizo Automatic Speech Recognition: Whisper and SraVaani 1.0 Fine-Tuning with Morphology-Aware Evaluation](/202608/21/2608.19361v1-a-speech-corpus-for-mizo-automatic-speech-recognition-whisper-and-sravaani-10-fine-tuning-with-morphology-aware-evaluation)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：构建米佐语语音语料库并基准测试多种ASR模型，属于语音数据集与基准工作
-2. [Towards Quantifying Benchmark Optimization in ASR Models](/202608/21/2608.19936v1-towards-quantifying-benchmark-optimization-in-asr-models)  
-   标签：评分：9.0/10、query:speech-audio
-   evidence：研究ASR模型的基准优化问题，并提出量化方法，属于语音识别相关研究
-3. [Hear2Act: Benchmarking When Prosody Should Change What an Assistant Does](/202608/21/2608.19515v1-hear2act-benchmarking-when-prosody-should-change-what-an-assistant-does)  
+1. [Explainability by Design: Structured Kolmogorov-Arnold Networks over Probabilistic Attributes for Speech Deepfake Source Tracing](/202608/22/2608.20213v1-explainability-by-design-structured-kolmogorov-arnold-networks-over-probabilistic-attributes-for-speech-deepfake-source-tracing)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：新的口语助手基准，检验韵律是否改变下游决策
-4. [Fourier is Frontier: Frequency-Aware Autoencoding for High-Fidelity Music Reconstruction](/202608/21/2608.19843v1-fourier-is-frontier-frequency-aware-autoencoding-for-high-fidelity-music-reconstruction)  
-   标签：评分：8.0/10、query:speech-audio
-   evidence：频率感知音频自编码用于高保真音乐重建
+   evidence：溯源现代语音合成器生成的伪造语音
 
 ### 速读区论文标签
-1. [S2Dialog: Multimodal Dialogue Retrieval with Semantic and Acoustic-Style Modeling](/202608/21/2608.14029v1-s2dialog-multimodal-dialogue-retrieval-with-semantic-and-acoustic-style-modeling)  
+1. [Listening Forward: Next Patch Embedding Prediction Enables Scalable Audio Learners](/202608/22/2608.19863v1-listening-forward-next-patch-embedding-prediction-enables-scalable-audio-learners)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：多模态对话检索同时建模语义与声学风格，服务于会话语音合成等领域，属语音音频综合主题
-2. [Separate First, Then Associate: A Two-Stage Approach for Real-World Audio-Visual Speech Enhancement](/202608/21/2608.14812v1-separate-first-then-associate-a-two-stage-approach-for-real-world-audio-visual-speech-enhancement)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：面向真实场景音视频语音增强，采用两阶段分离-关联方法提取目标语音
-3. [Aslema at NADI 2026: Augmentation through Fewshot for SLU](/202608/21/2608.18689v1-aslema-at-nadi-2026-augmentation-through-fewshot-for-slu)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：使用语音克隆合成语音进行数据增强的语音理解系统
-4. [Listening Forward: Next Patch Embedding Prediction Enables Scalable Audio Learners](/202608/21/2608.19863v1-listening-forward-next-patch-embedding-prediction-enables-scalable-audio-learners)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：提出下一个补丁嵌入预测的自监督音频表示学习方法，属于语音/音频领域通用基础方法
-5. [Explainability by Design: Structured Kolmogorov-Arnold Networks over Probabilistic Attributes for Speech Deepfake Source Tracing](/202608/21/2608.20213v1-explainability-by-design-structured-kolmogorov-arnold-networks-over-probabilistic-attributes-for-speech-deepfake-source-tracing)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：语音深度伪造溯源，与语音合成和语音转换系统紧密相关
-6. [Prototype-Rectified Iterative Self-supervised Manifold Denoising under Severe Acoustic Shift](/202608/21/2608.15037v1-prototype-rectified-iterative-self-supervised-manifold-denoising-under-severe-acoustic-shift)  
+   evidence：可扩展的自监督音频表征学习
+2. [Why Performance Metrics Overpromise in Auditory Attention Decoding: an Information-Theoretic Reappraisal](/202608/22/2608.14250v1-why-performance-metrics-overpromise-in-auditory-attention-decoding-an-information-theoretic-reappraisal)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：声学偏移下音频文本模型的测试时去噪
-7. [Efficient Audio-Visual Generation via Synchrony-Aware Cross-Modal Sparse Attention](/202608/21/2608.15522v1-efficient-audio-visual-generation-via-synchrony-aware-cross-modal-sparse-attention)  
+   evidence：为听觉注意解码提出信息论评估指标rIMI
+3. [Singer-Informed Vocal Source Separation for Multi-Singer Music Mixtures](/202608/22/2608.14516v1-singer-informed-vocal-source-separation-for-multi-singer-music-mixtures)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：基于同步感知稀疏注意力的高效音视频生成
-8. [ACE-Cap: Active Evidence Acquisition via Agentic Co-Evolution for Long-Paragraph Fine-Grained Audio Captioning](/202608/21/2608.16162v1-ace-cap-active-evidence-acquisition-via-agentic-co-evolution-for-long-paragraph-fine-grained-audio-captioning)  
+   evidence：面向多歌手音乐混合的歌手引导人声源分离
+4. [Distinguishing AI-Generated Music from Edited Audio as a Hard-Negative Robustness Task](/202608/22/2608.14916v1-distinguishing-ai-generated-music-from-edited-audio-as-a-hard-negative-robustness-task)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：音频描述与主动证据获取，重要的音频理解任务
-9. [Listen, Reason, and Segment: Aligning LALMs with Editorial Judgment for Media Chapterization](/202608/21/2608.16539v1-listen-reason-and-segment-aligning-lalms-with-editorial-judgment-for-media-chapterization)  
+   evidence：为AI生成音频检测构建数据集与困难负样本鲁棒性任务
+5. [Efficient Audio-Visual Generation via Synchrony-Aware Cross-Modal Sparse Attention](/202608/22/2608.15522v1-efficient-audio-visual-generation-via-synchrony-aware-cross-modal-sparse-attention)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：基于大音频语言模型的音频章节化，属于语音音频核心主题
-10. [DNN-Based Frequency-Dependent Estimation of Speech, Music, and Noise Power in Acoustic Mixtures for Hearing-Aid Scene Analysis](/202608/21/2608.17482v1-dnn-based-frequency-dependent-estimation-of-speech-music-and-noise-power-in-acoustic-mixtures-for-hearing-aid-scene-analysis)  
+   evidence：同步感知的高效音视频生成方法
+6. [Using the Mimi codec for metalinguistic representations](/202608/22/2608.15799v1-using-the-mimi-codec-for-metalinguistic-representations)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：面向助听器的语音与音频场景分析及功率估计
-11. [Target Speaker Identification: A Low-Latency Streaming Pipeline](/202608/21/2608.17972v1-target-speaker-identification-a-low-latency-streaming-pipeline)  
+   evidence：分析Mimi神经编解码器语义记号与元语言表征
+7. [A Novel Binaural Cue Preservation Loss for DNN-Based Binaural Speech Enhancement](/202608/22/2608.16299v1-a-novel-binaural-cue-preservation-loss-for-dnn-based-binaural-speech-enhancement)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：基于开源预训练模型的流式目标说话人识别流水线
+   evidence：双耳语音增强中的双耳线索保持损失
+8. [Contrastive Learning with Variational Regularization for Multi-Session EEG-to-Speech Decoding](/202608/22/2608.16360v1-contrastive-learning-with-variational-regularization-for-multi-session-eeg-to-speech-decoding)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：基于对比学习和变分正则化的脑电到语音解码
+9. [Listen, Reason, and Segment: Aligning LALMs with Editorial Judgment for Media Chapterization](/202608/22/2608.16539v1-listen-reason-and-segment-aligning-lalms-with-editorial-judgment-for-media-chapterization)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：音频大语言模型用于媒体章节分割
+10. [DNN-Based Frequency-Dependent Estimation of Speech, Music, and Noise Power in Acoustic Mixtures for Hearing-Aid Scene Analysis](/202608/22/2608.17482v1-dnn-based-frequency-dependent-estimation-of-speech-music-and-noise-power-in-acoustic-mixtures-for-hearing-aid-scene-analysis)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：深度网络估计语音、音乐和噪声功率用于助听器场景分析
+11. [Target Speaker Identification: A Low-Latency Streaming Pipeline](/202608/22/2608.17972v1-target-speaker-identification-a-low-latency-streaming-pipeline)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：低延迟流式目标说话人识别，属于语音/音频处理研究
 
 
 <div class="dpr-home-promo-card">
