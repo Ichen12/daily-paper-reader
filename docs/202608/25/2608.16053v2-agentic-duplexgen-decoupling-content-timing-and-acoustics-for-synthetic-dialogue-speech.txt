@@ -1,0 +1,237 @@
+Title: Agentic-DuplexGen: Decoupling Content, Timing, and Acoustics for Synthetic Dialogue Speech
+
+URL Source: https://arxiv.org/pdf/2608.16053v2
+
+Published Time: Tue, 25 Aug 2026 00:32:47 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+# Agentic-DuplexGen: Decoupling Content, Timing, and Acoustics for Synthetic Dialogue Speech 
+
+Pengcheng Wang ∗, Sheng Li ∗, Jiyi Li †, and Takahiro Shinozaki ∗∗ Department of Information and Communications Engineering, Institute of Science Tokyo, Yokohama, Japan 
+
+† Hokkaido University, Hokkaido, Japan 
+
+Abstract —Synthetic conversational speech has become an im-portant resource for developing and evaluating conversational speech systems. However, existing dialogue synthesis pipelines typically generate dialogue content first and then insert inter-ruptions, overlap, and backchannels using handcrafted mark-ers or timing rules, making conversational timing prescribed rather than interaction-driven. We present Agentic-DuplexGen, a dialogue synthesis framework that explicitly decouples content ,
+
+timing , and acoustics . An LLM first generates the dialogue script, and then two full-duplex conversational models perform the script while listening to each other in real time. This allows conversational timing to emerge naturally while preserving the scripted content. Finally, a high-fidelity text-to-speech model re-renders the interaction without altering its timing. As ademonstration of the proposed framework, we construct apatient–clinician conversational speech corpus with construction-time annotations, including word timestamps, speaker activity, overlap regions, and interaction events. Experimental results show that the proposed framework produces conversational dynamics closer to the real-dialogue reference distribution than the stitching baselines evaluated in this study. 
+
+Index Terms —conversational speech synthesis, full-duplex dia-logue, turn-taking, overlapping speech, data augmentation, con-versational ASR 
+
+I. I NTRODUCTION 
+
+Synthetic conversational speech has become an increas-ingly important resource for developing conversational speech recognition and speaker diarization systems. Recent progress in large language models (LLMs) and neural text-to-speech (TTS) has made it possible to generate large-scale dia-logue corpora automatically, significantly reducing the cost of collecting human conversations. However, many existing pipelines still treat dialogue generation as a single process: the dialogue and timing are generated together, while overlap, interruption, and backchannel behaviors are subsequently in-troduced through markers or handcrafted timing rules [1], [2]. As a result, conversational dynamics are largely prescribed by the generation pipeline instead of emerging from interaction. Recent full-duplex conversational models naturally generate conversational interaction through continuous listening while speaking. However, these models generate conversations freely and cannot reliably follow a predefined dialogue script. Ex-isting approaches often emphasize either controllable content or emergent interaction, leaving their combination relatively underexplored. Our hypothesis is that dialogue generation should be decom-posed into three independent processes: semantic generation, interaction generation, and acoustic realization. We address this limitation by explicitly decoupling dialogue generation into three stages: content , timing , and acoustics . An LLM de-termines only the dialogue content and speaker order. Two full-duplex conversational models then perform the script while listening to each other in real time, allowing conversational dynamics to emerge naturally without altering the scripted dialogue. Finally, a Conditional TTS system re-renders the generated interaction while preserving the timing. This sepa-ration ensures that each stage is responsible for exactly one aspect of the conversation. We demonstrate this framework as MedDialSpeech for patient–clinician dialogue generation. Compared with the eval-uated stitching baselines, the proposed approach produces conversational dynamics closer to real clinical conversations while maintaining exact script fidelity and high-quality speech synthesis. Besides, the generation process naturally produces aligned transcripts, speaker activity and interaction events, which makes the resulting corpus directly applicable to con-versational ASR and speaker diarization research. The main contributions of this work are as follows:  
+
+> •
+
+We propose a dialogue synthesis framework that explic-itly decouples dialogue content, conversational dynamics, and acoustic rendering.  
+
+> •
+
+We introduce a script-constrained duplex decoding strat-egy that enforces exact lexical constraints during du-plex generation while allowing overlap, interruptions, and backchannels to emerge naturally through real-time interaction.  
+
+> •
+
+We construct an interaction-aware patient-clinician con-versational speech corpus with construction-time anno-tations, and demonstrate that the proposed framework closer to the reference distribution than the evaluated stitching baselines. II. M ETHOD 
+
+Fig. 1 shows the full pipeline. Its organizing principle is that content, timing, and acoustics are produced by three separate stages that never share a decision: the script fixes content, the duplex performance fixes timing, and re-rendering fixes acoustics. arXiv:2608.16053v2 [cs.CL] 22 Aug 2026 Fig. 1. Overview of the proposed dialogue synthesis framework. An LLM first generates the dialogue script (content). Two full-duplex conversational models then perform the script through real-time interaction, allowing conversational dynamics to emerge naturally. Finally, a high-fidelity TTS system re-renders the interaction while preserving the generated dynamics. 
+
+A. Overview and Notation 
+
+The proposed framework separates dialogue generation into three independent stages, each responsible for one aspect of the conversation. An LLM generates the dialogue script (content ), two full-duplex conversational models perform the script through real-time interaction ( timing ), and a high-fidelity TTS system re-renders the interaction ( acoustics ). The three stages are strictly decoupled: the script determines only what is spoken, duplex interaction determines only when it is spoken, and re-rendering determines only how it sounds. Let the dialogue script consist of an ordered sequence of turns assigned to two speakers, i ∈ { A, B }. Concatenating all turns belonging to speaker i gives a target token sequence 
+
+si = ( si
+
+> 1
+
+, . . . , s iKi ),
+
+with a cursor pi indicating the next token to be spoken. During duplex generation, both speakers continuously receive each other’s audio and independently decide whether to emit the next script token or remain silent. The transcript is there-fore fixed by the script, whereas the sequence of emit-or-wait decisions determines the conversational timing. 
+
+B. Script-Constrained Duplex Generation 
+
+Dialogue content is fixed by constraining the lexical output of the full-duplex model. Following the inner-monologue ar-chitecture of Moshi [3], the model predicts a text token before generating the corresponding audio frame. At each frame, we intercept this prediction and restrict the candidate vocabulary to 
+
+Cit =
+
+({PAD } ∪ { sipi }, i is floor-eligible ,
+
+{PAD } ∪ B , i is a listener , (1) where sipi is the next script token and B is a fixed whitelist of listener backchannels (e.g., mm-hmm , yeah , right ). At each frame, the model selects 
+
+wit = arg max 
+
+> w∈C it
+
+P (w | hit).
+
+If wit = sipi , the corresponding audio is emitted and the cursor is advanced, 
+
+pi ← pi + 1 .
+
+If wit = PAD , the speaker remains silent for the current frame. If wit ∈ B , a listener backchannel is produced subject to the refractory constraint introduced in Section II-C. The constraint removes lexical uncertainty from duplex generation. Whenever a speaker decides to speak, the emitted word is uniquely determined by the script. Consequently, the duplex model no longer decides what to say; it decides only 
+
+whether to emit the next script token at the current frame or to wait. Dialogue content is therefore fixed by construction, while conversational timing remains completely determined by the interaction between the two duplex instances. 
+
+C. Emergent Timing 
+
+Conversational timing is generated through the interaction between two cross-listening full-duplex models. At every frame, each instance receives the other speaker’s audio and independently decides whether to emit the next script token or remain silent. No global schedule specifies when a turn begins or ends. Instead, the interaction is regulated by three control parameters. The first parameter is the handoff window Wh, which defines the interval around the projected end of the current turn during which the listener is allowed to take the floor: handoff allowed ⇐⇒ t ∈
+
+
+
+τend − Wh
+
+2 , τ end + Wh
+
+2
+
+
+
+, (2) where τend is estimated from the remaining script tokens of the current speaker. The second parameter, max_padding (Pmax ), limits the maximum number of consecutive PAD frames before a floor-eligible speaker is forced to begin its queued turn, preventing unrealistically long silent gaps. The third parameter, bc_refractory (Rbc ), specifies the minimum interval between two listener backchannels, preventing excessive acknowledgements. These parameters regulate only the frequency of interaction events. The precise onset of a floor transition, the duration of an overlap, and the attachment point of a backchannel are determined online by the two duplex models in response to each other’s audio. Conversational timing therefore emerges from interaction rather than from an explicit schedule. 
+
+D. Fidelity Re-rendering 
+
+The duplex models generate a symbolic interaction score rather than the final waveform. For each conversational event, the score records the active speaker, turn boundaries, overlap regions, and backchannel positions. This symbolic representa-tion is subsequently rendered into high-fidelity speech using CosyVoice [4]. Since the duplex model and the TTS system generally speak at different rates, absolute timestamps cannot be copied directly. Instead, timing is transferred using relative positions. For a silent transition, the silence duration 
+
+g = au+1 − bu
+
+f
+
+is preserved directly so that the rendered turn begins g
+
+seconds after the previous rendered turn ends. For an overlapped transition, the relative entry position is computed as 
+
+e = au+1 − au
+
+bu − au
+
+, (3) where e denotes the fraction of the current turn that has elapsed when the next speaker begins. The rendered overlap is reproduced by placing the onset of turn u + 1 at eD u,where Du is the rendered duration of turn u. Backchannels are mapped identically according to their relative position within the hosting turn. Consequently, overlap structure is preserved regardless of differences in speaking rate between the duplex model and the renderer. Three implementation details further improve rendering quality. A sliding prompt maintains speaker consistency throughout long conversations. Interrupted speech is physically truncated with a short crossfade to produce acoustically real interruptions. Backchannels are synthesized independently and mixed into the main conversation at their mapped positions to reproduce concurrent speech. Because the symbolic interaction score completely specifies the generated conversation, annotations are obtained automat-ically during synthesis rather than through post-processing. Word timestamps are produced directly from CosyVoice align-ment, speaker activity is exported as RTTM segments, and overlap, interruption, gap, and backchannel labels are read directly from the symbolic score. III. R ELATED WORK 
+
+A. Scripted conversational speech synthesis 
+
+Recent advances in LLMs and neural TTS have enabled large-scale conversational speech synthesis. Existing systems typically generate a dialogue script with an LLM and synthe-size each utterance using a neural speech generator. Behavior-SD [1] incorporates behavior prompts to control conversational events, while PersonaPlex [2] further models speaker personas and dialogue roles. Other dialogue synthesis systems simi-larly introduce overlap, interruption, or backchannel events through dialogue markers, behavior tags, or handcrafted timing rules [5]–[8]. These approaches provide fine-grained control over dialogue semantics, making them effective for scalable corpus construction and controllable dialogue generation. 
+
+B. Full-duplex conversational modeling 
+
+Full-duplex conversational models directly model bidirec-tional spoken interaction. dGSLM [9] first demonstrated dual-stream spoken dialogue generation, while Moshi [3] intro-duced an inner-monologue architecture that enables real-time duplex conversation. More recent systems, including SyncLLM [10] and SALMONN-Omni [11], further improve synchronous conversational modeling and naturally produce interruptions, and other conversation dynamics through con-tinuous listening while speaking. These models demonstrate that realistic interaction can emerge directly from duplex communication rather than explicit scheduling. These two research directions address complementary as-pects of conversational speech generation: one emphasizes controllable dialogue generation, while the other emphasizes interaction modeling. Our work combines the strengths of both by explicitly separating content generation, interaction generation, and acoustic rendering into three independent stages. IV. E XPERIMENTS 
+
+Unless noted, real-dialogue reference statistics are drawn from PriMock57 [12] together with published clinical-dialogue statistics; the reference voice for rendering is drawn from the same source but is used only for acoustic consistency, orthogonal to the timing statistics under test. Dialogue scripts are generated with DeepSeek-V4 [13]. −2.0 −1.5 −1.0 −0.5 0.0 0.5 1.0 1.5 2.0 
+
+FTO / floor-transfer offset (s) [<0 = overlap] 
+
+> 0246810
+> Density
+> Real PriMock57 (—) Emergent mp25_hl3 ( W=0.366) Concat fixed 0.2s ( W=0.783) Concat rand[0,0.5] ( W=0.695)
+
+Fig. 2. Floor-transfer-offset distributions. Emergent output overlaps the real distribution including its overlapped-transition mode and long silent tail; stitching collapses to a single near-zero-gap mode. 
+
+A. Experiment 1: Distributional Realism 
+
+We first evaluate whether the proposed duplex interaction produces conversational dynamics that matches real dialogue statistics. Specifically, we compare the generated conversa-tions against two stitching-based baselines using four com-plementary measures: floor-transfer-offset (FTO) Wasserstein distance, Kolmogorov–Smirnov (KS) statistic, overlapped-transition ratio, and long-tail gap ratio. The reference dis-tribution is computed from 5,611 floor transfers extracted from PriMock57, and is consistent with published turn-taking statistics [14]–[16]. Emergent statistics in this experiment are computed on general-domain scripts, so that the mechanism is evaluated independently of register effects; the medical-domain instantiation of the same configuration is reported in Table III and Table IV. As summarized in Table I and Fig. 2, the proposed method produces conversational dynamics closer to the real-dialogue reference distribution than the stitching baselines evaluated in this study. The FTO Wasserstein distance is reduced from 
+
+0.695 to 0.366 (47% relative improvement), while the KS statistic decreases from 0.432 to 0.197 . More importantly, unlike stitching-based synthesis, the proposed framework nat-urally reproduces both overlapped transitions and the long-tail silence distribution. The observed improvement remains stable under multiple robustness checks. Varying the utterance-end estimation con-stant over {0.3, 0.4, 0.5} s yields consistent rankings ( Wfto =0.435 /0.357 /0.292 ), which outperform both baselines. Boot-strap evaluation across six random seeds produces a 95% 
+
+confidence interval of [0 .280 , 0.545] , which remains well sep-arated from the baselines. Re-estimating utterance boundaries using an energy-based VAD further improves the agreement with real conversations, reducing Wfto to 0.240 and bringing the emergent FTO median to 0.08 s, close to the real value of 
+
+0.11 s. The proposed interaction mechanism is most effective 0 10 20 30 40 
+
+> Emergent overlap rate (time %)
+> 0.4 0.5 0.6 0.7 0.8 0.9
+> WFTO  to real (lower = more realistic)
+> overshoot (distorted) most realistic
+> (a)
+> emergent hl1 emergent hl3 emergent hl5 concat fixed concat rand concat hi-ovl
+> 25/3 15/1 25/1 15/3 8/1 25/5 15/5 8/5 C:hi_overlap C:fixed0.2 C:rand0_0.5
+> 0510 15 20 25 30
+> Gap long-tail >0.64 s (%)
+> (b)
+> real (20.5%)
+
+Fig. 3. Realism as a function of the overlap-control setting. The mechanism’s advantage holds inside the real-dialogue envelope and disappears once the overlap knob is driven past it—honestly bounding the claim. 
+
+within the overlap range observed in natural dialogue. Exces-sively increasing overlap leads to less realistic conversational timing, indicating that the method is designed to reproduce natural interaction rather than arbitrary overlap patterns. 
+
+B. Experiment 2: Fidelity of Decoupled Generation 
+
+The proposed framework explicitly separates content gen-eration, conversational timing, and acoustic rendering. This experiment verifies that information does not unintentionally leak across stages and each stage preserves the decision established by the previous one. Specifically, we evaluate content fidelity, timing preservation, and speaker consistency after the complete re-rendering pipeline. Table II summarizes the fidelity of each stage in the pro-posed pipeline. Since lexical content is fixed before duplex interaction, the generated transcripts remain identical to the input script, resulting in 0% forced WER. Likewise, overlap events are transferred exactly from the symbolic interaction score to the rendered speech without deviation. Acoustic re-rendering introduces at most 1.7% WER while preserving speaker identity, achieving a CAM++ [17] similarity of 0.82 .The last two rows of Table II confirm acoustic-level timing consistency: delivered overlap closely matches the annota-tions, with the remaining discrepancies explained by low-level (−6,dB) backchannel overlays that are annotated separately from floor overlap. 
+
+C. Experiment 3: Emergence and Controllability 
+
+To examine whether the proposed interaction remains both adaptive and controllable, we compare conversations generated under different dialogue styles and timing configurations. Since dialogue content is fixed throughout generation, differ-ences in conversational behavior are solely determined by the duplex interaction process. Under identical scripts and knob settings, different random seeds yield distinct performances (zero to three barge-ins per dialogue), confirming that over-lap placement is stochastic and interaction-driven rather than deterministic. Table III shows that the generated interaction adapts nat-urally to different dialogue styles while remaining control-lable. Under identical timing parameters, medical conversa-TABLE I FTO DISTRIBUTIONAL REALISM VERSUS REAL CLINICAL DIALOGUE (P RI MOCK 57, 5,611 TRANSITIONS ). L OWER Wfto AND KS INDICATE BETTER AGREEMENT WITH THE REAL DISTRIBUTION . B EST SYNTHETIC RESULTS ARE SHOWN IN BOLD .Method Wfto ↓ KS ↓ Overlapped transitions (%) Long-tail gaps (%) Real (PriMock57) – – 42.8 20.5 Stitching (fixed gap) 0.783 0.557 0.0 0.0 Stitching (random gap) 0.695 0.432 0.0 0.0 Ours 0.366 0.197 38.5 30.8 
+
+TABLE II PIPELINE FIDELITY . C ONTENT LOCK , TIMING TRANSFER , AND RE -RENDERING EACH PRESERVE THEIR INVARIANT .Check Result Forced WER (content lock) 0% 
+
+Overlap-event mapping deviation 0 (exact) Re-rendering WER ≤ 1.7% 
+
+Speaker consistency (CAM++) 0.82 
+
+Truncation validity (per segment) 0.01 pp Overlap audit, dominant tier 0.5 pp TABLE III REGISTER -ADAPTIVE OVERLAP UNDER IDENTICAL KNOB SETTINGS , AND BACKCHANNEL PLACEMENT .Condition Value Overlap % — medical script 7.2
+
+Overlap % — casual script 10 .5
+
+Overlap % — real clinical 6.3
+
+Backchannel at prosodic boundary 95 .5% 
+
+baseline 71 .7% 
+
+tions consistently exhibit less overlap than casual conver-sations ( 7.2% vs. 10 .5% ), closely matching the restrained interaction style observed in real clinical dialogue ( 6.3% ). Meanwhile, backchannels emerge at prosodically appropriate positions in 95 .5% of cases, substantially exceeding the ran-dom baseline ( 71 .7% ). Finally, increasing the handoff window consistently increases overlap frequency, whereas increasing 
+
+max_padding produces more long silent gaps, allowing conversational dynamics to be adjusted smoothly from polite to adversarial interaction. 
+
+D. Experiment 4: Downstream Stress Test 
+
+We evaluate whether the generated conversations provide a controllable benchmark for overlapping speech recognition. The released benchmark contains 180 segments ( 175 minutes) spanning three interaction difficulty levels, constructed by varying the timing parameters described in Section II-C. As summarized in Table IV, the three tiers exhibit progressively denser interaction patterns, with the natural tier closely match-ing the overlap statistics of real clinical dialogue. We evaluate Whisper large-v2 [18] and wav2vec2 [19] on the three difficulty tiers, reporting overlap-region WER sepa-rately from the overall WER. As shown in Table V, overlap-region errors are consistently 3–7× higher than aggregate WER and increase monotonically with interaction difficulty 
+
+TABLE IV THE THREE TIERS SEPARATE MONOTONICALLY ON INTERACTION DENSITY ; THE NATURAL TIER CLOSELY MATCHES THE TIME -OVERLAP RATE OF REAL CLINICAL DIALOGUE . T IME OVERLAP AND LONG -TAIL FROM CONSTRUCTION -TIME GROUND TRUTH .Tier Overlap % Overlap. trans. % Long-tail % BC/min Polite 2.0 11 .6 34 .4 3.9
+
+Natural 6.6 20 .6 28 .8 3.7
+
+Adversarial 12 .2 27 .2 21 .0 2.6
+
+Real 6.3 42 .8 20 .5 1.5
+
+TABLE V ASR WER (%) ON CORRECTED AUDIO . O VERLAP -REGION ERROR FAR EXCEEDS AGGREGATE AND RISES MONOTONICALLY WITH DIFFICULTY ACROSS BOTH SYSTEMS , WHILE CLEAN REGIONS STAY FLAT —DEGRADATION IS OVERLAP -DRIVEN AND CONTROLLABLE .System Region Polite Natural Advers. Whisper aggregate 4.1 6.8 12 .7
+
+overlap-region 28 .3 48 .1 56 .7
+
+clean 3.1 1.8 2.2
+
+wav2vec2 aggregate 16 .5 20 .2 24 .5
+
+overlap-region 50 .7 64 .8 71 .9
+
+clean 15 .2 14 .7 13 .3
+
+for both systems, whereas clean-region performance remains nearly unchanged. These results indicate that the proposed timing controls effectively regulate ASR difficulty through conversational overlap rather than overall speech quality. To distinguish the effects of conversational timing and acoustic rendering, we further conduct a controlled 2 × 2
+
+ablation with matched overlap rates (Table VI). Note that the absolute WER values in Table VI are not directly comparable to the by-tier numbers in Table V: the ablation cells hold the overlap rate and renderer fixed and exclude backchannel overlays, so their overlap regions consist only of turn-transition overlaps, a different and acoustically simpler composition than the full benchmark tiers. The comparison of interest is there-fore within the 2×2, not across tables. Holding rendering fixed, emergent and stitched timing produce comparable overlap-region WER, suggesting that conversational timing itself has only a limited influence on downstream ASR performance. In contrast, replacing truncate-and-fade rendering with equal-volume overlap substantially increases recognition difficulty, indicating that rendering intensity dominates overlap-region ASR performance. Two effects separate cleanly. Timing has no detectable TABLE VI                          
+
+> 2×2ABLATION OF OVERLAP -REGION WER (%, 95% CI). R ENDERING ,
+> NOT TIMING ,DRIVES DOWNSTREAM DIFFICULTY ;ALL SYNTHETIC CELLS FALL WELL BELOW REAL .Timing Rendering Overlap-region WER Emergent truncate +fade 18 .8(13 .1–24 .6)Stitched truncate +fade 23 .2(15 .5–31 .8)Emergent equal-volume 44 .1(37 .5–49 .6)Stitched equal-volume 43 .3(36 .9–50 .0)Real —76 .5(56 .4–99 .6)
+
+effect : with rendering held fixed, emergent and stitched con-fidence intervals overlap almost entirely ( 18 .8 vs. 23 .2; 44 .1
+
+vs. 43 .3), so at n = 30 any effect of emergent versus authored timing on ASR error is small relative to rendering. Rendering dominates : with timing held fixed, replacing truncate-and-fade with equal-volume overlay roughly doubles the error (disjoint CIs). Counter-intuitively, the acoustically cleaner 
+
+truncate-and-fade rendering makes overlap easier : fading the interrupted speaker lets the recognizer lock onto the surviving barge-in, moving error away from the real value. The harder, equal-volume condition is closer to real but still leaves a large gap—every synthetic cell sits well below the real overlap-region WER of 76 .5% .
+
+Robustness. The observed trend generalizes across differ-ent speaker pairs and dialogue domains. Re-rendering with 
+
+12 LibriTTS [20] speaker pairs preserves the overlap-region degradation, and similar behavior is observed on out-of-domain casual dialogue. In contrast, speaker diarization error (pyannote-3.1 [21]) remains largely unchanged across diffi-culty levels, indicating that the benchmark primarily stresses speech recognition rather than speaker attribution. V. L IMITATIONS 
+
+The proposed framework has several limitations. First, con-versational interaction is only partially emergent. Although turn timing is generated online through duplex interaction, global interaction statistics such as overlap frequency and backchannel density are still regulated by explicit control parameters. Likewise, overlap is currently confined to turn-transition regions and does not model deep mid-utterance interruptions. Second, the strict decoupling between content and timing inevitably limits conversational adaptability. Since dialogue content is fixed before duplex generation, speakers cannot revise or abandon planned utterances after being interrupted, preventing richer interaction phenomena such as repair, self-correction, or content negotiation. Finally, the current benchmark remains a simplified ap-proximation of real clinical conversations. It is constructed from a single reference corpus and synthetic rendering, and downstream ASR difficulty is influenced more by acoustic rendering than by emergent timing itself. Although the pro-posed benchmark provides controllable conversational dynam-ics, further improvements in overlap rendering and multi-speaker interaction are needed to better match real-world conversations. VI. C ONCLUSION 
+
+We presented Agentic-DuplexGen, a zero-training pipeline that decouples content, timing, and acoustics so that over-lapping conversational speech can be scripted for content yet emergent in timing and high-fidelity in sound. Emergent turn-taking is distributionally closer to real clinical dialogue than stitching and reproduces overlapped transitions and long gaps that are absent from the evaluated stitching baselines, while three physical knobs give controllable densities with a clean control/emergence boundary. The resulting three-difficulty medical benchmark ships with construction-time ground truth for stress-testing ASR and diarization. ETHICS AND DATA STATEMENT 
+
+The reference corpus (PriMock57) is used under its license. All released audio is synthetic; we label it as such and restrict its use to research on speech recognition and dialogue robustness. The synthetic data carries no clinical validity claim and must not be used for medical decision-making. ACKNOWLEDGMENT AND AI D ISCLOSURE 
+
+This anonymous draft follows the IEEE submission require-ments. Claude and Grammarly were used to polish drafts and assist with table organization in this manuscript. The experimental design and results, claims, citations were run and written by the authors. REFERENCES [1] S. Lee, K.-w. Kim, and G. Kim, “Behavior-SD: Behaviorally aware spoken dialogue generation with large language models,” in Proc. NAACL-HLT , Albuquerque, NM, USA, 2025, pp. 9574–9593. [2] R. Roy, J. Raiman, S.-g. Lee, T.-D. Ene, R. Kirby, S. Kim, J. Kim, and B. Catanzaro, “PersonaPlex: Voice and role control for full-duplex conversational speech models,” arXiv preprint arXiv:2602.06053 , 2026. [3] A. D´ efossez, L. Mazar´ e, M. Orsini, A. Royer, P. P´ erez, H. J´ egou, E. Grave, and N. Zeghidour, “Moshi: A speech-text foundation model for real-time dialogue,” arXiv preprint arXiv:2410.00037 , 2024. [4] Z. Du, C. Gao, Y. Wang, F. Yu, T. Zhao, H. Wang, X. Lv, H. Wang, C. Ni, X. Shi et al. , “CosyVoice 3: Towards in-the-wild speech generation via scaling-up and post-training,” arXiv preprint arXiv:2505.17589 , 2025. [5] Z. Zhou, Q. Zhang, L. Luo, J. Liu, and R. Zhou, “Open-source full-duplex conversational datasets for natural and interactive speech synthesis,” arXiv preprint arXiv:2509.04093 , 2025. [6] S. Pan, S. Banerjee, D. Hebbar, S. Patel, A. Gupta, K. J. Cheng, H. Kim, Z. A. Li, M. Q. Ma, T. Li, G. Anumanchipalli, and J. Lian, “Enabling conversational behavior reasoning capabilities in full-duplex speech,”         
+
+> arXiv preprint arXiv:2512.21706 , 2025. [7] G.-T. Lin, J. Lian, T. Li, Q. Wang, G. Anumanchipalli, A. H. Liu, and H.-y. Lee, “Full-duplex-bench: A benchmark to evaluate full-duplex spoken dialogue models on turn-taking capabilities,” arXiv preprint arXiv:2503.04721 , 2025. [8] Y. Peng, Y.-W. Chao, D. Ng, Y. Ma, C. Ni, B. Ma, and E. S. Chng, “FD-Bench: A full-duplex benchmarking pipeline designed for full duplex spoken dialogue systems,” arXiv preprint arXiv:2507.19040 , 2025. [9] T. A. Nguyen, E. Kharitonov, J. Copet, Y. Adi, W.-N. Hsu, A. Elkahky, P. Tomasello, R. Algayres, B. Sagot, A. Mohamed, and E. Dupoux, “Generative spoken dialogue language modeling,” Trans. Assoc. Comput. Linguistics , vol. 11, pp. 250–266, 2023. [10] B. Veluri, B. N. Peloquin, B. Yu, H. Gong, and S. Gollakota, “Be-yond turn-based interfaces: Synchronous LLMs as full-duplex dialogue agents,” in Proc. EMNLP , 2024, pp. 21 390–21 402.
+
+[11] W. Yu, S. Wang, X. Yang, X. Chen, X. Tian, J. Zhang, G. Sun, L. Lu, Y. Wang, and C. Zhang, “SALMONN-omni: A codec-free LLM for full-duplex speech understanding and generation,” arXiv preprint arXiv:2411.18138 , 2024. [12] A. Papadopoulos Korfiatis, F. Moramarco, R. Sarac, and A. Savkov, “PriMock57: A dataset of primary care mock consultations,” in Proc. 60th Annu. Meeting Assoc. Comput. Linguistics (Short Papers) , 2022, pp. 588–598. [13] DeepSeek-AI, “DeepSeek-V4: Towards highly efficient million-token context intelligence,” 2026. [Online]. Available: https://arxiv.org/abs/ 2606.19348 [14] M. Heldner and J. Edlund, “Pauses, gaps and overlaps in conversations,” 
+
+Journal of Phonetics , vol. 38, no. 4, pp. 555–568, 2010. [15] T. Stivers, N. J. Enfield, P. Brown, C. Englert, M. Hayashi, T. Heine-mann, G. Hoymann, F. Rossano, J. P. de Ruiter, K.-E. Yoon, and S. C. Levinson, “Universals and cultural variation in turn-taking in conversation,” Proc. Natl. Acad. Sci. USA , vol. 106, no. 26, pp. 10 587– 10 592, 2009. [16] S. C. Levinson and F. Torreira, “Timing in turn-taking and its impli-cations for processing models of language,” Frontiers in Psychology ,vol. 6, p. 731, 2015. [17] H. Wang, S. Zheng, Y. Chen, L. Cheng, and Q. Chen, “CAM++: A fast and efficient network for speaker verification using context-aware masking,” in Proc. Interspeech , 2023, pp. 5301–5305. [18] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and I. Sutskever, “Robust speech recognition via large-scale weak super-vision,” in Proc. ICML , 2023, pp. 28 492–28 518. [19] A. Baevski, H. Zhou, A. Mohamed, and M. Auli, “wav2vec 2.0: A framework for self-supervised learning of speech representations,” in 
+
+Proc. NeurIPS , 2020, pp. 12 449–12 460. [20] H. Zen, V. Dang, R. Clark, Y. Zhang, R. J. Weiss, Y. Jia, Z. Chen, and Y. Wu, “LibriTTS: A corpus derived from LibriSpeech for text-to-speech,” in Proc. Interspeech , 2019, pp. 1526–1530. [21] H. Bredin, “pyannote.audio 2.1 speaker diarization pipeline: Principle, benchmark, and recipe,” in Proc. Interspeech , 2023, pp. 1983–1987.
