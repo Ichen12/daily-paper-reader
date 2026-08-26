@@ -1,0 +1,1469 @@
+Title: Don't Just Listen, Try Planning: Graph-based Retrieval-Generation Agent for Long-form Audio Meeting Understanding
+
+URL Source: https://arxiv.org/pdf/2608.24048v1
+
+Published Time: Wed, 26 Aug 2026 00:39:55 GMT
+
+Number of Pages: 28
+
+Markdown Content:
+## Don’t Just Listen, Try Planning: Graph-based Retrieval-Generation Agent for Long-form Audio Meeting Understanding 
+
+Quanwei Tang 1, Dong Zhang 1,2* * , Shoushan Li 1, and Guodong Zhou 1
+
+1School of Computer Science & Technology, NLP Lab, Soochow University, China 
+
+2Jiangsu Key Lab of Language Computing, Suzhou. 
+
+dzhang@suda.edu.cn 
+
+Abstract 
+
+While long-form audio meeting understanding (LAMU) is garnering growing attention, task-specific question answering (QA) datasets re-main scarce. Existing speech QA paradigms and state-of-the-art Speech LLMs suffer from acoustic information loss and poor long-term context memory. To address these issues, we construct the LongAudioQA dataset and pro-pose the GRGA model, which models heteroge-neous audio features into a multi-dimensional graph and leverages agent planning for retrieval and answer generation. GitHub for data and code. 
+
+1 Introduction 
+
+Long-form audio meeting understanding (LAMU) has attracted significant attention in speech process-ing. However, previous studies have only focused on transcription recognition for long-form multi-party meetings (Yu et al., 2022a,b; Jain et al., 2024). Consequently, there is a lack of dedicated question answering (QA) datasets for long audio meetings, despite the critical importance of this task. To ad-dress this gap, we construct the LongAudioQA 
+
+dataset for LAMU. Distinct from short-form con-versation QA, it is designed to capture three core dimensions of long-form audio meeting content: complex semantics, multi-speaker interactions, and quite long timestamps. Although existing Speech LLMs (KimiTeam et al., 2025; Xu et al., 2025a) have demonstrated strong performance across various tasks, they pri-oritize textual context by ASR over speech con-text (You et al., 2022; Lin et al., 2024). Specifically, these models typically map the input speech to the textual context, which inevitably leads to the loss of valuable acoustic information. For example, regard-ing the query “sudden loud voice at the 19-minute mark” in Figure 1, the inability to access voice 
+
+> *
+
+Corresponding Author: Dong Zhang What is the reason for the person's sudden loud voice at the 19-minute mark?                    
+
+> 01:30
+> The total price is $1,200. No hidden fees.
+> 04:15
+> Double-confirmed, $1,200 for the whole group.
+> 18:50
+> Wait, I just got the final invoice... it says we owe an extra $250 for 'Post-Stay Sanitation Services'.
+> 19:05
+> But said earlier that the rate was locked and flat!
+> 19:10
+> This is a scam! You both told us everything was covered!
+> Speech LLM (Long Context Lost in the Middle) shout at bacase rate was not locked. 01:30 04:15 18:50 19:05 19:10
+> Text LLM (No Acoustic Aware)
+> 01:30 04:15 18:50 19:05 19:10
+> The transcript does not indicate voice volume.
+> Text RAG (Context Fragmentation) is angry about a fee, but the reason is unclear.
+> Audio RAG (Semantic Ambiguity) The speaker is laughing loudly.
+> Timestamp Speaker Semantic shouted at 19 minute because the new $250 fee (18:50) contradicted the earlier promise of 'no hidden fees' (01:30).
+> Indexing
+> Tool Execution & Graph Traversal Reflection & Re-Planning Answer Synthesis Query & Initial Context
+> Sees 19:10| You both told... 19:05| But said ...
+> 01:30 19:10 19:05
+> Reflection: Need more about s’ utterence. Plan: Retrospective Search for + “rate/fee” 1234
+> 18:50
+> Our GRGA
+> Lost
+> Retrieved Text to Audio Retrieved Text to Audio
+> Speaker 1 Speaker 2 Speaker 3 Speaker 4 Speaker 5
+
+Figure 1: Existing Speech LLMs and our GRGA for long-form audio QA. By indexing conversations across 
+
+Semantic , Speaker , and Timestamp dimensions, our model enables precise reasoning. 
+
+volume prevents natural understanding and appro-priate response (as the result of Text LLM in the Figure). We denote this phenomenon as Acoustic Missing . Additionally, prior QA on speech con-versations has been exclusively centered on short-form audio clips or dialogues ( < 30s) (Johnson et al., 2024; Zhao et al., 2025; Hu et al., 2026). When applied to extremely long audio meetings, these methods fail to capture long-term dependen-cies. Let’s return to the query in Figure 1, we not only need to locate the content of the 19-minute timestamp, but also to trace the answer back to the description of 1:30 (as our GRGA). Without an explicit design for long-range semantic understand-ing, even RAG approaches (Tang et al., 2025; Li et al., 2025; Wang et al., 2024) fail to identify the correct rationale (as Text RAG). We designate this phenomenon as Context Fragmentation .To address these challenges, we propose the Graph-based Retrieval-Generation Agent ( GRGA )model. Specifically, we first model heterogeneous features from the audio, including not only acoustic arXiv:2608.24048v1 [cs.SD] 25 Aug 2026 information (e.g., voice and tone) but also many speaker attributes (e.g., role: project manager, gen-der: male), into a unified multi-dimensional graph structure. Then, we leverage agent planning to retrieve question-relevant clues from this multi-dimensional graph and generate the final answer. In summary, we contribute: 
+
+• We design and construct the novel dataset Lon-gAudioQA for LAMU. 
+
+• We propose GRGA to handle both acoustic missing and context fragmentation. 
+
+• We conduct both automatic and human evalua-tion on three datasets of our LongAudioQA. 
+
+2 Dataset Construction 
+
+Existing speech QA benchmarks (Zhifei et al., 2025) predominantly focus on short-context span extraction or simple intent classification. They often treat the dialogue as a flat sequence of text, neglecting the intricate graph-like structure of meeting interactions (e.g., speaker turns, cross-references, and temporal dynamics). Consequently, current models are rarely tested on their ability to perform multi-hop reasoning or temporal ground-ing over long-form recordings. For instance, an-swering a question like “How did the speaker’s attitude change after the 30-minute discussion?” requires a model to not only localize information but also aggregate evidence across distinct time slices and model the causal dependencies between nodes. Therefore, we propose our LongAudioQA .
+
+2.1 Data Selection and Collection 
+
+We mainly construct the speech question-answer pairs from the following raw dataset: 
+
+AliMeeting. AliMeeting (Yu et al., 2022a,b) is a large-scale Mandarin speech dataset tailored for multi-speaker meeting ASR and SD. A distin-guishing feature of this corpus is the simultaneous recording of overlapping far-field audio and indi-vidual near-field references. This setup is designed to address the “who said what when” problem, test-ing the model’s ability to handle speaker overlap and diarization in complex settings. 
+
+AMI Meeting. The AMI Conference Cor-pus (Jain et al., 2024) consists of meeting audio recordings captured using far-field microphones, primarily capturing interactions among non-native English speakers. It is characterized by acous-tic complexity, presenting significant challenges commonly encountered in real conference settings, such as background noise and reverberation issues. 
+
+DailyTalk. In contrast to the aforementioned conference-centric corpora, DailyTalk (Lee et al., 2022) focuses on high-quality open-domain dyadic conversations. This corpus comprises 2,541 dia-logues. DailyTalk provides clean acoustic environ-ment with an emphasis on conversational fluency and prosodic features. We concatenated 20 clips to create inputs of intermediate length ( <10 min-utes). While shorter than full meetings, this dura-tion serves to ensure our method performs well on longer audio segments while maintaining effective-ness on shorter ones. 
+
+2.2 Question Definition and Data Annotation 
+
+To bridge the gap, we constructed a novel dataset designed to expand the boundaries of long-form meeting understanding. Unlike existing research that relies solely on factual retrieval, our dataset introduces a diversified question taxonomy, encom-passing factual, inferential, temporal, and acoustic-aware as shown in Table 1). This design enables us to systematically evaluate models’ ability to transition from explicit pattern matching to ad-vanced semantic reasoning within complex inter-action graphs. Following methodologies for auto-mated data annotation using LLMs (Lian et al., 2025a,b), we employ a hybrid strategy combining large language model-driven automated annotation with human-assisted verification. Specifically, this approach leverages large language models to gen-erate questions from specific local segments of raw conference data based on predefined query types and examples. The models then search conference content for answers and extract detailed evidence. This process is iterative: each batch of generated question-answer pairs undergoes human verifica-tion to ensure quality before advancing to the next iteration. While the generation process leverages an “oracle” mechanism to access localized evidence, the core challenge of this study lies in retrieving answers from global, long-context conference data without prior knowledge of relevant segments. This evaluates the model’s ability to overcome context fragmentation. 
+
+2.3 Dataset Quality Control 
+
+Given that automated generation inevitably intro-duces noise, we enforce a rigorous verification pro-tocol to ensure data reliability. Expert annotators inspect candidate samples to discard hallucinated questions (where answers are absent), rewrite am-Category Core Competency Subtasks & Example Queries Factual Explicit Retrieval • Entity Retrieval: “Who mentioned the project code ‘Alpha’?” 
+
+• Attribute Association: “What is the budget proposed by the Manager?” 
+
+• Keyword Locating: Matching specific text spans. 
+
+Inferential Multi-hop Reasoning • Causal Inference: Linking a problem raised early with the final decision. 
+
+• Coreference Resolution: Identifying what “that plan” refers to. 
+
+• Stance Analysis: Tracking how a speaker’s attitude evolves. 
+
+Temporal Time Awareness • Absolute Localization: “What topic was discussed at the 30-min mark?” 
+
+• Relative Sequencing: “What was discussed after ‘market research’?” 
+
+• Frequency Stats: Counting term occurrences in a window. 
+
+Summarization Aggregation • Topic Summarization: Synthesizing consensus on “backend architecture”. 
+
+• Speaker Profiling: Summarizing a participant’s main contributions. 
+
+Acoustic-Aware Multi-modal Alignment • Emotion & Intensity: “Who seemed most agitated when discussing the budget?” 
+
+• Cross-modal Localization & Causal: “What is the reason for the person’s sudden loud voice at the 15-minute mark?” 
+
+Table 1: Taxonomy of Meeting Questions in our LongAudioQA. Categories are distinguished by background colors: Factual , Inferential , Temporal , Summarization , and Acoustic-Aware . The Acoustic-Aware category uniquely requires grounding textual semantics with paralinguistic acoustic signals.                     
+
+> Dataset Dur (h) Avg. Dur (s) Avg. Turns # Q&A # Dial.
+> AliMeeting 14.91 1,935 815 3,013 28 AMI 18.24 1,930 757 3,243 34 DailyTalk 21.59 610 186 10,200 128
+
+Table 2: Statistical information among DailyTalk, AMI, and AliMeeting datasets. Dur : Duration, Avg : Average. 
+
+biguous references, and validate logic depth (hop count) to ensure complexity balance. Specifically, we require that the generated timestamp evidence yields an Intersection-over-Union (IoU) of > 0.9
+
+with the ground truth. This process results in a high-quality dataset with a human inter-annotator agreement rate of κ = 0 .91 (Cohen’s Kappa). Fi-nally, the duration and sample statistics of our Lon-gAudioQA, along with the question distribution, are summarized in Table 2 and Figure 2. AliMeeting AMI DailyTalk 020 40 60 80 100          
+
+> Percentage (%)
+> 38.0% 37.0% 19.3% 27.8% 29.1% 19.2% 19.5% 15.5% 23.2% 8.2% 9.6% 19.2% 6.5% 8.8% 19.2%
+> Factual Inferential Acoustic Summarization Temporal
+
+Figure 2: Question Distribution Across Corpora 
+
+3 Methodology 
+
+The core challenge in long-form audio QA lies in handling composite queries that involve semantic, temporal, and speaker relationships. Existing meth-ods often rely on “one-shot” retrieval, which fails to capture the intricate dependencies in meeting data. To address this, we propose a novel Graph-based Retrieval-Generation Agent ( GRGA ) that mimics the cognitive process of a human expert: it does not merely search, but rather plans and reflects .
+
+Cognitive Inspiration. To design an effective agent, we draw inspiration from the cognitive strate-gies human experts employ to navigate complex meetings. We observe that resolving composite queries typically adheres to a “Search-Reason-Verify” cognitive loop, which adapts dynamically to the query type. For instance, in factual tasks (e.g., verifying budget details), humans execute a targeted keyword scan followed by contextual verification—a mechanism we emulate through re-trieval tools. Conversely, inferential tasks (e.g., discerning the rationale behind a rejection) necessi-tates maintaining working memory while travers-ing causal chains. Similarly, humans naturally con-struct a mental timeline to address temporal queries ,whereas summarization involves synthesizing frag-mented details into high-level concepts. Conse-quently, we architect our agent to replicate these cognitive behaviors by incorporating a Planner Why did Speaker 3 express sadness when saying “well i hope so” at approximately 24 seconds? Speaker 3 expression of sadness approximately 24 seconds {"speaker_id": 3} utterance 'well i hope so' 
+
+> Speaker Timestamp Tempral Edge SameSpeaker EntityEdge ReplayTo Reference SemanticEdge Semantic Multi-hop Reasoning path
+
+Query Decomposer Execution Planner Self-Reflector Answer Synthesizer Tool Executor Multi-dimensional Graph Long Audio User Query    
+
+> keyword_search semantic_search time_range_search filter_by_speaker Evidence Set Insufficent Feedback
+> Re-Plan & Update Belief
+> 1. time_range_search, args={'start_time': 23, 'end_time': 25} 2. filter_by_speaker, args={'nodes': '$0', 'speaker_id': 3} 3. semantic_search, args={'term': 'well i hope so'} Executable Plan utterance_id='convEN2002a_utt11', transcript='HAS ANYBODY DONE ANYTHING ?', speaker_id=3, time_range=(19.02, 23.39), source='step_0' Evidence
+> ...
+> ...
+> ...
+> ... Speaker 3 were asking another participant to confirm if a proposed 'hosting party' had worked out. The sad emotion arises when the other participant gives the non-committal response "not a lot" [convEN2002a_utt12], causing Speaker 3 to realize their plan has failed and they will not be able to have the hosting party. convEN2002a_utt12 convEN2002a_utt8 convEN2002a_utt3 ...
+> Coverage Consistency Reliablity Question Answer Citation Score=2
+> The evidence does not support the claim 'hosting party'. Speaker 3 has been seeking confirmation. The slightly disheartened or sad tone fits this context of seeking validation, not a disappointment about a party. Furthermore, the 'hosting party' idea is not mentioned in the evidence.
+> Answer Citation Critique Indexing
+
+Figure 3: The overall architecture of our graph-based retrieval-generation agent GRGA . The framework models long-form audio as a Multi-dimensional Graph (bottom-left) to capture semantic, temporal, and speaker dependencies. Our GRGA Planning Process consists of: Query Decomposition , Planning , Execution , Synthesis , and Reflection .
+
+for logical orchestration, a Synthesizer module for holistic information aggregation, and a Self-Reflector for answer verification. 
+
+3.1 Problem Formulation 
+
+We formulate the task as a Partially Observ-able Markov Decision Process (POMDP) (Lauri et al., 2023a), defined by the tuple M =
+
+⟨S , A, T , R, Ω, O, γ ⟩. The pre-constructed multi-dimensional graph G serves as the environment with which the agent interacts. 
+
+Belief State ( bt) & Policy ( π): The belief state 
+
+bt, represented by the query Q and interaction history Ht, serves as the sufficient statistic for decision-making. We leverage a pre-trained LLM as the policy π(at | bt). Implemented via the Query Decomposer and Execution Planner , the policy uti-lizes in-context reasoning to determine the next optimal action without parameter updates. 
+
+Action ( A) & Observation ( Ω): The action space A comprises topological retrieval operations. The Tool Executor executes at on G, yielding a partial observation ot ∈ Ω (e.g., specific acoustic cues or semantic nodes), which updates bt.
+
+Reward ( R): The Self-Reflector acts as a veri-fier, providing a heuristic reward rt. It evaluates whether ot aligns with the reasoning chain, prompt-ing the planner to prune incorrect paths or terminate generation. Since the model is training-free, our objective is to approximate the optimal trajectory τ ∗ =
+
+{b0, a 0, . . . , a T } that maximizes the reliability of the final answer. The process terminates when the 
+
+Answer Synthesizer determines that sufficient evi-dence is gathered ( rt > threshold) or the maximum step limit is reached. Figure 3 illustrates our frame-work. 
+
+3.2 Audio-to-Graph Indexing 3.2.1 Acoustic Semantic Alignment 
+
+To initialize the graph nodes, we transform the continuous audio stream into discrete, semantically meaningful units with precise temporal boundaries. 
+
+VAD and Transcription. We employ FSMN-VAD to segment audio A into clips, filtering si-lence. These clips are transcribed by a high-fidelity ASR model to obtain text T . We apply CTC-based Forced Alignment: for each token wi, we perform constrained Viterbi decoding to align text with acoustic features, yielding exact boundaries 
+
+[tstart , t end ].
+
+Speaker Diarization. Identifying “who spoke” is insufficient; understanding “who they are” (e.g., role, stance) is key to reasoning. We propose a mul-timodal profiling mechanism. We extract speaker embeddings using ERes2NetV2 and perform incre-mental clustering. If the cosine similarity between a new embedding and existing clusters is below a threshold η = 0 .8, a new speaker ID is created. 
+
+Semantic Role Generation. A raw ID (e.g., 
+
+Speaker_0 ) lacks semantic context. We construct a Speaker Profile Pk for each unique speaker Sk.We aggregate all utterances belonging to Sk and prompt an LLM to distill attributes: 
+
+Pk = LLM (Concat ({vi.text | vi.spk = Sk})) 
+
+(1) The output is a structured profile, e.g., {Role: Project Manager, Gender: Male, Stance: Conservative} . This profile is stored as a node attribute. 
+
+3.2.2 Multi-dimensional Graph Modeling 
+
+Beyond the raw meeting transcripts, we also incor-porate the acoustic features (e.g., speaker identity, start/end timestamps, and corresponding speech) and explicitly model the dialogue flow as a hetero-geneous graph G = ( V, E).
+
+Nodes ( V): Each utterance is treated as a funda-mental node vi, enriched with attributes including text transcripts, speaker identity, start/end times-tamps, and corresponding speech, etc. 
+
+Edges ( E): To support the diverse reasoning tasks, we construct multiple edge types: (1) Temporal Edges ( etemp ) connecting adjacent utterances ( vi → vi+1 ); (2) Reply-To Edges ( ereply ): Captures conversa-tional turns. We establish a directed edge vi → vj
+
+if vj occurs within a dynamic window ∆t < 5s
+
+after vi and speakers are different; (3) SameSpeaker Edges ( espk ) Connects nodes 
+
+vi, v j where spk (vi) = spk (vj ). This enables the agent to aggregate scattered opinions of a specific person; (4) Entity Edges ( eent ) derived from entity key-word co-occurrence or discourse relations. (5) Semantic Edges ( esem ) To solve context for-getting, we employ an LLM to detect coreference chains. If vj contains pronouns (e.g., “that idea”) referring to an entity in vi, we create a semantic link vj sem 
+
+−−→ vi.
+
+3.3 GRGA Planning Process Belief Initialization: Query Decomposition. 
+
+Given a user query Q, the belief state is initial-ized by projecting the unstructured query into a structured constraint space C. We define the de-composition function fdec : Q → C as: 
+
+C = fdec (Q) = {ce, c c, c t, c m} (2) where ce, c c, c t, c m denote constraints on entities ,
+
+concepts , time , and metadata , respectively. The initial belief is set as b0 = H0 = {Q, C} .
+
+Policy Network: Execution Planning. The Exe-cution Planner approximates the policy πθ param-eterized by an In-Context Learning (ICL ) (Dong et al., 2024) guided LLM. At step t, it generates a multi-step plan Pt conditioned on the current belief 
+
+bt:
+
+Pt ∼ πθ(· | bt) (3) The plan Pt is a sequence of atomic operations derived from the Action Space A (see Table 11): 
+
+Pt = [ op 1, op 2, . . . , op k], op i ∈ A (4) This formulation enables long-horizon planning ,allowing the agent to chain logical operations (e.g., 
+
+Search → Filter ) before interacting with the en-vironment. 
+
+Environment Interaction: Tool Execution. The Execution Engine functions as the transition inter-face. It executes the plan Pt on the graph G to obtain an observation ot:
+
+ot = Exec (Pt, G) = {s1, s 2, . . . , s n} (5) where each segment si = (text i, time i, spk i).Upon receiving ot, the agent updates its belief state via a deterministic transition function ψ:
+
+bt+1 = ψ(bt, Pt, o t) = bt ⊕ {P t, o t} (6) 
+
+Reward Estimation: Synthesis & Reflection. 
+
+To guide the reasoning trajectory refinement, we employ a two-stage mechanism as reward function. 1) Answer Synthesis. The synthesizer generates a candidate answer ˆAt and citations Cite t based on the accumulated evidence in bt+1 :
+
+( ˆAt, Cite t) = fsyn (Q, b t+1 ) (7) 2) Reflection as Sparse Reward. The Reflector evaluates the logical entailment between the evi-dence E ⊂ bt+1 and the answer ˆAt, assigning a verification score sver ∈ [0 , 1] :
+
+sver = fref (Q, ˆAt, E ) (8) The reward rt is defined as a threshold function: 
+
+rt =
+
+(
+
+1 if sver ≥ τ (Success, Terminate )
+
+−β if sver < τ (Failure, Re-plan )
+
+(9) If rt < 0, the negative feedback f b t (critique) is injected into the belief state: bt+1 ← bt+1 ∪ { f b t},prompting the policy π to generate a corrective plan 
+
+Pt+1 in the next iteration. 
+
+4 Experimentation 
+
+To validate the effectiveness of our GRGA, we con-duct extensive experiments on our LongAudioQA dataset. Method AliMeeting AMI Meeting DailyTalk Fact. Infer. Temp. Summ. Acou. Fact. Infer. Temp. Summ. Acou. Fact. Infer. Temp. Summ. Acou.                                                                                                                                        
+
+> Speech as Context
+> Qwen3-Omni 29.31 27.33 15.81 19.06 16.50 20.96 26.38 15.12 16.67 12.15 34.26 38.43 2.43 2.11 9.39 Audio Flamingo 3 35.70 35.23 13.19 18.09 32.89 16.04 27.94 12.62 10.24 17.06 65.13 61.31 3.83 2.44 40.09 MiMo-Audio 54.50 54.50 16.92 39.91 25.15 52.75 64.74 35.34 38.30 17.17 81.57 78.65 5.58 3.46 31.44
+> Transcription as Context
+> Qwen3-Omni 47.66 63.53 38.34 32.65 11.70 53.55 46.66 37.32 43.63 14.13 80.11 77.14 62.71 15.71 18.27 Audio Flamingo 3 32.12 45.16 28.23 21.06 9.69 48.52 40.21 22.12 29.16 12.36 76.43 75.26 58.32 13.42 15.85 MiMo-Audio 48.02 64.62 38.29 29.43 15.72 53.62 44.10 37.14 41.49 17.94 80.67 76.16 62.46 15.35 17.52
+> Both Speech and Transcription as Context with RAG
+> BGE-M3 43.24 29.68 31.56 15.43 18.45 32.56 24.56 23.78 25.36 25.34 46.72 36.31 32.46 34.79 26.21 CLASP 25.37 19.54 18.92 14.76 16.32 24.12 20.31 22.76 11.60 14.79 30.58 33.42 27.34 13.52 11.81 GRGA(ours) 57.31 66.45 39.48 44.29 39.91 59.46 65.29 38.56 48.46 35.68 85.25 79.06 63.58 61.10 52.32
+
+Table 3: Main results on accuracy (%). We compare our proposed method against End-to-End Speech LLM and standard RAG baselines across three datasets. Bold indicates the best performance. Fact. : Factual, Infer. : Inferential, 
+
+Temp. : Temporal, Summ. : Summarization, Acou. : Acoustic reasoning. 
+
+4.1 Baselines and Implementation 
+
+First, we compare three recent most competi-tive multi-modal LLMs: Qwen3-Omni (Xu et al., 2025a), Audio Flamingo 3 (Goel et al., 2025), and MiMo-Audio (Xiaomi, 2025), which are con-sidered as SOTAs for speech or spoken text QA. Therefore, we implement them in two forms: 1) use whole meeting Speech as Context and 2) use whole meeting Transcription as Context .Second, we investigate two tailored RAG approaches for audio QA: BGE-M3 (Chen et al., 2024a) retrieving meeting text through a query, then merging the retrieved text and cor-responding audio into the model (TextRAG) and 
+
+CLASP (Abootorabi and Asgari, 2025), which are also considered as the SOTAs for RAG-based au-dio QA, retrieving meeting audio through a query, then merging the retrieved audio and corresponding text into the model (AudioRAG). They cast both meeting Speech and Transcription as Context .Notably, both of them adopt the same LLMs as ours to implement. More details of our GRGA and above baselines can refer to Appendix G. 
+
+4.2 Evaluation Metric 
+
+To rigorously assess the reasoning capabilities of our model, we report Semantic Accuracy across all datasets. Traditional n-gram metrics (e.g., BLEU, Exact Match) often fail to capture the true validity of generated responses, as they pe-nalize correct answers that differ in lexical surface forms from the ground truth. Drawing upon recent methodologies in complex reasoning evaluation (Mishra et al., 2025; Shui et al., 2023), we move beyond rigid string matching and establish a ro-bust, automated evaluation pipeline that prioritizes semantic equivalence and logical soundness. Specifically, we employ a high-capability LLM (LLM-as-a-Judge) to approximate human-level judgment. Formally, let D = {(qi, a i)}Ni=1 denote the evaluation dataset, where qi is the query and 
+
+ai is the ground-truth answer. Let ˆai represent the model-generated response. We define a semantic judgment function J , parameterized by an external expert model (e.g., GPT-OSS-120B (OpenAI et al., 2025)): 
+
+si = J (qi, a i, ˆai) ∈ { 0, 1}, (10) where si = 1 if and only if J determines that ˆai
+
+entails the same semantic information as ai, and 
+
+0 otherwise. The judge is prompted to disregard stylistic differences and focus solely on factual con-sistency and the correctness of reasoning. Finally, the Semantic Accuracy is computed as the expecta-tion of correct judgments: Accuracy = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+si × 100% . (11) This approach ensures a fair comparison by val-idating whether the model successfully retrieves and reasons over the core knowledge, regardless of its output phrasing. 
+
+4.3 Main Results 
+
+Table 3 shows the performance comparison of all baselines of our GRGA on our proposed three Dataset WER (↓) DER (↓)
+
+Collar = 0 s Collar = 0.25 s 
+
+DailyTalk 0.85 6.42 3.41 AliMeeting-far 20.38 16.80 13.10 AMI-sdm 18.84 17.60 14.90 
+
+Table 4: Error analysis on benchmark datasets. We report Word Error Rate (WER) and Diarization Error Rate (DER) under strict ( 0 s) and standard ( 0.25 s) collar (tolerance ) settings. All metrics are reported in percent-age (%), and ↓ denotes that lower values are better. Corr. Grd. Coh. Corr. Grd. Coh. Corr. Grd. Coh. 1.0 1.5 2.0 2.5 3.0 3.5 4.0 4.5 5.0    
+
+> Human Rating (1–5)
+> 1.79 2.25 2.12 3.25 3.76 4.35 1.93 2.36 2.24 3.51 4.32 4.37 3.43 4.11 3.72 4.23 4.12 4.37
+> AMI (IAA=0.78) AllMeeting (IAA=0.75) DailyTalk (IAA=0.82)
+> Qwen3-Omni Ours
+
+Figure 4: Human evaluation results. Our method shows significant improvements, particularly in Ground-edness across complex meeting scenarios. 
+
+datasets for Long-form speech meeting understand-ing. From this table, we can see: 
+
+Overcoming Context Limitations. End-to-End Speech LLMs (e.g., Qwen3-Omni) degrade sharply on long-form datasets, with AudioFlamingo3 drop-ping from ∼ 65% on DailyTalk to ∼ 16% on AMI. This confirms that fixed context windows hinder reasoning in long-form audio. Conversely, our GRGA maintains robust performance, outper-forming the strongest baseline (MiMo-Audio) on AMI, validating the scalability of our graph-based retrieval beyond context limits. 
+
+Planning vs. Naive Retrieval. Comparisons with RAG baselines highlight the failure of “one-shot” retrieval. Text RAG, while effective for fac-tual questions, struggles significantly with infer-ential questions ( 24 .6% vs. ours 65 .3% on AMI). This proves that vector similarity alone cannot cap-ture multi-hop dependencies. Our Query Planner bridges this gap by decomposing queries into log-ical chains. Additionally, the poor performance of Audio RAG ( ∼ 20% ) indicates that raw acous-tic retrieval is too noisy, justifying our use of a structured graph intermediate. 
+
+4.4 Analysis and Discussion Human Evaluation. As illustrated in Figure 4, our method consistently outperforms Qwen3-Omni 20 30 40 50 60 70 80 90 
+
+> Recall (%)
+> 20 30 40 50 60 70 80 90
+> Precision (%)
+> F1=30 F1=40 F1=50 F1=60 F1=70 F1=80 F1=90 Method Qwen3-Omni + Text RAG + Audio RAG + Ours Dataset DailyTalk AMI AliMeeting
+
+Figure 5: Citation Precision-Recall Trade-off . Results are reported in % with a ±2s tolerance. 
+
+across all datasets and metrics. Notably, the most substantial gap appears in Groundedness (e.g., 
+
++1.27 on AllMeeting). While the baseline gen-erates fluent text (high Coherence), it frequently lacks evidentiary support in multi-party dialogues. Our superior grounding directly translates to higher 
+
+Correctness , confirming that precise temporal an-choring effectively reduces factual errors. 
+
+Upstream Performance Analysis. Table 4 high-lights the noise disparity across datasets. DailyTalk serves as a clean baseline with minimal errors (WER 0.85% ). Conversely, AMI and AliMeeting present high noise rates, with WERs ∼ 20% and DERs > 13% . Despite these significant upstream errors in transcription and diarization, our GRGA maintains high QA accuracy (Table 3), demonstrat-ing the robustness of our iterative planning and reflection mechanisms against noisy inputs. 
+
+Evidence Recall & Precision Analysis. To as-sess the model’s ability to locate supporting evi-dence, we report the Precision (P) and Recall (R) of generated citations (timestamps) against ground truth spans (with a ±2s tolerance) in Figure 5 and Table 7. Our GRGA significantly outperforms base-lines across all datasets. Specifically, compared to standard Text RAG, our method improves Preci-sion by +19 .3% on AMI and +6 .7% on AliMeet-ing. This indicates that our Query Planner effec-tively filters out irrelevant noise, while the Reflec-tion mechanism ensures that retrieved segments are strictly relevant to the answer, minimizing hal-lucinated citations common in naive retrieval ap-proaches. 
+
+Ablation Study To validate the necessity of each component in our GRGA, we conduct an ablation study on the AMI dataset as a typical example in Table 5. From this table, we can see that removing any module results in varying degrees of perfor-Ablation Settings Overall AMI Avg. ∆ Fact. Infer. Temp. Summ. Acou. Ours (Full) 49.49 - 59.46 65.29 38.56 48.46 35.68                                                  
+
+> Validation of Query Decomposer
+> w/o Query Planner 46.39 -3.10 57.63 59.35 36.79 45.73 32.43
+> Validation of Query Planner
+> w/o Query Planner 44.68 -4.80 56.12 56.35 36.41 43.18 31.37
+> Validation of Reflection
+> w/o Reflection 39.64 -9.84 51.32 49.52 31.10 39.83 26.45
+> Validation of Action Space
+> w/o Tool: Filtering 43.69 -5.79 57.81 62.27 35.36 41.45 28.58 w/o Tool: Semantic Search 16.28 -33.21 28.96 16.38 12.21 13.69 10.15 w/o Tool: Graph Traversal 38.21 -11.27 45.57 38.62 32.31 41.25 33.31 w/o Tool: Audio Access 34.71 -14.78 47.52 49.12 33.13 31.71 12.06
+
+Table 5: Ablation study on the AMI dataset. We report the accuracy (%) drop when specific components are removed. ∆: Performance degradation compared to the full framework. 
+
+mance degradation for our GRGA. Especially, the results of w/o Semantic Search demonstrate that our approach can indeed solve the semantic understand-ing problem in long-form speech meeting scenario. The removal of Graph Traversal indicates the im-portance of our designed multi-dimensional graph. More analysis can be found in Appendix 6. 
+
+Step Analysis can be found in Appendix C. 
+
+Case Study can be found in Appendix D. Noise Sensitivity Analysis can be found in Appendix E. 
+
+5 Related Work 
+
+Speech and Meeting Question Answering. Early research in speech QA primarily focused on ex-tracting answer spans from short, single-speaker 
+
+speech segments, such as Spoken SQuAD (Li et al., 2018) and HeySQuAD (Wu et al., 2023). They nor-mally focus on answering ranking (Hu et al., 2026), instead of generative QA. While recent datasets like AMI (Jain et al., 2024) and AliMeeting (Yu et al., 2022a) provide rich multi-speaker meeting resources, they are predominantly used for ASR and diarization tasks rather than complex reason-ing. Existing QA models on these datasets often treat transcripts as flat text sequences, neglecting the intricate temporal and interpersonal dependen-cies inherent in meetings. In contrast, our work targets long-form meeting comprehension , requir-ing models to navigate graph-structured dialogues involving multiple speakers and temporal dynam-ics. 
+
+Large Speech Language Models. Recent ad-vancements in multi-modal LLMs have enabled direct processing of audio inputs. However, current Speech LLMs face significant limitations in context length. For instance, Kimi-Audio (KimiTeam et al., 2025) is optimized for short clips ( < 30 s) and suf-fers from truncation issues with longer inputs. Even state-of-the-art models like AudioFlamingo3 (Goel et al., 2025) are typically constrained to context of approximately 10 minutes. This bottleneck renders them unsuitable for long-form meeting analysis in the absence of external retrieval mechanisms. 
+
+Retrieval-Augmented Generation (RAG). 
+
+RAG has emerged as a standard paradigm for grounding LLMs in external knowledge (Lewis et al., 2020). Traditional “Retrieve-then-Generate” approaches rely on dense vector similarity to re-trieve relevant contexts in a single pass. However, these methods struggle with multi-hop reasoning ,where the evidence is fragmented or requires logi-cal deduction steps not captured by semantic sim-ilarity alone (Liu et al., 2025; Tang et al., 2025). Recent works have explored recursive retrieval or chain-of-thought prompting to address these lim-itations. Our framework advances this paradigm by formalizing retrieval as an iterative planning process , specifically tailored to handle the noisy and unstructured nature of ASR transcripts. 
+
+LLM Agents and Tool Using. The emergence of LLMs has catalyzed the development of au-tonomous agents capable of using tools to solve complex tasks, exemplified by frameworks like ReAct (Yao et al., 2023) and Toolformer (Schick et al., 2023). While these agents demonstrate pro-ficiency in open-domain tasks (e.g., web brows-ing, math) (Zhang et al., 2025), their application to structured audio understanding remains un-derexplored. We bridge this gap by defining a specialized Action Space for meeting analysis (e.g., time_range_search, hybrid_search) and in-corporating a Reflection mechanism modeled as a POMDP (Lauri et al., 2023b), enabling the agent to self-correct in partially observable audio envi-ronments. 
+
+6 Conclusion 
+
+We present GRGA , an agentic framework that ad-dresses the acoustic missing and context forget-ting issues in long-form speech understanding. By structuring audio into a multimodal heterogeneous graph and formulating QA as a POMDP, we en-able an agent to explicitly plan, navigate, and rea-son over complex interactions. Extensive exper-iments on our proposed LongAudioQA bench-marks demonstrate that our GRGA significantly outperforms both end-to-end Speech-LLMs and RAG-based SOTAs. 
+
+Acknowledgements 
+
+This work was supported by Jiangsu Province Fron-tier Program Project (BF2025036), and Hong Kong RGC grant GRF #15611021. They are also with Jiangsu Key Lab of Language Computing, Suzhou. 
+
+Limitations 
+
+Our work has three main limitations. (1) Error Propagation: Since graph construction relies on upstream ASR and diarization, severe acoustic noise or speaker overlap may introduce artifacts into the reasoning graph. (2) Inference Latency: The iterative agentic workflow (planning and reflection) incurs higher computational cost than single-turn RAG, limiting real-time deployment. (3) Domain Specificity: Our evaluation focuses on structured meetings; generalizing to unstruc-tured domains like movies or vlogs remains future work. 
+
+Ethics Statement 
+
+Dataset Sourcing and Compliance. Our dataset is constructed based on three existing public cor-pora: AliMeeting (Yu et al., 2022a), AMI Meeting Corpus (Jain et al., 2024), and DailyTalk (Lee et al., 2022). We strictly adhere to the original licensing terms of these datasets (e.g., Creative Commons BY-NC-SA 4.0 and Apache License 2.0). We have reviewed the source data to ensure that no Per-sonally Identifiable Information (PII) beyond what was originally consented to by the participants is exposed. For the AMI corpus, we utilize the spe-cific split intended for academic research involving simulated scenarios, minimizing privacy risks asso-ciated with real-world private meetings. 
+
+Human Annotation and Fair Compensation. 
+
+We employ highly qualified graduate students as annotators. We ensured that all participants were compensated at a rate significantly above the local minimum wage (approximately $5 per hour), re-specting fair labor standards. We also implemented strict protocols to protect annotators from exposure to any potentially harmful or offensive content, al-though the source datasets are generally free of such material. 
+
+Mitigation of LLM Bias and Hallucination. 
+
+We acknowledge that utilizing Large Language Models (LLMs) for data generation may intro-duce inherent biases or hallucinations. To miti-gate this, our human-in-the-loop pipeline strictly enforces factual consistency checks. We explicitly instructed annotators to discard questions that re-inforce stereotypes or rely on hallucinated events not present in the audio. The high inter-annotator agreement ( κ = 0 .95 ) suggests that our verification process effectively filters out low-quality or biased generations. 
+
+Potential Societal Impact. The technology pro-posed in this paper aims to enhance productivity and accessibility by structuring long-form audio. However, we recognize the potential dual-use risk regarding unauthorized surveillance or privacy in-trusion in workplace settings. We strongly advocate that the deployment of such meeting analysis tools must be accompanied by transparent consent from all recorded parties and robust data encryption mea-sures. This dataset is released solely for research purposes to advance the field of interpretable audio understanding. References 
+
+Mohammad Mahdi Abootorabi and Ehsaneddin Asgari. 2025. Clasp: Contrastive language-speech pretrain-ing for multilingual multimodal information retrieval. In Advances in Information Retrieval: 47th European Conference on Information Retrieval, ECIR 2025, Lucca, Italy, April 6–10, 2025, Proceedings, Part IV ,page 10–20, Berlin, Heidelberg. Springer-Verlag. Jianlv Chen, Shitao Xiao, Peitian Zhang, Kun Luo, Defu Lian, and Zheng Liu. 2024a. Bge m3-embedding: Multi-lingual, multi-functionality, multi-granularity text embeddings through self-knowledge distillation. 
+
+Preprint , arXiv:2402.03216. Yafeng Chen, Siqi Zheng, Hui Wang, Luyao Cheng, Qian Chen, Shiliang Zhang, and Junjie Li. 2024b. Eres2netv2: Boosting short-duration speaker veri-fication performance with computational efficiency. 
+
+Preprint , arXiv:2406.02167. Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Mar-cel Blistein, Ori Ram, Dan Zhang, Evan Rosen, Luke Marris, Sam Petulla, Colin Gaffney, Asaf Aharoni, Nathan Lintz, Tiago Cardal Pais, Henrik Jacobs-son, Idan Szpektor, Nan-Jiang Jiang, and 3416 oth-ers. 2025. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. Preprint ,arXiv:2507.06261. Qingxiu Dong, Lei Li, Damai Dai, Ce Zheng, Jingyuan Ma, Rui Li, Heming Xia, Jingjing Xu, Zhiyong Wu, Baobao Chang, Xu Sun, Lei Li, and Zhifang Sui. 2024. A survey on in-context learning. In Proceed-ings of the 2024 Conference on Empirical Methods in Natural Language Processing , pages 1107–1128, Miami, Florida, USA. Association for Computational Linguistics. Arushi Goel, Sreyan Ghosh, Jaehyeon Kim, Sonal Ku-mar, Zhifeng Kong, Sang gil Lee, Chao-Han Huck Yang, Ramani Duraiswami, Dinesh Manocha, Rafael Valle, and Bryan Catanzaro. 2025. Audio flamingo 3: Advancing audio intelligence with fully open large audio language models. In NeurIPS 2025 : Annual Conference on Neural Information Processing Sys-tems . NeurIPS. Jiliang Hu, Zuchao Li, Baoyuan Qi, Liu Guoming, and Ping Wang. 2026. End-to-end contrastive language-speech pretraining model for long-form spoken ques-tion answering. In AAAI 2026 .Aditya Jain, Fagner Cunha, Michael James Bunsen, Juan Sebastián Cañas, Léonard Pasi, Nathan Pinoy, Flemming Helsing, JoAnne Russo, Marc Botham, Michael Sabourin, Jonathan Fréchette, Alexan-dre Anctil, Yacksecari Lopez, Eduardo Navarro, Filonila Perez Pimentel, Ana Cecilia Zamora, José Alejandro Ramirez Silva, Jonathan Gagnon, Tom Au-gust, and 9 others. 2024. Insect identification in the wild: The ami dataset. Preprint , arXiv:2406.12452. Alexander Johnson, Peter Plantinga, Pheobe Sun, Swa-roop Gadiyaram, Abenezer Girma, and Ahmad Emami. 2024. Efficient SQA from long audio con-texts: A policy-driven approach. In 25th Annual Conference of the International Speech Communi-cation Association, Interspeech 2024, Kos, Greece, September 1-5, 2024 .KimiTeam, Ding Ding, Zeqian Ju, Yichong Leng, Songxiang Liu, Tong Liu, Zeyu Shang, Kai Shen, Wei Song, Xu Tan, Heyi Tang, Zhengtao Wang, Chu Wei, Yifei Xin, Xinran Xu, Jianwei Yu, Yutao Zhang, Xinyu Zhou, Y. Charles, and 21 others. 2025. Kimi-audio technical report. Preprint , arXiv:2504.18425. Mikko Lauri, David Hsu, and Joni Pajarinen. 2023a. Partially observable markov decision processes in robotics: A survey. IEEE Transactions on Robotics ,39(1):21–40. Mikko Lauri, David Hsu, and Joni Pajarinen. 2023b. Partially observable markov decision processes in robotics: A survey. IEEE Transactions on Robotics ,39(1):21–40. Keon Lee, Kyumin Park, and Daeyoung Kim. 2022. Dailytalk: Spoken dialogue dataset for conversational text-to-speech. Preprint , arXiv:2207.01063. Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Hein-rich Küttler, Mike Lewis, Wen-tau Yih, Tim Rock-täschel, Sebastian Riedel, and Douwe Kiela. 2020. Retrieval-augmented generation for knowledge-intensive nlp tasks. In Advances in Neural Infor-mation Processing Systems , volume 33, pages 9459– 9474. Curran Associates, Inc. Chia-Hsuan Li, Szu-Lin Wu, Chi-Liang Liu, and Hung yi Lee. 2018. Spoken squad: A study of mitigating the impact of speech recognition errors on listening comprehension. Preprint , arXiv:1804.00320. Qiwei Li, Teng Xiao, Zuchao Li, Ping Wang, Mengjia Shen, and Hai Zhao. 2025. Dialogue-rag: Enhancing retrieval for llms via node-linking utterance rewriting. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), ACL 2025, Vienna, Austria, July 27 - August 1, 2025 , pages 24423–24438. Zheng Lian, Haoyu Chen, Lan Chen, Haiyang Sun, Li-cai Sun, Yong Ren, Zebang Cheng, Bin Liu, Rui Liu, Xiaojiang Peng, Jiangyan Yi, and Jianhua Tao. 2025a. Affectgpt: A new dataset, model, and benchmark for emotion understanding with multimodal large lan-guage models. In Forty-second International Confer-ence on Machine Learning, ICML 2025, Vancouver, BC, Canada, July 13-19, 2025 . OpenReview.net. Zheng Lian, Haiyang Sun, Licai Sun, Haoyu Chen, Lan Chen, Hao Gu, Zhuofan Wen, Shun Chen, Siyuan Zhang, Hailiang Yao, Bin Liu, Rui Liu, Shan Liang, Ya Li, Jiangyan Yi, and Jianhua Tao. 2025b. OV-MER: towards open-vocabulary multimodal emotion recognition. In Forty-second International Confer-ence on Machine Learning, ICML 2025, Vancouver, BC, Canada, July 13-19, 2025 . OpenReview.net. Chyi-Jiunn Lin, Guan-Ting Lin, Yung-Sung Chuang, Wei-Lun Wu, Shang-Wen Li, Abdelrahman Mo-hamed, Hung-Yi Lee, and Lin-Shan Lee. 2024. Speechdpr: End-to-end spoken passage retrieval for open-domain spoken question answering. In IEEE International Conference on Acoustics, Speech and Signal Processing, ICASSP 2024, Seoul, Republic of Korea, April 14-19, 2024 , pages 12476–12480. IEEE. Hao Liu, Zhengren Wang, Xi Chen, Zhiyu Li, Feiyu Xiong, Qinhan Yu, and Wentao Zhang. 2025. Ho-pRAG: Multi-hop reasoning for logic-aware retrieval-augmented generation. In Findings of the Associa-tion for Computational Linguistics: ACL 2025 , pages 1897–1913, Vienna, Austria. Association for Compu-tational Linguistics. Venkatesh Mishra, Bimsara Pathiraja, Mihir Parmar, Sat Chidananda, Jayanth Srinivasa, Gaowen Liu, Ali Payani, and Chitta Baral. 2025. Investigating the shortcomings of LLMs in step-by-step legal reason-ing. In Findings of the Association for Computa-tional Linguistics: NAACL 2025 , pages 7795–7826, Albuquerque, New Mexico. Association for Compu-tational Linguistics. OpenAI, :, Sandhini Agarwal, Lama Ahmad, Jason Ai, Sam Altman, Andy Applebaum, Edwin Ar-bus, Rahul K. Arora, Yu Bai, Bowen Baker, Haim-ing Bao, Boaz Barak, Ally Bennett, Tyler Bertao, Nivedita Brett, Eugene Brevdo, Greg Brockman, Se-bastien Bubeck, and 108 others. 2025. gpt-oss-120b. 
+
+Preprint , arXiv:2508.10925. Alec Radford, Jong Wook Kim, Tao Xu, Greg Brock-man, Christine McLeavey, and Ilya Sutskever. 2022. Robust speech recognition via large-scale weak su-pervision. Preprint , arXiv:2212.04356. Timo Schick, Jane Dwivedi-Yu, Roberto Dessi, Roberta Raileanu, Maria Lomeli, Eric Hambro, Luke Zettle-moyer, Nicola Cancedda, and Thomas Scialom. 2023. Toolformer: Language models can teach themselves to use tools. In Advances in Neural Information Processing Systems , volume 36, pages 68539–68551. Curran Associates, Inc. Ruihao Shui, Yixin Cao, Xiang Wang, and Tat-Seng Chua. 2023. A comprehensive evaluation of large language models on legal judgment prediction. In 
+
+Findings of the Association for Computational Lin-guistics: EMNLP 2023 , pages 7337–7348, Singapore. Association for Computational Linguistics. Quanwei Tang, Sophia Yat Mei Lee, Junshuang Wu, Dong Zhang, Shoushan Li, Erik Cambria, and Guodong Zhou. 2025. A comprehensive graph frame-work for question answering with mode-seeking pref-erence alignment. In Findings of the Association for Computational Linguistics: ACL 2025 , pages 21504– 21523, Vienna, Austria. Association for Computa-tional Linguistics. Mingqiu Wang, Izhak Shafran, Hagen Soltau, Wei Han, Yuan Cao, Dian Yu, and Laurent El Shafey. 2024. Retrieval augmented end-to-end spoken dialog mod-els. In IEEE International Conference on Acoustics, Speech and Signal Processing, ICASSP 2024, Seoul, Republic of Korea, April 14-19, 2024 , pages 12056– 12060. IEEE. Yijing Wu, SaiKrishna Rallabandi, Ravisutha Srini-vasamurthy, Parag Pravin Dakle, Alolika Gon, and Preethi Raghavan. 2023. Heysquad: A spoken ques-tion answering dataset. Preprint , arXiv:2304.13689. LLM-Core-Team Xiaomi. 2025. Mimo-audio: Audio language models are few-shot learners. Jin Xu, Zhifang Guo, Hangrui Hu, Yunfei Chu, Xiong Wang, Jinzheng He, Yuxuan Wang, Xian Shi, Ting He, Xinfa Zhu, Yuanjun Lv, Yongqi Wang, Dake Guo, He Wang, Linhan Ma, Pei Zhang, Xinyu Zhang, Hongkun Hao, Zishan Guo, and 19 others. 2025a. Qwen3-omni technical report. arXiv preprint arXiv:2509.17765 .Kai-Tuo Xu, Feng-Long Xie, Xu Tang, and Yao Hu. 2025b. Fireredasr: Open-source industrial-grade mandarin speech recognition models from encoder-decoder to llm integration. Preprint ,arXiv:2501.14350. Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak Shafran, Karthik R. Narasimhan, and Yuan Cao. 2023. React: Synergizing reasoning and acting in language models. In The Eleventh International Conference on Learning Representations, ICLR 2023, Kigali, Rwanda, May 1-5, 2023 . OpenReview.net. Chenyu You, Nuo Chen, Fenglin Liu, Shen Ge, Xian Wu, and Yuexian Zou. 2022. End-to-end spoken con-versational question answering: Task, dataset and model. In Findings of the Association for Computa-tional Linguistics: NAACL 2022 , pages 1219–1232, Seattle, United States. Association for Computational Linguistics. Fan Yu, Shiliang Zhang, Yihui Fu, Lei Xie, Siqi Zheng, Zhihao Du, Weilong Huang, Pengcheng Guo, Zhijie Yan, Bin Ma, Xin Xu, and Hui Bu. 2022a. M2MeT: The ICASSP 2022 multi-channel multi-party meeting transcription challenge. In Proc. ICASSP . IEEE. Fan Yu, Shiliang Zhang, Pengcheng Guo, Yihui Fu, Zhi-hao Du, Siqi Zheng, Weilong Huang, Lei Xie, Zheng-Hua Tan, DeLiang Wang, Yanmin Qian, Kong Aik Lee, Zhijie Yan, Bin Ma, Xin Xu, and Hui Bu. 2022b. Summary on the ICASSP 2022 multi-channel multi-party meeting transcription grand challenge. In Proc. ICASSP . IEEE. Wenlin Zhang, Xiangyang Li, Kuicai Dong, Yichao Wang, Pengyue Jia, Xiaopeng Li, Yingyi Zhang, Derong Xu, Zhaocheng Du, Huifeng Guo, Ruiming Tang, and Xiangyu Zhao. 2025. Process vs. outcome reward: Which is better for agentic RAG reinforce-ment learning. NIPS 2025 .Zihan Zhao, Yiyang Jiang, Heyang Liu, Yu Wang, and Yanfeng Wang. 2025. Librisqa: A novel dataset and framework for spoken question answering with large language models. IEEE Trans. Artif. Intell. ,6(11):2884–2895. Xie Zhifei, Mingbao Lin, Zihang Liu, Pengcheng Wu, Shuicheng Yan, and Chunyan Miao. 2025. Audio-reasoner: Improving reasoning capability in large audio language models. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pages 23840–23862, Suzhou, China. Association for Computational Linguistics. 
+
+A More Analysis in Ablation Study                                                                 
+
+> Ablation Settings Overall AMI Avg. ∆Fact. Infer. Temp. Summ. Acou. Ours (Full) 49.49 -59.46 65.29 38.56 48.46 35.68
+> Validation of Query Decomposer
+> w/o Query Planner 46.39 -3.10 57.63 59.35 36.79 45.73 32.43
+> Validation of Query Planner
+> w/o Query Planner 44.68 -4.80 56.12 56.35 36.41 43.18 31.37
+> Validation of Reflection
+> w/o Reflection 39.64 -9.84 51.32 49.52 31.10 39.83 26.45
+> Validation of Action Space
+> w/o Tool: Filtering 43.69 -5.79 57.81 62.27 35.36 41.45 28.58 w/o Tool: Semantic Search 16.28 -33.21 28.96 16.38 12.21 13.69 10.15 w/o Tool: Graph Traversal 38.21 -11.27 45.57 38.62 32.31 41.25 33.31 w/o Tool: Audio Access 34.71 -14.78 47.52 49.12 33.13 31.71 12.06
+
+Table 6: Ablation study on the AMI dataset. We report the accuracy (%) drop when specific components are removed. ∆: Performance degradation compared to the full framework. 
+
+To validate the necessity of each component in AudioGraph, we conduct an ablation study on the AMI dataset (Table 6). 
+
+Impact of Cognitive Modules. Removing the 
+
+Query Planner leads to a significant drop of 4.80%, particularly in inferential tasks (-8.94%). This confirms that complex queries (e.g., multi-hop reasoning) cannot be solved by single-step retrieval; explicit planning is essential for decomposing in-tents. Most notably, the removal of the Reflection 
+
+mechanism causes a sharp decline of 9.84%. With-out the “verify” loop, the agent is prone to hallu-cination, accepting the first retrieved chunk even if it is irrelevant. This validates our hypothesis that a POMDP-style feedback loop is critical for robustness. 
+
+Impact of Graph Tools. The Graph Traver-sal tool proves indispensable ( ∆ = −11 .27% ). When disabled, the agent degrades to a flat-text searcher, failing to aggregate scattered informa-tion via speaker edges ( espk ) or temporal edges (etemp ). Furthermore, removing Audio Access 
+
+severely impacts acoustic-aware questions (Accu-racy 35.68% → 12.06%), demonstrating that text transcripts alone are insufficient for capturing par-alinguistic cues like emotion or speaker overlap. Finally, Semantic Search serves as the founda-tional entry point; its removal collapses the system (∆ = −33 .21% ), as the agent loses the ability to locate initial evidence nodes. Method DailyTalk AMI AliMeeting 
+
+P R P R P RQwen3-Omni 32.6 24.6 25.7 27.3 29.3 28.2 + Text RAG 67.3 69.1 56.9 65.2 72.4 68.3 + Audio RAG 61.6 63.6 45.2 42.7 57.3 49.6 
+
++ Ours 84.2 77.2 76.2 69.7 79.1 74.1 
+
+Table 7: Citation accuracy comparison. Results are reported in % with a ±2s tolerance. P: Precision, R: Recall. 
+
+B Evidence Precision Recall Analysis 
+
+Table 7 compares the evidence citation accu-racy across three datasets, demonstrating that our method consistently outperforms both the vanilla model and RAG baselines. 
+
+C Step Analysis Acoustic Factual Temporal Summarization Inferential 012345
+
+> Avg. Number of Steps Adaptive Computation: Complex tasks trigger multi-step reasoning
+> Action Type
+> Audio Access Graph Traversal Filtering Traversal
+
+Figure 6: Average reasoning steps across different question types. The agent exhibits adaptive computa-tion : solving simple Factual queries requires minimal steps, while complex Inferential and Temporal queries trigger deeper reasoning chains. The stacked colors il-lustrate the distribution of tool usage, showing heavy reliance on Graph Traversal for multi-hop reasoning. 
+
+Complexity-Aware Reasoning. The results demonstrate a clear correlation between question difficulty and planning depth. For Factual queries (e.g., “What is the budget?” ), the agent adopts a “shortcut” strategy, typically resolving the intent in just 1.8 steps using primarily Semantic Search .This indicates high efficiency. In contrast, Infer-ential and Temporal queries trigger significantly longer trajectories (avg. >4 steps). This confirms that the agent is actively performing multi-hop reasoning—iteratively traversing etemp or espk 
+
+edges to aggregate scattered evidence, rather than relying on a single retrieval pass. 
+
+Tool Usage Distribution. The stacked break-down reveals task-specific tool preferences. Sum-Dataset Method Human Ratings (1-5 Scale) Avg. IAA Corr. Grd. Coh. AMI Qwen3-Omni 1.79 2.12 3.76 2.56 0.78                                   
+
+> Ours 2.25 3.25 4.35 3.28 AllMeeting Qwen3-Omni 1.93 2.24 4.32 2.83 0.75
+> Ours 2.36 3.51 4.37 3.41 DailyTalk Qwen3-Omni 3.43 3.72 4.12 3.76 0.82
+> Ours 4.11 4.23 4.37 4.24 Overall
+> Average Qwen3-Omni 2.38 2.69 4.07 --Average Ours 2.91 3.66 4.36 Improvement (%) +0.52 +0.97 +0.30
+
+Table 8: Human evaluation results across different datasets. Models are assessed on three dimensions: Cor-rectness (Corr.), Groundedness (Grd.), and Coherence (Coh.) using a 1-5 scale. We also report average scores (Avg.) and Inter-Annotator Agreement (IAA). 
+
+marization tasks show a dominant usage of 
+
+Filter tools (Green) to isolate specific time ranges or speakers. Crucially, Acoustic-aware questions exhibit a high frequency of Audio Access (Red) calls in the final steps, validating that the agent cor-rectly learns to “listen” to the raw audio only when textual transcripts are insufficient (e.g., verifying emotion). 
+
+D Human Evaluation. 
+
+To validate real-world performance, we conducted a blind evaluation on 150 queries randomly sam-pled across five question types from AMI, AliMeet-ing, and DailyTalk. Three graduate student anno-tators assessed the responses (IAA=0.78 on avg.). Results in Table 8 shows: 
+
+The “Fluency vs. Factualit” Gap. While the baseline (Qwen3-Omni) maintains high Coherence 
+
+(4.07), its low Groundedness score (2.69) indicates a tendency to generate fluent but hallucinated con-tent. In contrast, our method achieves a massive 
+
++0.97 improvement in Groundedness . This con-firms that our approach does not merely gener-ate text but accurately anchors answers to precise timestamps and speakers, effectively mitigating hal-lucinations. 
+
+Grounding Drives Correctness. There is a clear positive correlation between groundedness and cor-rectness. By explicitly locating evidence, our method achieves a +0.52 gain in Correctness . This demonstrates that superior localization capabili-ties directly translate to more factually accurate an-swers, particularly for reasoning-heavy questions. 
+
+Robustness in Complex Scenarios. The perfor-mance gap is most pronounced on challenging low mid high Speaker Separation Error low mid high Transcription Error 59.84 56.54 52.94 55.24 52.94 49.34 49.44 47.14 39.54                 
+
+> Ours
+> low mid high Speaker Separation Error low mid high Transcription Error 54.47 49.87 42.27 48.67 45.30 37.47 39.87 36.27 24.67
+> Text RAG
+> low mid high Speaker Separation Error low mid high Transcription Error 5.37 6.67 10.67 6.57 7.64 11.87 9.57 10.87 14.87
+> Ours - Text RAG
+> 25 30 35 40 45 50 55 Accuracy
+> 10
+> 5
+> 0510 Accuracy
+
+Figure 7: Noise Sensitivity Analysis. QA Accuracy comparison under varying upstream error rates. The rightmost panel highlights the widening performance gap ( ∆ Accuracy), showing that GRGA’s advantage grows in noisier environments. 
+
+datasets like AMI and AliMeeting (noisy, multi-party interactions) compared to the cleaner Dai-lyTalk. Our method maintains distinct advantages in these “hard” settings (e.g., +1.13 Groundedness on AMI ), proving its robustness where standard omni-models struggle with speaker attribution and temporal reasoning. 
+
+E Noise Sensitivity Analysis 
+
+To evaluate the robustness of our proposed GRGA against upstream errors, we conducted a sensitivity analysis by simulating varying levels of Word Error Rate (WER) and Diarization Error Rate (DER). We compare our model with the baseline Text RAG system across a 3 × 3 grid of noise conditions. We define three noise levels for both ASR and Diarization components: 
+
+Low (Oracle): We use Ground Truth (GT) tran-scripts and speaker labels to simulate an ideal sce-nario. 
+
+Mid (Standard): We utilize the outputs from our standard pipeline (as described in Section H), representing a realistic deployment scenario (DER 
+
+≈ 17.6%, WER ≈ 18.8%). 
+
+High (Simulated Noise): For High WER , we uti-lize a lower-performance lightweight ASR model (openai/whisper-small (Radford et al., 2022)) to generate transcripts with high error rates (WER 
+
+≈ 33.6%). For High DER , we simulated noise by randomly shuffling a subset of speaker la-bels within a meeting while preserving timestamp boundaries. This represents a worst-case scenario where speaker identity information is highly unreli-able (DER ≈ 52.4%). Figure 7 visualizes the impact of noise, revealing distinct behaviors: 
+
+Graceful Degradation. Text RAG suffers catas-trophic drops as noise increases, falling from 
+
+54 .47% to 24 .67% in the High/High setting. This underscores the fragility of standard RAG when explicit text or speaker cues are noisy. Conversely, GRGA demonstrates graceful degradation, retain-ing 39 .54% accuracy even under the harshest con-ditions. 
+
+The “Noise Buffer” Effect. Notably, the per-formance gap between GRGA and the baseline widens from +5 .37% (Low/Low) to +14 .87% 
+
+(High/High). This indicates that our graph struc-ture acts as an effective noise buffer. By leveraging topological connectivity and temporal constraints, the agent can compensate for corrupted signals, reducing the system’s reliance on perfect transcrip-tion and diarization. 
+
+F Case Study 
+
+Table 9 presents a case study illustrating our method’s self-correction capability, where the agent initially generates a low-confidence response but, triggered by the reflection module, re-plans to retrieve specific evidence (e.g., concrete com-plaints about deadlines), ultimately producing a highly grounded and accurate answer. 
+
+G Experimental Setting Details 
+
+G.1 Baselines Qwen3-Omni. Qwen3-Omni (Xu et al., 2025a) is a state-of-the-art (SOTA) end-to-end omni-modal model that processes interleaved inputs (e.g., text and audio) and generates text responses. It sup-ports speech inputs of up to 40 minutes. The model adopts a Mixture-of-Experts (MoE) architecture Stage Module / Action Execution Details & Internal State User Query: “What is the team’s general attitude to the project deadline and workload?”                                               
+
+> Phase 1 Intent Analysis Entities: [‘team’, ‘project deadline’, ‘workload’] Concept: [‘general attitude’]
+> Plan Execution 1. Hybrid Search: query=“team project deadline workload” ( →10 hits)
+> 2. Traverse Relations: Expand context ( →64 nodes found).
+> Draft Answer “The team generally views the deadline as tight... members feeling urgency.”
+> (Generic summary, lacks specific details)
+> Reflection (Critic) Assessment: ✗Confidence: 2/5
+> Reasoning: “Supported is False. Need reverse confirmation for ‘tight’ and ‘work-intensive’ claims.”
+> ,→Decision: Trigger R E-P LAN .
+> Phase 2 Re-Plan Strategy New Goal: Validate sentiment strength (e.g., stress, specific complaints).
+> Tool: hybrid_search(query=“project deadline focused effort”, alpha=0.6)
+> Evidence Retrieval The new search strategy retrieves highly specific emotional utterances:
+> •utt180 : “...only got six days to do the topic segmentation”
+> •utt225 : “shall we change the deadlines ?”
+> •utt349 : “that’s a hassle too it’s a lot of work ”
+> •utt553 : “i wanna do it superficially ”
+> Final Response “The team’s attitude indicates the project deadline is perceived as tight... One member states they only have six days [utt180 ]. Another asks ‘shall we change the deadlines?’ [utt225 ]. Another calls it ‘a hassle’ [utt349 ]... expresses a preference to handle it ‘superficially’ [utt553 ].”
+> Final Reflection Assessment: ✓Confidence: 5/5 Status: Supported.
+
+Table 9: Case Study on Self-Correction. Initially, the model retrieved broad context but generated a low-confidence (2/5), generic answer. The Reflection module detected the lack of specific evidence and triggered a re-planning step focusing on “focused effort.” This allowed the model to retrieve concrete complaints (e.g., “six days,” “hassle,” “superficially”), resulting in a highly grounded (5/5) final response. 
+
+with 30B parameters, of which 3B are activated per inference. Notably, it achieves performance com-parable to top-tier proprietary models (e.g., Gemini 2.5 Pro (Comanici et al., 2025)) across a wide range of audio understanding benchmarks. 
+
+AudioFlamingo3. We select Audio Flamingo 3 (Goel et al., 2025) as a SOTA audio-language model. Built upon Whisper encoder and 7B LLM, it employs an “on-demand thinking” mechanism to facilitate chain-of-thought reasoning. Crucially, its architecture processes inputs via 30-second win-dows with a strict context cap of 10 minutes. This baseline serves to quantify the performance degra-dation of context-constrained models when applied to long meeting scenarios. 
+
+MiMo-Audio. MiMo-Audio (Xiaomi, 2025) is a SOTA end-to-end audio language model. It combines a 1.2B audio tokenizer with a 7B LLM. The model supports a 128k context window and downsamples audio tokens to 6.25 Hz, enabling efficient processing of long sequences. Crucially, its instruction-tuning stage incorporates “thinking” mechanisms, allowing chain-of-thought reasoning directly over audio inputs. Comparing against MiMo-Audio helps assess whether our graph-based structural reasoning provides advantages beyond large-scale end-to-end pretraining. 
+
+Text RAG Baseline. We implement a stan-dard dense retrieval baseline using BGE-M3 (Chen et al., 2024a) embeddings. Meeting transcripts are segmented into utterances with prepended meta-data (e.g., [time] SPK: text ). Given a query q,we retrieve the top-k (k = 10 , λ = 0 .25 ) most rel-evant segments based on cosine similarity, get text result and corresponding audio clips. Crucially, to maintain discourse coherence, retrieved segments are temporally reordered before being fed into the 
+
+Speech-LLM . This baseline represents the conven-tional approach to handling long meetings without graph-based structural reasoning. 
+
+Audio RAG Baseline. We construct a cross-modal retrieval baseline using CLASP (Abootorabi and Asgari, 2025), which aligns audio and text in a shared semantic space. The long audio is segmented into clips based on speaker diarization timestamps. Given a text query q, we retrieve the top-k most relevant audio clips via cosine simi-larity between the query embedding and CLASP-encoded audio embeddings. These retrieved raw audio clips, along with their speaker metadata, are then fed directly into the Speech-LLM (same back-bone as ours) to generate the response. This base-line evaluates the efficacy of retrieving raw acoustic features versus our proposed graph-based semantic navigation. 
+
+G.2 Evaluation Metric: Semantic Accuracy 
+
+To rigorously assess the reasoning capabilities of our model, we report Semantic Accuracy across all datasets. Traditional n-gram metrics (e.g., BLEU, Exact Match) often fail to capture the true validity of generated responses, as they pe-nalize correct answers that differ in lexical surface forms from the ground truth. Drawing upon recent methodologies in complex reasoning evaluation (Mishra et al., 2025; Shui et al., 2023), we move beyond rigid string matching and establish a ro-bust, automated evaluation pipeline that prioritizes semantic equivalence and logical soundness. Specifically, we employ a Strong LLM (LLM-as-a-Judge) to approximate human-level judgment. Formally, let D = {(qi, a i)}Ni=1 denote the evalu-ation dataset, where qi is the query and ai is the ground-truth answer. Let ˆai represent the model-generated response. We define a semantic indicator function I(·) parameterized by an external judge J
+
+(e.g., GPT-OSS-120B (OpenAI et al., 2025)): 
+
+si = J (qi, a i, ˆai) ∈ { 0, 1}, (12) where si = 1 if and only if J determines that ˆai
+
+entails the same semantic information as ai, and 0
+
+otherwise. The judge is prompted to ignore stylistic differences and focus strictly on factual consistency and reasoning correctness. Finally, the Semantic Accuracy is computed as the expectation of correct judgments: Accuracy = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+si × 100% . (13) This approach ensures a fair comparison by validat-ing whether the model successfully retrieves and reasons over the core knowledge, regardless of its output phrasing. 
+
+H Implementation Details 
+
+All the methods that did not explicitly state the model used Qwen3-Omni (Xu et al., 2025a). 
+
+Graph Construction Setup. For the initial au-dio processing, we utilize the FireRedASR-AED 
+
+(Xu et al., 2025b) model for Automatic Speech Recognition (ASR) to transcribe the raw audio meeting data. To obtain precise word-level times-tamps (i.e., tstart and tend ), we employ the Mon-treal Forced Aligner (MFA) .
+
+Speaker Verification: We use a pre-trained 
+
+ERes2NetV2 (Chen et al., 2024b) model to extract speaker embeddings. The cosine similarity thresh-old for speaker clustering is set to η = 0 .8 based on validation set performance. Edge Construction: 
+
+The temporal window for establishing “Reply-To” edges is set to ∆t = 5 seconds. Attribute Ex-traction: We employ Qwen3-Omni (via vllm API) to extract speaker profiles and resolve coreference chains during the node enrichment phase. 
+
+Agent Planning Configuration The core plan-ning mechanism of GRGA depends on spe-cific hyper-parameters governing the exploration-exploitation trade-off: Backbone Model: The Pol-icy Network πθ is parameterized by Qwen3-Omni ,operated with a temperature of 0 to ensure deter-ministic reasoning paths. Reward Function: As defined in Eq. (9), the self-reflection verification threshold is set to τ = 4 (1-5 Scale). The penalty factor for failed verification is set to β = 0 .5.
+
+Search Constraints: The maximum depth for the reasoning tree is limited to Kmax = 5 steps. If the agent fails to reach a verified conclusion within these steps, the process terminates and returns the current best candidate. All experiments were conducted on a server clus-ter equipped with 8 × Ascend 910B (64GB) GPUs. 
+
+H.1 Text RAG Baseline. 
+
+To benchmark our method against a standard text-based retrieval pipeline, we implement a dense Retrieval-Augmented Generation (RAG) baseline over meeting transcripts. 
+
+Context construction. We segment the meeting transcript into individual utterances and treat each utterance as one retrieval unit. Each unit is format-ted with temporal and speaker metadata: 
+
+ui = [start i - end i] SPEAKER_ID: text i.
+
+Dense retrieval. We use BGE-M3 (Chen et al., 2024a) as the embedding backbone. Given a query 
+
+q, we compute embeddings for the query and each utterance: 
+
+eq = fBGE (q) ∈ R1024 , ei = fBGE (ui) ∈ R1024 .We apply L2 normalization to enable cosine-based scoring: 
+
+ˆe = e
+
+∥e∥2
+
+, si = cos(ˆ eq, ˆei) = ˆ e⊤ 
+
+> q
+
+ˆei.
+
+We rank all utterances by si and retrieve the top-k
+
+segments ( k = 10 ) that satisfy a minimum similar-ity threshold λ = 0 .25 :
+
+Csim = TopK 
+
+
+
+{ui | si ≥ λ}, k 
+
+
+
+.
+
+Temporal reordering. To preserve discourse co-herence, we reorder the retrieved utterances by their start time before forming the final context: 
+
+C = SortByTime( Csim ).
+
+Generation. We concatenate the reordered seg-ments as context c = Concat( C) and prompt the generator to answer strictly based on the retrieved context . We use the same backbone LLM as in our main method for a fair comparison: 
+
+y = LLM (q, c ).
+
+H.2 Audio RAG Baseline. 
+
+Given a text query q and a long audio recording A,we build a retrieval-augmented generation (RAG) baseline based on CLASP (Abootorabi and As-gari, 2025), a multilingual audio-text representa-tion model that maps raw speech into a shared 768-dimensional semantic space. 
+
+Audio segmenttation. 
+
+We segment the long audio A into K shorter clips {ak}Kk=1 , by speaker diarization. 
+
+Embedding computation. We compute the query embedding and the audio clip embeddings using CLASP: 
+
+eq = ftext (q) ∈ R768 , (14) 
+
+ek = faudio (ak) ∈ R768 , k = 1 , . . . , K, (15) where faudio (·) encodes speech (e.g., via HuBERT and spectrogram encoders with a fusion module), and ftext (·) encodes text into the same representa-tion space. 
+
+Retrieval. We rank audio clips by cosine simi-larity and select the most relevant clip (or top-M
+
+clips): 
+
+sk = cos( eq, ek) = e⊤ 
+
+> q
+
+ek
+
+∥eq∥2 ∥ek∥2
+
+, (16) 
+
+k⋆ = arg max  
+
+> k∈{ 1,...,K }
+
+sk. (17) Optionally, we retrieve K = TopM ({sk}Kk=1 ) for multi-evidence prompting. 
+
+Generation. We feed the query and retrieved evidence to a Speech LLM to generate the final response: 
+
+y = LLM  q, {ak}k∈K 
+
+, (18) where the evidence is provided, contains retrieval speaker diarization and corresponding audio clips. 
+
+I Multi-dimensional Meeting Database Construction Algorithm 
+
+Complexity. Let M be the number of VAD clips, and let Fm be the number of acoustic frames in clip 
+
+m. Let Nw be the total number of word tokens after forced alignment, Ns the total number of diariza-tion segments, and Nu the number of utterances. 
+
+ASR inference and CTC forced alignment are linear in the input length, costing O
+
+PMm=1 Fm
+
+
+
+time. Speaker diarization requires embedding extraction over frames plus clustering over seg-ments; in practice this is O
+
+PMm=1 Fm
+
+
+
+for fea-ture extraction, and an additional clustering cost by AHC is O(N 2 
+
+> s
+
+). Speaker assignment via over-lap matching costs O(Nw + Ns) using the two-pointer implementation in Alg. 1 (a naive all-pairs matching would be O(NwNs)). Building utter-ances from word streams is O(Nw), and adding temporal edges in the meeting graph is O(Nu).The space complexity is dominated by stor-ing word- and utterance-level annotations, i.e., 
+
+O(Nw + Nu), plus the storage overhead of the text and vector indices for utterance retrieval. Algorithm 1: Multi-dimensional Meeting Database Construction 
+
+Input: Long meeting audio X; session id sid ; hyper-parameters 
+
+θ = {max_clip_len , vad_pad , β sil , α ovlp , K }
+
+Output: Structured database D; meeting graph G = ( V, E ); indices I 
+
+> 1
+
+X ← PREPROCESS (X) ; // resample/mono/normalize  
+
+> 2
+
+C ← FSMN_VAD (X, vad_pad , max_clip_len ) ; // clips with absolute spans  
+
+> 3
+
+Initialize tables C LIPS , W ORDS , S PK SEGS , U TTERANCES ; 
+
+> 4
+
+Initialize graph G = ( V, E ); 
+
+> 5
+
+foreach clip c ∈ C do // process each VAD clip  
+
+> 6
+
+CLIPS ← CLIPS ∪{ (sid, c.id, c.t s, c.t e, c.wav )}; 
+
+> 7
+
+(T, P) ← ASR (c.wav ) ; // transcript and CTC posteriors  
+
+> 8
+
+W ← CTC_F ORCED ALIGN (T, P);; // W = {(wi, a i, b i, p i)} word-level timestamps  
+
+> 9
+
+S ← DIARIZE (c.wav ) ; // S = {(spk j , s j , e j , emb j , conf j )} 
+
+> 10
+
+S ← CLUSTER AND SMOOTH (S) ; // merge/smooth speaker segments  
+
+> 11
+
+SPK SEGS ← SPK SEGS ∪{ (sid, c.id, S)}; 
+
+> 12
+
+fW ← ASSIGN SPEAKER TOWORDS FAST (W, S, α ovlp ); 
+
+> 13
+
+WORDS ← WORDS ∪{ (sid, c.id, fW)}; 
+
+> 14
+
+U ← BUILD UTTERANCES ( fW, β sil ) ; // group into utterances  
+
+> 15
+
+foreach utterance u ∈ U do  
+
+> 16
+
+UTTERANCES ← UTTERANCES 
+
+∪{ (sid, u.id, u.spk, u.t s, u.t e, u.text, u.audio _ref, u.conf )}; 
+
+> 17
+
+V ← V ∪ { u.id } ; // utterance nodes in G 
+
+> 18
+
+E ← E ∪ ADD TEMPORAL EDGES (UTTERANCES ) ; // time adjacency  
+
+> 19
+
+E ← E ∪ ADD SPEAKER EDGES (UTTERANCES ) ; // same-speaker links (optional)  
+
+> 20
+
+E ← E ∪ ADD ENTITY ORTOPIC EDGES (UTTERANCES ) ; // optional NER/topic links  
+
+> 21
+
+Ibm 25 ← BUILD BM25I NDEX (UTTERANCES .TEXT ); 
+
+> 22
+
+Ivec ← BUILD VECTOR INDEX (UTTERANCES , K ); 
+
+> 23
+
+I ← {I bm 25 , Ivec }; 
+
+> 24
+
+D ← { CLIPS , WORDS , SPK SEGS , UTTERANCES , I} ; 
+
+> 25
+
+return D, G, I;J Retrieval-Generation Agent Algorithm 
+
+Algorithm 2: GRGA with Formal Notation 
+
+Input: Q ∈ Q , G = ( V, E, X )
+
+Output: ˆA ∈ A with Cite ⊆ V × T
+
+// Decomposition: fdec : Q → C  
+
+> 1
+
+C = fdec (Q) = {ce, c c, c t, c m} 
+
+> 2
+
+b0 = H0 = {Q, C} ; k ← 0
+
+// POMDP Loop  
+
+> 3
+
+while k < K max do 
+
+// Policy: πθ : B → ∆( A∗) 
+
+> 4
+
+Pk ∼ πθ(· | bk) where bk = b0 ∪ Hk 
+
+> 5
+
+if Pk = ⊥ then  
+
+> 6
+
+return ⊥
+
+// Transition: T : S × A → ∆( S) 
+
+> 7
+
+ok = L 
+
+> op ∈P k
+
+Exec (op, G) where ok ∈ O 
+
+// Belief Update: ψ : B × A × O → B  
+
+> 8
+
+bk+1 = ψ(bk, Pk, o k) = bk ∪ {P k, o k}
+
+// Synthesis: fsyn : Q × B → A × C  
+
+> 9
+
+( ˆAk, Cite k) = fsyn (Q, b k+1 )
+
+// Reward: R : S × A → R 
+
+> 10
+
+sver = fref (Q, ˆAk, o k) ∈ [0 , 1]  
+
+> 11
+
+rk =
+
+(
+
+1 if sver ≥ τ
+
+−β otherwise  
+
+> 12
+
+if rk > 0 then  
+
+> 13
+
+return ( ˆAk, Cite k) 
+
+> 14
+
+else  
+
+> 15
+
+Hk+1 = Hk ∪ { (Pk, o k, ˆAk, r k)}; k ← k + 1  
+
+> 16
+
+return ⊥
+
+Tool Time Complexity Description 
+
+Filter O(|V | + |E|) Metadata filter 
+
+Search O(|V | · dembed + k log k) Vector retrieval + sorting 
+
+GraphTraversal O( ¯d · depth ) BFS ( ¯d: avg degree) 
+
+Temporal O(1) Indexed temporal query 
+
+AudioAccess O(1) Get audio clip 
+
+Table 10: Time Complexity of Graph Operations J.1 Complexity Analysis 
+
+We provide a comprehensive theoretical analysis of the time and space complexity of the proposed GRGA algorithm. We examine each component’s computational cost and derive the overall complex-ity bounds. 
+
+J.1.1 Time Complexity Analysis 
+
+The total time complexity of GRGA is determined by the iterative POMDP loop and its constituent operations: 
+
+Ttotal = Tdec +
+
+> Kmax
+
+X
+
+> k=0
+
+
+
+T (k) 
+
+> plan
+
++ T (k) 
+
+> exec
+
++ T (k) 
+
+> syn
+
++ T (k)
+
+> ref
+
+
+
+(19) where Kmax is the maximum number of itera-tions. 
+
+Query Decomposition. The decomposition func-tion fdec : Q → C involves a single LLM infer-ence: 
+
+Tdec = O(|Q| · dmodel ) (20) where |Q| denotes the query length in tokens and 
+
+dmodel is the model dimension. This is a one-time operation outside the main loop. 
+
+Execution Planning. At iteration k, the policy network πθ generates a plan conditioned on the belief state bk:
+
+T (k) 
+
+> plan
+
+= O(|bk| · dmodel + Lplan · |A| ) (21) where: • |bk| = O(|Q| + |C| + k · | oavg |) grows linearly with iteration count • Lplan is the average plan length • |A| is the action space size 
+
+Tool Execution. The execution engine applies 
+
+Lplan operations on the meeting graph G = ( V, E ).The complexity depends on the tool type: The worst-case execution time is: 
+
+T (k) 
+
+> exec
+
+= O(Lplan · max {| V | · dembed , |V | log |V |} )
+
+(22) 
+
+Answer Synthesis. The synthesizer fsyn pro-cesses accumulated evidence: 
+
+T (k) 
+
+> syn
+
+= O
+
+> k
+
+[
+
+> i=0
+
+oi · dmodel + Lanswer · dmodel 
+
+!
+
+(23) where Lanswer is the generated answer length. Note that Ski=0 oi = O(k · | oavg |) grows with iterations. 
+
+Reflection. The reflector fref evaluates logical entailment: 
+
+T (k) 
+
+> ref
+
+= O
+
+
+
+(|Q| + | ˆAk| + |ok|) · dmodel 
+
+
+
+(24) 
+
+Aggregate Complexity 
+
+Ttotal = O
+
+
+
+Kmax · (|Q| + k · | oavg |) · dmodel 
+
++ Lplan · | V | · dembed 
+
+
+
+(25) Under typical conditions where |V | ≫ | Q| and 
+
+dembed ≈ dmodel , this simplifies to: 
+
+Ttotal = O(Kmax · | V | · dmodel ) (26) In practice, Kmax ∈ [1 , 5] and early stopping (when sver ≥ τ ) significantly reduces the average iteration count ¯K < K max .
+
+J.2 Space Complexity Analysis 
+
+The space requirements consist of three main com-ponents: 
+
+Stotal = Sgraph (27) 
+
+Graph Storage. The meeting graph requires stor-age for structure and embeddings: 
+
+Sgraph = O(|V | + |E| + |V | · dembed ) (28) For a typical 30 minutes meeting: • |V | ≈ 900 nodes • dembed = 1024 (BGE-M3) • Storage: ∼2MB (structure) + ∼3.5MB (em-beddings) 
+
+K Tools Details 
+
+The table 11 shows the definitions of the atomic tools in our Action Space (A). Category Tool Signature Description & Purpose Retrieval 
+
+keyword_search(query) BM25-based search for precise entity/term lookup. 
+
+semantic_search(query) Dense vector retrieval for abstract semantic con-cepts. 
+
+hybrid_search(query, α = 0 .6) Weighted combination of keyword and semantic scores to optimize recall. 
+
+Filtering filte_time_range( tstart , t end ) Retrieves utterances strictly within a specified time window. 
+
+filte_speaker(nodes, spk_id) Filters a set of candidate nodes by speaker iden-tity. 
+
+Traversal traverse_relations(nodes, depth=k) 
+
+Walks along graph edges (e.g., Next , Reply-To ) to trace dialogue threads for multi-hop reasoning. 
+
+Audio audio_segment( tstart , t end ) Retrieves raw waveform data to ground text in acoustic signals (e.g., for emotion detection). 
+
+> Table 11: The definitions of the atomic tools in our Action Space ( A). The Query Planner invokes these tools to interact with the meeting graph and retrieve evidence.
+
+L QA Examples 
+
+Header. The box title Example # (QA_TYPE, Key=#) indicates the example index, its question type (e.g., Factual ), and a unique identifier Key used to retrieve the corresponding record in the released JSON files. 
+
+Evidence section (lower part). Below the dashed line, we display the verbatim evidence excerpt(s) 
+
+for the referenced utterance IDs. Each excerpt is formatted as: Evidence [utt_id]: [t_start –t_end] SPEAKER_#: transcript . Here, [t_start – t_end] denotes the absolute timestamps (in seconds) within the meeting, and SPEAKER_# is the diarization-based speaker label. This layout makes the supervision explicitly grounded : readers can directly verify that the answer is entailed by the cited utterance(s), and systems can be evaluated on both answer correctness and evidence retrieval. 
+
+Example 1 ( Factual , Key=1) Question: What specific technical difficulty is Speaker 4 facing regarding XML files? 
+
+Answer: Speaker 4 has written code to read and remove the XML, but is struggling to store the data (e.g., into a vector) or display it on the screen using Java. 
+
+Evidence (utterance IDs): [513] 
+
+Rationale: Speaker 4 explicitly states their current coding roadblock regarding Java vectors and display. 
+
+Evidence [513]: [1083.43 - 1100.41] SPEAKER_4: i’ve been trying to g write something to read the x. m. l. and get rid of it and i can get rid of it but i’m having trouble putting it anywhere else so it will come up on the screen for the moment i haven’t managed to put it into a vector or whatever in java to play with it. 
+
+Example 2 ( Inferential , Key=26) Question: How did the group decide to resolve the issue of having too many pop-up windows? 
+
+Answer: The group discussed using tabs (similar to Mozilla) or toggle buttons within a single window to switch between views like the full transcription and the summary, rather than opening separate windows. 
+
+Evidence (utterance IDs): [265, 266, 269, 273, 304, 314] 
+
+Rationale: Multiple speakers contribute to the idea of using tabs/toggles to manage content within one window frame to avoid clutter. 
+
+Evidence [265]: [657.56 - 663.43] SPEAKER_2: so maybe you can just like choose the s same window for transcription and summary. 
+
+Evidence [266] : [661.99 - 664.73] SPEAKER_1: hmm so like have a tab there. 
+
+Evidence [269] : [665.32 - 669.42] SPEAKER_2: yeah yeah tabs are nice. 
+
+Evidence [273] : [669.91 - 671.05] SPEAKER_4: mozilla style. 
+
+Evidence [304] : [697.23 - 703.29] SPEAKER_2: yeah uh change the contents of the same window like from transcription to summary. 
+
+Evidence [314] : [719.03 - 725.56] SPEAKER_2: no no it could be like transcription summary like two buttons and you just press on which ever you want. 
+
+Example 3 ( Summarization , Key=53) Question: What are the key interface design decisions made during this meeting? Answer: The team decided to: (1) use buttons instead of right-click menus for speaker characterisation, (2) use tabs or buttons to toggle between transcription and summary in the same window rather than separate windows, and (3) implement right-click menus for topics with options to view all meetings containing that topic. 
+
+Evidence (utterance IDs): [76, 84, 88, 158, 167, 266, 269, 314] 
+
+Rationale: These utterances capture the major UI/UX consensus points reached through discussion. 
+
+Evidence [76]: [207.74 - 220.21] SPEAKER_2: i guess a button button makes a bit more sense ’cause otherwise you don’t really know that oh what if i right click now what happens then it’s like more if it’s visual. 
+
+Evidence [84]: [225.08 - 232.04] SPEAKER_4: it’s more idiot proof isn’t it it’s got a button. 
+
+Evidence [88]: [229.16 - 231.24] SPEAKER_3: that’s true yeah it’s more intuitive really isn’t it. 
+
+Evidence [158]: [399.55 - 402.78] SPEAKER_3: so we could do that in a similar way do it right click as well. 
+
+Evidence [167]: [411.28 - 424.13] SPEAKER_3: so we have basically two options of of browsing the meetings is by either um searching and opening individual observations and when then we have the interlinking by right click basically. 
+
+Evidence [266]: [661.99 - 664.73] SPEAKER_1: hmm so like have a tab there. 
+
+Evidence [269]: [665.32 - 669.42] SPEAKER_2: yeah yeah tabs are nice. 
+
+Evidence [314]: [719.03 - 725.56] SPEAKER_2: no no it could be like transcription summary like two buttons and you just press on which ever you want. 
+
+Example 4 ( Temporal , Key=60) Question: At what point does the team shift from discussing GUI to discussing the interim prototype? 
+
+Answer: Around 810–824 seconds (approximately 13–14 minutes into the meeting). 
+
+Evidence (utterance IDs): [361, 363, 365] 
+
+Rationale: The topic pivot occurs when Speaker 3 asks what prototype they should aim for. 
+
+Evidence [361]: [816.58 - 822.38] SPEAKER_3: and finally the prototype he spoke about what kind of prototype could we produce. 
+
+Evidence [363]: [824.27 - 828.76] SPEAKER_3: because i’m i’m just you know i go into the lab and i say right what am i gonna change today. 
+
+Evidence [365]: [828.76 - 836.48] SPEAKER_3: you know and it kind of just it just develops i’m not aiming for anything do we wanna aim for something. 
+
+Example 5 ( Acoustic , Key= 80 )Question: Why did Speaker 3 express sadness when saying “well i hope so” at approximately 24 seconds? 
+
+Answer: Speaker 3 sounded sad when expressing hope that others had done some work, likely in response to Speaker 4’s question “has anybody done anything” and Speaker 1’s admission “not a lot no”, suggesting disappointment about the team’s progress. 
+
+Evidence (utterance IDs): [13, 11, 12] 
+
+Rationale: This combines the sad emotion label from node 13 with the contextual text from surround-ing nodes to explain the cause. Evidence [11]: [ 19.07 - 23.69] SPEAKER_4: has anybody done anything. 
+
+Evidence [12]: [ 21.47 - 23.29] SPEAKER_1: not a lot no. 
+
+Evidence [13]: [ 24.17 - 25.22] SPEAKER_3: well i hope so. Current Item:  36 
+
+🔮 Prediction Data (Pred) 
+
+ 📋 查看完整数据 
+
+Basic Info 
+
+Key:  36 
+
+Type: 
+
+inferential 
+
+Question 
+
+What will the team do with the removed audio processing goal? 
+
+Answer 
+
+They will mention it as future work in the conclusion of their final report, explaining they didn't have enough time. 
+
+Evidence Nodes 
+
+Nodes : 137 , 140 , 149 , 152 , 153 
+
+Reasoning 
+
+Speaker 2 suggests 'a good future work thing isn't it stick in the conclusion of the final report' and the team agrees to put it under 'changes since the initial specification'. 
+
+✅ Ground Truth (GT) 
+
+ 📋 查看完整数据 
+
+Basic Info 
+
+Key:  36 
+
+Type: 
+
+inferential 
+
+Question 
+
+What will the team do with the removed audio processing goal? 
+
+Answer 
+
+They will mention it as future work in the conclusion of their final report, explaining they didn't have enough time. 
+
+Evidence Nodes 
+
+Nodes : 137 , 140 , 149 , 152 , 153 
+
+Reasoning 
+
+Speaker 2 suggests 'a good future work thing isn't it stick in the conclusion of the final report' and the team agrees to put it under 'changes since the initial specification'. 
+
+## 📌 Evidence Nodes (Evidence Nodes) 
+
+🔮 Pred Evidence Nodes 
+
+Node List : [137, 140, 149, 152, 153] ✅ GT Evidence Nodes 
+
+Node List : [137, 140, 149, 152, 153] Figure 8: Data Display 🎵 Audio 0:00 0:00 / 35:44 / 35:44 
+
+## 📊 Manual Annotation 
+
+Confidence Score 
+
+Confidence Score 
+
+1 - Very Uncertain ❌
+
+2 - Uncertain  ⚠
+
+3 - Somewhat Confident 🤔 
+
+4 - Confident ✅
+
+5 - Very Certain ⭐
+
+ 📖 Scoring Guide 
+
+1: Answer likely unsupported or contradicted by evidence 
+
+2: Only small part of answer supported or major gaps exist 
+
+3: About half of answer supported with notable uncertainties 
+
+4: Most claims supported with only minor doubts 
+
+5: Every claim directly and fully supported by evidence 
+
+Current Score 
+
+## 1/5 
+
+Groundedness 
+
+Groundedness 
+
+1 - Completely Inaccurate ❌
+
+2 - Most of it is inaccurate  ⚠
+
+3 - Partially Accurate 🤔 
+
+4 - Fairly Accurate ✅
+
+5 - Completely Accurate ⭐
+
+ 📖 Scoring Guide 
+
+1: Evidence nodes have no relation to answer 
+
+2: Only few evidence items relevant 
+
+3: About half evidence supports answer 
+
+4: Most evidence supports answer 
+
+5: All evidence precisely supports answer 
+
+Groundedness 
+
+## 3/5 
+
+Coherence 
+
+Coherence 
+
+1 - Completely Incoherent ❌
+
+2 - Mostly Incoherent  ⚠
+
+3 - Partially Coherent 🤔 
+
+4 - Fairly Coherent ✅
+
+5 - Completely Coherent ⭐
+
+ 📖 Scoring Guide 
+
+1: Logic confused or self-contradictory 
+
+2: Obvious logical jumps 
+
+3: Some logical gaps 
+
+4: Logic basically smooth 
+
+5: Logic clear and rigorous 
+
+Coherence 
+
+## 5/5 
+
+Reasoning ((Optional)) 
+
+Please explain your scoring rationale... 
+
+Additional Annotations 
+
+Has Contradiction Missing Evidence Irrelevant Information 
+
+💾 Save Annotation  ⏭ Skip  ⚠ Not annotated 
+
+⬅ Previous Next  ➡ Progress: 1 / 1 1 Annotated Figure 9: Manual Evaluation M Manual Evaluation Tool N Data Construction Prompt 
+
+Prompt for Acoustic-Aware QA Generation 
+
+# Role 
+
+You are an expert AI assistant specializing in multimodal speech dataset construction. Your task is to generate high-quality Acoustic-Aware QA pairs based on the provided audio and speech transcription and metadata. 
+
+# Input Data format 
+
+An audio clip. A list of Nodes. Each Node contains: ‘turn_id‘: [‘timestamp start‘-‘timestamp end‘] Speaker ‘speaker‘: ‘text‘ (Emotion: ‘emotion‘) (Volume: ‘Volume‘) 
+
+# Task Definition: Acoustic-Aware QA 
+
+You must generate questions that cannot be answered by reading the text alone. The answer must require checking the Acoustic Features (specifically the ‘emotion‘ and ‘timestamp‘ fields). 
+
+## Critical Requirement 1: Focus on High Arousal Emotions 
+
+You must prioritize questions regarding strong emotions such as Anger, Happiness, Excitement, or Sadness .
+
+### How to handle "Neutral" data: 
+
+If the input data contains only "Neutral" labels: 
+
+• Do: Ask Verification Questions checking for the presence of strong emotions. 
+
+– Good Example: "Did Speaker 3 sound angry when asking about the annual meeting?" 
+
+– Good Answer: "No. According to the audio data, Speaker 3 maintained a neutral tone." 
+
+• Don’t: Ask passive descriptive questions like "What was the emotion?". 
+
+## Critical Requirement 2: NO Confidence Scores 
+
+• Strictly Forbidden: Do NOT mention the numeric confidence scores (e.g., ‘0.99‘, ‘1.0‘) in the Question or the Answer. 
+
+• Simply state the emotion label as a fact (e.g., "The speaker was angry"). 
+
+## Allowed Question Patterns 
+
+1. Emotion-Content Attribution (Why is he angry?): 
+
+"Why did spk3 sound angry at the 15th minute?" (Combine Emotion label + Text analysis). 2. Specific Time Identification: 
+
+"Who sounded the most excited around 10 seconds?" 3. Emotion Verification (For Neutral Data): 
+
+"When Speaker 1 said [Text], did they express happiness ?" "Did the speaker sound furious or annoyed during the discussion?" 
+
+## NOT Allowed Question Patterns 
+
+• Wrong Questions: 
+
+Q: Why did Speaker 3 sound sad when saying ’i think the search works as well’ around 45 seconds? A: Speaker 3 did not sound sad at that moment. 
+
+# Output Format (Strict JSON) 
+
+Output a valid JSON List. Ensure ‘evidence_nodes‘ is a list of integers. Using ’ instead of " for citation 
+
+``` json [{{ "question": "The specific 'question' string.", "answer": "The brief 'answer' derived from the text.", "evidence_nodes": [10, 12], // Must be a list of turn_ids "reasoning": "Brief explanation of the logic." }} ]
+
+``` 
+
+# Input: 
+
+{input_data} 
+
+# Output: Prompt for Graph-based QA Generation 
+
+# Role 
+
+You are an expert data annotator specialized in Graph-based Audio Understanding and Conversational AI . Your goal is to construct a massive, high-quality Graph RAG dataset from raw ASR transcripts. 
+
+# Input Data Structure 
+
+A list of Nodes. Attributes: ‘turn_id‘: [‘timestamp start‘-‘timestamp end‘] Speaker ‘speaker‘: ‘text‘ 
+
+# Mission 
+
+Your mission is to exhaustively mine the provided transcript for every possible piece of information and convert it into a Question-Answer (QA) pair. Do not stop at just one question per category. 
+
+Aim to generate as many valid, distinct QA pairs as the data supports (e.g., 10-20 pairs for a medium-length segment). 
+
+# Critical Guidelines (The "Don’t"s) 
+
+1. Filter Noise: Do NOT generate Factual questions about "YEAH", "OKAY", "MM-HMM" (backchannels). 
+
+• Bad: "Who said ’Yeah’?" 
+
+• Good (Inferential): Use "Yeah" nodes only as evidence for "Agreement" or "Consensus". 2. Avoid Hallucination: Every answer must be strictly supported by the ‘evidence_nodes‘. 3. No Generic Questions: Avoid vague questions like "What happened?". Be specific: "What software bug did Speaker A mention?" 
+
+# Question Generation Strategy (How to generate MANY questions) 
+
+To maximize the number of QAs, apply these specific strategies: 
+
+## Strategy A: Entity-Centric Mining (Factual) 
+
+Scan for every entity in the text. Generate a question for each. 
+
+• Entities: Project names, specific numbers, technical terms, people’s names, locations, file paths. 
+
+• Trigger: "I see a phone number ’04555’." -> QA: "What is the phone number mentioned?" 
+
+## Strategy B: Logic & Linkage (Inferential) 
+
+Look for connections between distant or adjacent nodes. 
+
+• Cause & Effect: Node X proposes something -> Node Y rejects it. -> QA: "Why was the proposal in Node X rejected?" 
+
+• Clarification: Node A asks a question -> Node B answers it. -> QA: "How did Speaker B respond to A’s inquiry about [Topic]?" 
+
+• Sentiment: Look for emotional words or emphatic language. -> QA: "Which speaker expressed frustration about the file system?" 
+
+## Strategy C: Time Anchors (Temporal) 
+
+• Absolute: "What topic was introduced exactly at the 10-minute mark?" 
+
+• Relative: "What was discussed immediately before the discussion about the budget?" 
+
+• Duration: "How long did the debate about ’UI Design’ last?" (Calculate from start/end timestamps of the cluster). 
+
+## Strategy D: Scene Understanding (Summarization) 
+
+• Topic Segmentation: Identify where the topic shifts. -> QA: "Summarize the main points discussed regarding [Topic Name]." 
+
+• Speaker Role: "Based on the segment, what seems to be the role of Speaker 0?" (e.g., Manager, Technical Lead). 
+
+# Output Format (Strict JSON) 
+
+Output a valid JSON List. Ensure ‘evidence_nodes‘ is a list of integers. 
+
+``` json [{{ "type": "factual | inferential | temporal | summarization", "question": "The specific question string.", "answer": "The precise answer derived from the text.", "evidence_nodes": [10, 12], // Must be a list of turn_ids "reasoning": "Brief explanation of the logic." }} ]
+
+``` 
+
+# Input: 
+
+{input_data} 
+
+# Output:
