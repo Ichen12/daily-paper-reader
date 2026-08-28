@@ -1,0 +1,909 @@
+Title: CSAVocoder: A Causal Spatial Audio Vocoder Towards Real-Time Spatial Audio Generation
+
+URL Source: https://arxiv.org/pdf/2608.25404v1
+
+Published Time: Thu, 27 Aug 2026 00:33:13 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# CSAVocoder: A Causal Spatial Audio Vocoder Towards Real-Time Spatial Audio Generation 
+
+Zhiyuan Zhu Han Wang Wenxiang Guo Yu Zhang 
+
+Changhao Pan Rui Yang Zhou Zhao *
+
+Zhejiang University 
+
+{schmittzhu, zhaozhou}@zju.edu.cn 
+
+Abstract 
+
+Spatial audio vocoders are able to convert mel-spectrograms produced by generative mod-els into spatial audio waveforms. Most neu-ral vocoders are designed for monaural audio, and direct extensions to spatial audio can de-grade spatial quality by ignoring inter-channel cues. We present CSAVocoder, a causal GAN-based spatial audio vocoder that jointly opti-mizes waveform fidelity and spatial rendering. Our framework introduces a Spatial Adaptor that fuses multi-channel mel-spectrograms with dynamic source-listener pose information, to-gether with a spatial consistency discriminator that supervises inter-channel cues. To meet real-time requirements, we design a strictly causal, stateful generator that supports effi-cient streaming inference with constant mem-ory overhead. Experiments on large-scale spa-tial audio datasets show that CSAVocoder im-proves spatial fidelity at competitive audio qual-ity and real-time performance. 
+
+1 Introduction 
+
+Unlike monaural audio, spatial audio renders sound sources at different directions and distances, pro-viding a more immersive listening experience. It reconstructs a three-dimensional sound field and exploits the natural localization mechanisms of the human auditory system. By accurately modeling these cues, spatial audio delivers a strong sense of presence and realism in digital environments. Spatial audio is increasingly important in ap-plications such as virtual reality, augmented real-ity (Gupta et al., 2022; Kailas and Tiwari, 2021), and immersive gaming (Raghuvanshi and Snyder, 2018; Broderick et al., 2018; Yadegari et al., 2022). Recent generative models have made progress in spatial audio synthesis (Zhu et al., 2025; Lu et al., 2025), but many operate in the mel-spectrogram 
+
+> *Corresponding Author
+
+domain and rely on a vocoder to produce wave-forms. Works such as ISDrama (Zhang et al., 2025b) and DualSpec (Zhao et al., 2026) use pre-trained HiFi-GAN-style vocoders and achieve high single-channel quality, yet they largely ignore inter-channel spatial consistency. Most vocoder studies still target single-channel audio; direct extensions to spatial audio often degrade spatial quality be-cause they ignore inter-channel cues. The relative pose between the sound source and the listener is also a critical factor in spatial audio rendering. Recent works (Heydari et al., 2025; Singh Kush-waha et al., 2024; Templin et al., 2025) use various forms of spatial information, including explicit co-ordinates and features extracted from visual inputs. The relative position controls loudness and spec-tral coloration, while orientation affects perceived direction and spatial awareness. Therefore, an ef-fective spatial audio vocoder must explicitly model and exploit pose information to improve both signal quality and spatial perception. At the same time, real-time and efficiency re-quirements further complicate spatial audio ren-dering. In virtual and augmented reality, user in-teraction and rapid scene changes require spatial audio to react with low latency in order to maintain immersion. Prior work (Joy et al., 2024; Zhang et al., 2025b) emphasizes real-time rendering and the real-time factor (RTF). Since the vocoder is the final stage of spatial audio generation, its inference speed directly impacts end-to-end system latency and is critical for real-time applications. Designing a spatial audio vocoder that is both accurate and efficient is therefore challenging. The model must synthesize waveforms with high fi-delity. It must also render perceptually valid spatial cues such as interaural level differences (ILD) and interaural phase differences (IPD), and learn the complex mapping from pose to acoustic behavior, including source position and motion. In addition, the vocoder must be causal and support low-latency arXiv:2608.25404v1 [eess.AS] 26 Aug 2026 streaming inference that generates audio continu-ously in chunks. To address these challenges, we propose CSAV-ocoder, a causal GAN-based spatial vocoder that maps multi-channel mel-spectrograms and the rela-tive source-listener pose to spatial waveforms and supports chunk-wise streaming inference. In sum-mary, our contributions are: • We design a GAN-based spatial audio vocoder with a causal architecture that supports low-latency streaming inference while maintaining high-quality spatial audio synthesis. • We introduce a pose-conditioning mechanism that uses a position adaptor to encode the relative source-listener pose and a mel adaptor to capture inter-channel relationships, improving spatial au-dio rendering and perceptual quality. • We propose a unified architecture for the binaural and FOA formats considered in this work, learn-ing an end-to-end mapping from multi-channel mel-spectrograms to multi-channel spatial audio waveforms. 
+
+2 Related Work 
+
+Spatial Audio Rendering Spatial audio render-ing constructs immersive auditory scenes by model-ing sound propagation in three-dimensional space. Among existing representations, binaural audio and First-Order Ambisonics (FOA) are particularly cen-tral. Binaural audio directly models ear-canal sig-nals via head-related transfer functions (HRTFs) and is the final perceptual format for headphone playback. FOA provides a spherical-harmonic, scene-centric representation with rotational equiv-ariance and is widely used in VR/AR and 360 ◦
+
+video systems. These two formats are therefore can be considered as the primary targets of many generative spatial audio models. A broad line of work studies spatial audio gen-eration and understanding from visual, textual, or multimodal inputs (Zhu et al., 2026). 2.5D Vi-sual Sound (Gao and Grauman, 2019) upmixes monophonic audio to binaural signals using vi-sual cues in a regression setting. More recent methods move toward end-to-end spatial gener-ation: ViSAGe (Kim et al., 2025) predicts FOA from silent video, ISDrama (Zhang et al., 2025b) models long-form spatial narratives with explicit real-time constraints, Diff-SAGe (Singh Kushwaha et al., 2024) applies diffusion in the complex spec-tral domain to better preserve inter-channel phase, and BEWO (Sun et al., 2024) enables text-driven binaural generation. ImmerseDiffusion (Heydari et al., 2025), In-the-Wild Audio Spatialization (Pan et al., 2025c), and streaming autoregressive diffu-sion models (Lei et al., 2026) synthesize FOA or binaural audio from spatial and semantic condi-tions. Many of these systems operate primarily in the spectral domain and rely on separate vocoders or reconstruction stages, which introduce additional latency. Spatial information is often injected im-plicitly via latent variables or high-level prompts. Only a few works, such as ISDrama and ImmerseD-iffusion, combine explicit spatial conditioning with considerations of real-time performance. These systems place strong demands on the spatial audio vocoder at the end of the pipeline: it must gener-ate high-quality audio and preserve spatial cues, as measured by localization and listener-preference evaluations (Pan et al., 2025a). 
+
+Neural Vocoders Neural vocoders map acoustic features to waveforms and form the last stage of audio generation. GAN-based vocoders dominate due to favorable quality-efficiency trade-offs. HiFi-GAN (Kong et al., 2020) introduces multi-period and multi-scale discriminators; BigVGAN (Lee et al., 2022) improves robustness via periodic activations and anti-aliasing; FARGAN (Valin et al., 2024), CARGAN (Morrison et al., 2022), and QGAN (Chaudhary and Abrol, 2024) re-duce parameters and computing complexity. Mu-sicHiFi (Zhu et al., 2024) is an efficient high-fidelity stereophonic vocoder for enhancing low-resolution audio. Alternative approaches operate in structured do-mains. Vocos (Siuzdak, 2024) predicts complex STFT coefficients; AF-Vocoder (Chen et al., 2025) applies frequency-domain artifact filtering; Dis-Coder (Lanzendörfer et al., 2025) generates in the latent space of neural audio codecs. Diffusion vocoders such as DiffWave (Kong et al., 2021), PriorGrad (Lee et al., 2021), and FastDiff (Huang et al., 2022) offer high perceptual quality via iter-ative denoising, and flow-based vocoders such as WaveFM (Luo et al., 2025) learn direct transport trajectories for efficiency. These existing vocoders primarily target monophonic or stereophonic audio and do not explicitly model spatial cues, limiting their effectiveness for spatial audio rendering. 
+
+Real-time Speech Synthesis Real-time synthe-sis is critical for interactive applications where la-tency must stay below perceptual thresholds, fa-voring causal architectures and streaming infer-ence. Early neural vocoders such as WaveNet (Van Den Oord et al., 2016) are autoregressive and naturally causal, but sample-by-sample genera-tion is too slow for real-time use. Online sys-tems such as CONAN (Zhang et al., 2025d) and Moshi (Défossez et al., 2024) use chunk-wise gen-eration and state caching for bounded-delay inter-action. For vocoders, WaveHax (Yoneyama et al., 2025b) and MS-WaveHax (Yoneyama et al., 2025a) adopt causal convolutions with shuffle-based up-sampling; DLL-APNet (Du et al., 2025) combines distillation and simplification; MelFlow (Welker et al., 2025) adapts flow models to causal mel-to-waveform mapping; BinauralFlow (Liang et al., 2025) demonstrates streamable binaural genera-tion. These advances motivate spatial vocoders that jointly achieve high spatial fidelity and streaming capability. 
+
+3 Method 
+
+3.1 Task Definition 
+
+We aim to synthesize a multi-channel spatial audio waveform y ∈ RC×L from a multi-channel mel-spectrogram M ∈ RC×F ×T and the corresponding spatial pose sequence P ∈ RDp×Tp . Here, C de-notes the number of channels, L is the waveform length, F is the number of mel frequency bins, and 
+
+T is the number of mel frames. The sequence P
+
+captures the time-varying pose of the sound source relative to the listener, where Dp is the pose dimen-sion and Tp is the number of pose samples. Each pose vector consists of a 3D Cartesian position 
+
+(x, y, z ) and a 4D quaternion (qw, q x, q y, q z ) that encodes orientation, so Dp = 7 .We formulate the problem as learning a condi-tional generative function G that maps the inputs to the target waveform: 
+
+y = G(M, P; θ), (1) where θ denotes the learnable parameters of the generator. 
+
+3.2 GAN-based Vocoder 
+
+Our framework builds on the HiFi-GAN vocoder, which consists of a generator G and a set of dis-criminators D. Figure 1 illustrates the overall ar-chitecture. We extend both the generator and the discriminator stack to support spatial conditioning and strictly causal streaming synthesis. 
+
+3.2.1 Generator 
+
+The generator follows the overall topology of HiFi-GAN, using a convolutional network to upsample the input mel-spectrogram in the temporal domain. Instead of reusing the original non-causal modules, we redesign the core building blocks to satisfy strict causality and to support stateful streaming infer-ence. The generator takes the outputs of the Mel Adap-tor and the Position Adaptor (Section 3.4) as con-ditioning inputs. The fused conditioning then passes through a series of upsampling and resid-ual blocks, which gradually increase the temporal resolution to that of the target waveform. We re-place standard transposed convolutions with our ShuffleUpsampleBlock. First, the CausalConv1d block projects the channels from C to Cout · s,producing X′ ∈ RB×(Cout s)×Tin . Then a Shuffle-Block reshapes this tensor to X′′ ∈ RB×Cout ×(Tin s)
+
+by folding extra channels into the time dimension. Since pixel shuffle is a pure tensor reordering with-out temporal mixing, it preserves the causality of the preceding convolution and yields artifact-free causal upsampling. The residual blocks forming the multi-receptive-field fusion (MRF) stack are modified in the same spirit. Each StreamingResBlock consists of several causal convolutions with different dilation rates to capture patterns at multiple temporal scales, and maintains an internal buffer whose length matches its effective left context. These buffers store histor-ical features from previous chunks, so even highly dilated convolutions receive the correct past context when processing the first frames of a new chunk. 
+
+3.2.2 Discriminator Conventional Wave and Spectral Discrimina-tors To encourage fidelity in both waveform and spectral domains, we combine the standard MPD and MSD from HiFi-GAN (Kong et al., 2020) with the MRD from BigVGAN (Lee et al., 2022). The waveform discriminators capture periodic and multi-scale temporal artifacts, while the MRD uses multiple STFT configurations to detect frequency-domain artifacts at different resolutions. When applied channel-wise or to flattened multi-channel signals, however, these discriminators are spatially agnostic: they cannot directly assess inter-channel relationships or the correctness of spatial cues. 
+
+Spatial Consistency Discriminator To explic-itly supervise spatial structure, we introduce a Spa-Feature Extraction (Geometric + Kinematic) 
+
+> (a) Mel Adaptor
+> 1D Conv 1D Conv 1D Conv
+> Cross-Channel Attention (MHSA)
+> ...
+> C-channel Independent Conv1d Extraction
+> Fusion (Concat + 1x1 Conv)
+> Multi Channel Mel-spectrogram
+> PreConv (Causal Conv1d)
+> (b) Core Backbone
+> Causal Upsample ShuffleBlock (Causal Conv1d + PixelShuffle) MRF Module (Causal ResBlock)
+> State Cache
+> Upsample Stages ( ×4) Causal Upsample ShuffleBlock (Causal Conv1d + PixelShuffle)
+> State Cache
+> Causal Upsample ShuffleBlock (Causal Conv1d + PixelShuffle)
+> State Cache
+
+...  
+
+> MRF Module (Causal ResBlock) MRF Module (Causal ResBlock) PostConv (Causal Conv1d) Multi Channel Waveform Spatial Pose Sequence
+> (c) Spatial Position Adaptor
+> Fourier Feature Encoding Causal Dilated Convs (Temporal Encoder) FiLM Layer
+> State Cache
+> Streaming Causal Conv1d (k=K, d=1)
+> State Cache (length = K-1)
+> expand channels for Shuffle
+> internal feature map
+> (d) Causal Shuffle Upsample Block
+> channel groups
+> PixelShuffle 1d (factor )
+> Time up by
+> Reshape:
+> chunk n-1 (cache context) chunk n (new frames)
+> Time axis
+> FiLM Injection
+
+Figure 1: Overview of our model architecture. 
+
+tial Consistency Discriminator (SCD) that operates on multi-channel log-mel spectrograms and pro-vides spatially informed adversarial gradients to the generator. Given a multi-channel waveform y ∈
+
+RB×C×T , the SCD computes M ∈ RB×C×F ×T ′
+
+and projects it via a 2D convolution into latent features X ∈ RB×d×C×T ′
+
+. An axial-attention backbone then applies multi-head self-attention (MHSA) along the temporal axis (B · C, T ′, d ) and along the channel axis (B · T ′, C, d ). Temporal attention is bidirectional, since the discriminator processes finite segments offline. Channel-axis at-tention models cross-channel spectral and level re-lationships. A lightweight convolutional head maps the attended features to a scalar spatial-consistency score per segment, complementing conventional discriminators that mainly target single-channel fi-delity. 
+
+3.2.3 Training Objectives 
+
+To train the generator G and the discriminator set 
+
+D, we use a composite objective composed of several weighted loss terms. We adopt the stan-dard Least-Squares GAN adversarial loss ( Ladv )(Mao et al., 2017), feature matching loss ( Lfm )(Kumar et al., 2019), and multi-resolution spec-tral reconstruction losses ( Lmel and LSTFT ) (Kong et al., 2020). The detailed formulations of these standard objectives are provided in Appendix B. Our primary contribution to the objective function is the format-aware Spatial Loss, designed to ex-plicitly supervise spatial cues. 
+
+Spatial Loss Standard spectral losses treat chan-nels independently and fail to constrain inter-channel spatial cues. We propose a format-aware spatial loss Lspatial that explicitly supervises physi-cal attributes. For binaural audio, following duplex theory, we combine interaural phase difference (IPD) and in-teraural level difference (ILD) losses: LBin spatial =
+
+λIPD LIPD + λILD LILD . The IPD loss operates on multi-resolution STFTs and compares phase differ-ences in a sine-cosine embedding to avoid wrap-ping, with supervision concentrated in the low-frequency region by a Gaussian weighting. The ILD loss measures the discrepancy between the log-magnitude level differences of the two ears and emphasizes high frequencies through a complemen-tary weighting. For FOA audio, we define the loss on physi-cal sound-field descriptors: LFOA spatial = λiv Liv_dir +
+
+λrLr + λdiff Ldiff + λelog Lelog . Direction-related terms ( Liv_dir , Lr) constrain the angle and magni-tude of the intensity vector with a low-frequency bias, while diffusion-related terms ( Ldiff , Lelog )capture ambient envelopment with a mid-high-frequency bias. To stabilize training, all terms are modulated by an energy-based soft mask derived from the ground-truth signal. Detailed formulations are in Appendix B.4. 
+
+Full Objective The total loss functions for the generator and the discriminators are defined as Streaming Input      
+
+> Streaming Mel Adaptor Mel Embedding
+> Streaming Pos Adaptor
+> stage-wise
+> Conv Backbone
+> PreConv  Causal Upsample ShuffleBlock Stage 1 Causal ResBlock
+> ...
+> PostConv
+> Conv Backbone
+> Causal Upsample ShuffleBlock Stage N Causal ResBlock PrevConv Cache Upsample_1 cache Cache Bank PostConv Cache Upsample_N cache
+> Mel Chunk
+> Mel Chunk
+> Mel Chunk
+> Pos Chunk
+> Wav Chunk
+> Streaming Output
+> Mel Embedding
+> stage-wise
+> Conv Backbone
+> PreConv  Causal Upsample ShuffleBlock Stage 1 Causal ResBlock
+> ...
+> PostConv
+> Conv Backbone
+> Causal Upsample ShuffleBlock Stage N Causal ResBlock PrevConv Cache Upsample_1 cache Cache Bank PostConv Cache Upsample_N cache
+> Pos Chunk
+> Mel Embedding
+> Conv Backbone
+> PreConv  Causal Upsample ShuffleBlock Stage 1 Causal ResBlock
+> ...
+> PostConv
+> Conv Backbone
+> Causal Upsample ShuffleBlock Stage N Causal ResBlock
+> Pos Chunk
+> Wav Chunk Wav Chunk
+> Mel Adaptor Cache Pos Adaptor Cache
+> Streaming Mel Adaptor Streaming Pos Adaptor
+> Mel Adaptor Cache Pos Adaptor Cache
+> stage-wise
+> Streaming Mel Adaptor Streaming Pos Adaptor
+> stage-wise
+
+Figure 2: Continuous streaming inference pipeline. Starting from a multi-channel mel-spectrogram, the Mel Adaptor and Position Adaptor compute mel and pose embeddings. The embeddings are passed to the convolutional backbone, which generates waveform chunks through causal upsampling and residual blocks. Each streaming block keeps its own cache in the cache bank, so computation follows the causal constraint and never recomputes past activations. 
+
+weighted sums of the components described above. For each discriminator Dk in the discriminator set D, the total loss consists only of the adversarial term: 
+
+LD = X
+
+k
+
+Ladv (Dk; G). (2) For the generator G, the total loss is defined as 
+
+LG = Ladv (G; D) + λfm Lfm + λmel Lmel 
+
++ λSTFT LSTFT + λspatial Lspatial , (3) where λfm , λmel , λSTFT , and λspatial are hyperpa-rameters that balance the contributions of different loss terms. 
+
+3.3 Causal Architecture for Streaming Synthesis 
+
+Autoregressive vocoders such as WaveNet (Van Den Oord et al., 2016) are naturally causal but too slow due to sample-by-sample generation. Non-autoregressive vocoders such as HiFi-GAN are fast, but their symmetric padding and transposed convo-lutions access future frames, which breaks tempo-ral causality; simply switching to left-only padding often introduces boundary artifacts. We therefore redesign the HiFi-GAN generator as a fully causal, explicitly stateful architecture tai-lored for streaming synthesis. All stages from mel features to waveform satisfy strict causality, and a stateful inference mechanism avoids redundant computation in chunk-based processing. 
+
+Strict Causal Property When mapping a mel-spectrogram M = {m1, . . . , m T } to a waveform 
+
+W = {w1, . . . , w T ′ }, strict causality requires that each output sample wt depends only on input frames {m1, . . . , m i} whose timestamps do not ex-ceed that of wt. Any dependency on future frames 
+
+mj with j > i violates this constraint. Our design enforces this property at the operator level. All convolutions use explicit left padding instead of symmetric padding. For a kernel of size k and dila-tion d, we pad (k − 1) d samples on the left and run the convolution with zero padding, so the output at any time step depends only on inputs at or before that step. 
+
+Stateful Streaming Inference. Causality alone is insufficient for efficient streaming. Naively prepending a long contextual prefix to each chunk causes substantial redundant computation. We therefore implement all context-dependent layers in a stateful form. Each layer receives the current input chunk together with a compact cache from the previous step, and returns the current output plus an updated cache that stores exactly the left-context features required by the next chunk. As shown in Figure 2, the generator processes a se-quence of mel chunks while propagating a global state object that aggregates the caches of all stateful layers, so no past activations are recomputed. 
+
+3.4 Spatial Adaptor 
+
+Standard mono-channel vocoders lack mechanisms to process multi-channel spectrograms or incorpo-rate heterogeneous pose conditioning. We there-fore introduce the Spatial Adaptor, which uses two parallel modules to encode spectral and geometric cues. 
+
+Attentional Mel Adaptor This module fuses the multi-channel mel-spectrogram M ∈ RB×C×F ×T
+
+into a unified single-stream representation Xmel ∈
+
+RB×dhifi ×T while preserving implicit spatial cues. First, we apply a shared weight-normalized 1D convolution to each channel independently to ex-tract local features Xfeat ∈ RB×C×d×T . To cap-ture nonlinear inter-channel dependencies, we then employ Multi-Head Self-Attention along the chan-nel axis at each time step. Unlike fixed difference operations, this data-driven approach dynamically weights the contribution of each channel. Finally, the attended features are concatenated and pro-jected via a 1 × 1 convolution to the backbone dimension dhifi , serving as the unified input to the generator. 
+
+Spatial Position Adaptor This adaptor converts the raw pose sequence P into dense, physically meaningful conditioning Xpos . From the 7D raw pose, we derive Cartesian coordinates and forward vectors (from quaternions), augmented with first-order velocity differences to capture kinematic motion. To mitigate the spectral bias of MLPs, we map these scalars to high-dimensional sinu-soidal representations using Fourier feature encod-ing (Mildenhall et al., 2021), enabling sensitiv-ity to fine-grained spatial changes. The encoded features are then processed by CausalPosEncoder, a stack of causal dilated convolutions that mod-els motion trajectories. We inject this condition into the generator via Feature-wise Linear Mod-ulation (FiLM). For each upsampling block, au-dio features xaudio are modulated by scaling γ
+
+and bias β projected from the pose embeddings: FiLM (xaudio ) = (1 + tanh( γ)) · xaudio + β.
+
+3.5 Unified Framework for Spatial Audio 
+
+Traditional vocoders are mono-centric or naïvely replicate single-channel outputs, limiting their ap-plicability to spatial audio. We design a channel-free generator where the shared backbone performs identical upsampling for any channel count. The Attentional Mel Adaptor fuses a C-channel mel-spectrogram into a fixed-dimensional representa-tion, and the final projection layer outputs exactly 
+
+C waveform channels. For adversarial training, we pair this flexible generator with channel-aware dis-criminator heads specialized for each format. The training objective is likewise format-aware: for 2-channel binaural samples the spatial loss empha-sizes ILD and IPD, while for 4-channel FOA sam-ples it switches to the sound-field losses above. At inference, the model handles the supported formats by mapping the input mel-spectrogram and its chan-nel configuration directly to spatial audio output. The design keeps extension lightweight: supporting new standards such as 5.1 or 7.1 surround mainly requires format-specific objectives, discriminator heads, and evaluation protocols, while leaving the generator backbone unchanged. 
+
+4 Experiments 
+
+4.1 Experiment Details Dataset We use data in both binaural and FOA formats. For binaural data, we adopt the MRSSpeech subset of MRSAudio (Guo et al., 2025a) and the EasyCom (Donley et al., 2021) dataset. For FOA data, we use the Spatial Lib-riSpeech (Sarabia et al., 2023) dataset, synthesized from LibriSpeech (Panayotov et al., 2015), which offers a large number of FOA samples with spa-tial annotations. To increase spatial and acoustic diversity, we further generate simulated data using the SoundSpaces toolkit. In total, our training cor-pus contains roughly 600 hours of binaural data (about 350k samples) and 900 hours of FOA data (about 310k samples), all stored as 16-bit PCM at a sampling rate of 48 kHz. We preprocess EasyCom and MRSSpeech datasets using the ClearVoice (Zhao et al., 2025) denoising algorithm to enhance audio quality. We randomly sample 700 segments from all datasets as the test set, and split the remaining data into train-ing and validation sets with a 9:1 ratio. Detailed statistics are provided in Appendix C. Model ANG COS (↑)                                                                     
+
+> DIS COS (↑)MRSTFT ( ↓)PESQ ( ↑)MCD ( ↓)Periodicity( ↓)RTF ( ↓)
+> HiFi-GAN 39.07 68.37 1.470 1.562 5.329 0.169 0.0622 CARGAN 30.00 63.71 1.194 1.739 3.377 0.160 0.1348 FARGAN 23.53 56.03 1.219 1.885 3.447 0.161 0.1916 DiffWave 27.05 61.07 1.585 2.070 6.440 0.156 0.1621 PriorGrad 37.18 64.71 1.981 2.364 3.671 0.128 0.1629 FastDiff 29.46 59.93 2.889 2.051 6.948 0.130 0.1174 WaveFM 41.36 71.96 1.079 2.400 2.727 0.141 0.1634 Vocos 40.04 70.23 1.039 2.510 1.892 0.113 0.0339 Ours 62.11 77.05 1.223 2.109 2.153 0.107 0.1587
+> Table 1: Objective comparison with vocoder baselines on the binaural test set (spatial metrics in percentages).
+
+Baseline We compare our proposed method with several vocoder baselines. We use the original HiFi-GAN (Kong et al., 2020), Vocos (Siuzdak, 2024), CARGAN (Morrison et al., 2022), FAR-GAN (Valin et al., 2024), and WaveFM (Luo et al., 2025) as baselines. We further include diffu-sion vocoders DiffWave (Kong et al., 2021), Prior-Grad (Lee et al., 2021), and FastDiff (Huang et al., 2022). Recent work such as MusicHiFi (Zhu et al., 2024) has explored stereophonic vocoding, but its implementation is not publicly available. Because dedicated spatial vocoder baselines are limited, we use the above models, which have shown strong performance in monaural audio generation. We perform channel-wise inference on all baselines to generate binaural and FOA audio for comparison with our model. DSP and two-stage spatialization baselines are compared in Section 4.3. 
+
+Metrics Our evaluation protocol comprises both subjective listening tests and objective metrics. The objective evaluation covers general audio quality, spectral and temporal similarity, and spatial characteristics. For waveform and spectral similarity, we adopt metrics used in BinauralGrad (Leng et al., 2022): MCD (mel-cepstral distortion) to measure spectral distortion, periodicity to assess harmonic consis-tency, and MRSTFT, which combines spectral con-vergence with log- and linear-magnitude terms to improve spectral alignment. We also report PESQ as a perceptual measure for speech-related quality assessment. Except for PESQ, lower metric values indicate better performance. To quantify spatial fidelity, we introduce two consistency measures, ANG Cos and DIS Cos, which respectively evaluate angular and distance similarity between generated and reference signals. Specifically, we extract angular and distance em-beddings from binaural audio using Spatial-AST. Because Spatial-AST (Zheng et al., 2024) produces position estimates only for static sources, we parti-tion each audio into 1-second segments, compute the cosine similarity between predicted and ground-truth embeddings within each segment, and then average these segment-level similarities to obtain an overall spatial-consistency score. These metrics are reported as percentages. For subjective evaluation, we use MOS-Q (Mean Opinion Score for Quality) to evaluate the qual-ity of generated audio and MOS-P (Mean Opin-ion Score for Position) to assess spatial perception. More implementation details are in Appendix G. 
+
+4.2 Quantitative Comparison 
+
+We compare our model with existing vocoder base-lines and present the metric results in Table 1. As shown in the table, our approach improves the spa-tial metrics over all baselines, including the dif-fusion vocoders, while remaining competitive on audio metrics. These gains indicate that explicitly modeling inter-channel relationships through our Mel Adaptor and supervising spatial cues via the Spatial Consistency Discriminator are important for preserving spatial information. The main audio-quality trade-off appears in PESQ. Our PESQ score is lower than non-causal baselines such as Vocos and WaveFM. This is partly expected under the strictly causal constraint, since our causal convolu-tions only access past context, whereas non-causal models can use bidirectional receptive fields that benefit perceptual quality. More results on FOA are in Appendix E. Analyses on bandwidth-matched evaluation, causal variants, and pose perturbations are in Appendix D. We report the Real-Time Factor (RTF) measured on a single NVIDIA RTX 4090 GPU. Our model achieves RTF = 0.1587, which is well below unity and indicates that the causal streaming architecture Method ANG COS (↑) DIS COS (↑) MRSTFT (↓) PESQ (↑) MCD (↓) Per. (↓) RTF (s1+s2)                                                  
+
+> GT + DSP 26.65 51.07 1.189 3.884 4.353 0.090 0 + 0.2030
+> Vocos + DSP 23.65 50.02 1.347 2.216 6.126 0.103 0.0170 + 0.2030
+> GT + BinauralGrad 50.83 72.13 2.536 3.548 8.815 0.078 0 + 1.1282
+> Vocos + BinauralGrad 46.45 69.59 2.692 2.149 8.948 0.113 0.0170 + 1.1282
+> ISDrama + HiFi-GAN 45.77 67.70 2.782 1.110 8.885 0.206 0.183 + 0.062
+> ISDrama + Ours 47.73 71.44 2.676 1.090 9.454 0.219 0.183 + 0.1587
+> GT + Ours 62.11 77.05 1.223 2.109 2.153 0.107 0 + 0.1587
+
+Table 2: Comparison with DSP and two-stage spatialization baselines (spatial metrics in percentages). 
+
+supports real-time generation. Compared to other GAN-based baselines, our RTF remains compet-itive while providing substantially better spatial preservation. Detailed latency results are provided in Appendix F. Overall, these results show that CSAVocoder achieves both high-fidelity waveform synthesis and accurate spatial rendering. The causal architecture introduces a minor quality trade-off compared to non-causal models, but this is an acceptable cost for enabling low-latency streaming applications. 
+
+4.3 Comparison with Spatialization Baselines 
+
+Channel-wise vocoder baselines share our mel-to-waveform input condition, so we further compare against spatialization pipelines with different input assumptions. The DSP baseline computes prop-agation delays from source-ear geometry and ap-plies channel-wise time warping to a mono wave-form. BinauralGrad (Leng et al., 2022) serves as a learned waveform spatializer, and ISDrama (Zhang et al., 2025b) provides an upstream spatial genera-tion stage that produces binaural mel-spectrograms. Each pipeline combines a stage-1 input (GT mono source, Vocos output, or ISDrama mel) with a stage-2 rendering module (DSP, BinauralGrad, HiFi-GAN, or CSAVocoder), and we report the RTF of both stages. GT in stage 1 denotes ground-truth mono audio and GT in last row denotes binaural mel-spectrogram from GT binaural audio. Table 2 shows that GT mel-spectrogram with our vocoder reaches 62.11/77.05 ANG/DIS COS, higher than DSP method with GT wav input (26.65/51.07) and BinauralGrad with GT wav in-put (50.83/72.13). Replacing the stage-1 input with Vocos output degrades all spatialization pipelines, which confirms that upstream mono quality bounds the final spatial fidelity. ISDrama + Ours also outperforms ISDrama + HiFi-GAN (47.73/71.44 vs. 45.77/67.70), indicating that our vocoder pre-serves spatial cues even under upstream generated mel inputs. This comparison clarifies the posi-tioning of our work: the main contribution is a spatial vocoder under matched mel-to-waveform constraints, whereas traditional rendering systems assume different inputs such as mono sources, HRTFs, and separate spatialization modules. 
+
+4.4 Qualitative Comparison 
+
+We conduct a qualitative comparison of our pro-posed model with the baselines. Figure 3 compares generated audio samples. The first column shows the ground-truth audio, the second column shows audio generated by our model, and the remaining columns show baseline predictions. Our causal model preserves harmonic stacks and formant tra-jectories, which closely match the ground truth on both channels, while maintaining consistent left-right spectral patterns. Compared with the base-lines, our results exhibit sharper and more coherent harmonic structures with fewer band-wise artifacts and a cleaner noise floor. Our causal generation still shows slightly smoother transients and mildly re-duced high-frequency detail than non-causal coun-terparts. Nevertheless, it achieves a highly simi-lar overall spectral structure, indicating that high perceptual quality is attainable under causal con-straints. 
+
+4.5 Subjective Evaluation 
+
+We conduct subjective listening tests to evaluate the quality and spatial perception of the generated audio. Table 3 reports the subjective evaluation results. For the MOS-P test, listeners rate how accurately they perceive the sound-source position in the gen-erated audio compared to the ground-truth position on a scale from 1 to 5. Our model achieves the highest MOS-P score among all models, indicating superior spatial perception. For the MOS-Q test, listeners rate the overall audio quality of the gener-ated samples on a scale from 1 to 5. Our model also Figure 3: Qualitative comparison of spectrograms. The first column shows the ground truth, the second column shows our model, and the remaining columns show baselines. 
+
+achieves a high MOS-Q score, although causal gen-eration can be slightly weaker in audio quality than non-causal models that use future context. We fur-ther conduct a MUSHRA-style expert evaluation on spatial perception, reported in Appendix G.2. 
+
+Model MOS-P MOS-Q 
+
+HiFi-GAN 3.86 ± 0.19 3.98 ± 0.17 
+
+CARGAN 3.90 ± 0.18 4.03 ± 0.14 
+
+FARGAN 3.93 ± 0.14 4.07 ± 0.15 
+
+WaveFM 4.13 ± 0.13 4.17 ± 0.12 
+
+Vocos 4.09 ± 0.15 4.24 ± 0.11 
+
+Ours 4.25 ± 0.16 4.09 ± 0.21 
+
+GT 4.42 ± 0.11 4.41 ± 0.16 
+
+> Table 3: MOS results with 95% confidence intervals.
+
+4.6 Ablation Study 
+
+We perform ablation studies of our proposed com-ponents and present the results in Table 4. All proposed components contribute to the over-all performance of our model. Removing the Mel Adaptor causes a clear drop in spatial metrics, since the model no longer uses inter-channel information. Using 4 attention heads in the Mel Adaptor yields the best performance. Removing the Position Adap-tor results in a moderate degradation, indicating that spatial information can still be partially cap-tured through the Mel Adaptor. The results also show that the Spatial Consistency Discriminator improves spatial metrics. In our experiments, how-ever, its adversarial weight required careful tuning; otherwise, training could become unstable. 
+
+5 Conclusion 
+
+We present CSAVocoder, a spatial audio vocoder that jointly addresses high-fidelity waveform syn-
+
+Setting ANG COS (↑)
+
+DIS COS (↑)w/o Mel Adaptor 42.60 65.39 Mel Adaptor 2 head 61.03 76.55 Mel Adaptor 8 head 61.50 76.70 w/o SCD 58.82 74.63 w/o Position Adaptor 54.78 70.63 Mel Adaptor 4 head 62.11 77.05 
+
+> Table 4: Ablation of adaptor components and attention head counts on the binaural test set.
+
+thesis and accurate spatial rendering. Our frame-work extends the GAN architecture with three key innovations: a Spatial Adaptor that fuses multi-channel mel-spectrograms with dynamic pose in-formation to capture inter-channel relationships, a Spatial Consistency Discriminator that explic-itly supervises spatial cues, and a strictly causal, stateful generator whose streaming inference incurs only constant memory overhead. Experimental results show that CSAVocoder out-performs channel-wise vocoder baselines in spa-tial fidelity while maintaining strong audio quality and real-time performance. Within the binaural and FOA settings studied here, the unified architec-ture supports multiple spatial formats in a single framework, making it a practical solution for im-mersive audio applications such as virtual reality, augmented reality, and spatial communication. These results highlight explicit spatial modeling and causal streaming as a strong foundation for future work on real-time spatial audio generation. Limitations 
+
+Our work has three main limitations. First, es-tablishing fair comparisons against causal base-lines is challenging because different implemen-tations adopt distinct buffering strategies and run-time optimizations that affect both latency and qual-ity. Many strong vocoders are optimized for of-fline generation and benefit from non-causal con-text or heavier post-processing; even when adapted to streaming, their engineering choices can dom-inate measured runtime. A standardized causal-baseline suite with matched end-to-end latency bud-gets and consistent objective measurements is left for future work. Second, we focus on binaural and FOA formats; extending to higher-order am-bisonics (HOA), multichannel loudspeaker layouts (e.g., 5.1/7.1), object-based audio, and personalized HRTF rendering is non-trivial. Increasing channel counts changes the required inductive bias, stabil-ity of adversarial training, and computational cost, and different ambisonic conventions may introduce dataset mismatches. Third, we condition on pose (position and orientation), but alternative or com-plementary representations may be more robust or expressive. Examples include relative geometry features (distance/azimuth/elevation), scene-aware embeddings from visual or 3D context, or learned spatial tokens that summarize multi-source envi-ronments. We leave these axes to future work. 
+
+Ethical Considerations 
+
+This paper presents CSAVocoder, a causal and state-ful vocoder for low-latency spatial audio generation conditioned on acoustic features. While the model does not generate linguistic content on its own, it can be integrated into upstream TTS/VC systems; therefore, both model- and data-related risks must be considered. 
+
+Data provenance, licensing, and privacy. We rely on publicly available speech/spatial-audio cor-pora and simulation pipelines. We do not claim ownership of any third-party audio content and recommend that any release avoid redistributing raw audio unless explicitly permitted by original licenses/terms. Derived artifacts such as file lists, splits, and evaluation scripts should be shared in a way that enables reproducibility while reducing privacy exposure. Speech datasets may contain personally identifying information or sensitive at-tributes. 
+
+Risks from real-time generation and speech pri-vacy. Low-latency speech generation can enable near-real-time impersonation, “live” spoofing in voice authentication, and the re-synthesis of inter-cepted private conversations. Spatial audio further increases realism and may strengthen deceptive sce-narios. In addition, pose conditioning introduces an auxiliary privacy surface: logged 3D trajecto-ries and orientations can reveal behavioral patterns, attention, or activity context in immersive systems. 
+
+Potential harmful applications. Beyond deep-fakes, potential misuse includes covert surveillance, harassment, social engineering, or generating mis-leading evidence. Dataset misuse may include training downstream models for speaker identifica-tion, demographic profiling, or other applications that participants did not consent to, especially when data is repurposed outside its original scope. 
+
+Mitigations and responsible release. We recom-mend (i) clear acceptable-use terms and licenses; (ii) optional watermarking/provenance signals and guidance for detection; (iii) restricting and docu-menting deployment contexts; (iv) minimizing re-tention of raw audio, intermediate representations, and pose logs; and (v) reporting limitations and failure modes. For listening tests, risks are minimal but include fatigue; conservative volume, breaks, and withdrawal options are advised. 
+
+Bias and environmental impact. Training data and simulators may under-represent languages, ac-cents, acoustic environments, and accessibility-related speech characteristics, leading to uneven performance. Finally, while causal inference can reduce runtime cost, training remains compute-intensive; we encourage transparent reporting of compute and settings to support reproducibility and responsible scaling. 
+
+References        
+
+> James Broderick, Jim Duggan, and Sam Redfern. 2018. The importance of spatial audio in modern games and virtual environments. In 2018 IEEE games, en-tertainment, media conference (GEM) , pages 1–9. IEEE. Aryan Chaudhary and Vinayak Abrol. 2024. QGAN: Low Footprint Quaternion Neural Vocoder for Speech Synthesis. In Interspeech 2024 , pages 3874– 3878. Changan Chen, Carl Schissler, Sanchit Garg, Philip Kobernik, Alexander Clegg, Paul Calamia, Dhruv
+
+Batra, Philip Robinson, and Kristen Grauman. 2022. Soundspaces 2.0: A simulation platform for visual-acoustic learning. In Advances in Neural Information Processing Systems , volume 35, pages 8896–8911. Curran Associates, Inc. Zhuangqi Chen, Xianjun Xia, Xiaohuai Le, Siyu Sun, and Chuanzeng Huang. 2025. AF-Vocoder: Artifact-Free Neural Vocoder with Global Artifact Filter. In 
+
+Interspeech 2025 , pages 4903–4907. Alexandre Défossez, Laurent Mazaré, Manu Orsini, Amélie Royer, Patrick Pérez, Hervé Jégou, Edouard Grave, and Neil Zeghidour. 2024. Moshi: a speech-text foundation model for real-time dialogue. arXiv preprint arXiv:2410.00037 .Jacob Donley, Vladimir Tourbabin, Jung-Suk Lee, Mark Broyles, Hao Jiang, Jie Shen, Maja Pantic, Vamsi Kr-ishna Ithapu, and Ravish Mehra. 2021. Easycom: An augmented reality dataset to support algorithms for easy communication in noisy environments. arXiv preprint arXiv:2107.04174 .Hui-Peng Du, Yang Ai, and Zhen-Hua Ling. 2025. A distilled low-latency neural vocoder with ex-plicit amplitude and phase prediction. Preprint ,arXiv:2509.13667. Fangming Feng, Dongjie Fu, Zequn Xie, Yu Zhang, Yangyang Wu, Zhou Zhao, and Tao Jin. 2026. Rec-tifying the emotional flow: Aligning priors and dy-namic guidance for high-arousal text-to-speech. In 
+
+Proceedings of the 64th Annual Meeting of the As-sociation for Computational Linguistics (Volume 1: Long Papers) , pages 21874–21888. Association for Computational Linguistics. Ruohan Gao and Kristen Grauman. 2019. 2.5d visual sound. In Proceedings of the IEEE/CVF Confer-ence on Computer Vision and Pattern Recognition (CVPR) .Wenxiang Guo, Changhao Pan, Zhiyuan Zhu, Xintong Hu, Yu Zhang, Li Tang, Rui Yang, Han Wang, Zong-bao Zhang, Yuhan Wang, and 1 others. 2025a. Mr-saudio: A large-scale multimodal recorded spatial au-dio dataset with refined annotations. arXiv preprint arXiv:2510.10396 .Wenxiang Guo, Yu Zhang, Changhao Pan, Rongjie Huang, Li Tang, Ruiqi Li, Zhiqing Hong, Yongqi Wang, and Zhou Zhao. 2025b. Techsinger: Technique controllable multilingual singing voice synthesis via flow matching. arXiv preprint arXiv:2502.12572 .Wenxiang Guo, Yu Zhang, Changhao Pan, Zhiyuan Zhu, Ruiqi Li, ZheTao Chen, Wenhao Xu, Fei Wu, and Zhou Zhao. 2025c. STARS: A unified framework for singing transcription, alignment, and refined style an-notation. In Findings of the Association for Compu-tational Linguistics: ACL 2025 , pages 15081–15093, Vienna, Austria. Association for Computational Lin-guistics. Rishabh Gupta, Jianjun He, Rishabh Ranjan, Woon-Seng Gan, Florian Klein, Christian Schneiderwind, Annika Neidhardt, Karlheinz Brandenburg, and Vesa Välimäki. 2022. Augmented/mixed reality audio for hearables: Sensing, control, and rendering. IEEE Signal Processing Magazine , 39(3):63–89. Mojtaba Heydari, Mehrez Souden, Bruno Conejo, and Joshua Atkins. 2025. Immersediffusion: A genera-tive spatial audio latent diffusion model. In ICASSP .Rongjie Huang, Max WY Lam, Jun Wang, Dan Su, Dong Yu, Yi Ren, and Zhou Zhao. 2022. Fastdiff: A fast conditional diffusion model for high-quality speech synthesis. arXiv preprint arXiv:2204.09934 .Dhanush Joy, S Kiran, Alan Ponnachan, R Ashok, and M Nikhil. 2024. Real-time implementation of spa-tial audio on fpga using interaural time difference and amplitude-driven perceptual depth. In 2024 First International Conference on Electronics, Communi-cation and Signal Processing (ICECSP) , pages 1–6. IEEE. Ganesh Kailas and Nachiketa Tiwari. 2021. Design for immersive experience: Role of spatial audio in extended reality applications. In Design for Tomor-row—Volume 2: Proceedings of ICoRD 2021 , pages 853–863. Springer. Jaeyeon Kim, Heeseung Yun, and Gunhee Kim. 2025. Visage: Video-to-spatial audio generation. In The Thirteenth International Conference on Learning Representations .Jungil Kong, Jaehyeon Kim, and Jaekyoung Bae. 2020. Hifi-gan: Generative adversarial networks for effi-cient and high fidelity speech synthesis. Advances in neural information processing systems , 33:17022– 17033. Zhifeng Kong, Wei Ping, Jiaji Huang, Kexin Zhao, and Bryan Catanzaro. 2021. Diffwave: A versa-tile diffusion model for audio synthesis. Preprint ,arXiv:2009.09761. Kundan Kumar, Rithesh Kumar, Thibault de Boissiere, Lucas Gestin, Wei Zhen Teoh, Jose Sotelo, Alexandre de Brebisson, Yoshua Bengio, and Aaron Courville. 2019. Melgan: Generative adversarial networks for conditional waveform synthesis. Preprint ,arXiv:1910.06711. Luca A. Lanzendörfer, Florian Grötschla, Michael Ungersböck, and Roger Wattenhofer. 2025. High-fidelity music vocoder using neural audio codecs. In ICASSP 2025 - 2025 IEEE International Confer-ence on Acoustics, Speech and Signal Processing (ICASSP) , pages 1–5. Sang-gil Lee, Heeseung Kim, Chaehun Shin, Xu Tan, Chang Liu, Qi Meng, Tao Qin, Wei Chen, Sun-groh Yoon, and Tie-Yan Liu. 2021. Priorgrad: Improving conditional denoising diffusion models with data-dependent adaptive prior. arXiv preprint arXiv:2106.06406 .Sang-gil Lee, Wei Ping, Boris Ginsburg, Bryan Catan-zaro, and Sungroh Yoon. 2022. Bigvgan: A univer-sal neural vocoder with large-scale training. arXiv preprint arXiv:2206.04658 .Ke Lei, Yu Zhang, Changhao Pan, Xueyi Pu, Wenxi-ang Guo, Ruiqi Li, and Zhou Zhao. 2026. Towards streaming synchronized spatial audio generation via autoregressive diffusion transformer. In Proceedings of the 43rd International Conference on Machine Learning .Yichong Leng, Zehua Chen, Junliang Guo, Haohe Liu, Jiawei Chen, Xu Tan, Danilo Mandic, Lei He, Xi-angyang Li, Tao Qin, and 1 others. 2022. Binaural-grad: A two-stage conditional diffusion probabilistic model for binaural audio synthesis. Advances in Neural Information Processing Systems , 35:23689– 23700. Ruiqi Li, Yu Zhang, Changhao Pan, Ke Lei, Xiang Yin, and Cheng Yang. 2026. SwanVoice: Expressive long-form zero-shot speech synthesis for both monologue and dialogue. arXiv preprint arXiv:2605.30993 .Ruiqi Li, Yu Zhang, Yongqi Wang, Zhiqing Hong, Rongjie Huang, and Zhou Zhao. 2024. Robust singing voice transcription serves synthesis. arXiv preprint arXiv:2405.09940 .Susan Liang, Dejan Markovic, Israel D. Gebru, Steven Krenn, Todd Keebler, Jacob Sandakly, Frank Yu, Samuel Hassel, Chenliang Xu, and Alexander Richard. 2025. Binauralflow: A causal and stream-able approach for high-quality binaural speech synthesis with flow matching models. Preprint ,arXiv:2505.22865. Zhan Liu, Changli Tang, Yuxin Wang, Zhiyuan Zhu, Youjun Chen, Yiwen Shao, Tianzi Wang, Lei Ke, Zengrui Jin, and Chao Zhang. 2026. Jaeger: Joint 3d audio-visual grounding and reasoning in simulated physical environments. arXiv preprint arXiv:2602.18527 .Xikun Lu, Yunda Chen, Zehua Chen, Jie Wang, Mingx-ing Liu, Hongmei Hu, Chengshi Zheng, Stefan Bleeck, and Jinqiu Sang. 2025. Deep learning for personalized binaural audio reproduction. arXiv preprint arXiv:2509.00400 .Tianze Luo, Xingchen Miao, and Wenbo Duan. 2025. Wavefm: A high-fidelity and efficient vocoder based on flow matching. Preprint , arXiv:2503.16689. Xudong Mao, Qing Li, Haoran Xie, Raymond YK Lau, Zhen Wang, and Stephen Paul Smolley. 2017. Least squares generative adversarial networks. In Proceed-ings of the IEEE international conference on com-puter vision , pages 2794–2802. Ben Mildenhall, Pratul P Srinivasan, Matthew Tancik, Jonathan T Barron, Ravi Ramamoorthi, and Ren Ng. 2021. Nerf: Representing scenes as neural radiance fields for view synthesis. Communications of the ACM , 65(1):99–106. Max Morrison, Rithesh Kumar, Kundan Kumar, Prem Seetharaman, Aaron Courville, and Yoshua Bengio. 2022. Chunked autoregressive gan for conditional waveform synthesis. In Submitted to ICLR 2022 .Changhao Pan, Yifei Fan, Fan Zhuo, Yifu Chen, Wenx-iang Guo, Yu Zhang, Ruiqi Li, Zhiyuan Zhu, Rui Yang, Shengpeng Ji, Chenyuhao Wen, Jiayang Xu, Ke Lei, Xiaoda Yang, Jingyu Lu, and Zhou Zhao. 2026a. Audio editing in the era of foundation mod-els: A survey. arXiv preprint arXiv:2606.23139 .Changhao Pan, Wenxiang Guo, Yu Zhang, Zhiyuan Zhu, Zhetao Chen, Han Wang, and Zhou Zhao. 2025a. A multimodal evaluation framework for spatial audio playback systems: From localization to listener pref-erence. In Proceedings of the 33rd ACM Interna-tional Conference on Multimedia , pages 7006–7015. ACM. Changhao Pan, Rui Yang, Han Wang, Zhuan Zhou, Xuming He, Wenxiang Guo, Ziyue Jiang, Ruiqi Li, Yu Zhang, Chenyuhao Wen, Ke Lei, Xiang Yin, Jingyu Lu, Zhiyuan Zhu, and Zhou Zhao. 2026b. Comprehensive benchmarking of long-form speech generation in diverse scenarios. arXiv preprint arXiv:2605.28618 .Changhao Pan, Dongyu Yao, Yu Zhang, Wenxiang Guo, Jingyu Lu, Zhiyuan Zhu, and Zhou Zhao. 2025b. Synthetic singers: A review of deep-learning-based singing voice synthesis approaches. arXiv preprint arXiv:2601.13910 .Tianrui Pan, Jie Liu, Zewen Huang, Jie Tang, and Gang-shan Wu. 2025c. In-the-wild audio spatialization with flexible text-guided localization. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) ,pages 1989–2001, Vienna, Austria. Association for Computational Linguistics. Vassil Panayotov, Guoguo Chen, Daniel Povey, and Sanjeev Khudanpur. 2015. Librispeech: an asr cor-pus based on public domain audio books. In 2015 IEEE international conference on acoustics, speech and signal processing (ICASSP) , pages 5206–5210. IEEE. Nikunj Raghuvanshi and John Snyder. 2018. Parametric directional coding for precomputed sound propaga-tion. ACM Transactions on Graphics (TOG) , 37(4):1– 14. Miguel Sarabia, Elena Menyaylenko, Alessandro Toso, Skyler Seto, Zakaria Aldeneh, Shadi Pirhosseinloo, Luca Zappella, Barry-John Theobald, Nicholas Apos-toloff, and Jonathan Sheaffer. 2023. Spatial lib-rispeech: An augmented dataset for spatial audio learning. arXiv preprint arXiv:2308.09514 .Manolis Savva, Abhishek Kadian, Oleksandr Maksymets, Yili Zhao, Erik Wijmans, Bhavana Jain, Julian Straub, Jia Liu, Vladlen Koltun, Jitendra Malik, Devi Parikh, and Dhruv Batra. 2019. Habitat: A platform for embodied ai research. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) .Michael Schoeffler, Fabian-Robert Stöter, Bernd Edler, and Jürgen Herre. 2015. Towards the next generation of web-based experiments: A case study assessing basic audio quality following the itu-r recommenda-tion bs. 1534 (mushra). In 1st Web Audio Conference ,pages 1–6. Saksham Singh Kushwaha, Jianbo Ma, Mark R. P. Thomas, Yapeng Tian, and Avery Bruni. 2024. Diff-SAGe: End-to-End Spatial Audio Generation Using Diffusion Models. arXiv e-prints , arXiv:2410.11299. Hubert Siuzdak. 2024. Vocos: Closing the gap between time-domain and fourier-based neural vocoders for high-quality audio synthesis. Preprint ,arXiv:2306.00814. Christian J. Steinmetz and Joshua D. Reiss. 2020. au-raloss: Audio focused loss functions in PyTorch. In 
+
+Digital Music Research Network One-day Workshop (DMRN+15) .Peiwen Sun, Sitong Cheng, Xiangtai Li, Zhen Ye, Huadai Liu, Honggang Zhang, Wei Xue, and Yike Guo. 2024. Both ears wide open: Towards language-driven spatial audio generation. arXiv preprint arXiv:2410.10676 .Christian Templin, Yanda Zhu, and Hao Wang. 2025. Sonicmotion: Dynamic spatial audio soundscapes with latent diffusion models. arXiv e-prints , pages arXiv–2507. Jean-Marc Valin, Ahmed Mustafa, and Jan Büthe. 2024. Very low complexity speech synthesis using frame-wise autoregressive gan (fargan) with pitch prediction. 
+
+IEEE Signal Processing Letters , 31:2115–2119. Aaron Van Den Oord, Sander Dieleman, Heiga Zen, Karen Simonyan, Oriol Vinyals, Alex Graves, Nal Kalchbrenner, Andrew Senior, Koray Kavukcuoglu, and 1 others. 2016. Wavenet: A generative model for raw audio. arXiv preprint arXiv:1609.03499 , 12. Simon Welker, Tal Peer, and Timo Gerkmann. 2025. Real-time streaming mel vocoding with generative flow matching. Preprint , arXiv:2509.15085. Shahrokh Yadegari, John Burnett, Grady Kestler, and Louis Pisha. 2022. Spatial audio and sound design in the context of games and multimedia. In Encyclo-pedia of Computer Graphics and Games , pages 1–7. Springer. Reo Yoneyama, Masaya Kawamura, Ryo Terashima, Ryuichi Yamamoto, and Tomoki Toda. 2025a. Com-parative analysis of fast and high-fidelity neu-ral vocoders for low-latency streaming synthesis in resource-constrained environments. Preprint ,arXiv:2506.03554. Reo Yoneyama, Atsushi Miyashita, Ryuichi Yamamoto, and Tomoki Toda. 2025b. Wavehax: Aliasing-free neural waveform synthesis based on 2d convolution and harmonic prior for reliable complex spectrogram estimation. IEEE Transactions on Audio, Speech and Language Processing , 33:4454–4470. Yu Zhang, Wenxiang Guo, Changhao Pan, Dongyu Yao, Zhiyuan Zhu, Ziyue Jiang, Yuhan Wang, Tao Jin, and Zhou Zhao. 2025a. Tcsinger 2: Customizable multilingual zero-shot singing voice synthesis. arXiv preprint arXiv:2505.14910 .Yu Zhang, Wenxiang Guo, Changhao Pan, Zhiyuan Zhu, Tao Jin, and Zhou Zhao. 2025b. Isdrama: Immer-sive spatial drama generation through multimodal prompting. arXiv preprint arXiv:2504.20630 .Yu Zhang, Wenxiang Guo, Changhao Pan, Zhiyuan Zhu, Ruiqi Li, Jingyu Lu, Rongjie Huang, Ruiyuan Zhang, Zhiqing Hong, Ziyue Jiang, and 1 others. 2025c. Ver-satile framework for song generation with prompt-based control. arXiv preprint arXiv:2504.19062 .Yu Zhang, Rongjie Huang, Ruiqi Li, JinZheng He, Yan Xia, Feiyang Chen, Xinyu Duan, Baoxing Huai, and Zhou Zhao. 2024a. Stylesinger: Style transfer for out-of-domain singing voice synthesis. In Proceedings of the AAAI Conference on Artificial Intelligence ,volume 38, pages 19597–19605. Yu Zhang, Ziyue Jiang, Ruiqi Li, Changhao Pan, Jinzheng He, Rongjie Huang, Chuxin Wang, and Zhou Zhao. 2024b. Tcsinger: Zero-shot singing voice synthesis with style transfer and multi-level style control. In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Process-ing , pages 1960–1975. Yu Zhang, Ruiqi Li, Changhao Pan, Ke Lei, Xiang Yin, and Cheng Yang. 2026. Swantale: Unified multi-speaker speech and audio generation for instruct and zero-shot tasks. arXiv preprint arXiv:2608.02023 .Yu Zhang, Changhao Pan, Wenxiang Guo, Ruiqi Li, Zhiyuan Zhu, Jialei Wang, Wenhao Xu, Jingyu Lu, Zhiqing Hong, Chuxin Wang, and 1 others. 2024c. Gtsinger: A global multi-technique singing corpus with realistic music scores for all singing tasks. arXiv preprint arXiv:2409.13832 .Yu Zhang, Baotong Tian, and Zhiyao Duan. 2025d. Co-nan: A chunkwise online network for zero-shot adap-tive voice conversion. Preprint , arXiv:2507.14534. Lei Zhao, Sizhou Chen, Linfeng Feng, Jichao Zhang, Xiao-Lei Zhang, Chi Zhang, and Xuelong Li. 2026. Dualspec: Text-to-spatial-audio generation via dual-spectrogram guided diffusion model. IEEE Transac-tions on Multimedia .Shengkui Zhao, Zexu Pan, and Bin Ma. 2025. Clearervoice-studio: Bridging advanced speech pro-cessing research and practical deployment. arXiv preprint arXiv:2506.19398 .Zhisheng Zheng, Puyuan Peng, Ziyang Ma, Xie Chen, Eunsol Choi, and David Harwath. 2024. Bat: Learn-ing to reason about spatial sounds with large language models. arXiv preprint arXiv:2402.01591 .Ge Zhu, Juan-Pablo Caceres, Zhiyao Duan, and Nicholas J Bryan. 2024. Musichifi: Fast high-fidelity stereo vocoding. IEEE Signal Processing Letters .Zhiyuan Zhu, Yixuan Chen, Yiwen Shao, Wenxiang Guo, Changhao Pan, Yu Zhang, Yuxiang Wang, Wei Liu, Houhua Zhang, Chengkuan Zeng, Wenbo Cheng, Yunxi Liu, Rui Yang, Steve Yves, Liefeng Bo, and Zhou Zhao. 2026. Spatial-Omni: Spatial audio under-standing integration in multimodal LLMs via FOA encoding. arXiv preprint arXiv:2606.10738 .Zhiyuan Zhu, Yu Zhang, Wenxiang Guo, Changhao Pan, and Zhou Zhao. 2025. Asaudio: A survey of advanced spatial audio research. arXiv preprint arXiv:2508.10924 .
+
+A Implementation Details 
+
+This appendix provides the hyperparameters and ar-chitectural configurations used in our experiments. 
+
+A.1 Audio and Spectrogram Parameters 
+
+All audio processing and mel-spectrogram extrac-tion are conducted using the parameters listed in Table 5. The generator upsampling factor is set to 320 to match the mel-spectrogram hop size. 
+
+Table 5: Audio processing and mel-spectrogram extrac-tion parameters 
+
+Parameter Value 
+
+Sample rate 48,000 Hz FFT size 1024 Hop size 320 Window size 1024 Number of mel bins 128 Mel fmin 20 Hz Mel fmax 24,000 Hz 
+
+A.2 Generator Architecture 
+
+The generator backbone G is based on the HiFi-GAN V1 configuration and is modified to support causal streaming synthesis. The total upsampling factor is 8 × 5 × 4 × 2 = 320 . The detailed config-uration is provided in Table 6. 
+
+A.3 Spatial Adaptor Architecture 
+
+The Spatial Adaptor consists of two core submod-ules: the Attentional Mel Adaptor and the Spatial Position Adaptor. Their configurations are summa-rized in Table 7. 
+
+A.4 Training and Optimization Hyperparameters 
+
+The training and optimization hyperparameters are listed in Table 8. We adopt a standard adversarial training setup with additional spectral and spatial losses. 
+
+B Losses Design 
+
+B.1 Adversarial Objective ( Ladv )
+
+We adopt the Least-Squares GAN (LS-GAN) for adversarial training. For each discrim-inator Dk in the set {Dk}, the discrimina-tor loss is Ladv (Dk, G ) = Ey
+
+(Dk(y) −
+
+1) 2+Ez,c
+
+Dk(G(z, c)) 2, which encourages high Layer / Block Output Channels Kernel Stride Upsample                                         
+
+> Initial conv ( conv_pre )512 71–Upsampling block 1 Causal upsampling 256 16 8×8
+> MRF residual blocks 256 [3, 7, 11] ––Upsampling block 2 Causal upsampling 128 10 5×5
+> MRF residual blocks 128 [3, 7, 11] ––Upsampling block 3 Causal upsampling 64 84×4
+> MRF residual blocks 64 [3, 7, 11] ––Upsampling block 4 Causal upsampling 32 42×2
+> MRF residual blocks 32 [3, 7, 11] ––Final conv ( conv_post )C71–
+
+Table 6: Generator backbone configuration 
+
+scores for real samples y and low scores for gener-ated samples G(z, c).The generator adversarial loss is Ladv (G, D ) = P 
+
+> k
+
+Ez,c
+
+(Dk(G(z, c)) − 1) 2, which encourages all discriminators to regard generated audio as real. Since D comprises the MPD, MSD, MRD, and SCD introduced above, the final adversarial objec-tives are Ladv (G) = P 
+
+> k
+
+Ladv (G; Dk), Ladv (D) = P 
+
+> k
+
+Ladv (Dk; G), which jointly enforce alignment with real audio in temporal structure, multi-scale patterns, spectral detail, and spatial consistency. 
+
+B.2 Feature Matching Loss ( Lfm )
+
+To stabilize GAN training and regularize the generator toward the real data manifold, we employ a feature matching loss. It acts as a perceptual constraint based on learned hierarchical representations: Lfm (G, D ) =
+
+P 
+
+> k
+
+Ey,z,c
+
+hPLk  
+
+> i=1 1
+> Ni
+
+D(i) 
+
+> k
+
+(y) − D(i) 
+
+> k
+
+(G(z, c)) 1
+
+i
+
+,
+
+where D(i) 
+
+> k
+
+is the i-th intermediate feature map of discriminator Dk, Lk is the number of layers considered, and Ni is the number of elements in that feature map. 
+
+B.3 Auxiliary Perceptual and Reconstruction Losses 
+
+These losses provide more direct, non-adversarial gradient signals to the generator and optimize spe-cific perceptual aspects of the synthesized audio. To ensure that the spectral structure of the gener-ated audio matches that of real audio, we employ two spectral reconstruction losses. The first is the mel-spectrogram loss Lmel ,which computes the L1 distance between the mel-spectrograms of the generated audio G(M, P) and the real audio y. This loss constrains the model on the perceptually important mel scale and is defined as 
+
+Lmel (G) = Ey,M,P
+
+ ϕ(y) − ϕ(G(M, P)) 1
+
+,
+
+(4) where ϕ denotes the transformation from the wave-form to its mel-spectrogram. The second is the multi-resolution STFT loss 
+
+LSTFT . This loss is computed under multiple short-time Fourier transform (STFT) configurations, each with different FFT sizes, window sizes, and hop sizes. It consists of two components: the spectral convergence loss Lsc , which penalizes differences in spectral magnitude, and the log STFT magnitude loss Lmag , which computes an L1 loss on the log-magnitude spectrogram and better reflects human perception of loudness. The total STFT loss is defined as the average of these two components across all STFT resolutions. 
+
+B.4 Spatial Loss Formulation 
+
+We provide the full formulation of the spatial loss 
+
+Lspatial , which explicitly supervises inter-channel spatial cues beyond per-channel spectral similar-ity. Its concrete form is defined in a format-adaptive way for binaural and First-Order Ambison-ics (FOA) signals. Submodule Hyperparameter Value 
+
+Attentional Mel Adaptor Input mel bins 128 Hidden channels 256 Conv kernel size 5Number of attention heads 4Spatial Position Adaptor Input pose dimension 7Fourier feature bands 8Causal temporal encoder layers 3Temporal encoder kernel size 3Injection mechanism FiLM Injection feature dimension 256 
+
+Table 7: Spatial adaptor configuration 
+
+Hyperparameter Value 
+
+Optimizer Adam Learning rate (G / D) 2 × 10 −4
+
+Adam betas (β1, β 2) (0.8, 0.99) Learning rate decay γ 0.999 Batch size 16 Audio segment length 16,384 samples 
+
+Loss weights 
+
+Ladv (λadv ) 1.0 
+
+Lfm (λfm ) 2.0 
+
+Lmel (λmel ) 45.0 
+
+LSTFT (λSTFT ) 1.0 
+
+Lspatial (IPD/ILD) 0.1 
+
+Lspatial (FOA) 2.0 
+
+Table 8: Training and optimization hyperparameters 
+
+Binaural Spatial Loss. For binaural signals, we compute complex STFTs of the left and right chan-nels, SL(f, t ) and SR(f, t ), under multiple STFT configurations. The interaural phase difference (IPD) is given by ∆Φ( f, t ) = arg SL(f, t ) −
+
+arg SR(f, t ). To avoid phase wrapping, we embed 
+
+∆Φ into the complex plane and define 
+
+uIPD (f, t ) =  cos ∆Φ( f, t ), sin ∆Φ( f, t ) ∈ R2.
+
+The IPD loss compares the embedded representa-tions of the target and generated signals, 
+
+LIPD =          
+
+> P
+> f,t wIPD (f)m(f,t )upred IPD (f,t )−uref IPD (f,t )22P
+> f,t wIPD (f)m(f,t )+ ε
+
+,
+
+where wIPD (f ) = exp  −(f /f IPD,max )2 empha-sizes low frequencies and m(f, t ) is an energy-based soft mask. The interaural level difference (ILD) is defined in the log-magnitude domain as ILD ref (f, t ) = 20 log 10 |Sref  
+
+> L
+
+(f, t )| − 20 log 10 |Sref  
+
+> R
+
+(f, t )|,
+
+and analogously for ILD pred . The ILD loss is 
+
+LILD =        
+
+> P
+> f,t wILD (f)m(f,t )ILD pred (f,t )−ILD ref (f,t )
+> P
+> f,t wILD (f)m(f,t )+ ε
+
+,
+
+with wILD (f ) = 1 − exp  −(f /f ILD,min )2 that em-phasizes high frequencies. The soft mask m(f, t ) is derived from the frame-wise energy of the reference signal. Let E(t) be the RMS energy at frame t (averaged over frequency and channels), and 
+
+EdB (t) = 10 log 10 (E(t) + ε).
+
+We define a smooth frame-wise speech activity 
+
+s(t) = σ
+
+ EdB (t) − μVAD 
+
+σVAD 
+
+
+
+,
+
+where σ(·) is the sigmoid function, μVAD is the soft-VAD center in dB, and σVAD controls the transition width. The time–frequency mask is then 
+
+m(f, t ) = mmin + (1 − mmin ) s(t),
+
+with mmin > 0 to avoid nullifying silent regions. The binaural spatial loss is 
+
+Lbin spatial = λIPD LIPD + λILD LILD .
+
+FOA Spatial Loss. For FOA signals, we assume a B-format ordering (W, X, Y, Z ). Given target and predicted waveforms y, ˆy ∈ RB×4×T , we com-pute complex STFTs for each scale, obtaining 
+
+W (f, t ), X (f, t ), Y (f, t ), Z (f, t )for the reference and 
+
+ˆW (f, t ), ˆX(f, t ), ˆY (f, t ), ˆZ(f, t ) for the prediction. The total FOA energy at each bin is 
+
+Eref (f, t ) = |W |2 + |X|2 + |Y |2 + |Z|2,Epred (f, t ) = | ˆW |2 + | ˆX|2 + | ˆY |2 + | ˆZ|2.
+
+Energy-weighted mask and frequency biases. We reuse the soft mask m(f, t ) from the binaural case, now interpreted per FOA STFT configuration. To steer supervision across frequency, we define a low-frequency bias for direction-related terms, 
+
+wdir (f ) = exp  −(f /f iv,max )2,
+
+and a smooth mid–high-frequency bias for diffuseness-related terms. Let fs be the sampling rate and ˜f = f / (fs/2) the normalized frequency. We set 
+
+wdiff (f ) = 12 + 12 tanh ˜f − cdiff 
+
+wdiff 
+
+!
+
+,
+
+where cdiff controls the center of the transition and 
+
+wdiff controls its width. We also apply mild energy exponents Eα to em-phasize high-energy bins without dominating the loss. We denote these exponents by αiv , α r, α diff .
+
+Intensity vector and directional term. The active intensity components are computed as 
+
+Iref  
+
+> X
+
+(f, t ) = ℜ{ W ∗(f, t )X(f, t )},Iref  
+
+> Y
+
+(f, t ) = ℜ{ W ∗(f, t )Y (f, t )},Iref  
+
+> Z
+
+(f, t ) = ℜ{ W ∗(f, t )Z(f, t )},
+
+and analogously for Ipred  
+
+> X
+
+, I pred  
+
+> Y
+
+, I pred  
+
+> Z
+
+. We collect these into intensity vectors 
+
+Iref (f, t ) = [ Iref  
+
+> X
+
+, I ref  
+
+> Y
+
+, I ref  
+
+> Z
+
+]⊤,
+
+Ipred (f, t ) = [ Ipred  
+
+> X
+
+, I pred  
+
+> Y
+
+, I pred  
+
+> Z
+
+]⊤.
+
+The directional mismatch is measured via the co-sine distance 
+
+div (f, t ) = 1 − Iref (f, t )⊤Ipred (f, t )
+
+∥Iref (f, t )∥2 ∥Ipred (f, t )∥2 + ε ,
+
+and we define 
+
+Liv_dir =
+
+P 
+
+> f,t
+
+m(f,t ) wdir (f )
+
+ Eref (f,t )
+
+αiv div (f,t )
+
+P 
+
+> f,t
+
+m(f,t ) wdir (f )
+
+ Eref (f,t )
+
+αiv +ε .
+
+Normalized intensity ratio term. We normalize the intensity by total energy, 
+
+rref (f, t ) = Iref (f, t )
+
+Eref (f, t ) + ε ,
+
+rpred (f, t ) = Ipred (f, t )
+
+Epred (f, t ) + ε ,
+
+and define 
+
+Lr =   
+
+> P
+> f,t m(f,t )wdir (f)
+
+ Eref (f,t )
+
+αr rpred (f,t )−rref (f,t ) 1   
+
+> P
+> f,t m(f,t )wdir (f)
+
+ Eref (f,t )
+
+αr +ε .
+
+Diffuseness term. We compute the intensity norm 
+
+∥Iref (f, t )∥2, ∥Ipred (f, t )∥2,
+
+and define diffuseness as 
+
+Dref (f, t ) = 1 − ∥Iref (f, t )∥2
+
+Eref (f, t ) + ε ,Dpred (f, t ) = 1 − ∥Ipred (f, t )∥2
+
+Epred (f, t ) + ε .
+
+The diffuseness loss is then 
+
+Ldiff =   
+
+> P
+> f,t m(f,t )wdiff (f)
+
+ Eref (f,t )
+
+αdiff  Dpred (f,t )−Dref (f,t )
+
+2   
+
+> P
+> f,t m(f,t )wdiff (f)
+
+ Eref (f,t )
+
+αdiff +ε .
+
+Log-energy term. Finally, we align the log-energy fields of reference and prediction: 
+
+log Eref (f, t ) = log( Eref (f, t ) + ε),
+
+log Epred (f, t ) = log( Epred (f, t ) + ε),
+
+and define              
+
+> Lelog =
+> P
+> f,t m(f, t )wdiff (f)log Epred (f, t )−log Eref (f, t )
+> P
+> f,t m(f, t )wdiff (f) + ε
+
+Multi-scale aggregation. In practice, all the above quantities are computed for multiple STFT parameter sets (nFFT , hop , win ). The four FOA terms Liv_dir , Lr, Ldiff , Lelog are averaged over scales, and the final FOA spatial loss is 
+
+LFOA spatial = λiv Liv_dir +λrLr +λdiff Ldiff +λelog Lelog .
+
+C Details of Datasets 
+
+C.1 Recorded Binaural and FOA Data 
+
+We use both binaural and First-Order Ambison-ics (FOA) spatial audio data for training and eval-uation. For the binaural branch, we adopt the MRSSpeech subset of the MRSAudio (Guo et al., 2025a) corpus together with the EasyCom (Don-ley et al., 2021) dataset, which contain extensive indoor recordings captured with binaural micro-phones. These corpora cover multiple speakers, diverse source-listener spatial configurations, and both Chinese and English speech, providing real-istic binaural characteristics and room acoustics. For FOA, we use the Spatial LibriSpeech (Sarabia et al., 2023) dataset, which is synthesized from Lib-riSpeech (Panayotov et al., 2015) and provides a large number of FOA-format spatial speech sam-ples with corresponding position annotations. How-ever, Spatial LibriSpeech only models azimuthal variation on the horizontal plane during spatializa-tion and lacks diversity along the vertical dimen-sion (elevation). As a result, many samples contain little variation in the z channel, which can make the model overfit horizontal-plane cues and reduce its sensitivity to vertical direction. Assembling recorded corpora at this scale requires controlled capture and dense manual labeling. Similar data-construction efforts appear in other audio areas, including spatial and singing corpus construction, transcription, and long-form benchmarking (Guo et al., 2025c; Zhang et al., 2024c; Li et al., 2024; Pan et al., 2026b). 
+
+C.2 Simulated Spatial Data from SoundSpaces (MP3D) 
+
+To enrich spatial diversity, especially in elevation and in complex 3D room geometries, we addition-ally generate a large amount of simulated spatial data based on the SoundSpaces (Chen et al., 2022) simulation framework and Habitat-Sim (Savva et al., 2019). In this work we focus on indoor scenes from the Matterport3D (MP3D) dataset; for each MP3D environment we instantiate a Habitat-Sim simulator and attach an audio sensor config-ured either as binaural (2-channel) or FOA Am-bisonics (4-channel) at a sampling rate of 48 kHz, following procedure in (Liu et al., 2026). The listener (receiver) is placed at a height of 1.5 m above the floor, and the audio materials configu-ration from MP3D is loaded to enable frequency-dependent reflection, absorption, and diffraction in the propagation engine. We calculate the relative pose between source and receiver, and use it as conditioning input to the model. 
+
+C.3 Static BRIR/RIR Sampling and Position Generation. 
+
+For the static subset, we randomly sample receiver and source positions on the MP3D navigation mesh. A candidate pair is accepted only if the horizontal distance lies within (1 , 10) m and the height differ-ence is smaller than 2 m, which avoids degenerate configurations (too close or too far, or across floors). For each accepted pair we query the audio sensor once and obtain a binaural or FOA room impulse response (BRIR/RIR). All positions are initially given in the Habitat/BAT coordinate convention, where the horizontal plane is x-z, y points upwards, and the agent faces the −z direction. For down-stream usage we convert all 3D positions (x, y, z )
+
+into a more conventional, listener-centric coordi-nate system with the horizontal plane being x-y, z
+
+pointing upwards, and the listener facing the +y
+
+direction. All relative positions (source minus re-ceiver) in our dataset use this coordinate system. 
+
+C.4 Dynamic Simulated Trajectories. 
+
+Besides the purely static BRIRs, we also construct a dynamic subset in which the listener remains fixed while the source moves through the envi-ronment. Concretely, for a given receiver posi-tion we randomly sample two source points that are both within a reasonable distance from the receiver and compute the shortest path between them on the navigation mesh. The resulting 3D path is uniformly subsampled to a fixed number of time steps (e.g., 20 frames per trajectory). At each step we update the source position in Habitat-Sim, query a new BRIR from the audio sensor, and record the corresponding source position, relative position, and coarse direction labels ( left/right ,
+
+front/behind , above/below ) derived from the transformed coordinate system. For each utterance we also generate a frame-level pose sequence at 20 Hz by repeating the (static) relative position or by aligning it with the dynamic trajectory, yielding an N × 7 pose matrix per audio sample that is fully time-synchronized with the waveform. 
+
+C.5 Convolution with Mono Speech and Post-processing. 
+
+To turn the simulated BRIR/RIRs into training data, we convolve them with clean, single-channel speech from the LibriSpeech (Panayotov et al., 2015) corpus. All LibriSpeech utterances are first resampled to 48 kHz and converted to mono. For each utterance we randomly select one BRIR en-try, perform FFT-based convolution to obtain ei-ther 2-channel binaural or 4-channel FOA audio, and then truncate the result to match the original utterance length. We apply simple peak normaliza-tion (with a conservative safety margin) to avoid clipping and ensure that all simulated samples are loudness-consistent with the real-world data. Pair-ing simulation with recording lets us cover configu-rations that are hard to collect directly. Comparable strategies, combining large-scale data or pretrained generative priors, are widely adopted in other au-dio generation tasks (Feng et al., 2026; Pan et al., 2026a). 
+
+C.6 Overall Dataset Scale 
+
+Combining the real and simulated corpora, our final training and evaluation set comprises ap-proximately 600 hours of binaural data and 900 hours of FOA data. Among them, around 220k binaural samples and 70k FOA samples are synthesized by convolving LibriSpeech with SoundSpaces-generated BRIR/RIRs in MP3D envi-ronments, while the remaining samples come from MRSSpeech, EasyCom, and Spatial LibriSpeech. All audio is uniformly resampled to 48 kHz, and all spatial annotations are provided in the unified listener-centric coordinate system. This scale is comparable to the annotated corpora that expres-sive singing synthesis systems rely on for con-trollable style and technique (Zhang et al., 2024b, 2025a, 2024a; Guo et al., 2025b). 
+
+D Additional Binaural Evaluation 
+
+We provide additional binaural analyses on sampling-rate fairness, causality, and pose robust-ness. 
+
+D.1 Bandwidth-matched Evaluation 
+
+To control for native sampling-rate differences across baselines, we additionally evaluate all meth-ods under a common effective bandwidth. We ap-ply a low-pass filter with cutoff fc = 7 .8 kHz to both references and outputs before resampling to the rate required by each metric. As shown in Table 9, the relative ranking on au-dio metrics remains similar, and our method retains leading spatial consistency after bandwidth match-ing. The smaller spatial gap compared with the full-band setting is expected because high-frequency cues are important for binaural spatial perception. 
+
+D.2 Causal and Non-causal Variants 
+
+We compare causal and non-causal variants to iso-late the effect of strict streaming constraints. Table 10 indicates that non-causal context im-proves several audio-quality metrics, but both CSAVocoder variants substantially outperform Vo-cos variants on spatial metrics. This pattern in-dicates that the spatial gains mainly come from spatial conditioning and inter-channel modeling rather than from causality alone. 
+
+D.3 Pose Perturbation Robustness 
+
+We evaluate robustness to noisy or partially missing pose inputs by adding Gaussian noise or randomly dropping pose entries during inference. The aver-age pose standard deviation per audio sample is approximately 1.1, so the tested Gaussian noise levels correspond to moderate perturbations. Table 11 shows gradual degradation under stronger perturbations, while the model stays ro-bust to moderate noise and pose dropout. 
+
+E FOA Results 
+
+We present additional experimental results for FOA spatial audio synthesis. For FOA audio, we adopt similar evaluation metrics as for binaural audio, including audio quality metrics (PESQ, MRSTFT, MCD) and spatial consistency metrics (Corr_all and AUC_j_all). The spatial consistency metrics are derived from the ViSAGe work (Kim et al., 2025) and assess the ability of the generated audio to preserve spatial cues. For audio quality, we use common metrics such as PESQ, MRSTFT, and MCD to measure the quality of the generated audio. For the FOA format, we specifically evaluate the audio quality of the W channel. Table 12 presents a quantitative comparison of our method against several baseline models on the FOA spatial audio synthesis task. The results indicate competitive FOA spatial preservation, with the best AUC_j_all among the compared models. Its audio-quality metrics remain comparable to those of non-causal models. 
+
+F Latency Evaluation 
+
+This appendix defines the latency measures used for streaming inference and reports representative results under different chunk sizes. Model ANG COS (↑)                                           
+
+> DIS COS (↑)
+> MRSTFT
+> (↓)
+> PESQ
+> (↑)
+> MCD
+> (↓)
+> Per.
+> (↓)HiFi-GAN 50.24 75.02 2.0317 1.3397 9.8823 0.1824 HiFi-GAN (48kHz) 64.77 80.48 0.9999 2.1226 3.4236 0.1305 CARGAN 57.21 77.89 1.1352 1.7441 3.9013 0.1114 FARGAN 42.00 67.84 1.0677 1.8937 4.1077 0.1154 WaveFM 66.05 82.84 0.8593 2.6007 2.7301 0.0916
+> Vocos 68.64 83.46 0.8840 2.5119 2.3722 0.0931
+> Ours 68.71 83.86 1.1440 2.0752 2.5072 0.0933
+
+Table 9: Bandwidth-matched evaluation with a common low-pass cutoff fc = 7 .8 kHz. 
+
+F.1 Definitions 
+
+For streaming audio generation, we consider three types of latency: 
+
+Algorithmic latency ( Lalg , ms). Algorithmic la-tency is the inherent delay introduced by the stream-ing design, independent of hardware speed. Under chunked inference, a system that outputs audio only after receiving a full chunk has a lower bound 
+
+Lalg ≥ Tchunk + Tlookahead + Toverlap , (5) where Tchunk is the chunk duration, Tlookahead is any future-context requirement (0 for strictly causal de-signs), and Toverlap accounts for cross-fade/overlap-add schemes that require waiting for future samples. For our model, Tlookahead = 0 and Toverlap = 0 .
+
+Compute latency ( Lcomp , ms/chunk). Compute latency is the wall-clock time required to run the model for one chunk (forward pass in stream-ing mode). We report distributional statistics (p50/p90/p99) because tail latency is critical for real-time playback stability. 
+
+Real-Time Factor (RTF). To compare compute latency across chunk sizes, we use RTF = Lcomp 
+
+Tchunk 
+
+. (6) RTF < 1 indicates faster-than-real-time inference. 
+
+F.2 Chunking under sr = 48 kHz, hop=320 
+
+With sampling rate sr = 48 kHz and hop size 320 samples, the feature frame rate is 
+
+f = 48000 320 = 150 frames/s , (7) Thus, chunk sizes of 40/60/80/100 ms correspond to 6/9/12/15 mel frames, respectively. 
+
+F.3 Measurement protocol 
+
+We benchmark streaming inference with batch size 1 and disable gradient computation. For GPU tim-ing, we synchronize before and after each forward pass to measure true kernel execution time. We perform a warm-up phase to avoid one-time com-pilation and cache effects, then run a fixed number of iterations and collect per-chunk latency sam-ples, from which we compute mean and percentiles (p50/p90/p99). Unless stated otherwise, Lcomp in-cludes only model inference and excludes feature extraction, file I/O, and audio device buffering. 
+
+F.4 Results and discussion 
+
+Table 13 reports representative compute latency un-der different chunk sizes. Across repeated runs, the mean compute latency stays in a narrow band (approximately 15 ms/chunk), while RTF improves as chunk size increases. This behavior is expected on GPUs when sequence lengths are short: fixed overheads (kernel launches, framework schedul-ing, memory movements) can dominate, and larger chunks may better utilize the GPU, reducing the 
+
+per-frame cost even if ms/chunk is similar. All tested settings achieve RTF < 1, indicating real-time feasibility with substantial headroom. 
+
+G Details of Experiments 
+
+G.1 Subjective evaluation 
+
+The subjective evaluation is conducted in a con-trolled acoustic environment featuring sound-attenuated conditions, precisely calibrated play-back systems, and frequency-equalized headphones to ensure consistency across listening sessions. A total of 200 audio segments are randomly sampled from the test dataset for evaluation purposes. Our subjective protocol follows the listening-test prac-tice commonly used in long-form speech and song generation research (Li et al., 2026; Zhang et al., 2026, 2025c; Pan et al., 2025b). We recruit 29 par-Model ANG COS DIS COS MRSTFT PESQ MCD Per.                         
+
+> Vocos 40.04 70.23 1.039 2.510 1.892 0.113 Causal Vocos 41.06 71.35 1.240 2.240 2.977 0.112 Non-causal CSAVocoder 60.21 74.29 1.083 2.397 1.742 0.093 Causal CSAVocoder 62.11 77.05 1.223 2.109 2.153 0.107
+
+Table 10: Causal and non-causal comparison. ANG/DIS COS and PESQ are higher-is-better; others are lower-is-better.                             
+
+> Noise Type Level ANG COS (↑)
+> DIS COS (↑)Gaussian noise 0.05 62.10 77.01 Gaussian noise 0.1 61.34 76.00 Gaussian noise 0.2 59.11 74.83 Random drop 10% 61.19 77.04 Random drop 20% 61.67 76.11 Random drop 30% 60.18 75.82 w/o Pose –56.61 75.75
+> CSAVocoder –62.11 77.05
+
+Table 11: Robustness to pose noise and missing entries. 
+
+ticipants to provide perceptual ratings across two dimensions: audio quality and spatial perception, using a 5-point Likert scale ranging from 1 (Poor) to 5 (Excellent). For audio quality assessment, we use the Mean Opinion Score for Quality (MOS-Q), where partic-ipants listen with headphones and evaluate the clar-ity and naturalness of the synthesized audio. For spatial perception assessment, we adopt the Mean Opinion Score for Position (MOS-P), where partic-ipants judge the authenticity of spatial attributes, in-cluding the correspondence between the perceived sound source localization (direction and distance) and the textual prompt specifications. All participants receive appropriate compensa-tion at an hourly rate of $20, yielding a total ex-perimental cost of approximately $1500. Prior to participation, subjects are informed that their as-sessments will be used exclusively for academic research purposes. Detailed instructions for the audio evaluation protocol are shown in Figures 4 and 5. 
+
+G.2 MUSHRA-style Expert Evaluation 
+
+To complement the MOS study with non-expert listeners, we further conduct a MUSHRA-style ex-pert test following the ITU-R BS.1534 methodol-ogy (Schoeffler et al., 2015), focused on spatial perception rather than audio quality alone. The test involves 9 spatial audio experts and 120 dy-namic spatial audio generation results. The evalu-ated systems are our method and 5 baselines (Vo-cos, WaveFM, DiffWave, PriorGrad, and FastDiff). Each trial contains an explicit reference, a hidden reference, and a 3.5 kHz low-pass / dual-mono anchor. Participants rate each stimulus on a 0 to 100 scale. We report quality scores (MUSHRA-Q) and spatial perception scores (MUSHRA-P), where MUSHRA-P covers direction, distance, external-ization, and image stability. Table 14 shows the results with 95% confi-dence intervals. CSAVocoder achieves the highest MUSHRA-P (88.0) and overall score (85.5). Its MUSHRA-Q is slightly below Vocos and Prior-Grad, but its spatial perception score exceeds all baselines by a large margin, which is consistent with the objective spatial metrics. The hidden ref-erence scores close to 100 and the anchor close to the lower bound, confirming that the protocol is reliable. 
+
+G.3 Objective evaluation 
+
+To ensure the reproducibility of our experiments, we use standard open-source implementations for objective evaluation. The specific configurations and libraries are detailed below: 
+
+MRSTFT : We use the Multi-Resolution Short-Time Fourier Transform (MRSTFT) implementa-tion from Auraloss (Steinmetz and Reiss, 2020). The metric is computed as the sum of spectral con-vergence and log-magnitude distance across multi-ple window sizes. 
+
+https://github.com/csteinmetz1/auraloss 
+
+PESQ : Perceptual Evaluation of Speech Quality (PESQ) is evaluated using the Wideband mode (ITU-T P.862.2). Since our model generates 48 kHz audio, we downsample both the reference and synthesized signals to 16 kHz solely for this mea-surement using the python-pesq wrapper. 
+
+https://github.com/ludlows/python-pesq 
+
+MCD : We compute the Mel-Cepstral Distortion (MCD) to measure the spectral envelope difference. We use the mel-cepstral-distance library with Dynamic Time Warping (DTW) enabled to align Model Corr_all ( ↑) AUC_ j _all ( ↑) MRSTFT ( ↓) MCD (dB) ( ↓) PESQ ( ↑)
+
+HiFi-GAN 18.65 61.98 1.278 4.052 2.122 CARGAN 15.99 61.20 1.257 3.690 1.757 FARGAN 16.26 61.28 1.154 2.941 1.794 WaveFM 14.37 60.80 0.846 1.950 3.520 Vocos 19.49 62.92 0.918 1.453 2.997 
+
+Ours 18.53 63.44 1.248 3.449 1.972 
+
+Table 12: FOA Results 
+
+Figure 4: Screenshot of the MOS-P test interface. 
+
+Figure 5: Screenshot of the MOS-Q test interface. Chunk Mean p50 p90 p99 RTF 40 15 .24 ± 0.95 14.99 16.44 18.62 0.3811 60 15 .15 ± 1.35 14.80 16.70 19.34 0.2526 80 15 .52 ± 2.06 14.71 17.71 24.67 0.1941 100 15 .86 ± 2.40 15.46 18.14 24.81 0.1587 
+
+Table 13: Representative compute latency (ms/chunk) for streaming inference at different chunk sizes under sr = 48 kHz and hop=320. We report p50/p90/p99 and RTF as Lcomp /T chunk .
+
+System Q (↑) P (↑) Overall (↑)Hidden ref. 96.0 [95.2, 96.8] 96.5 [95.6, 97.4] 96.3 [95.6, 96.9] 
+
+CSAVocoder 83.0 [81.8, 84.2] 88.0 [86.6, 89.3] 85.5 [84.5, 86.6] 
+
+Vocos 86.5 [85.5, 87.5] 70.0 [68.1, 71.9] 78.3 [76.8, 79.7] 
+
+WaveFM 84.7 [83.7, 85.7] 72.0 [70.1, 73.9] 78.4 [77.0, 79.7] 
+
+DiffWave 78.8 [77.7, 80.0] 58.0 [56.1, 60.0] 68.4 [66.9, 70.0] 
+
+PriorGrad 85.2 [83.9, 86.4] 60.0 [58.1, 61.9] 72.6 [71.0, 74.2] 
+
+FastDiff 71.6 [70.3, 72.9] 55.0 [53.1, 56.9] 63.3 [61.7, 64.9] 
+
+Anchor 24.5 [22.9, 25.9] 19.5 [17.8, 21.2] 22.0 [20.4, 23.6] 
+
+Table 14: MUSHRA-style expert evaluation. Q: quality, P: spatial perception; 95% CIs. 
+
+the sequences before calculation. 
+
+https://github.com/MattShannon/mcd 
+
+Periodicity : To evaluate pitch accuracy and har-monic consistency, we calculate the periodicity er-ror using the pre-trained CREPE model provided in the CARGAN repository (Morrison et al., 2022). The metric represents the root mean squared error between the periodicity vectors of the ground truth and generated audio. 
+
+https://github.com/descriptinc/cargan 
+
+ANG COS & DIS COS : To quantify spatial fidelity, we use the pre-trained Spatial-AST model (Zheng et al., 2024) to extract high-level spatial representations. We report the metrics as ANG COS (for angular consistency) and DIS COS (for distance consistency), where higher cosine similarity indicates better preservation of perceptible spatial cues. 
+
+https://github.com/zszheng147/ Spatial-AST 
+
+RTF : Real-Time Factor (RTF) is calculated as the time required to generate the waveform divided by the duration of the audio on a single NVIDIA 4090 GPU. 
+
+H Licenses and Availability 
+
+We respect the original licenses of all referenced ar-tifacts and do not redistribute them. This work uses publicly available datasets. We do not redistribute any third-party audio content. Users must obtain the original datasets from their respective providers and comply with the original licenses/terms of use. We will release only derived metadata (e.g., file lists, splits, and non-invertible statistics) under CC BY 4.0, subject to the original dataset terms. Our codebase may depend on third-party libraries; these components remain under their respective licenses. Any external assets (e.g., pretrained backbones or evaluation tools) are used in accordance with their original licensing terms. 
+
+I Use of AI Assistants 
+
+We used an AI-based writing assistant during manuscript preparation solely for language polish-ing, including grammar checking, spelling correc-tion, and improving clarity and readability of the text. All technical claims, experimental procedures, and interpretations were produced and verified by the authors.

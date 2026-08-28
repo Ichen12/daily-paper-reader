@@ -6,73 +6,79 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-08-26
-- 运行时间：2026-08-26 21:56:41 UTC
+- 最新运行日期：2026-08-28
+- 运行时间：2026-08-28 04:13:39 UTC
 - 运行状态：成功
-- 本次总论文数：17
-- 精读区：7
-- 速读区：10
+- 本次总论文数：19
+- 精读区：8
+- 速读区：11
 
 ### 今日简报（AI）
-今日精读7篇、速读10篇，重点聚焦多语言多模态音频理解与真实世界视听语音增强。  
-最值得关注：EXAM^2探索多语言多模态音频分析，ISCSLP 2026挑战赛聚焦真实场景视听语音增强。  
-建议下一步优先精读这两篇，再顺藤摸瓜速读FlowSep 2等音频分离工作。
-- 详情：[/202608/26/README](/202608/26/README)
+1) 今日19篇音频模型论文中，精读聚焦两篇9分：多语言多模态音频理解与统一生成。
+2) 最值得看：EXAM² 扩展多语言多模态音频分析；FireRedAudio 用解耦连续表示兼顾理解与生成。
+3) 下一步可扫读速读里的对话推理与聚类方向，如不一致感知推理、AudioLens 多视角聚类。
+- 详情：[/202608/28/README](/202608/28/README)
 
 ### 精读区论文标签
-1. [EXAM$^2$: $\underline{Ex}tending$ $\underline{A}udio$ $Understanding$ $in$ $\underline{M}ultilingual$ $and$ $\underline{M}ultimodal$ $Analysis$](/202608/26/2608.23758v1-exam2-underlineextending-underlineaudio-understanding-in-underlinemultilingual-and-underlinemultimodal-analysis)  
+1. [EXAM$^2$: $\underline{Ex}tending$ $\underline{A}udio$ $Understanding$ $in$ $\underline{M}ultilingual$ $and$ $\underline{M}ultimodal$ $Analysis$](/202608/28/2608.23758v2-exam2-underlineextending-underlineaudio-understanding-in-underlinemultilingual-and-underlinemultimodal-analysis)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：多语言多模态音频理解基准，覆盖语音、声音、音乐和图像
-2. [The ISCSLP 2026 Real-World Audio-Visual Speech Enhancement Challenge](/202608/26/2608.23759v1-the-iscslp-2026-real-world-audio-visual-speech-enhancement-challenge)  
+   evidence：覆盖语音、声音、音乐和图像的多语言多模态音频理解基准
+2. [FireRedAudio: A General-Purpose Audio Language Model with Decoupled Continuous Representations for Understanding and Generation](/202608/28/2608.24168v2-fireredaudio-a-general-purpose-audio-language-model-with-decoupled-continuous-representations-for-understanding-and-generation)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：面向真实世界音视频语音增强的挑战赛基准
-3. [EmoTra-TTS: Smooth Intra-Utterance Emotion Transitions for Speech Synthesis](/202608/26/2608.23791v1-emotra-tts-smooth-intra-utterance-emotion-transitions-for-speech-synthesis)  
+   evidence：统一音频语言模型，支持语音合成与编辑
+3. [Fine-Tuning Whisper for Automatic Speech Recognition in Baniwa: A Preliminary Study](/202608/28/2608.26060v1-fine-tuning-whisper-for-automatic-speech-recognition-in-baniwa-a-preliminary-study)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：支持句内情感平滑过渡的文本到语音合成
-4. [Preference Optimization for Non-Verbal Vocalization Synthesis](/202608/26/2608.24163v1-preference-optimization-for-non-verbal-vocalization-synthesis)  
+   evidence：微调Whisper用于低资源语言语音识别
+4. [Attention-Guided Reliability Scaling for Contrastive Decoding in Robust Audio-Visual Speech Recognition](/202608/28/2608.26213v1-attention-guided-reliability-scaling-for-contrastive-decoding-in-robust-audio-visual-speech-recognition)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：面向非言语声音的TTS偏好优化系统研究
-5. [FireRedAudio: A General-Purpose Audio Language Model with Decoupled Continuous Representations for Understanding and Generation](/202608/26/2608.24168v1-fireredaudio-a-general-purpose-audio-language-model-with-decoupled-continuous-representations-for-understanding-and-generation)  
+   evidence：音视频语音识别中的对比解码
+5. [AudioSpan: Spanning the Duration and Depth of Audio Comprehension](/202608/28/2608.26431v1-audiospan-spanning-the-duration-and-depth-of-audio-comprehension)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：通用音频语言模型支持语音合成与编辑，采用解耦连续表示。
-6. [Visually-Guided Spatial Audio Generation for $360^\circ$ In-the-Wild Speech Scenes](/202608/26/2608.24579v1-visually-guided-spatial-audio-generation-for-360circ-in-the-wild-speech-scenes)  
+   evidence：提出长音频理解基准AudioSpan
+6. [AfriSwitch: A Benchmark for In-the-Wild African Code-Switched Speech Recognition](/202608/28/2608.26434v1-afriswitch-a-benchmark-for-in-the-wild-african-code-switched-speech-recognition)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：提出了语音导向的360度视频-FOA数据集YT-SPEECH
-7. [TurboT2VA: Fast Large-Scale Text-to-Video-Audio Generation via Score-Regularized Consistency Distillation](/202608/26/2608.24674v1-turbot2va-fast-large-scale-text-to-video-audio-generation-via-score-regularized-consistency-distillation)  
+   evidence：覆盖16种非洲语言的语码混合语音识别基准数据集
+7. [EmoSay: Artificial Intelligence-Driven Text-to-Emotional-Speech System for Affective Communication in Extended Reality](/202608/28/2608.26566v1-emosay-artificial-intelligence-driven-text-to-emotional-speech-system-for-affective-communication-in-extended-reality)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：文本到视频-音频联合生成，与文本到音频合成直接相关
+   evidence：文本转情感语音系统扩展了TTS的情感表达能力
+8. [Scaling phoneme-based TTS augmentation for ASR: A unified pipeline and controlled study](/202608/28/2608.26697v1-scaling-phoneme-based-tts-augmentation-for-asr-a-unified-pipeline-and-controlled-study)  
+   标签：评分：9.0/10、query:speech-audio
+   evidence：面向ASR增强的基于音素的TTS合成流水线
 
 ### 速读区论文标签
-1. [FlowSep 2: Self-Supervised Flow Matching for Language-Queried Audio Source Separation](/202608/26/2608.22111v2-flowsep-2-self-supervised-flow-matching-for-language-queried-audio-source-separation)  
+1. [Benchmarking_Fast_Domain_Adaptation_for_Unsupervised_Speech_Units](/202608/28/2608.26992v1-benchmarkingfastdomainadaptationforunsupervisedspeechunits)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：基于文本条件流匹配生成模型的语音查询音频源分离
-2. [Don't Just Listen, Try Planning: Graph-based Retrieval-Generation Agent for Long-form Audio Meeting Understanding](/202608/26/2608.24048v1-dont-just-listen-try-planning-graph-based-retrieval-generation-agent-for-long-form-audio-meeting-understanding)  
+   evidence：面向带口音语音的无监督语音单元域适应基准
+2. [When Text Misleads: Inconsistent-Aware Reasoning for Audio-Grounded Dialogue](/202608/28/2608.27176v1-when-text-misleads-inconsistent-aware-reasoning-for-audio-grounded-dialogue)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：构建长音频会议理解数据集并引入图检索生成模型
-3. [Relative Time Intervals Representation for Word-level Timestamping with Masked Training](/202608/26/2608.24041v1-relative-time-intervals-representation-for-word-level-timestamping-with-masked-training)  
+   evidence：用于音频对话评估的跨模态不一致推理框架
+3. [AudioLens: Multi-Perspective Speech Clustering with Reasoning Audio-Language Models](/202608/28/2608.25177v1-audiolens-multi-perspective-speech-clustering-with-reasoning-audio-language-models)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：用相对时间间隔与混合微调让SpeechLLM同时建模内容与时间结构
-4. [Target Speaker Identification: A Low-Latency Streaming Pipeline](/202608/26/2608.17972v1-target-speaker-identification-a-low-latency-streaming-pipeline)  
+   evidence：多视角语音聚类基准
+4. [CSAVocoder: A Causal Spatial Audio Vocoder Towards Real-Time Spatial Audio Generation](/202608/28/2608.25404v1-csavocoder-a-causal-spatial-audio-vocoder-towards-real-time-spatial-audio-generation)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：用于实时合成的空间音频声码器
+5. [Generative vs. Encoder Large Language Models for ASR Evaluation: A Comparative Study](/202608/28/2608.25574v1-generative-vs-encoder-large-language-models-for-asr-evaluation-a-comparative-study)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：比较LLM用于ASR评估，与语音识别直接相关
+6. [Direct or Mediated? Task-Dependent Audio Information Routing in Large Audio Language Models](/202608/28/2608.27026v1-direct-or-mediated-task-dependent-audio-information-routing-in-large-audio-language-models)  
+   标签：评分：7.0/10、query:speech-audio
+   evidence：分析LALM在ASR和音频问答中的音频信息路由，与语音识别相关
+7. [μNet: Ultra-Low-Memory and Low-Complexity Speech Enhancement for Embedded Digital Signal Processors](/202608/28/2608.21155v1-net-ultra-low-memory-and-low-complexity-speech-enhancement-for-embedded-digital-signal-processors)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：结合说话人分割与验证的低延迟流式目标说话人识别系统
-5. [FM Synthesizer Audio-Parameter Shared Embeddings](/202608/26/2608.18226v1-fm-synthesizer-audio-parameter-shared-embeddings)  
+   evidence：面向嵌入式DSP的语音增强
+8. [FlowSep 2: Self-Supervised Flow Matching for Language-Queried Audio Source Separation](/202608/28/2608.22111v2-flowsep-2-self-supervised-flow-matching-for-language-queried-audio-source-separation)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：FM合成器音频与参数的联合嵌入，面向声音设计
-6. [μNet: Ultra-Low-Memory and Low-Complexity Speech Enhancement for Embedded Digital Signal Processors](/202608/26/2608.21155v1-net-ultra-low-memory-and-low-complexity-speech-enhancement-for-embedded-digital-signal-processors)  
+   evidence：基于流匹配生成模型的语言查询音频源分离，方法与文本到音频合成相关
+9. [Investigating voiced and unvoiced regions of speech for audio deepfake detection](/202608/28/2608.24639v1-investigating-voiced-and-unvoiced-regions-of-speech-for-audio-deepfake-detection)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：面向嵌入式DSP的超低内存语音增强方法
-7. [PUMA: A Polish Benchmark for Culturally Grounded Multimodal Understanding](/202608/26/2608.21853v1-puma-a-polish-benchmark-for-culturally-grounded-multimodal-understanding)  
+   evidence：面向合成语音检测的语音分析，与TTS合成音频密切相关
+10. [Mapping Written Words to Spoken Words in a Different Language Using Only Visual Grounding](/202608/28/2608.26925v1-mapping-written-words-to-spoken-words-in-a-different-language-using-only-visual-grounding)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：提出了包含音频任务的多模态基准，与语音和音频数据集/基准相关。
-8. [Better Retrieval, Worse Robustness: How Multi-hop RAG Amplifies Upstream ASR Errors](/202608/26/2608.22872v2-better-retrieval-worse-robustness-how-multi-hop-rag-amplifies-upstream-asr-errors)  
+   evidence：利用视觉接地和自监督语音表示进行低资源语音-文本映射
+11. [Said Aloud, Read Different: Cross-Modal Instability in Multimodal Models](/202608/28/2608.27135v1-said-aloud-read-different-cross-modal-instability-in-multimodal-models)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：利用TTS合成带口音语音研究多跳RAG对ASR错误的放大效应
-9. [Speech-to-SOAP: End-to-End Summarization of Medical Dialogues: KIT@BeTraC 2026](/202608/26/2608.24327v1-speech-to-soap-end-to-end-summarization-of-medical-dialogues-kitbetrac-2026)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：端到端将医学语音摘要为SOAP病历，与语音识别/理解研究相关。
-10. [Investigating voiced and unvoiced regions of speech for audio deepfake detection](/202608/26/2608.24639v1-investigating-voiced-and-unvoiced-regions-of-speech-for-audio-deepfake-detection)  
-   标签：评分：6.0/10、query:speech-audio
-   evidence：利用AASIST分析清音与浊音区段进行语音伪造检测
+   evidence：语音增强对比三元组基准
 
 
 <div class="dpr-home-promo-card">
