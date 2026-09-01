@@ -1,0 +1,350 @@
+Title: REDnet: Recursive Encoder and Decoder for Speech Separation under Unknown Number of Speakers and Variable Number of Microphones
+
+URL Source: https://arxiv.org/pdf/2608.24659v1
+
+Published Time: Wed, 26 Aug 2026 01:16:57 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# REDnet: Recursive Encoder and Decoder for Speech Separation under Unknown Number of Speakers and Variable Number of Microphones 
+
+## Fulin Wu and Zhong-Qiu Wang 
+
+Department of Computer Science and Engineering, Southern University of Science and Technology, Shenzhen, China 12532594@mail.sustech.edu.cn, wang.zhongqiu41@gmail.com 
+
+Abstract 
+
+We propose recursive encoder and decoder (RED) for build-ing a single deep neural network (DNN) model that can sepa-rate multi-speaker mixtures containing unknown numbers of speakers and variable numbers of microphones arranged in an unknown geometry, a task that has not been studied yet. The decoder of RED recursively detects whether there are active speakers left and separates one speaker at a time. It is designed to be trained in an end-to-end fashion to improve separation performance. The encoder of RED recursively encodes each microphone channel of the input mixture, sequentially incor-porating spatial cues. Combining both, the DNN can be trained to separate mixtures not only with unknown numbers of speak-ers but also with variable numbers of microphones, achieving state-of-the-art performance on multiple public datasets. 
+
+## 1 Introduction 
+
+In many artificial intelligence applications, the sensors in-evitably record a mixture of multiple concurrent signals. It is often necessary to unmix them before further processing. One prominent example, in audio signal processing, is speech separation ( a.k.a. , the cocktail party problem) (McDermott 2009; Wang and Chen 2018; Li et al. 2023; Fan et al. 2025; Xu et al. 2025a,b; Li et al. 2026), where multiple speakers often talk concurrently in natural conversations, and their mixed speech needs to be separated from each other before further processing. In realistic scenarios, the number of concurrent speakers is often unknown and needs to be estimated, and, in addition, the recording device can be a single microphone or an array of microphones arranged in a geometry not observed during training. This motivates us to build a single, general-purpose model that can flexibly separate multi-speaker mix-tures across a broad range of speaker counts, microphone counts, and microphone geometries. This requires the model to solve two key challenges together: producing outputs for an unknown number of speakers based on inputs with a diverse number of microphones arranged in various and possibly un-known geometries. This is particularly challenging for deep neural networks (DNN) based models as the input and output dimensions are usually fixed. There have been studies attacking the two challenges sep-arately but not jointly. For example, DNN modules such as TAC (Luo et al. 2020a) and VarArray (Yoshioka et al. 2022) that iteratively combine channel-specific features with glob-ally aggregated cues across all microphones have been pro-posed to separate mixtures recorded by variable numbers of microphones. However, the number of speakers to estimate is assumed known and fixed, which limits their application scenarios. On the other hand, SepTDA (Lee et al. 2024) and SR-CorrNet (Shin et al. 2026) propose a transformer-decoder-based attractor module to deal with unknown num-bers of speakers, but they assume that the number of input microphones and their geometry are fixed between training and testing. Recently, FlexIO (Masuyama et al. 2026b) trains a single DNN to handle speech separation and enhancement under known numbers of speakers and variable numbers of microphones, but it assumes that the number of sources and the source types are known a priori, which restricts its prac-tical deployment. In summary, there still lacks a unified so-lution that can address both challenges at the same time. In this context, we make the first attempt towards solving both challenges inside a single DNN. We propose recursive encoder and decoder network (REDnet), equipped with a recursive encoder (RE) and a recursive decoder (RD). RE re-cursively encodes each microphone, sequentially exploiting spectral and spatial cues for separation. RD, building upon a monaural, recursive speech separation paradigm named OR-PIT (Takahashi et al. 2019), recursively performs speaker detection and separates one speaker at a time until no speak-ers are detected. We summarize our contributions as follows: 
+
+• We are the first to train a single DNN to perform speech sep-aration under unknown numbers of speakers and variable numbers of microphones arranged in unknown geometries. 
+
+• We propose RE, a new mechanism that recursively en-codes information of each microphone. We observe that RE captures spatial cues better than TAC. 
+
+• We propose RD, which, building upon the recursive sepa-ration paradigm in OR-PIT (Takahashi et al. 2019), further improves the performance via end-to-end training, refined loss functions, and speaker interaction modules. 
+
+• The proposed shared recursive design allows the encoder and decoder to be readily integrated into a unified frame-work (e.g., REDnet), which can aggregate spectral and spa-tial information across variable numbers of microphones to separate unknown numbers of speakers. Evaluation results on multiple public datasets show that REDnet obtains state-of-the-art performance, exhibiting strong generalizability to real-recorded signals. arXiv:2608.24659v1 [eess.AS] 25 Aug 2026 2 Related Work 
+
+2.1 Related work with RD 
+
+To separate unknown numbers of speakers, there are roughly four approaches. 1 Separate-then-select methods train one model for each speaker count or train a single model to produce a fixed, maximum number of estimates, and sub-sequently identify valid ones (Nachmani et al. 2020; Luo et al. 2020b; Kim et al. 2023; Kim and Shin 2023). However, they require additional post-selection and always perform separation up to the assumed maximum number of speak-ers, regardless of the actual speaker count. 2 Count-aware methods jointly count speakers and route a shared representa-tion to speaker-count-specific separation heads (Chazan et al. 2021; Zhu et al. 2021). Their performance relies on count-ing accuracy, and they have to pre-define speaker counts the model can handle. 3 Attractor-based methods estimate a variable number of speaker embeddings and use them to sep-arate speakers(Horiguchi et al. 2020; Chetupalli et al. 2022; Maiti et al. 2023; Chetupalli et al. 2023; Lee et al. 2024; Shin et al. 2026). Although they can accommodate unknown numbers of speakers, speaker selection occurs in a latent at-tractor space, making its relation to the final speech estimates less transparent. 4 Recursive methods extract one speaker at each iteration, and stop when no speaker is detected (Shi et al. 2018; Kinoshita et al. 2018; Takahashi et al. 2019; Shi et al. 2020; Jin et al. 2022; Alizadeh et al. 2025). However, existing recursive approaches generally rely on relatively limited sep-aration backbones, which restricts their overall performance. RD follows the recursive paradigm, but rather than count-ing speakers independently or generating all latent attractors before separation, it tightly couples speaker separation with counting: the stopping decision is made directly from the cur-rent separation state, so the number of speakers is counted jointly with the recursive separation process. Compared with separate-then-select methods, RD is trained end-to-end by jointly performing separation and counting, avoiding post-selection. Compared with prior recursive methods, RD em-ploys stronger time-frequency-domain models, speaker inter-action modules and refined training objectives, and is trained in an end-to-end fashion, thereby realizing better separation. 
+
+2.2 Related work with RE 
+
+There are roughly three approaches for handling variable numbers of microphones. 1 Beamforming methods (Hey-mann et al. 2016; Erdogan et al. 2016; Luo et al. 2019) estimate linear filters to combine microphone signals, natu-rally accommodating any number of microphones. However, linear filtering alone often cannot realize sufficient separa-tion especially when the number of microphones is limited and reverberation is strong. Applying a monaural DNN for post-filtering cannot fully exploit spatial cues (Wang and Wang 2019). 2 Average-based aggregation methods , such as TAC, extract features from individual microphones and combine each feature with a global representation obtained by averaging across microphones (Luo et al. 2020a; Yosh-ioka et al. 2022; Zhang et al. 2023; Kim et al. 2024; Ma-suyama et al. 2026b). This design can process a variable number of microphones without assuming a fixed geome-try. However, averaging-based aggregation compresses all microphone signals into a single global feature and may weaken channel-specific cues and fine-grained inter-channel patterns. Repeated TAC operations, which are necessary to make TAC work, dramatically increase computation. 3 Ex-plicit inter-channel modeling methods model multiple micro-phones using cross-attention (Wang et al. 2020, 2021; Pandey et al. 2022; Wang et al. 2023a; Guo et al. 2024, 2025; Ma-suyama et al. 2026b). These methods enable adaptive infor-mation exchange among microphones and can accommodate diverse microphone counts and array geometries. However, explicitly modeling inter-channel dependencies generally in-curs architectural complexity and computational overhead. Our proposed RE progressively integrates one microphone at each recursion step by jointly modeling the current micro-phone signal and the information accumulated from previ-ously processed microphone signals. This avoids both the in-formation compression introduced by TAC-style global aver-aging and the quadratic cost associated with explicit pairwise inter-channel modeling. By interacting only the current mi-crophone with the accumulated representation, RE preserves channel-specific information, while maintaining linear com-plexity with respect to the number of microphones. 
+
+2.3 Related work with REDnet 
+
+There are recent efforts developing a single DNN model for flexible speech separation and enhancement, such as FlexIO (Masuyama et al. 2026b). However, its flexibility relies on externally provided speaker prompts and does not require the model to infer the number of speakers. Our study takes a further step towards a universal speech separation and en-hancement system by jointly dealing with variable numbers of microphones and unknown numbers of speakers. 
+
+## 3 Problem Formulation 
+
+In a noisy-reverberant environment containing C concurrent speakers, the signal recorded by a microphone array with P
+
+microphones can be formulated, in the short-time Fourier transform (STFT) domain, as follows: 
+
+Yp(t, f ) = XCc=1 Sp(c, t, f ) + Vp(t, f ) ∈ C, (1) where t, f , p and c respectively index T time frames, F fre-quency bins, P microphones and C speakers. At microphone 
+
+p, Yp, Sp(c) and Vp respectively denote the spectrograms of the mixture, target-speech signal of speaker c, and non-target signals. Without loss of generality, we designate the first mi-crophone as the reference microphone, and our goal is to estimate the target signals {S1(c)}Cc=1 at the reference mi-crophone 1 based on the observed mixtures {Yp}Pp=1 . Notice that, in realistic applications, different mixtures often contain different numbers of speakers and are recorded by different microphone arrays with different numbers of microphones. That is, P and C can vary from mixture to mixture. Our objective is to train a single DNN model that can perform accurate speech separation for a wide range of speaker and microphone counts. Notice that, at run time, the number of microphones is readily available from the input mixture, whereas the number of active speakers needs to be estimated. RE Block  Back bone  
+
+> Shrink
+> Enlarge
+> Concat RD Block
+> Shrink
+> Enlarge
+> Detector
+> Gating
+> RE Block
+> Shrink
+> Enlarge
+> Concat
+> RD Block
+> Shrink
+> Enlarge
+> Detector
+> Gating
+> RE Block
+> Shrink
+> Enlarge
+> Concat
+> Rd Block
+> Shrink
+> Enlarge
+> Detector
+> Gating
+> Shrink
+> Detector
+> Conv2D
+> Conv2D
+> Deconv2D
+> Deconv2D
+> Deconv2D
+> Conv2D
+> Triple-path speaker interaction block
+> Deconv2D
+> Deconv2D
+> Deconv2D
+> Deconv2D
+> Deconv2D
+
+Figure 1: Overview of proposed REDnet (best viewed in color). Blocks with the same name and color share the same parameters. See Fig. 2 for an illustration of REBlock, RDBlock, Backbone, triple-path speaker interaction block, and speaker detector. 
+
+## 4 REDnet 
+
+Fig. 1 illustrates our proposed REDnet, which consists of an RE module to deal with variable numbers of microphones, a Backbone to model spectral, temporal, and spatial patterns, and an RD module for dealing with unknown numbers of speakers. This section describes each of them. 
+
+4.1 Recursive encoder 
+
+Given an STFT-domain representation of the mixture signal at each microphone p, Yp ∈ R2×T ×F , where the first dimen-sion stacks the real and imaginary (RI) components, a two-dimensional convolution (Conv2D) module is first applied to embed each microphone signal independently, obtaining an embedding Xp ∈ RD×T ×F . Next, starting from the ref-erence microphone 1, RE recursively processes the P em-beddings, progressively aggregating their information into a unified representation. Let Ip ∈ RD×T ×F denote the output after the p-th recursion, which represents the accumulated feature after exploiting information from the first p micro-phones. The recursive representation starts froms I0 = 0. At the p-th recursion, Ip−1 is concatenated with the representa-tion of the current microphone signal Xp ∈ RD×T ×F along the first dimension: Ap = concat ( Ip−1, Xp) ∈ R2D×T ×F ,which is then projected by a shrink layer based on point-wise Conv2D to E × T × F and subsequently modeled by an REBlock. Next, an enlarge layer, also based on point-wise Conv2D, restores the feature dimension to D. Its output is added to the previous accumulated representation Ip−1
+
+through a residual connection, yielding Ip ∈ RD×T ×F ,which aggregates information from the first p microphones. After all the P microphones have been processed, the final aggregated representation IP is fed to a Backbone module to further refine the representation, obtaining Z ∈ RD×T ×F
+
+for the recursive decoder to separate an unknown number of speakers. The details of the REBlock and Backbone modules will be described later in Section 4.3. 
+
+4.2 Recursive decoder 
+
+Given the Backbone output Z ∈ RD×T ×F , RD recursively extracts one speaker at each iteration until no speaker is de-tected. We set O1 = Z to start the decoding process. At the 
+
+c-th iteration, the residual representation Oc ∈ RD×T ×F is projected by a shrink layer (based on point-wise Conv2D) to E × T × F . Based on the shrunk feature, a speaker de-tector (which is an MLP to be described in Section 4.3) first determines whether there are active speakers. If no speaker is detected, the recursive decoding process terminates; oth-erwise, the shrunk feature is passed to an RDBlock to ob-tain a feature representation of the c-th speaker, denoted as 
+
+Uc ∈ RD×T ×F , which can be fed to a 2D deconvolution (De-conv2D) layer to produce an estimate of the RI components of speaker c, bSRD  
+
+> 1
+
+(c) ∈ R2×T ×F , on which a loss function can be defined to train the network. Meanwhile, an enlarge layer based on point-wise Conv2D is applied to Uc to restore the feature dimension from E to D,producing Gc ∈ RD×T ×F , which is used to derive a gating mechanism for updating the residual representation: 
+
+Oc+1 = Oc ⊙  1 − sigmoid( Gc). (2) This gating mechanism mimics time-frequency (T-F) mask-ing in speech separation and enhancement (Wang and Chen 2018), since Gc, derived from Uc which is regularized to reconstruct speaker c, likely only contains information about speaker c, and hence the computed gate, 1 − sigmoid( Gc),could peel off speaker c from the current residual represen-tation Oc, yielding a new residual representation Oc+1 that potentially only contains information about the speakers that are not yet separated. This mechanism could be useful for recursive speech separation, as the embeddings in later itera-tions should not contain information about the speakers that have already been separated in earlier iterations. This also motivates us to design a loss to penalize each 
+
+Oc+1 to encourage them to contain information only about the remaining speakers not yet separated. We realize this by applying a Deconv2D layer to Oc+1 to compute a spec-trogram (denoted as bXRM  
+
+> 1
+
+(c + 1) ∈ R2×T ×F , with “RM” meaning “remaining mixture”), which is then penalized by the summation of the target signals of the remaining speak-ers (i.e., PCc′=c+1 Sq (c′)). We skip this for OC+1 , as it is expected to have no speakers left in it. On the other hand, since the speakers are serially estimated in different recursion steps and hence lack direct interaction, a triple-path speaker interaction module is attached to jointly model the speaker embeddings produced by RDBlock across all the recursion steps. This could allow information to be exchanged when the spectrograms of different speakers are estimated. In detail, we feed {Uc}Cc=1 to the speaker inter-action module to refine each speaker embedding, and then use a shared Deconv2D layer to estimate the spectrograms of each speaker. For each speaker c, we denote the estimate as STP  
+
+> 1
+
+(c) ∈ R2×T ×F , where “TP” means “triple-path”. 
+
+Training setup . During training, the oracle number of speakers, C, is used to unroll the RD module for C iterations. An additional speaker-detection step is performed to have the speaker detector learn to stop the recursion. 
+
+Inference setup . At run time, the number of speakers needs to be estimated. The recursive decoding continues until the predicted probability of the speaker detector falls below a pre-defined threshold τ (set to 0.5). This way, an estimated number of speakers, ˆC, can be used for separation. 
+
+4.3 DNN architectures of various blocks 
+
+Fig. 2(a) shows the architecture of REBlock, Backbone, and RDBlock. It is based on the widely-adopted TF-GridNet block (Wang et al. 2023b), which stacks an intra-frame full-band module, a sub-band temporal module, and a cross-frame self-attention module for efficient time and frequency mod-eling. We make two minor modifications: replace all PReLU activations with SiLU (Elfwing et al. 2018), and insert a Conv-SwiGLU module proposed in TF-LocoFormer (Saijo Average pooling 𝐸 FC + SiLU 3𝐸 FC + Sigmoid 0 or 1  
+
+> (a)
+> Conv-SwiGLU
+> Intra-frame full-band module
+> Conv-SwiGLU
+> Sub-band temporal module Cross-speaker attention module
+> (c)
+> 𝑇 $ 𝐹 ×𝐶×𝐸
+> Reshape
+> 𝐔 ∈ ℝ !×#×$×%
+> 𝑇 $ 𝐶 ×𝐹×𝐸
+> Reshape Reshape
+> 𝐹 $ 𝐶 ×𝑇×𝐸
+> Reshape
+> 𝐶×𝐸×𝑇×𝐹
+> Freq. modeling Cross-speaker modeling Time modeling
+> ×𝐵
+> MHSA FC+SwiGLU+FC Conv1D
+> 𝐹 $ 𝐶 ×𝑇×𝐸
+> Conv1D SiLU Deconv1D
+> 𝐹 $ 𝐶 ×𝑇×𝐸
+> LayerNorm LayerNorm LayerNorm
+> 𝑇 $ 𝐹 ×𝐶×𝐸 𝑇 $ 𝐹 ×𝐶×𝐸
+> Conv-SwiGLU
+> Intra-frame full-band module
+> Conv-SwiGLU
+> Sub-band temporal module
+> 𝐸×𝑇×𝐹
+> Reshape Reshape Freq. modeling Time modeling
+> ×𝐵
+> Cross-frame self-attention module
+> 𝐸×𝑇×𝐹
+> (b) (c)
+> 𝐐 &∈ ℝ #×$×%
+> Reshape
+> 𝑇×𝐹×𝐸 𝐹×𝑇×𝐸 𝐸×𝑇×𝐹
+
+Figure 2: Illustration of (a) REBlock, RDBlock and Back-bone; (b) speaker interaction block; and (c) speaker detector. et al. 2024) before the intra-frame full-band module and sub-band temporal module to better model local patterns. The triple-path speaker interaction block in Fig. 2(b) se-quentially performs cross-speaker, frequency and time mod-eling, where the latter two share the same architecture as those in Fig. 2(a). For cross-speaker modeling, we reshape the input tensor C × E × T × F to (T · F ) × C × E, view it as T · F sequences each with C steps, and use a multi-head self-attention (MHSA) layer followed by a one-hidden-layer MLP with SwiGLU activation to model speaker interaction. The speaker detector in Fig. 2(c) takes an E × T × F
+
+tensor as input, and applies average pooling over time and frequency, obtaining an E-dimensional vector, which is then processed by a one-hidden-layer MLP with a SiLU hidden activation, followed by a sigmoid activation to estimate the probability of whether at least one speaker is active. 
+
+4.4 Loss functions 
+
+The scale-invariant signal-to-noise ratio (SI-SNR) loss (Le Roux et al. 2019) is leveraged to penalize estimated signals. Let wRD , wRM , wTP , and wBCE denote weights for different loss terms; the overall loss function is defined as follows: 
+
+L = wRD · L RD + wRM · L RM + wTP · L TP + wBCE · L BCE .
+
+The first three terms penalize bSRD  
+
+> 1
+
+, bSRM  
+
+> 1
+
+and bSTP  
+
+> 1
+
+, respectively. The fourth term, LBCE , is the binary cross-entropy (BCE) loss for training the speaker detector. For a mixture contain-ing C speakers, the label sequence for training is [1 , . . . , 1, 0] ,consisting of C ones followed by a zero, where 1 indicates that at least one speaker exists and 0 means no speakers exist. To successfully train REDnet for separation, we need to resolve the label-permutation problem before loss computa-tion. If wTP is set positive, we identify the best permutation by using permutation invariant training (Kolbæk et al. 2017) on LTP , and use the best permutation to compute LRD and 
+
+LRM . If wTP is set to zero (i.e., the speaker interaction mod-ule is not used), we resolve the permutation based on LRD ,and apply the same permutation to compute LRM .
+
+## 5 Experimental Setup 
+
+Based on public datasets (see Table 1), we first separately validate whether RE can handle variable numbers of micro-phones and whether RD can separate unknown numbers of speakers, followed by their integration (i.e., RED) to check whether both can be realized simultaneously. As different datasets often have different definitions of target speech, fol-lowing their design, the target speech can be reverberant (de-noted as “r”), direct-path (“d”) and direct-path plus 50 ms of early reflections (“d+e”). This section describes the datasets, baselines, system configurations, and evaluation metrics. 
+
+5.1 Datasets for REnet, RDnet and REDnet 
+
+For RD, we construct RDnet by replacing the recursive en-coder in REDnet with a Conv2D layer which embeds input mixtures recorded by a fixed number of microphones from 
+
+2P × T × F to D × T × F (where P is fixed). We train and test RDnet on the WSJ0-{2,3,4,5}mix dataset (Nachmani et al. 2020), which is monaural, anechoic, noise-free, and consists of mixtures with 2 to 5 speakers. In addition, to show the effectiveness of RDnet in noisy-reverberant conditions, we train and test it based on a noisy-reverberant version of WSJ0-{2,3,4,5}mix, named WSJ0-{1,2,3,4,5}mix-nr (Saijo et al. 2023), which additionally provides single-speaker signals to evaluate models’ effectiveness at speech enhancement. For RE, we construct REnet by replacing the recursive decoder in REDnet with a Deconv2D layer to predict the RI components of target signals, assuming a fixed number of speakers to separate (i.e., from D × T × F to 2C × T × F ,with C fixed). We perform training and testing on a dataset introduced in the TAC paper (Luo et al. 2020a). The dataset is designed for multi-channel two-speaker separation in noisy-reverberant conditions, covering both ad-hoc- and fixed-geometry array setups (denoted respectively as TAC-ad-hoc 
+
+and TAC-fixed-array ). The models are trained only on the ad-hoc array data, with the fixed-geometry array data reserved for evaluating generalizability to unseen array geometries. For RED, we strictly follow the experimental setup of FlexIO (Masuyama et al. 2026b), using the same data to train and test REDnet so that a direct performance comparison can be made. The FlexIO setup combines five datasets in speech separation and enhancement, including WSJ0-{2,3}mix (Her-shey et al. 2016), WHAM! (Wichern et al. 2019), anechoic and reverberant WHAMR! (denoted respectively as WHAMR!-A and WHAMR!-R) (MacIejewski et al. 2020) WSJ1-CHiME4 
+
+(Scheibler et al. 2021) and CHiME-4 (Barker et al. 2017), which have different numbers of speakers and microphones as well as acoustic conditions. This setting is well-suited to our task, as REDnet is designed to separate unknown num-bers of speakers given variable numbers of microphones.                                     
+
+> Model Dataset Ver. / SR (kHz) PCS1
+> REnet TAC-ad-hoc – / 16 {2,3,4,5,6} {2} rTAC-fixed-array – / 16 {}, {6} {}, {2} RDnet1 WSJ0-{2,3,4,5}mix min / 8 {1} {2,3,4,5} dRDnet2 WSJ0-{1,2,3,4,5}mix-NR min / 8 {1} {1,2,3,4,5} d+e REDnet WSJ0-{2,3}mix min / 16 {1} {2,3} dWHAM! min / 16 {1} {1,2} WHAMR!-{A,R} min / 16 {1,2} {1,2} WSJ1-CHiME4 – / 16 {2,4}, {3} {2,3} CHiME-4 – / 16 {1,2,4}, {3, 5} {1}
+
+Table 1: Datasets, including version (Ver.) and sampling rate (SR), used for each model. REnet is trained on TAC-ad-hoc 
+
+and tested on TAC-ad-hoc and TAC-fixed-array . RDnet1 is trained and tested on WSJ0-{2,3,4,5}mix , and RDnet2 on 
+
+WSJ0-{1,2,3,4,5}mix-NR . REDnet is trained and tested on the five datasets combined. In column “ P ”, some rows have two sets of values separated by a comma. This means that the microphone counts in the right set are reserved for testing to check generalizability, not used for training. 
+
+5.2 Miscellaneous system configurations 
+
+REBlock, Backbone, and RDBlock share the same modified TF-GridNet architecture but have different hyper-parameters and model weights. Using the notations in the TF-GridNet paper (Wang et al. 2023b), for REBlock and RDBlock, we set D = 64 , B = 4 , I = 4 , J = 4 , H = 256 and L = 4 ; and for Backbone, we change D = 128 , I = 1 and J = 1 . For each Conv1D and Deconv1D in Conv-SwiGLU, the kernel size is 3 and the stride is 1. In the cross-speaker attention module of the speaker interaction block, the MHSA layer uses 4 attention heads and the expansion ratio in the MLP layer is set to 3. We stack B = 2 speaker interaction blocks. Each microphone signal is normalized to unit sample vari-ance before any processing. For STFT, the window size is 16 
+
+ms, hop size 8 ms, and the square-root Hann window is used as the analysis window. The models are trained using the Adam optimizer. The learning rate starts from 5 × 10 −4 and is halved if the validation loss is not improved in 3 epochs. The batch size is 1. The segment size is 8 seconds for training RDnet and REDnet, and 4 seconds for REnet. Gradient clip-ping with a maximum L2 norm of 1.0 is applied to stabilize training. Mixed-precision with bfloat 16 is used in training. The evaluation metrics include SI-SDR (Le Roux et al. 2019), BSSEval SDR (Vincent et al. 2006), signal-to-interference ratio (SIR) (Vincent et al. 2006), narrow-band PESQ (NB-PESQ) (Rix et al. 2001) and wide-band PESQ (WB-PESQ) (ITU 2007), STOI (Taal et al. 2011), and DNS-MOS (OVRL) (Reddy et al. 2022). For SI-SDR, on some datasets we report SI-SDRi, which is the SI-SDR improve-ment of estimated signals over unprocessed mixtures. Following previous studies (Lee et al. 2024; Shin et al. 2026), at run time, if the estimated number of speakers ˆC
+
+exceeds C, an optimal subset of estimated signals is selected for metric computation; and if ˆC < C , the predictions are padded with C − ˆC signals whose values are all 10 −8.5.3 Baseline systems 
+
+Since our models are trained on public datasets, we can read-ily compare the results of our models with existing ones. For REnet, we consider TAC (Luo et al. 2020a) as the baseline, as it is a representative model for speech separation under variable numbers of microphones. To use a compu-tation cost similar to RE, we implement TAC following the design in USES (Zhang et al. 2023) and equip it with the same “shrink–modeling–enlarge” structure. At each TAC layer, dif-ferent microphone embeddings first go through a shrink layer to reduce the feature dimension, followed by a T-F modeling block that shares the same architecture and configuration as REBlock except for the number of blocks B, and they are then fused across microphones by the TAC operation, and go through an enlarge layer to restore the original feature dimension, followed by a residual connection. REBlock uses 
+
+4 modified TF-GridNet blocks, whereas TAC uses 1 such block per TAC layer and stacks 4 TAC layers to achieve a similar computation cost. For RDnet, we compare its performance with previous best methods (see Table 3) on the WSJ0-{2,3,4,5}mix dataset. We further compare it with MUSE (Saijo et al. 2023), which proposes the WSJ0-{1,2,3,4,5}mix-NR dataset. For REDnet, we compare its performance mainly with FlexIO (Masuyama et al. 2026b), which assumes oracle speaker count and source types at run time. 
+
+## 6 Evaluation Results 
+
+This section reports the results of REnet, RDnet and REDnet. 
+
+6.1 Results of RDnet 
+
+Table 2 reports the results of RDnet on WSJ0-{2,3,4,5}mix, assuming known speaker count at run time. In row 1, we replace the gating operation with an addition-based residual connection. Its performance is consistently worse than row 
+
+2, which turns on the gating. Row 3 and 4 show that replac-ing PReLU with SiLU and introducing the Conv-SwiGLU block progressively improve separation. Row 5 − 7 investi-gate the contributions of different training objectives. In row 
+
+5, including the triple-path speaker interaction module by turning on the LTP loss and turning off LRD produces clear gains. In row 6, retaining a small weight for the intermediate 
+
+LRD loss enhances overall performance. In row 7, further in-cluding LRM obtains clear improvement in the 4- and 5-mix conditions. Finally, in row 8, increasing the weight of LBCE 
+
+yields the best overall results. In addition, we observe that doing this can stabilize the training of speaker detection. Table 3 compares RDnet with existing methods on WSJ0-{2,3,4,5}mix, where all the systems need to do speaker count-ing. RDnet obtains better SI-SDRi than the previous best in the {3, 4, 5}-mix cases, and a competitive SI-SDRi in the 2-mix case. The improvement is clear in the most challenging 
+
+5-mix case (i.e., 20 .8 vs. 19 .9 dB SI-SDRi). In addition, the speaker counting accuracy of RDnet is high, reaching 99 .2% 
+
+in the 5-mix case. This explains why RDnet has a minor performance drop when switching from oracle to estimated number of speakers (e.g., from 20 .9 to 20 .8 dB SI-SDRi in                                                                                      
+
+> Conv-SwiGLU SI-SDRi (dB) Gating SiLU wRM wRD wTP wBCE 2-mix 3-mix 4-mix 5-mix
+> ✗✗✗0.01.00.01.022 .922 .019 .317 .6
+> ✓✗✗0.01.00.01.023 .222 .319 .717 .8
+> ✓✓✗0.01.00.01.023 .322 .419 .718 .0
+> ✓✓✓0.01.00.01.024 .023 .220 .618 .8
+> ✓✓✓0.00.01.01.024 .624 .221 .920 .3
+> ✓✓✓0.00.11.01.024 .724 .421 .820 .3
+> ✓✓✓0.10.11.01.024 .724 .422 .220 .6
+> ✓✓✓0.10.11.02.524 .724 .522 .320 .9
+
+Table 2: Ablation results of RDnet1 on WSJ0-{2,3,4,5}mix, assuming known speaker count at run time.                                     
+
+> SI-SDRi (dB) Model 2-mix 3-mix 4-mix 5-mix RSS (Takahashi et al. 2019) 14 .8(N/A )12 .6(N/A )10 .2(N/A )N/A gDPRNN (Nachmani et al. 2020) 18 .6(84 .6) 14 .6(69 .0) 11 .5(47 .5) 10 .4(92 .3)
+> SepEDA (Chetupalli et al. 2022) 21 .1(99 .8) 18 .4(97 .0) 14 .4(90 .2) 11 .6(96 .9)
+> ReSepNet (Alizadeh et al. 2025) 21 .2(N/A )19 .2(N/A )14 .9(N/A )12 .0(N/A )
+> SepNet (Yang et al. 2025) 21 .4(99 .9) 19 .9(99 .5) 16 .9(97 .7) 14 .3(95 .7)
+> SepTDA (Lee et al. 2024) 23 .6(99 .9) 22 .1(95 .9) 19 .5(90 .1) 16 .9(83 .2)
+> SR-CorrNet-B (Shin et al. 2026) 24 .8(100 .0)24 .4(99 .7)21 .9(97 .7) 19 .9(96 .9)
+> RDnet1 24 .7(99 .9) 24 .5(99 .7)22 .3(99 .0)20 .8(99 .2)
+
+Table 3: SI-SDRi comparison on WSJ0-{2,3,4,5}mix, all obtained based on estimated number of speakers. Values in parentheses denote speaker-counting accuracy (%).                 
+
+> Model C= 2 C= 3 C= 4 C= 5
+> SR-CorrNet-B 188 .2261 .9335 .5409 .1
+> RDnet1 177 .4222 .5267 .6312 .7
+
+Table 4: Computation cost in GMACs per second.                  
+
+> TAC-ad-hoc TAC-fixed-array Method P= 2 P= 4 P= 6 P= 6
+> TAC 17 .820 .220 .917 .1
+> REnet 19 .322 .323 .418 .5
+
+Table 5: SI-SDRi (dB) results on TAC-{ac-hoc,fixed-array}. the 5-mix case). Table 4 reports the computation cost of RD-net. It uses less computation but obtains better SI-SDRi than SR-CorrNet-B (Shin et al. 2026), the previous best. In Table 6, RDnet outperforms MUSE (Saijo et al. 2023) on WSJ0-{1,2,3,4,5}mix-NR, confirming its effectiveness and robustness in challenging noisy-reverberant conditions. 
+
+6.2 Results of REnet 
+
+Table 5 reports the performance of REnet on the TAC-ad-hoc 
+
+dataset. Compared with TAC under a similar computational cost, REnet consistently achieves better performance. Table 5 SI-SDR (dB) SDR (dB) NB-PESQ Test set Mixture MUSE RDnet2 MUSE ⋆ RDnet2 ⋆ Mixture MUSE RDnet2 MUSE ⋆ RDnet2 ⋆ Mixture MUSE RDnet2 MUSE ⋆ RDnet2 ⋆                                                                           
+
+> 1-mix 4.511 .516 .111 .516 .16.713 .918 .013 .918 .02.09 3.01 3.79 3.01 3.79
+> 2-mix −1.68.415 .08.414 .9−0.810 .116 .710 .116 .71.59 2.45 3.66 2.45 3.66
+> 3-mix −4.65.413 .65.313 .5−3.77.015 .16.915 .11.39 2.05 3.42 2.05 3.41
+> 4-mix −6.42.512 .22.412 .2−5.54.113 .64.013 .61.32 1.80 3.17 1.79 3.17
+> 5-mix −7.70.310 .70.210 .7−6.71.912 .21.912 .21.31 1.64 2.94 1.64 2.94
+
+Table 6: Results on WSJ0-{1,2,3,4,5}mix-NR. Superscript ⋆ denotes using an estimated number of speakers for separation.                                                                                                                    
+
+> Prior
+> C?WHAM! (1–1) WHAMR!-A (1–2) WHAMR!-R (1–2) CHiME-4 (1–4) CHiME-4 (1–5) Method SDR STOI PESQ SDR STOI PESQ SDR STOI PESQ SDR STOI PESQ SDR STOI PESQ Mixture –−0.90.761 1.11 −0.90.760 1.11 0.00.731 1.11 7.60.870 1.27 7.60.870 1.27
+> USES ✓10 .20.857 1.65 15 .80.964 2.55 13 .80.960 2.51 18 .30.966 2.46 18 .30.978 2.95
+> TUSS ✓13 .60.942 2.29 13 .60.941 2.28 12 .40.937 2.24 17 .10.957 2.31 17 .10.957 2.31
+> FlexIO ✓13 .80.944 2.31 15 .80.960 2.61 14 .90.958 2.58 21 .30.980 2.86 22 .30.983 2.96
+> REDnet ✓16 .40.965 2.63 18 .10.974 2.91 17 .50.973 2.93 21 .40.982 3.21 22 .20.985 3.30
+> REDnet ✗16 .40.965 2.63 18 .10.974 2.91 17 .50.973 2.93 21 .40.982 3.21 22 .20.985 3.30
+
+Table 7: SDR (dB), STOI and WB-PESQ results of REDnet on speech enhancement tasks (i.e., C = 1 ). The numbers in parentheses beside each dataset denote the numbers of speakers and microphones, i.e., “( C–P )”.                                                                                                                    
+
+> Prior
+> C?WHAMR!-R (2–1) WHAMR!-R (2–2) WSJ1-CHiME (2–2) WSJ1-CHiME (2–4) WSJ1-CHiME (3–3) Method SDR SIR PESQ SDR SIR PESQ SDR SIR PESQ SDR SIR PESQ SDR SIR PESQ Mixture –−4.10.11.08 −4.10.11.08 −1.30.11.17 −1.20.11.17 −4.2−3.21.12
+> DNN-IVA ✓––––––10 .724 .1––––7.720 .1–TUSS ✓9.525 .31.82 9.525 .31.82 14 .929 .12.73 15 .129 .42.75 11 .423 .12.15
+> FlexIO ✓9.725 .51.84 12 .529 .62.22 19 .635 .03.36 21 .637 .33.60 17 .330 .43.03
+> REDnet ✓13 .832 .72.34 15 .734 .42.65 19 .637 .43.49 21 .238 .33.69 18 .234 .03.24
+> REDnet ✗13 .732 .62.34 15 .734 .42.65 19 .637 .43.49 21 .238 .33.69 18 .234 .03.24
+
+Table 8: SDR (dB), SIR (dB) and WB-PESQ results of REDnet on speech separation tasks (i.e., C > 1). also reports the performance on the TAC-fixed-array dataset. Although both REnet and TAC are trained exclusively on TAC-ad-hoc, REnet consistently outperforms TAC, suggest-ing good generalizability to unseen array geometries. 
+
+6.3 Results of REDnet 
+
+Table 7 reports the results of REDnet for speech enhance-ment (i.e., C = 1 ) on various datasets. Even using an esti-mated number of speakers for inference, REDnet consistently outperforms state-of-the-art models including USES (Zhang et al. 2023), TUSS (Saijo et al. 2025) and FlexIO (Masuyama et al. 2026b) (which assume a known speaker count) across most datasets and metrics. Table 8 reports speech separation performance (i.e., C > 1). REDnet achieves, in most cases, superior results over DNN-IVA (Scheibler et al. 2021), TUSS and FlexIO. In addition, in both tables the performance of REDnet degrades only slightly when using estimated speaker count for inference. These results show its effectiveness and robustness to variations in the number of microphones and speakers. Table 9 reports DNSMOS scores on the simulated                                 
+
+> Simulated Real Method Prior C?1ch 5ch 1ch 5ch MVDR (Masuyama et al. 2026a) ✓2.08 2.57 1.46 1.95
+> USES (Zhang et al. 2023) ✓3.03 3.22 3.07 1.58
+> U2-C (Zhang et al. 2024) ✓–––3.08
+> FlexIO (Masuyama et al. 2026b) ✓3.11 3.17 2.91 3.05
+> REDnet ✗3.27 3.29 3.15 3.10
+
+Table 9: DNSMOS scores on CHiME-4 test sets. and real test sets of CHiME-4. Although trained only on sim-ulated data, REDnet obtains strong results on real recordings, outperforming USES, U2-C and FlexIO. 
+
+## 7 Conclusions 
+
+We have proposed REDnet, a simple and effective model for speech separation under unknown numbers of speakers and variable numbers of microphones. State-of-the-art separation performance is obtained on multiple representative datasets in speech separation and enhancement. Future research will focus on better exploiting spatial cues in RE and extending RD for unsupervised speech separation. 
+
+## References 
+
+Alizadeh, H.; et al. 2025. ReSepNet: A Unified-Light Model for Recursive Speech Separation with Unknown Speaker Count. In Proc. Interspeech , 1458–1462. Barker, J.; Marxer, R.; Vincent, E.; and Watanabe, S. 2017. The Third ‘CHiME’ Speech Separation and Recognition Challenge: Analysis and Outcomes. Comput. Speech Lang. ,46: 605–626. Chazan, S. E.; Wolf, L.; Nachmani, E.; and Adi, Y. 2021. Single Channel Voice Separation for Unknown Number of Speakers under Reverberant and Noisy Settings. In Proc. ICASSP , 3730–3734. Chetupalli, S. R.; et al. 2022. Speech Separation for an Unknown Number of Speakers using Transformers With Encoder-Decoder Attractors. In Proc. Interspeech , 5393– 5397. Chetupalli, S. R.; et al. 2023. Speaker Counting and Sep-aration from Single-Channel Noisy Mixtures. IEEE/ACM Trans. Audio, Speech, Lang. Process. , 31: 1681–1692. Elfwing, S.; et al. 2018. Sigmoid-Weighted Linear Units for Neural Network Function Approximation in Reinforcement Learning. Neural Networks , 107: 3–11. Erdogan, H.; Hershey, J. R.; Watanabe, S.; Mandel, M. I.; and Le Roux, J. 2016. Improved MVDR Beamforming us-ing Single-Channel Mask Prediction Networks. In Proc. Interspeech , 1981–1985. Fan, C.; Liu, E.; Li, A.; Tao, J.; Zhou, J.; Li, J.; Zheng, C.; and Lv, Z. 2025. BSDB-Net: Band-Split Dual-Branch Network with Selective State Spaces Mechanism for Monaural Speech Enhancement. In Proc. AAAI , 23850–23858. Guo, H.; Chen, Y.; Zhang, X.; and Li, X. 2024. Graph At-tention Based Multi-Channel U-Net for Speech Dereverbera-tion With Ad-Hoc Microphone Arrays. In Proc. Interspeech ,617–621. Guo, H.; Feng, L.; Chen, Y.; Li, X.; Zhu, B.; Wang, H.-Y.; Zhang, X.-L.; and Li, X. 2025. Co-Attention Based Multi-Channel TF-GridNet for Speech Separation with Ad-Hoc Microphone Arrays. In Proc. ICASSP , 1–5. Hershey, J. R.; Chen, Z.; Le Roux, J.; and Watanabe, S. 2016. Deep Clustering: Discriminative Embeddings for Segmenta-tion and Separation. In Proc. ICASSP , 31–35. Heymann, J.; et al. 2016. Neural Network based Spec-tral Mask Estimation for Acoustic Beamforming. In Proc. ICASSP , 196–200. Horiguchi, S.; Fujita, Y.; Watanabe, S.; Xue, Y.; and Naga-matsu, K. 2020. End-to-End Speaker Diarization for an Un-known Number of Speakers with Encoder-decoder Based Attractors. In Proc. Interspeech , 269–273. ITU. 2007. Wideband Extension to Recommendation P.862 for the Assessment of Wideband Telephone Networks and Speech Codecs. ITU-T Recommendation P.862.2, Interna-tional Telecommunication Union, Geneva, Switzerland. Jin, Z.; et al. 2022. Coarse-to-Fine Recursive Speech Separa-tion for Unknown Number of Speakers. arXiv:2203.16054. Kim, H.; and Shin, J. W. 2023. On Training Speech Sep-aration Models with Various Numbers of Speakers. IEEE Signal Process. Lett. , 30: 1202–1206. Kim, J.; Kindt, S.; Madhu, N.; and Kang, H.-G. 2024. En-hanced Deep Speech Separation in Clustered Ad Hoc Dis-tributed Microphone Environments. In Proc. Interspeech ,2185–2189. Kim, Y.; et al. 2023. Investigation of Training Mute-Expressive End-to-End Speech Separation Networks for an Unknown Number of Speakers. In Proc. Interspeech , 3764– 3768. Kinoshita, K.; Drude, L.; Delcroix, M.; and Nakatani, T. 2018. Listening to Each Speaker One by One with Recurrent Selective Hearing Networks. In Proc. ICASSP , 5064–5068. Kolbæk, M.; Yu, D.; Tan, Z.-H.; and Jensen, J. 2017. Mul-titalker Speech Separation with Utterance-Level Permuta-tion Invariant Training of Deep Recurrent Neural Networks. 
+
+IEEE/ACM Trans. Audio, Speech, Lang. Process. , 25(10): 1901–1913. Le Roux, J.; Wisdom, S.; Erdogan, H.; and Hershey, J. R. 2019. SDR - Half-Baked or Well Done? In Proc. ICASSP ,626–630. Lee, Y.; Choi, S.; Kim, B.-Y.; Wang, Z.-Q.; and Watanabe, S. 2024. Boosting Unknown-Number Speaker Separation with Transformer Decoder-Based Attractor. In Proc. ICASSP ,446–450. Li, X.; Wang, Y.; Sun, Y.; Wu, X.; and Chen, J. 2023. Pgss: Pitch-Guided Speech Separation. In Proc. AAAI , 13130– 13138. Li, Y.; Li, K.; Yin, X.; Yang, Z.; Dong, Z.; Yao, Z.; Xu, H.; Tian, Y.; and Lu, Y. 2026. SepPrune: Structured Pruning for Efficient Deep Speech Separation. In Proc. AAAI , 31861– 31869. Luo, Y.; Ceolini, E.; Han, C.; Liu, S.-C.; and Mesgarani, N. 2019. FaSNet: Low-Latency Adaptive Beamforming for Multi-Microphone Audio Processing. In Proc. ASRU , 260– 267. Luo, Y.; Chen, Z.; Mesgarani, N.; and Yoshioka, T. 2020a. End-to-End Microphone Permutation and Number Invariant Multi-Channel Speech Separation. In Proc. ICASSP , 6394– 6398. Luo, Y.; et al. 2020b. Separating Varying Numbers of Sources with Auxiliary Autoencoding Loss. In Proc. In-terspeech , 2622–2626. MacIejewski, M.; et al. 2020. WHAMR!: Noisy and Rever-berant Single-Channel Speech Separation. In Proc. ICASSP ,696–700. Maiti, S.; Ueda, Y.; Watanabe, S.; Zhang, C.; Yu, M.; Zhang, S.-X.; and Xu, Y. 2023. EEND-SS: Joint End-to-End Neu-ral Speaker Diarization and Speech Separation for Flexible Number of Speakers. In Proc. SLT , 480–487. Masuyama, Y.; Chang, X.; Zhang, W.; Cornell, S.; Wang, Z.-Q.; Ono, N.; Qian, Y.; and Watanabe, S. 2026a. An End-to-End Integration of Speech Separation and Recognition with Self-Supervised Learning Representation. Comput. Speech Lang. , 95(101813): 1–18. Masuyama, Y.; Saijo, K.; Paissan, F.; Han, J.; Delcroix, M.; Aihara, R.; Germain, F. G.; Wichern, G.; and Le Roux, J. 2026b. FlexIO: Flexible Single- and Multi-Channel Speech Separation and Enhancement. In Proc. ICASSP , 14417– 14421. McDermott, J. 2009. The Cocktail Party Problem. Current Biology , 19(22): 1024–1027. Nachmani, E.; et al. 2020. Voice Separation with an Un-known Number of Multiple Speakers. In Proc. ICML , 7121– 7132. Pandey, A.; Xu, B.; Kumar, A.; Donley, J.; Calamia, P.; and Wang, D. 2022. Time-Domain Ad-Hoc Array Speech En-hancement Using a Triple-Path Network. In Proc. Inter-speech , 729–733. Reddy, C. K.; et al. 2022. DNSMOS P. 835: A Non-Intrusive Perceptual Objective Speech Quality Metric to Evaluate Noise Suppressors. In Proc. ICASSP , 886–890. Rix, A. W.; Beerends, J. G.; Hollier, M. P.; and Hekstra, A. P. 2001. Perceptual Evaluation of Speech Auality (PESQ)-A New Method for Speech Quality Assessment of Telephone Networks and Codecs. In Proc. ICASSP , 749–752. Saijo, K.; Ebbers, J.; Germain, F. G.; Wichern, G.; and Le Roux, J. 2025. Task-Aware Unified Source Separation. In 
+
+Proc. ICASSP .Saijo, K.; Wichern, G.; Germain, F. G.; Pan, Z.; and Roux, J. L. 2024. TF-Locoformer: Transformer with Local Model-ing by Convolution for Speech Separation and Enhancement. In Proc. IWAENC , 205–209. Saijo, K.; Zhang, W.; Wang, Z.-Q.; Watanabe, S.; Kobayashi, T.; and Ogawa, T. 2023. A Single Speech Enhance-ment Model Unifying Dereverberation, Denoising, Speaker Counting, Separation, and Extraction. In Proc. ASRU , 1–6. Scheibler, R.; et al. 2021. Surrogate Source Model Learning for Determined Source Separation. In Proc. ICASSP , 176– 180. Shi, J.; Chang, X.; Guo, P.; Watanabe, S.; Fujita, Y.; Xu, J.; Xu, B.; and Xie, L. 2020. Sequence to Multi-sequence Learn-ing via Conditional Chain Mapping for Mixture Signals. In 
+
+Proc. NIPS , volume 33, 3735–3747. Shi, J.; Xu, J.; Liu, G.; Xu, B.; et al. 2018. Listen, Think and Listen Again: Capturing Top-Down Auditory Attention for Speaker-Independent Speech Separation. In Proc. IJCAI ,4353–4360. Shin, U.-H.; et al. 2026. Asymmetric Encoder-Decoder Based on Time-Frequency Correlation for Speech Separa-tion. arXiv:2603.29097. Taal, C. H.; Hendriks, R. C.; Heusdens, R.; and Jensen, J. 2011. An Algorithm for Intelligibility Prediction of Time– Frequency Weighted Noisy Speech. IEEE Trans. Audio, Speech, Lang. Process. , 19(7): 2125–2136. Takahashi, N.; Parthasaarathy, S.; Goswami, N.; and Mitsu-fuji, Y. 2019. Recursive Speech Separation for Unknown Number of Speakers. In Proc. Interspeech , 1348–1352. Vincent, E.; et al. 2006. Performance Measurement in Blind Audio Source Separation. IEEE Trans. Audio, Speech, Lang. Process. , 14(4): 1462–1469. Wang, D.; and Chen, J. 2018. Supervised Speech Separation Based on Deep Learning: An Overview. IEEE/ACM Trans. Audio, Speech, Lang. Process. , 26(10): 1702–1726. Wang, D.; Yoshioka, T.; Chen, Z.; Wang, X.; Zhou, T.; and Meng, Z. 2021. Continuous Speech Separation with Ad Hoc Microphone Arrays. In Proc. EUSIPCO , 1100–1104. Wang, D.; et al. 2020. Neural Speech Separation using Spa-tially Distributed Microphones. In Proc. Interspeech , 339– 343. Wang, H.; Deng, C.; Fu, Y.; Ge, M.; Wang, L.; Zhang, G.; Dang, J.; and Wang, F. 2023a. SDNet: Stream-Attention and Dual-Feature Learning Network for Ad-Hoc Array Speech Separation. In Proc. Interspeech , 3739–3743. Wang, Z.-Q.; Cornell, S.; Choi, S.; Lee, Y.; Kim, B.-Y.; and Watanabe, S. 2023b. TF-GridNet: Integrating Full- and Sub-Band Modeling for Speech Separation. IEEE/ACM Trans. Audio, Speech, Lang. Process. , 31: 3221–3236. Wang, Z.-Q.; and Wang, D. 2019. Combining Spectral and Spatial Features for Deep Learning Based Blind Speaker Sep-aration. IEEE/ACM Trans. Audio, Speech, Lang. Process. ,27(2): 457–468. Wichern, G.; Antognini, J.; Flynn, M.; Zhu, L. R.; McQuinn, E.; Crow, D.; Manilow, E.; and Le Roux, J. 2019. WHAM!: Extending Speech Separation to Noisy Environments. In 
+
+Proc. Interspeech , 1368–1372. Xu, M.; Li, K.; Chen, G.; and Hu, X. 2025a. Tiger: Time-frequency Interleaved Gain Extraction and Reconstruction for Efficient Speech Separation. In Proc. ICLR , 70205– 70222. Xu, Z.; Fan, X.; Wang, Z. Q.; Jiang, X.; and Choudhury, R. R. 2025b. ArrayDPS: Unsupervised Blind Speech Separation with a Diffusion Prior. In Proc. ICML , 69160–69188. Yang, X.; et al. 2025. Speaker Separation for an Unknown Number of Speakers with Encoder-Decoder-Based Contex-tual Information Module. In Proc. Interspeech , 1448–1452. Yoshioka, T.; Wang, X.; Wang, D.; Tang, M.; Zhu, Z.; Chen, Z.; and Kanda, N. 2022. VarArray: Array-Geometry-Agnostic Continuous Speech Separation. In Proc. ICASSP ,6027–6031. Zhang, W.; Saijo, K.; Wang, Z.-Q.; Watanabe, S.; and Qian, Y. 2023. Toward Universal Speech Enhancement for Diverse Input Conditions. In Proc. ASRU , 1–6. Zhang, W.; et al. 2024. Improving Design of Input Condition Invariant Speech Enhancement. In Proc. ICASSP , 10696– 10700. Zhu, J.; et al. 2021. Multi-Decoder DPRNN: Source Sepa-ration for Variable Number of Speakers. In Proc. ICASSP ,3420–3424.

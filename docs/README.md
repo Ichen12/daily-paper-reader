@@ -6,56 +6,59 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-08-30
-- 运行时间：2026-08-30 22:32:55 UTC
+- 最新运行日期：2026-08-31
+- 运行时间：2026-09-01 00:35:18 UTC
 - 运行状态：成功
 - 本次总论文数：12
 - 精读区：3
 - 速读区：9
 
 ### 今日简报（AI）
-今日共读12篇论文，重点精读3篇，其中中文幽默谐音识别在语音识别中的消歧研究以9.0分最受关注。值得关注的方向是语音情感识别中的动态条件随机场建模，以及音频水印对深度伪造检测的鲁棒性挑战。建议普通读者优先了解谐音歧义处理，它对提升中文语音助手交互体验很实用。
-- 详情：[/202608/30/README](/202608/30/README)
+- 今日共生成 12 篇推荐（精读 3 篇，速读 9 篇）
+- 精读：《A Shaky Voice Is Not Always a Dodge: Benchmarking Textual and Vocal Evasion Detection in Earnings Calls》（9.0/10）, 《REDnet: Recursive Encoder and Decoder for Speech Separation under Unknown Number of Speakers and Variable Number of Microphones》（8.0/10）
+- 速读：《A Reranker for Orchestrating Heterogeneous Speech and Text Retrievers》（7.0/10）, 《SpeechGym: An Audio-Native Gym for Training Voice Agents via Reinforcement Learning》（7.0/10）, 《Auditing Generative Audio Calls for Known-Task Audio-LLM Evaluation》（7.0/10）
+- 这些结果覆盖了当下较热的方向，建议先看精读区论文的关键问题与方法。
+- 详情：[/202608/31/README](/202608/31/README)
 
 ### 精读区论文标签
-1. [Mandarin Humorous Homophone Recognition and Disambiguation in Automatic Speech Recognition](/202608/30/2608.25384v1-mandarin-humorous-homophone-recognition-and-disambiguation-in-automatic-speech-recognition)  
+1. [A Shaky Voice Is Not Always a Dodge: Benchmarking Textual and Vocal Evasion Detection in Earnings Calls](/202608/31/2608.28040v1-a-shaky-voice-is-not-always-a-dodge-benchmarking-textual-and-vocal-evasion-detection-in-earnings-calls)  
    标签：评分：9.0/10、query:speech-audio
-   evidence：基于音系特征的普通话错误发音检测
-2. [Mandarin Humorous Homophone Recognition and Disambiguation in Automatic Speech Recognition](/202608/30/2608.25384v2-mandarin-humorous-homophone-recognition-and-disambiguation-in-automatic-speech-recognition)  
+   evidence：包含文本和音频标注的逃避检测基准
+2. [REDnet: Recursive Encoder and Decoder for Speech Separation under Unknown Number of Speakers and Variable Number of Microphones](/202608/31/2608.24659v1-rednet-recursive-encoder-and-decoder-for-speech-separation-under-unknown-number-of-speakers-and-variable-number-of-microphones)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：面向普通话自动语音识别中的发音错误检测与诊断
-3. [A Reranker for Orchestrating Heterogeneous Speech and Text Retrievers](/202608/30/2608.26194v1-a-reranker-for-orchestrating-heterogeneous-speech-and-text-retrievers)  
+   evidence：针对未知说话人数和可变麦克风数的语音分离方法
+3. [SURE-Challenge: Evaluating Speech Evidence Before Speech-LLM Generation](/202608/31/2608.27783v1-sure-challenge-evaluating-speech-evidence-before-speech-llm-generation)  
    标签：评分：8.0/10、query:speech-audio
-   evidence：语音与文本多模态检索聚合
+   evidence：提出SURE-Challenge，用于在SpeechLLM生成前评估语音证据的基准
 
 ### 速读区论文标签
-1. [Dual-Scale State-Space Modeling with Speaker-Wise Dynamic CRF for Speech Emotion Recognition in Conversation](/202608/30/2608.22399v1-dual-scale-state-space-modeling-with-speaker-wise-dynamic-crf-for-speech-emotion-recognition-in-conversation)  
+1. [A Reranker for Orchestrating Heterogeneous Speech and Text Retrievers](/202608/31/2608.26194v1-a-reranker-for-orchestrating-heterogeneous-speech-and-text-retrievers)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：对话语音情绪识别，音频自监督表示与说话人建模
-2. [On the Robustness of Audio Deepfake Detection under Audio Watermarking](/202608/30/2608.24159v1-on-the-robustness-of-audio-deepfake-detection-under-audio-watermarking)  
+   evidence：通过重排序器编排语音和文本检索器，属于多模态语音音频领域的核心
+2. [SpeechGym: An Audio-Native Gym for Training Voice Agents via Reinforcement Learning](/202608/31/2608.26432v1-speechgym-an-audio-native-gym-for-training-voice-agents-via-reinforcement-learning)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：提出基于音频水印的评估框架，检验音频深度伪造检测模型的鲁棒性
-3. [Benchmarking LLM Judges for Voice-Agent Evaluation: Reliability, Calibration, and Human Oversight](/202608/30/2608.24314v1-benchmarking-llm-judges-for-voice-agent-evaluation-reliability-calibration-and-human-oversight)  
+   evidence：提出SpeechGym，一个在原生音频上通过强化学习训练语音代理的环境，使用全模态语音模型
+3. [Auditing Generative Audio Calls for Known-Task Audio-LLM Evaluation](/202608/31/2608.27817v1-auditing-generative-audio-calls-for-known-task-audio-llm-evaluation)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：对语音智能体评估中的LLM评审进行可靠性与校准基准测试
-4. [Investigating voiced and unvoiced regions of speech for audio deepfake detection](/202608/30/2608.24639v1-investigating-voiced-and-unvoiced-regions-of-speech-for-audio-deepfake-detection)  
+   evidence：针对已知任务的可生成音频调用审计；涉及音频大模型评估/基准方法
+4. [Exploring the Design Space of Representation Learning for Audio Transformations](/202608/31/2608.28127v1-exploring-the-design-space-of-representation-learning-for-audio-transformations)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：基于浊音/清音区域分析的语音深度伪造检测
-5. [REDnet: Recursive Encoder and Decoder for Speech Separation under Unknown Number of Speakers and Variable Number of Microphones](/202608/30/2608.24659v1-rednet-recursive-encoder-and-decoder-for-speech-separation-under-unknown-number-of-speakers-and-variable-number-of-microphones)  
+   evidence：面向音频变换的神经表示学习
+5. [Multirate State Space Models for End-to-End Processing of Pulse Density Modulated Speech Signals](/202608/31/2608.28472v1-multirate-state-space-models-for-end-to-end-processing-of-pulse-density-modulated-speech-signals)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：面向语音音频处理的深度学习多说话人分离方法
-6. [SPECTRA: Subspace-Preserving Embedding Calibration, Transport, and Replay for Fully Few-Shot Class-Incremental Audio Classification](/202608/30/2608.25054v1-spectra-subspace-preserving-embedding-calibration-transport-and-replay-for-fully-few-shot-class-incremental-audio-classification)  
+   evidence：对脉冲密度调制语音信号直接端到端处理，支持低功耗设备的语音任务
+6. [Low-Power End-to-End Cochlear Implant Speech Denoising with Spiking Neural Networks](/202608/31/2608.28493v1-low-power-end-to-end-cochlear-implant-speech-denoising-with-spiking-neural-networks)  
    标签：评分：7.0/10、query:speech-audio
-   evidence：提出SPECTRA方法，用于完全少样本类增量音频分类
-7. [LibriBrain100: One Hundred Hours of Broad and Deep MEG Data for Neural Speech Decoding at Scale](/202608/30/2608.25204v1-libribrain100-one-hundred-hours-of-broad-and-deep-meg-data-for-neural-speech-decoding-at-scale)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：大规模MEG神经语音解码数据集与评测基准
-8. [SpeechGym: An Audio-Native Gym for Training Voice Agents via Reinforcement Learning](/202608/30/2608.26432v1-speechgym-an-audio-native-gym-for-training-voice-agents-via-reinforcement-learning)  
-   标签：评分：7.0/10、query:speech-audio
-   evidence：用于语音智能体训练的音频原生环境，不依赖外部ASR/TTS
-9. [StreamAV-Bench: A Comprehensive Benchmark for Streaming Audio-Video Generation](/202608/30/2608.26336v1-streamav-bench-a-comprehensive-benchmark-for-streaming-audio-video-generation)  
+   evidence：面向人工耳蜗的语音降噪，属于语音音频领域核心
+7. [Dual-Scale State-Space Modeling with Speaker-Wise Dynamic CRF for Speech Emotion Recognition in Conversation](/202608/31/2608.22399v1-dual-scale-state-space-modeling-with-speaker-wise-dynamic-crf-for-speech-emotion-recognition-in-conversation)  
    标签：评分：6.0/10、query:speech-audio
-   evidence：面向流式音视频生成的评测基准
+   evidence：对话语音情感识别，音频架构
+8. [Reasoning-Oriented Post-Training and Inference-Time LoRA Rescaling for Audio-Dependent Question Answering](/202608/31/2608.23092v1-reasoning-oriented-post-training-and-inference-time-lora-rescaling-for-audio-dependent-question-answering)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：音频相关的问答任务，涉及语音与音频主题
+9. [Phoneme- and Word-Level Metrics Using Self-Supervised Speech Representations for Forced Alignment Evaluation](/202608/31/2608.28508v1-phoneme--and-word-level-metrics-using-self-supervised-speech-representations-for-forced-alignment-evaluation)  
+   标签：评分：6.0/10、query:speech-audio
+   evidence：基于自监督语音表征的对齐评估指标，支持语音识别研究
 
 
 <div class="dpr-home-promo-card">
